@@ -1,0 +1,24 @@
+{
+  "name": "mutingwende",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"yarn --cwd apps/server dev\" \"yarn --cwd apps/web dev\"",
+    "dev:api": "yarn --cwd apps/server dev",
+    "dev:web": "yarn --cwd apps/web dev",
+    "dev:mobile": "yarn --cwd apps/mobile start",
+    "build": "yarn --cwd apps/web build",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "eslint": "^9.11.1",
+    "prettier": "^3.3.3"
+  }
+}
+
+

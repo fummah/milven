@@ -1,0 +1,26 @@
+# Node
+node_modules
+*.log
+*.tmp
+.DS_Store
+dist
+build
+
+# Env
+.env
+.env.local
+apps/server/.env
+apps/web/.env
+apps/mobile/.env
+
+# Prisma
+apps/server/prisma/*.db
+
+# Expo
+.expo
+.expo-shared
+
+# Yarn
+yarn-error.log
+
+

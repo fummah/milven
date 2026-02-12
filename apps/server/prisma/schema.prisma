@@ -1,0 +1,466 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  firstName     String?
+  lastName      String?
+  phone         String?
+  country       String?
+  // Stripe customer id for billing
+  stripeCustomerId String?
+  role          UserRole  @default(STUDENT)
+  level         CfaLevel  @default(LEVEL1)
+  customRoleId  String?
+  customRole    CustomRole? @relation(fields: [customRoleId], references: [id])
+  emailVerifiedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  // Relations
+  createdExams  Exam[]    @relation("ExamCreatedBy")
+  examAttempts  ExamAttempt[]
+  videoProgresses VideoProgress[]
+  subscriptions Subscription[]
+  payments      PaymentRecord[]
+  emailVerificationToken EmailVerificationToken?
+  passwordResetTokens PasswordResetToken[]
+  enrollments   Enrollment[]
+  materialProgresses MaterialProgress[]
+  topicProgresses    TopicProgress[]
+  courseProgresses   CourseProgress[]
+}
+
+enum UserRole {
+  STUDENT
+  ADMIN
+}
+
+enum CfaLevel {
+  NONE
+  LEVEL1
+  LEVEL2
+  LEVEL3
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuestionType {
+  MCQ
+  VIGNETTE_MCQ
+  CONSTRUCTED_RESPONSE
+}
+
+model Module {
+  id        String   @id @default(cuid())
+  name      String
+  level     CfaLevel
+  order     Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  topics    Topic[]
+}
+
+model Topic {
+  id           String    @id @default(cuid())
+  name         String
+  level        CfaLevel
+  order        Int?
+  moduleNumber Int?      // deprecated: use moduleId; kept for migration/display
+  moduleId     String?
+  module       Module?   @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  // Relations
+  questions Question[]
+  videos    Video[]
+  revisionSummaries RevisionSummary[]
+  materials LearningMaterial[]
+}
+
+model Vignette {
+  id        String    @id @default(cuid())
+  text      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  questions Question[]
+}
+
+model Question {
+  id         String       @id @default(cuid())
+  stem       String
+  type       QuestionType
+  level      CfaLevel
+  difficulty Difficulty
+  topicId    String
+  topic      Topic        @relation(fields: [topicId], references: [id])
+  vignetteId String?
+  vignette   Vignette?    @relation(fields: [vignetteId], references: [id])
+  createdAt  DateTime     @default(now())
+  options    McqOption[]
+  answers    ExamAnswer[]
+  usedInExams ExamQuestion[]
+}
+
+model McqOption {
+  id          String    @id @default(cuid())
+  questionId  String
+  question    Question  @relation(fields: [questionId], references: [id])
+  text        String
+  isCorrect   Boolean   @default(false)
+  // Back relation for ExamAnswer.selectedOption
+  selectedByAnswers ExamAnswer[]
+}
+
+model Exam {
+  id               String     @id @default(cuid())
+  name             String
+  level            CfaLevel
+  timeLimitMinutes Int
+  // Extended metadata (lightweight to avoid relation rebuild for now)
+  type             String?    // 'COURSE' | 'QUIZ'
+  courseId         String?
+  topicId          String?
+  active           Boolean    @default(false)
+  // When set, exam is only available to students between startAt and endAt (inclusive)
+  startAt          DateTime?
+  endAt            DateTime?
+  createdAt        DateTime   @default(now())
+  createdById      String?
+  createdBy        User?      @relation("ExamCreatedBy", fields: [createdById], references: [id])
+  attempts         ExamAttempt[]
+  examQuestions    ExamQuestion[]
+}
+
+model ExamQuestion {
+  examId     String
+  questionId String
+  order      Int?
+  createdAt  DateTime @default(now())
+  exam       Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  @@id([examId, questionId])
+  @@index([examId, order])
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+}
+
+model ExamAttempt {
+  id               String       @id @default(cuid())
+  examId           String
+  exam             Exam         @relation(fields: [examId], references: [id])
+  userId           String
+  user             User         @relation(fields: [userId], references: [id])
+  startedAt        DateTime     @default(now())
+  submittedAt      DateTime?
+  status           AttemptStatus @default(IN_PROGRESS)
+  timeRemainingSec Int?
+  scorePercent     Float?
+  answers          ExamAnswer[]
+}
+
+model ExamAnswer {
+  id               String      @id @default(cuid())
+  attemptId        String
+  attempt          ExamAttempt @relation(fields: [attemptId], references: [id])
+  questionId       String
+  question         Question    @relation(fields: [questionId], references: [id])
+  selectedOptionId String?
+  selectedOption   McqOption?  @relation(fields: [selectedOptionId], references: [id])
+  textAnswer       String?
+  isCorrect        Boolean?
+  flagged          Boolean     @default(false)
+  timeSpentSec     Int         @default(0)
+  @@unique([attemptId, questionId])
+}
+
+model Video {
+  id          String    @id @default(cuid())
+  title       String
+  url         String
+  topicId     String?
+  topic       Topic?    @relation(fields: [topicId], references: [id])
+  level       CfaLevel
+  durationSec Int?
+  createdAt   DateTime  @default(now())
+  progresses  VideoProgress[]
+}
+
+model VideoProgress {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  videoId     String
+  video       Video    @relation(fields: [videoId], references: [id])
+  positionSec Int      @default(0)
+  completed   Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+  @@unique([userId, videoId])
+}
+
+model RevisionSummary {
+  id         String   @id @default(cuid())
+  topicId    String?
+  topic      Topic?   @relation(fields: [topicId], references: [id])
+  level      CfaLevel
+  title      String
+  contentUrl String?
+  contentHtml String?
+  createdAt  DateTime @default(now())
+}
+
+enum MaterialKind {
+  LINK
+  PDF
+  VIDEO
+  IMAGE
+  HTML
+}
+
+model LearningMaterial {
+  id          String       @id @default(cuid())
+  topicId     String
+  topic       Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  kind        MaterialKind
+  title       String
+  url         String?
+  contentHtml String?
+  imageUrl    String?
+  // Estimated time to complete this material in seconds
+  estimatedSeconds Int?
+  order       Int?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  @@index([topicId, order])
+}
+
+model Course {
+  id             String    @id @default(cuid())
+  name           String
+  level          CfaLevel
+  description    String?
+  durationHours  Int?
+  // (Deprecated) Price moved to Product; left for backward compatibility.
+  priceCents     Int?
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  enrollments    Enrollment[]
+  courseProducts CourseProduct[]
+}
+
+enum EnrollmentStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Enrollment {
+  id        String           @id @default(cuid())
+  userId    String
+  courseId  String
+  status    EnrollmentStatus @default(IN_PROGRESS)
+  user      User             @relation(fields: [userId], references: [id])
+  course    Course           @relation(fields: [courseId], references: [id])
+  createdAt DateTime         @default(now())
+  @@unique([userId, courseId])
+  @@index([userId, createdAt])
+}
+
+enum BillingInterval {
+  ONE_TIME
+  MONTHLY
+  YEARLY
+}
+
+model Product {
+  id           String           @id @default(cuid())
+  name         String
+  description  String?
+  priceCents   Int
+  interval     BillingInterval
+  active       Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  courseLinks  CourseProduct[]
+  // Stripe linkage
+  stripeProductId String?
+  stripePriceId   String?
+}
+
+model CourseProduct {
+  courseId  String
+  productId String
+  course    Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@id([courseId, productId])
+}
+
+model CustomRole {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  users       User[]
+}
+
+model RolePermission {
+  id        String   @id @default(cuid())
+  roleKey   String   // 'ADMIN', 'STUDENT', or 'custom:<id>'
+  permission String
+  allowed   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([roleKey, permission])
+}
+
+model LevelDef {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  order     Int?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Provider {
+  FLUTTERWAVE
+  PAYFAST
+  STRIPE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+model Subscription {
+  id               String             @id @default(cuid())
+  userId           String
+  user             User               @relation(fields: [userId], references: [id])
+  provider         Provider
+  plan             String?
+  // Provider-specific reference (e.g., Stripe subscription id)
+  providerReference String?
+  status           SubscriptionStatus @default(INCOMPLETE)
+  currency         String?
+  currentPeriodEnd DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  @@unique([userId, provider])
+}
+
+model PaymentRecord {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  provider  Provider
+  reference String
+  amount    Int
+  currency  String
+  status    String
+  rawDataJson Json
+  createdAt DateTime @default(now())
+  @@unique([provider, reference])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+// Learning progress tracking
+model MaterialProgress {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id])
+  materialId    String
+  kind          MaterialKind
+  percent       Float        @default(0)
+  timeSpentSec  Int          @default(0)
+  lastPosSec    Int?
+  meta          Json?
+  updatedAt     DateTime     @updatedAt
+  completedAt   DateTime?
+  @@unique([userId, materialId])
+}
+
+model TopicProgress {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  topicId       String
+  percent       Float     @default(0)
+  timeSpentSec  Int       @default(0)
+  completedAt   DateTime?
+  gateSatisfied Boolean   @default(false)
+  updatedAt     DateTime  @updatedAt
+  @@unique([userId, topicId])
+}
+
+model CourseProgress {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  courseId      String
+  percent       Float     @default(0)
+  timeSpentSec  Int       @default(0)
+  completedAt   DateTime?
+  lastTopicId   String?
+  lastMaterialId String?
+  updatedAt     DateTime  @updatedAt
+  @@unique([userId, courseId])
+}
+
+// Tax definitions for billing
+model Tax {
+  id          String   @id @default(cuid())
+  name        String
+  ratePercent Float
+  active      Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+// Simple key-value settings storage
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  // JSON value for flexibility
+  value     Json?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}

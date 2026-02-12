@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Action15
+      POSTGRES_DB: mutingwende
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+  api:
+    build:
+      context: ./apps/server
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://postgres:Action15@db:5432/mutingwende?schema=public
+      PORT: 4000
+      JWT_SECRET: dev_secret
+      CORS_ORIGIN: http://localhost:5173,http://localhost:3000,exp://127.0.0.1:19000
+      ALLOW_DEBUG: "1"
+      DEFAULT_ADMIN_EMAIL: admin@milven.finance
+      DEFAULT_ADMIN_PASSWORD: Milven#2026
+      DEFAULT_ADMIN_FORCE_RESET: "1"
+      STRIPE_SECRET_KEY: sk_test_51S00o1Px1OcXYlrvYH9sOlMaBxNQIeumiXMdGSGVesDCgJcNcg2Bz05xneMeVXy86GPXAfBMxYkLHZw4TlAgO6RM00wA4gD7yc
+      WEB_BASE_URL: http://localhost:5173
+      SMTP_HOST: smtp.zbsburial.com
+      SMTP_PORT: "465"
+      SMTP_USER: info@zbsburial.com
+      SMTP_PASS: "6r5r34A71C64G0"
+      SMTP_FROM: info@zbsburial.com
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./apps/server/uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "npm run migrate && npm run dev"
+volumes:
+  db_data:
+
+

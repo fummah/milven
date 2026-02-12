@@ -1,0 +1,2 @@
+ALTER TABLE "Topic" ADD COLUMN IF NOT EXISTS "moduleNumber" INTEGER;
+

@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ant Design + Tailwind harmony tweaks */
+:root {
+	--brand: #102540;
+}
+
+/* Prevent pull-to-refresh / overscroll reload when scrolling to top (all pages) */
+html, body, #root {
+  overscroll-behavior-y: none;
+  overscroll-behavior-x: none;
+}
+/* Prevent touch-driven pull-to-refresh on mobile */
+html {
+  touch-action: pan-x pan-y;
+}
+.ant-layout {
+  overscroll-behavior: contain;
+}
+
+/* Smooth fonts */
+html, body, #root {
+	height: 100%;
+}
+body {
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+	color: #000000;
+	background-color: #ffffff;
+}
+
+/* Serif headings per brand */
+h1, h2, h3, h4, h5, h6 {
+	font-family: 'Merriweather', Georgia, 'Times New Roman', Times, serif;
+	color: #102540;
+}
+
+/* Rich text editor sizing */
+.rich-editor .ql-toolbar.ql-snow {
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+.rich-editor .ql-container.ql-snow {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  height: auto !important;
+}
+.rich-editor .ql-editor {
+  min-height: 280px; /* default height */
+  overflow: auto;
+}
+/* Make the whole editor vertically resizable */
+.rich-editor {
+  resize: vertical;
+  overflow: auto;
+  display: block;
+}
+
+/* Admin sider menu active indicator (underline instead of gray block) */
+.admin-sider .ant-menu {
+  --brand: #102540;
+}
+.admin-sider .ant-menu-item-selected,
+.admin-sider .ant-menu-item-active {
+  background: transparent !important;
+}
+.admin-sider .ant-menu-item-selected .ant-menu-title-content {
+  color: var(--brand) !important;
+  font-weight: 600;
+}
+.admin-sider .ant-menu-item {
+  position: relative;
+}
+.admin-sider .ant-menu-item-selected::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--brand);
+  border-radius: 2px;
+}
+.admin-sider .ant-menu-item:hover::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(16, 37, 64, 0.25);
+  border-radius: 2px;
+}
+.admin-sider .ant-menu-item:hover {
+  background: transparent !important;
+}
+
+/* Student sider menu active indicator (underline) */
+.student-sider .ant-menu-item-selected,
+.student-sider .ant-menu-item-active {
+  background: transparent !important;
+}
+.student-sider .ant-menu-item {
+  position: relative;
+}
+.student-sider .ant-menu-item-selected::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: #102540;
+  border-radius: 2px;
+}
+.student-sider .ant-menu-item:hover::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(16, 37, 64, 0.25);
+  border-radius: 2px;
+}
+.student-sider .ant-menu-item:hover {
+  background: transparent !important;
+}
+

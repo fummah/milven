@@ -1,0 +1,12 @@
+your-domain.com {
+	encode zstd gzip
+	handle_path /api/* {
+		reverse_proxy api:4000
+	}
+	handle {
+		respond "Mutingwende API is running. Deploy web static separately or via CDN." 200
+	}
+	tls you@example.com
+}
+
+

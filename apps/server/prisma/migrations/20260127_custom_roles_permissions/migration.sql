@@ -1,0 +1,19 @@
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "customRoleId" TEXT;
+CREATE TABLE IF NOT EXISTS "CustomRole" (
+  "id" TEXT PRIMARY KEY,
+  "name" TEXT NOT NULL UNIQUE,
+  "description" TEXT,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE "User" ADD CONSTRAINT "User_customRoleId_fkey" FOREIGN KEY ("customRoleId") REFERENCES "CustomRole"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+CREATE TABLE IF NOT EXISTS "RolePermission" (
+  "id" TEXT PRIMARY KEY,
+  "roleKey" TEXT NOT NULL,
+  "permission" TEXT NOT NULL,
+  "allowed" BOOLEAN NOT NULL DEFAULT false,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "RolePermission_role_permission_unique" UNIQUE ("roleKey","permission")
+);
+
