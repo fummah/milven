@@ -27,7 +27,7 @@ services:
       DEFAULT_ADMIN_EMAIL: admin@milven.finance
       DEFAULT_ADMIN_PASSWORD: Milven#2026
       DEFAULT_ADMIN_FORCE_RESET: "1"
-      STRIPE_SECRET_KEY: sk_test_51S00o1Px1OcXYlrvYH9sOlMaBxNQIeumiXMdGSGVesDCgJcNcg2Bz05xneMeVXy86GPXAfBMxYkLHZw4TlAgO6RM00wA4gD7yc
+      STRIPE_SECRET_KEY: 
       WEB_BASE_URL: http://localhost:5173
       SMTP_HOST: smtp.zbsburial.com
       SMTP_PORT: "465"

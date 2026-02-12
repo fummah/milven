@@ -12,6 +12,7 @@ build
 apps/server/.env
 apps/web/.env
 apps/mobile/.env
+apps/server/.env.example
 
 # Prisma
 apps/server/prisma/*.db
