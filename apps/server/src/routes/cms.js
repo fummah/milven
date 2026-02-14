@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import Stripe from 'stripe';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -8,6 +9,50 @@ import { requireRole } from '../middleware/requireRole.js';
 
 export function cmsRouter(prisma) {
 	const router = Router();
+  // Local Stripe helper (mirrors billing.ensureStripeProductAndPrice)
+  const stripeKey = process.env.STRIPE_SECRET_KEY || '';
+  const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: '2023-10-16' }) : null;
+
+  async function ensureStripeProductAndPriceLocal(p) {
+    if (!stripe) return p;
+    let sp = p.stripeProductId ? await stripe.products.retrieve(p.stripeProductId).catch(() => null) : null;
+    if (!sp) {
+      sp = await stripe.products.create({ name: p.name, active: p.active, description: p.description || undefined });
+    } else {
+      await stripe.products.update(sp.id, { name: p.name, active: p.active, description: p.description ?? undefined });
+    }
+    // Prices are immutable for amount/interval
+    let needNewPrice = !p.stripePriceId;
+    if (p.stripePriceId) {
+      try {
+        const existing = await stripe.prices.retrieve(p.stripePriceId);
+        const recurring = (p.interval === 'MONTHLY' || p.interval === 'YEARLY');
+        const intervalOk = recurring ? (existing.recurring && ((p.interval === 'MONTHLY' && existing.recurring.interval === 'month') || (p.interval === 'YEARLY' && existing.recurring.interval === 'year'))) : !existing.recurring;
+        const amountOk = existing.unit_amount === p.priceCents;
+        const activeOk = existing.active;
+        if (!(intervalOk && amountOk && activeOk)) {
+          needNewPrice = true;
+          await stripe.prices.update(existing.id, { active: false });
+        }
+      } catch {
+        needNewPrice = true;
+      }
+    }
+    let priceId = p.stripePriceId || null;
+    if (needNewPrice) {
+      const base = { product: sp.id, unit_amount: p.priceCents, currency: 'usd', nickname: p.name };
+      const created = await stripe.prices.create({
+        ...base,
+        ...(p.interval === 'ONE_TIME' ? {} : (p.interval === 'MONTHLY' ? { recurring: { interval: 'month' } } : { recurring: { interval: 'year' } }))
+      });
+      priceId = created.id;
+    }
+    if (sp.id !== p.stripeProductId || priceId !== p.stripePriceId) {
+      const updated = await prisma.product.update({ where: { id: p.id }, data: { stripeProductId: sp.id, stripePriceId: priceId } });
+      return updated;
+    }
+    return p;
+  }
   // file upload setup
   const uploadDir = process.env.UPLOAD_DIR ?? path.join(process.cwd(), 'uploads');
   try { fs.mkdirSync(uploadDir, { recursive: true }); } catch {}
@@ -110,21 +155,27 @@ export function cmsRouter(prisma) {
     });
     if (!course) return res.status(404).json({ error: 'Not found' });
     const level = course.level;
-    // Related content by level: modules with topics, then standalone topics (no module), then flat topics list for backward compat
-    const [modulesWithTopics, topics, revisionSummaries, exams] = await Promise.all([
+    const [modulesWithTopics, topics] = await Promise.all([
       prisma.module.findMany({
-        where: { level },
+        where: { courseId: id },
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-        include: { topics: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] } }
+        include: {
+          topics: {
+            where: { courseId: id },
+            orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
+          }
+        }
       }),
       prisma.topic.findMany({
-        where: { level },
+        where: { courseId: id },
         orderBy: [{ moduleId: 'asc' }, { moduleNumber: 'asc' }, { order: 'asc' }, { createdAt: 'desc' }],
         include: { module: true }
-      }),
+      })
+    ]);
+    const [revisionSummaries, exams] = await Promise.all([
       prisma.revisionSummary.findMany({ where: { level }, orderBy: { createdAt: 'desc' } }),
       prisma.exam.findMany({
-        where: { level },
+        where: { courseId: id },
         orderBy: { createdAt: 'desc' },
         select: { id: true, name: true, level: true, timeLimitMinutes: true, createdAt: true, type: true, topicId: true, courseId: true, active: true, startAt: true, endAt: true }
       })
@@ -199,6 +250,18 @@ export function cmsRouter(prisma) {
       }
       return { ...course, products };
     });
+    // If auto-created product, ensure Stripe linkage
+    try {
+      if (created?.products?.length) {
+        const first = created.products[0];
+        const synced = await ensureStripeProductAndPriceLocal(first);
+        if (synced && (synced.stripeProductId || synced.stripePriceId)) {
+          created.products = [synced];
+        }
+      }
+    } catch (e) {
+      console.warn('[cms] Stripe sync for auto-created product failed:', e?.message ?? e);
+    }
     return res.status(201).json({ course: created });
   });
   router.put('/courses/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
@@ -224,32 +287,66 @@ export function cmsRouter(prisma) {
     return res.json({ ok: true });
   });
 
-  // Modules (containers for topics; a module has many topics)
+  	// Modules (containers for topics; a module has many topics)
 	router.get('/modules', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const level = req.query.level;
-		const where = level ? { level } : {};
+		const courseId = (req.query.courseId ?? '').toString().trim();
+		const where = courseId
+			? { courseId }
+			: (level ? { level } : {});
 		const modules = await prisma.module.findMany({
 			where,
 			orderBy: [{ level: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
-			include: { topics: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] } }
+			include: {
+				topics: {
+					...(courseId ? { where: { courseId } } : {}),
+					orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
+				}
+			}
 		});
 		return res.json({ modules });
 	});
 	router.post('/modules', requireAuth(), requireRole('ADMIN'), async (req, res) => {
-		const schema = z.object({ name: z.string().min(2), level: z.enum(['NONE', 'LEVEL1', 'LEVEL2', 'LEVEL3']), order: z.number().int().optional() });
+		const schema = z.object({
+			name: z.string().min(2),
+			courseId: z.string().min(1),
+			order: z.number().int().optional()
+		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const max = await prisma.module.findFirst({ where: { level: parse.data.level }, orderBy: { order: 'desc' }, select: { order: true } });
+		const courseId = parse.data.courseId;
+		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, level: true } });
+		if (!course) return res.status(400).json({ error: 'Invalid courseId' });
+		const level = course.level;
+		const max = await prisma.module.findFirst({ where: { courseId }, orderBy: { order: 'desc' }, select: { order: true } });
 		const order = parse.data.order ?? (max?.order ?? 0) + 1;
-		const module_ = await prisma.module.create({ data: { ...parse.data, order } });
+		const module_ = await prisma.module.create({ data: { name: parse.data.name, level, courseId, order } });
 		return res.status(201).json({ module: module_ });
 	});
 	router.put('/modules/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const id = req.params.id;
-		const schema = z.object({ name: z.string().min(2).optional(), level: z.enum(['NONE', 'LEVEL1', 'LEVEL2', 'LEVEL3']).optional(), order: z.number().int().optional() });
+		const schema = z.object({
+			name: z.string().min(2).optional(),
+			courseId: z.string().optional().nullable(),
+			order: z.number().int().optional()
+		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const module_ = await prisma.module.update({ where: { id }, data: parse.data });
+		const courseId = typeof parse.data.courseId === 'undefined'
+			? undefined
+			: (parse.data.courseId || null);
+		const course = courseId ? await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, level: true } }) : null;
+		if (courseId && !course) return res.status(400).json({ error: 'Invalid courseId' });
+		const level = course ? course.level : undefined;
+		const module_ = await prisma.module.update({
+			where: { id },
+			data: {
+				...(typeof parse.data.name !== 'undefined' ? { name: parse.data.name } : {}),
+				...(typeof level !== 'undefined' ? { level } : {}),
+				...(typeof courseId !== 'undefined' ? { courseId } : {}),
+				...(typeof parse.data.order !== 'undefined' ? { order: parse.data.order } : {})
+			}
+		});
 		return res.json({ module: module_ });
 	});
 	router.delete('/modules/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
@@ -259,14 +356,16 @@ export function cmsRouter(prisma) {
 		return res.json({ ok: true });
 	});
 
-  // Topics
+	// Topics
 	router.get('/topics', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const level = req.query.level;
+		const courseId = (req.query.courseId ?? '').toString().trim();
 		const moduleId = req.query.moduleId;
 		const q = (req.query.q ?? '').toString().trim();
 		const where = {
 			AND: [
-				level ? { level } : {},
+				courseId ? { courseId } : {},
+				(!courseId && level) ? { level } : {},
 				moduleId ? { moduleId } : {},
 				q ? { name: { contains: q, mode: 'insensitive' } } : {}
 			]
@@ -284,15 +383,24 @@ export function cmsRouter(prisma) {
   router.post('/topics', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const schema = z.object({
 			name: z.string().min(2),
-			level: z.enum(['NONE', 'LEVEL1', 'LEVEL2', 'LEVEL3']),
+			courseId: z.string().min(1),
 			moduleId: z.string().optional().nullable(),
 			moduleNumber: z.number().int().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const data = { ...parse.data, moduleId: parse.data.moduleId || undefined };
+		const courseId = parse.data.courseId;
+		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, level: true } });
+		if (!course) return res.status(400).json({ error: 'Invalid courseId' });
+		const level = course.level;
+		if (parse.data.moduleId) {
+			const m = await prisma.module.findUnique({ where: { id: parse.data.moduleId }, select: { id: true, courseId: true } });
+			if (!m) return res.status(400).json({ error: 'Invalid moduleId' });
+			if (m.courseId && m.courseId !== courseId) return res.status(400).json({ error: 'Module does not belong to this course' });
+		}
+		const data = { ...parse.data, courseId, level, moduleId: parse.data.moduleId || undefined };
 		const max = await prisma.topic.findFirst({
-			where: data.moduleId ? { moduleId: data.moduleId } : { level: data.level },
+			where: data.moduleId ? { moduleId: data.moduleId, courseId } : { courseId },
 			orderBy: { order: 'desc' },
 			select: { order: true }
 		});
@@ -304,13 +412,35 @@ export function cmsRouter(prisma) {
 		const id = req.params.id;
 		const schema = z.object({
 			name: z.string().min(2).optional(),
-			level: z.enum(['NONE', 'LEVEL1', 'LEVEL2', 'LEVEL3']).optional(),
+			courseId: z.string().optional().nullable(),
 			moduleId: z.string().optional().nullable(),
 			moduleNumber: z.number().int().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const data = { ...parse.data, moduleId: parse.data.moduleId === null || parse.data.moduleId === '' ? null : parse.data.moduleId };
+		const courseId = typeof parse.data.courseId === 'undefined'
+			? undefined
+			: (parse.data.courseId || null);
+		const existing = await prisma.topic.findUnique({ where: { id }, select: { id: true, courseId: true } });
+		if (!existing) return res.status(404).json({ error: 'Not found' });
+		const effectiveCourseId = (typeof courseId !== 'undefined') ? courseId : (existing.courseId ?? null);
+		const course = effectiveCourseId ? await prisma.course.findUnique({ where: { id: effectiveCourseId }, select: { id: true, level: true } }) : null;
+		if (effectiveCourseId && !course) return res.status(400).json({ error: 'Invalid courseId' });
+		const level = course ? course.level : undefined;
+		const nextModuleId = (typeof parse.data.moduleId === 'undefined')
+			? undefined
+			: (parse.data.moduleId === null || parse.data.moduleId === '' ? null : parse.data.moduleId);
+		if (nextModuleId) {
+			const m = await prisma.module.findUnique({ where: { id: nextModuleId }, select: { id: true, courseId: true } });
+			if (!m) return res.status(400).json({ error: 'Invalid moduleId' });
+			if (effectiveCourseId && m.courseId && m.courseId !== effectiveCourseId) return res.status(400).json({ error: 'Module does not belong to this course' });
+		}
+		const data = {
+			...parse.data,
+			...(typeof level !== 'undefined' ? { level } : {}),
+			...(typeof courseId !== 'undefined' ? { courseId } : {}),
+			...(typeof nextModuleId !== 'undefined' ? { moduleId: nextModuleId } : {})
+		};
 		const topic = await prisma.topic.update({ where: { id }, data, include: { module: true } });
 		return res.json({ topic });
 	});
@@ -331,7 +461,18 @@ export function cmsRouter(prisma) {
     const id = req.params.id;
     const topic = await prisma.topic.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        level: true,
+        order: true,
+        moduleNumber: true,
+        moduleId: true,
+        createdAt: true,
+        updatedAt: true,
+        module: {
+          select: { id: true, name: true, level: true, order: true, createdAt: true, updatedAt: true }
+        },
         materials: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
         revisionSummaries: { orderBy: { createdAt: 'desc' } },
         videos: { orderBy: { createdAt: 'desc' } }

@@ -242,23 +242,46 @@ export function learningRouter(prisma) {
         select: { id: true, name: true, level: true, description: true, durationHours: true }
       });
       if (!course) return res.status(404).json({ error: 'Not found' });
-      const [topics, modules] = await Promise.all([
-        prisma.topic.findMany({
-          where: { level: course.level },
-          orderBy: [{ moduleId: 'asc' }, { moduleNumber: 'asc' }, { order: 'asc' }],
-          select: { id: true, name: true, moduleNumber: true, moduleId: true, order: true, level: true }
-        }),
-        prisma.module.findMany({
-          where: { level: course.level },
-          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-          include: {
-            topics: {
-              orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-              select: { id: true, name: true, moduleNumber: true, order: true, level: true }
+      let topics = [];
+      let modules = [];
+      try {
+        [topics, modules] = await Promise.all([
+          prisma.topic.findMany({
+            where: { courseId },
+            orderBy: [{ moduleId: 'asc' }, { moduleNumber: 'asc' }, { order: 'asc' }],
+            select: { id: true, name: true, moduleNumber: true, moduleId: true, order: true, level: true, courseId: true }
+          }),
+          prisma.module.findMany({
+            where: { courseId },
+            orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+            include: {
+              topics: {
+                where: { courseId },
+                orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+                select: { id: true, name: true, moduleNumber: true, order: true, level: true, courseId: true }
+              }
             }
-          }
-        })
-      ]);
+          })
+        ]);
+      } catch {
+        [topics, modules] = await Promise.all([
+          prisma.topic.findMany({
+            where: { level: course.level },
+            orderBy: [{ moduleId: 'asc' }, { moduleNumber: 'asc' }, { order: 'asc' }],
+            select: { id: true, name: true, moduleNumber: true, moduleId: true, order: true, level: true }
+          }),
+          prisma.module.findMany({
+            where: { level: course.level },
+            orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+            include: {
+              topics: {
+                orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+                select: { id: true, name: true, moduleNumber: true, order: true, level: true }
+              }
+            }
+          })
+        ]);
+      }
       return res.json({ course, topics, modules });
     } catch (e) {
       return res.status(500).json({ error: 'Failed to load course' });

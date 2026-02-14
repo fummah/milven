@@ -5,6 +5,8 @@ node_modules
 .DS_Store
 dist
 build
+docker-compose.dev.yml
+docker-compose.prod.yml
 
 # Env
 .env

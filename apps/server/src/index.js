@@ -34,6 +34,14 @@ if (!process.env.DATABASE_URL) {
 const app = express();
 const prisma = new PrismaClient();
 
+// Prevent process crashes on unhandled errors; log and continue (nodemon will still restart on file changes)
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
+
 async function ensureDefaultAdmin() {
 	try {
 		const email = process.env.DEFAULT_ADMIN_EMAIL ?? 'admin@milven.finance';
@@ -67,7 +75,7 @@ app.use(
 );
 app.use(
 	cors({
-		origin: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:5173', 'http://localhost:3000'],
+		origin: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:5173', 'http://localhost:3000','http://164.90.156.5'],
 		credentials: true
 	})
 );

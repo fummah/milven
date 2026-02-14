@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Input, Space, Button, Modal, Form, Select, InputNumber, Switch, message, Drawer, Radio, Tooltip } from 'antd';
+import { Table, Typography, Input, Space, Button, Modal, Form, Select, InputNumber, Switch, message, Drawer, Radio, Tooltip, Grid } from 'antd';
 import { PlusOutlined, EditOutlined, EyeOutlined, DeleteOutlined, FilterOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useNavigate } from 'react-router-dom';
 
 export function AdminCourses() {
   const navigate = useNavigate();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -159,14 +161,14 @@ export function AdminCourses() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 gap-3">
         <Typography.Title level={4} style={{ margin: 0 }}>Courses</Typography.Title>
-        <Space>
-          <Input.Search placeholder="Search name/description" allowClear onSearch={() => fetchCourses()} value={q} onChange={e => setQ(e.target.value)} />
-          <Select placeholder="Level" allowClear style={{ width: 160 }} value={level} onChange={setLevel}
+        <Space wrap>
+          <Input.Search placeholder="Search name/description" allowClear onSearch={() => fetchCourses()} value={q} onChange={e => setQ(e.target.value)} style={{ width: isMobile ? 260 : undefined }} />
+          <Select placeholder="Level" allowClear style={{ width: isMobile ? 180 : 160 }} value={level} onChange={setLevel}
             options={levelsList}
           />
-          <Select placeholder="Active" allowClear style={{ width: 140 }} value={onlyActive}
+          <Select placeholder="Active" allowClear style={{ width: isMobile ? 160 : 140 }} value={onlyActive}
             onChange={setOnlyActive}
             options={[{ value: true, label: 'Active' }, { value: false, label: 'Inactive' }]}
           />
@@ -185,6 +187,8 @@ export function AdminCourses() {
         loading={loading}
         dataSource={data}
         columns={columns}
+        size={isMobile ? 'small' : 'middle'}
+        scroll={isMobile ? { x: 'max-content' } : undefined}
         pagination={{ total, pageSize: 20, onChange: () => {} }}
       />
 

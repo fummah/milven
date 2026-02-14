@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Input, Space, Select, Button, Modal, Form, message, Drawer, Popconfirm, Descriptions, Tag, Divider, Row, Col, Switch } from 'antd';
+import { Table, Typography, Input, Space, Select, Button, Modal, Form, message, Drawer, Popconfirm, Descriptions, Tag, Divider, Row, Col, Switch, Grid } from 'antd';
 import { PlusOutlined, EditOutlined, EyeOutlined, DeleteOutlined, UserOutlined, MailOutlined, PhoneOutlined, GlobalOutlined, SafetyCertificateOutlined, CalendarOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { countriesOptions } from '../../constants/countries';
@@ -7,6 +7,8 @@ import { countriesOptions } from '../../constants/countries';
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
 export function AdminUsers() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -115,14 +117,14 @@ export function AdminUsers() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 gap-3">
         <Typography.Title level={4} style={{ margin: 0 }}>Users</Typography.Title>
-        <Space>
-          <Input.Search placeholder="Search email" allowClear onSearch={() => fetchUsers()} value={q} onChange={e => setQ(e.target.value)} />
-          <Select placeholder="Role" allowClear style={{ width: 140 }} value={role} onChange={setRole}
+        <Space wrap>
+          <Input.Search placeholder="Search email" allowClear onSearch={() => fetchUsers()} value={q} onChange={e => setQ(e.target.value)} style={{ width: isMobile ? 260 : undefined }} />
+          <Select placeholder="Role" allowClear style={{ width: isMobile ? 160 : 140 }} value={role} onChange={setRole}
             options={[{ value: 'ADMIN', label: 'Admin' }, { value: 'STUDENT', label: 'Student' }]}
           />
-          <Select placeholder="Level" allowClear style={{ width: 160 }} value={level} onChange={setLevel}
+          <Select placeholder="Level" allowClear style={{ width: isMobile ? 180 : 160 }} value={level} onChange={setLevel}
             options={[{ value: 'LEVEL1', label: 'Level I' }, { value: 'LEVEL2', label: 'Level II' }, { value: 'LEVEL3', label: 'Level III' }]}
           />
           <Button onClick={() => fetchUsers()}>Filter</Button>
@@ -134,6 +136,8 @@ export function AdminUsers() {
         loading={loading}
         dataSource={data}
         columns={columns}
+        size={isMobile ? 'small' : 'middle'}
+        scroll={isMobile ? { x: 'max-content' } : undefined}
         pagination={{
           total,
           pageSize: 20,

@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Space, Button, Typography, Modal, Form, Select, Switch, Popconfirm, message } from 'antd';
+import { Card, Table, Space, Button, Typography, Modal, Form, Select, Switch, Popconfirm, message, Grid } from 'antd';
 import { PlusOutlined, StopOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 export function AdminSubscriptions() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [loading, setLoading] = useState(false);
   const [subs, setSubs] = useState([]);
   const [users, setUsers] = useState([]);
@@ -110,13 +112,13 @@ export function AdminSubscriptions() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <Typography.Title level={4} style={{ margin: 0 }}>Subscriptions</Typography.Title>
-        <Space>
+        <Space wrap>
           <Select
             allowClear
             placeholder="Filter by user"
-            style={{ width: 260 }}
+            style={{ width: isMobile ? 260 : 260 }}
             value={filterUserId || undefined}
             onChange={setFilterUserId}
             showSearch
@@ -127,7 +129,7 @@ export function AdminSubscriptions() {
           <Select
             allowClear
             placeholder="Filter status"
-            style={{ width: 200 }}
+            style={{ width: isMobile ? 200 : 200 }}
             value={filterStatus || undefined}
             onChange={setFilterStatus}
             options={[
@@ -142,7 +144,7 @@ export function AdminSubscriptions() {
           />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Create Subscription</Button>
         </Space>
-      </Space>
+      </div>
       <Card>
         <Table
           rowKey="id"
@@ -153,6 +155,8 @@ export function AdminSubscriptions() {
               : subs)
           }
           columns={columns}
+          size={isMobile ? 'small' : 'middle'}
+          scroll={isMobile ? { x: 'max-content' } : undefined}
         />
       </Card>
       <Modal

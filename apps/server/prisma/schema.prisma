@@ -66,6 +66,8 @@ model Module {
   id        String   @id @default(cuid())
   name      String
   level     CfaLevel
+  courseId  String?
+  course    Course?  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   order     Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -76,6 +78,8 @@ model Topic {
   id           String    @id @default(cuid())
   name         String
   level        CfaLevel
+  courseId     String?
+  course       Course?   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   order        Int?
   moduleNumber Int?      // deprecated: use moduleId; kept for migration/display
   moduleId     String?
@@ -261,6 +265,8 @@ model Course {
   updatedAt      DateTime  @updatedAt
   enrollments    Enrollment[]
   courseProducts CourseProduct[]
+  modules        Module[]
+  topics         Topic[]
 }
 
 enum EnrollmentStatus {

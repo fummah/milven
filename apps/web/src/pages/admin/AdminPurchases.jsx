@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Space, Typography, Select, Button, message, Modal, Form } from 'antd';
+import { Card, Table, Space, Typography, Select, Button, message, Modal, Form, Grid } from 'antd';
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 export function AdminPurchases() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [loading, setLoading] = useState(false);
   const [purchases, setPurchases] = useState([]);
   const [users, setUsers] = useState([]);
@@ -128,13 +130,13 @@ export function AdminPurchases() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <Typography.Title level={4} style={{ margin: 0 }}>Purchases (One-time)</Typography.Title>
-        <Space>
+        <Space wrap>
           <Select
             allowClear
             placeholder="Filter by user"
-            style={{ width: 260 }}
+            style={{ width: isMobile ? 260 : 260 }}
             value={filterUserId || undefined}
             onChange={setFilterUserId}
             showSearch
@@ -145,9 +147,16 @@ export function AdminPurchases() {
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Create Purchase</Button>
           <Button icon={<ReloadOutlined />} onClick={loadPurchases}>Refresh</Button>
         </Space>
-      </Space>
+      </div>
       <Card>
-        <Table rowKey="id" loading={loading} dataSource={purchases} columns={columns} />
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={purchases}
+          columns={columns}
+          size={isMobile ? 'small' : 'middle'}
+          scroll={isMobile ? { x: 'max-content' } : undefined}
+        />
       </Card>
       <Modal
         title="Edit Purchase"

@@ -308,11 +308,26 @@ export function usersRouter(prisma) {
 	// Admin: delete user
 	router.delete('/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const id = req.params.id;
-		const result = await prisma.user.deleteMany({ where: { id } });
-		if (result.count === 0) {
-			return res.status(404).json({ error: 'Not found' });
+		try {
+			// Best-effort cascade for related records before deleting the user.
+			await prisma.$transaction([
+				prisma.enrollment.deleteMany({ where: { userId: id } }),
+				prisma.examAnswer.deleteMany({ where: { attempt: { userId: id } } }).catch(() => {}),
+				prisma.examAttempt.deleteMany({ where: { userId: id } }),
+				prisma.materialProgress.deleteMany({ where: { userId: id } }).catch(() => {}),
+				prisma.topicProgress.deleteMany({ where: { userId: id } }).catch(() => {}),
+				prisma.courseProgress.deleteMany({ where: { userId: id } }).catch(() => {}),
+				prisma.subscription.deleteMany({ where: { userId: id } }).catch(() => {}),
+				prisma.payment?.deleteMany ? prisma.payment.deleteMany({ where: { userId: id } }) : prisma.$executeRaw`SELECT 1`,
+				prisma.passwordResetToken.deleteMany({ where: { userId: id } }).catch(() => {}),
+				prisma.emailVerificationToken.deleteMany({ where: { userId: id } }).catch(() => {})
+			]);
+			const result = await prisma.user.deleteMany({ where: { id } });
+			if (result.count === 0) return res.status(404).json({ error: 'Not found' });
+			return res.json({ ok: true, deleted: result.count });
+		} catch (e) {
+			return res.status(500).json({ error: 'Failed to delete user', details: e?.message ?? String(e) });
 		}
-		return res.json({ ok: true, deleted: result.count });
 	});
 	// Admin: enroll user in one or more courses
 	router.post('/:id/enrollments', requireAuth(), requireRole('ADMIN'), async (req, res) => {

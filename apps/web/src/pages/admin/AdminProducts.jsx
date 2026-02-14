@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Input, Space, Button, Form, Select, InputNumber, Switch, message, Drawer, Descriptions, Tag } from 'antd';
+import { Table, Typography, Input, Space, Button, Form, Select, InputNumber, Switch, message, Drawer, Descriptions, Tag, Grid } from 'antd';
 import { PlusOutlined, EditOutlined, EyeOutlined, DeleteOutlined, DollarOutlined, BookOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 export function AdminProducts() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -74,11 +76,11 @@ export function AdminProducts() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 gap-3">
         <Typography.Title level={4} style={{ margin: 0 }}>Products</Typography.Title>
-        <Space>
-          <Input.Search placeholder="Search name/description" allowClear onSearch={fetchProducts} value={q} onChange={e => setQ(e.target.value)} />
-          <Select placeholder="Active" allowClear style={{ width: 140 }} value={onlyActive} onChange={setOnlyActive}
+        <Space wrap>
+          <Input.Search placeholder="Search name/description" allowClear onSearch={fetchProducts} value={q} onChange={e => setQ(e.target.value)} style={{ width: isMobile ? 260 : undefined }} />
+          <Select placeholder="Active" allowClear style={{ width: isMobile ? 160 : 140 }} value={onlyActive} onChange={setOnlyActive}
             options={[{ value: true, label: 'Active' }, { value: false, label: 'Inactive' }]}
           />
           <Button onClick={fetchProducts}>Filter</Button>
@@ -90,6 +92,8 @@ export function AdminProducts() {
         loading={loading}
         dataSource={data}
         columns={columns}
+        size={isMobile ? 'small' : 'middle'}
+        scroll={isMobile ? { x: 'max-content' } : undefined}
         pagination={{ total, pageSize: 20 }}
       />
 

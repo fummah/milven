@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Input, Space, Button, Modal, Form, Select, message, Drawer, Row, Col, Popconfirm, Tooltip } from 'antd';
+import { Table, Typography, Input, Space, Button, Modal, Form, Select, message, Drawer, Row, Col, Popconfirm, Tooltip, Grid } from 'antd';
 import { countriesOptions } from '../../constants/countries';
 import { PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined, FilterOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
@@ -10,6 +10,8 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
 export function AdminStudents() {
   const navigate = useNavigate();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -172,14 +174,14 @@ export function AdminStudents() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 gap-3">
         <Typography.Title level={4} style={{ margin: 0 }}>Students</Typography.Title>
-        <Space>
-          <Input.Search placeholder="Search email" allowClear onSearch={() => fetchUsers()} value={q} onChange={e => setQ(e.target.value)} />
+        <Space wrap>
+          <Input.Search placeholder="Search email" allowClear onSearch={() => fetchUsers()} value={q} onChange={e => setQ(e.target.value)} style={{ width: isMobile ? 260 : undefined }} />
           <Select
             placeholder="Level"
             allowClear
-            style={{ width: 160 }}
+            style={{ width: isMobile ? 180 : 160 }}
             value={level}
             onChange={setLevel}
             options={[
@@ -197,6 +199,8 @@ export function AdminStudents() {
         loading={loading}
         dataSource={data}
         columns={columns}
+        size={isMobile ? 'small' : 'middle'}
+        scroll={isMobile ? { x: 'max-content' } : undefined}
         pagination={{
           total,
           pageSize: 20,

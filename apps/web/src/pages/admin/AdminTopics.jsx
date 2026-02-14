@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Form, Input, Button, Select, message, Table, Drawer, Space, Popconfirm, Tag, Tabs, Modal, Upload, Steps, Layout, List, Divider, Radio, Descriptions, Typography } from 'antd';
+import { Card, Form, Input, Button, Select, message, Table, Drawer, Space, Popconfirm, Tag, Tabs, Modal, Upload, Steps, Layout, List, Divider, Radio, Descriptions, Typography, Grid } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, UploadOutlined, FolderOutlined, SearchOutlined, EyeOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
@@ -11,9 +11,10 @@ const LEVEL_OPTIONS = [
   { label: 'Level III', value: 'LEVEL3' }
 ];
 
-
 export function AdminTopics() {
   const navigate = useNavigate();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
   const asUrl = (u) => {
     if (!u) return u;
@@ -58,11 +59,12 @@ export function AdminTopics() {
     try {
       const params = {};
       const topicLevel = filterCourseId ? (courses.find(c => c.id === filterCourseId)?.level) : undefined;
+      if (filterCourseId) params.courseId = filterCourseId;
       if (topicLevel) params.level = topicLevel;
       if (filterModuleId) params.moduleId = filterModuleId;
       if (filterQ) params.q = filterQ;
       const moduleLevel = filterModuleCourseId ? (courses.find(c => c.id === filterModuleCourseId)?.level) : undefined;
-      const moduleParams = moduleLevel ? { level: moduleLevel } : {};
+      const moduleParams = filterModuleCourseId ? { courseId: filterModuleCourseId, ...(moduleLevel ? { level: moduleLevel } : {}) } : (moduleLevel ? { level: moduleLevel } : {});
       const [topicsRes, modulesRes, coursesRes] = await Promise.all([
         api.get('/api/cms/topics', { params }),
         api.get('/api/cms/modules', { params: moduleParams }),
@@ -97,7 +99,7 @@ export function AdminTopics() {
   };
 
   const openPreview = (topic) => {
-    const course = courses.find(c => c.level === topic.level);
+    const course = (topic?.courseId ? courses.find(c => c.id === topic.courseId) : null) || courses.find(c => c.level === topic.level);
     if (course) {
       const back = encodeURIComponent('/admin/topics');
       navigate(`/admin/courses/${course.id}/preview?topicId=${topic.id}&back=${back}`);
@@ -146,6 +148,7 @@ export function AdminTopics() {
       }
       const payload = {
         name: values.name,
+        courseId: values.courseId,
         moduleId: values.moduleId || undefined,
         level
       };
@@ -179,11 +182,28 @@ export function AdminTopics() {
 
   const submitModule = async (values) => {
     try {
+      const courseId = values.courseId || null;
+      if (!courseId) {
+        message.error('Please select a course');
+        return;
+      }
+      const course = courses.find(c => c.id === courseId);
+      const level = course?.level;
       if (editingModule) {
-        await api.put(`/api/cms/modules/${editingModule.id}`, values);
+        await api.put(`/api/cms/modules/${editingModule.id}`, {
+          name: values.name,
+          courseId,
+          level,
+          order: values.order != null ? Number(values.order) : undefined
+        });
         message.success('Module updated');
       } else {
-        await api.post('/api/cms/modules', values);
+        await api.post('/api/cms/modules', {
+          name: values.name,
+          courseId,
+          level,
+          order: values.order != null ? Number(values.order) : undefined
+        });
         message.success('Module created');
       }
       moduleForm.resetFields();
@@ -303,7 +323,7 @@ export function AdminTopics() {
           <Button icon={<EditOutlined />} size="small" onClick={() => {
             setEditing(record);
             setTopicStep(0);
-            const courseId = courses.find(c => c.level === record.level)?.id ?? '';
+            const courseId = record.courseId ?? (courses.find(c => c.level === record.level)?.id ?? '');
             form.setFieldsValue({ name: record.name, moduleId: record.moduleId || '', courseId });
             setDrawerOpen(true);
           }}>
@@ -326,7 +346,7 @@ export function AdminTopics() {
       title="Admin · Modules & Topics"
       extra={
         <Space>
-          <Button icon={<FolderOutlined />} onClick={() => { setEditingModule(null); moduleForm.resetFields(); moduleForm.setFieldsValue({ level: 'LEVEL1' }); setModuleDrawerOpen(true); }}>
+          <Button icon={<FolderOutlined />} onClick={() => { setEditingModule(null); moduleForm.resetFields(); moduleForm.setFieldsValue({ courseId: filterModuleCourseId || '', level: 'LEVEL1' }); setModuleDrawerOpen(true); }}>
             New Module
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setTopicStep(0); form.resetFields(); form.setFieldsValue({ courseId: '', moduleId: '' }); setDrawerOpen(true); }}>
@@ -362,6 +382,8 @@ export function AdminTopics() {
                 rowKey="id"
                 loading={loading}
                 dataSource={modules}
+                size={isMobile ? 'small' : 'middle'}
+                scroll={isMobile ? { x: 'max-content' } : undefined}
                 pagination={{ pageSize: 20 }}
                 expandable={{
                   defaultExpandAllRows: false,
@@ -373,6 +395,7 @@ export function AdminTopics() {
                         size="small"
                         rowKey="id"
                         dataSource={topicList}
+                        scroll={isMobile ? { x: 'max-content' } : undefined}
                         pagination={false}
                         columns={[
                           { title: 'Order', dataIndex: 'order', width: 70 },
@@ -385,7 +408,7 @@ export function AdminTopics() {
                               <Space size={4}>
                                 <Button icon={<EditOutlined />} size="small" onClick={() => {
                                   setEditing(topicRow);
-                                  const courseId = courses.find(c => c.level === topicRow.level)?.id ?? '';
+                                  const courseId = topicRow.courseId ?? (courses.find(c => c.level === topicRow.level)?.id ?? '');
                                   form.setFieldsValue({ name: topicRow.name, moduleId: topicRow.moduleId || '', courseId });
                                   setDrawerOpen(true);
                                 }}>Edit</Button>
@@ -409,6 +432,8 @@ export function AdminTopics() {
                     title: 'Course',
                     key: 'course',
                     render: (_, record) => {
+                      const linked = record.courseId ? courses.find(c => c.id === record.courseId) : null;
+                      if (linked) return <Tag key={linked.id} color="blue" style={{ marginBottom: 2 }}>{linked.name}</Tag>;
                       const matching = courses.filter(c => c.level === record.level);
                       if (matching.length === 0) return <span style={{ color: '#999' }}>—</span>;
                       return matching.map(c => <Tag key={c.id} color="blue" style={{ marginBottom: 2 }}>{c.name}</Tag>);
@@ -465,7 +490,12 @@ export function AdminTopics() {
                   options={[
                     { label: 'All modules', value: '' },
                     ...modules
-                      .filter(m => !filterCourseId || m.level === courses.find(c => c.id === filterCourseId)?.level)
+                      .filter(m => {
+                        if (!filterCourseId) return true;
+                        if (m.courseId) return m.courseId === filterCourseId;
+                        const lvl = courses.find(c => c.id === filterCourseId)?.level;
+                        return lvl ? m.level === lvl : true;
+                      })
                       .map(m => ({ value: m.id, label: `${m.name} (${m.level})` }))
                   ]}
                   style={{ minWidth: 200 }}
@@ -501,8 +531,16 @@ export function AdminTopics() {
           <Form.Item name="name" label="Module Name" rules={[{ required: true }]}>
             <Input placeholder="e.g. Module 1: Ethics" />
           </Form.Item>
-          <Form.Item name="level" label="Level" rules={[{ required: true }]}>
-            <Select options={LEVEL_OPTIONS} />
+          <Form.Item name="courseId" label="Course" rules={[{ required: true, message: 'Select a course' }]}>
+            <Select
+              placeholder="Select a course"
+              options={courses.map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))}
+              showSearch
+              optionFilterProp="label"
+            />
+          </Form.Item>
+          <Form.Item name="level" label="Level" hidden>
+            <Input />
           </Form.Item>
           <Form.Item name="order" label="Order">
             <Input type="number" min={0} placeholder="Display order" />
@@ -541,8 +579,10 @@ export function AdminTopics() {
                   {({ getFieldValue }) => {
                     const courseId = getFieldValue('courseId');
                     const course = courses.find(c => c.id === courseId);
-                    const moduleOpts = course
-                      ? modules.filter(m => m.level === course.level).map(m => ({ value: m.id, label: `${m.name} (${m.level})` }))
+                    const moduleOpts = courseId
+                      ? modules
+                        .filter(m => (m.courseId ? m.courseId === courseId : (course ? m.level === course.level : true)))
+                        .map(m => ({ value: m.id, label: `${m.name} (${m.level})` }))
                       : moduleOptions;
                     return (
                       <Form.Item name="moduleId" label="Module">
@@ -573,6 +613,8 @@ export function AdminTopics() {
                 loading={materialsLoading}
                 dataSource={materials}
                 columns={materialsColumns}
+                size={isMobile ? 'small' : 'middle'}
+                scroll={isMobile ? { x: 'max-content' } : undefined}
                 pagination={false}
               />
               <Space>

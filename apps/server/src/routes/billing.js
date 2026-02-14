@@ -9,6 +9,57 @@ const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: '2023-10-16' }) :
 export function billingRouter(prisma) {
   const router = Router();
 
+  async function createPurchaseInvoiceForCheckoutSession({ session, custId, productId }) {
+    if (!stripe) return;
+    if (!session?.id || !custId || !productId) return;
+    // Only create out-of-band purchase invoices for true one-time products.
+    // Recurring products (MONTHLY/YEARLY) should rely on Stripe subscription invoices.
+    const prod = await prisma.product.findUnique({ where: { id: String(productId) } });
+    if (!prod) return;
+    if (prod.interval !== 'ONE_TIME') return;
+    const synced = await ensureStripeProductAndPrice(prod);
+
+    const baseKey = `milven_purchase_${String(session.id)}`;
+    // Create draft invoice tagged as system-created
+    let inv = await stripe.invoices.create(
+      {
+        customer: custId,
+        collection_method: 'send_invoice',
+        days_until_due: 0,
+        metadata: { milven: '1', purchase: '1', productId: String(prod.id), checkoutSession: String(session.id) }
+      },
+      { idempotencyKey: `${baseKey}_inv` }
+    );
+
+    await stripe.invoiceItems.create(
+      {
+        customer: custId,
+        price: synced.stripePriceId,
+        invoice: inv.id,
+        quantity: 1,
+        description: prod.description || prod.name,
+        metadata: { milven: '1', type: 'purchase', productId: String(prod.id) }
+      },
+      { idempotencyKey: `${baseKey}_item` }
+    );
+
+    inv = await stripe.invoices.finalizeInvoice(inv.id, {}, { idempotencyKey: `${baseKey}_finalize` });
+    await stripe.invoices.pay(inv.id, { paid_out_of_band: true }, { idempotencyKey: `${baseKey}_pay` });
+  }
+
+  async function ensureInvoiceTaggedMilven(invoiceId) {
+    if (!stripe) return;
+    if (!invoiceId) return;
+    try {
+      const inv = await stripe.invoices.retrieve(String(invoiceId));
+      const meta = inv?.metadata || {};
+      if (meta.milven === '1' || meta.milven === 1) return;
+      await stripe.invoices.update(inv.id, { metadata: { ...meta, milven: '1' } });
+    } catch {
+      // ignore
+    }
+  }
+
   function intervalToStripe(interval) {
     if (interval === 'MONTHLY') return { recurring: { interval: 'month' } };
     if (interval === 'YEARLY') return { recurring: { interval: 'year' } };
@@ -249,52 +300,38 @@ export function billingRouter(prisma) {
         }
       }
 
-      // Create paid invoice for one-time payment (subscription first invoice is created by Stripe)
-      if (session.mode === 'payment' && productId && custId) {
+      // Ensure a visible invoice exists in Stripe.
+      // - For one-time payments: Stripe may not create an invoice by default. We create a paid invoice out-of-band.
+      // - For subscriptions: Stripe will create invoices; we just tag the latest invoice so it appears in account-wide admin list.
+      if (session.mode === 'payment' && !session.subscription && productId && custId) {
         try {
-          const prod = await prisma.product.findUnique({ where: { id: String(productId) } });
-          if (prod) {
-            const synced = await ensureStripeProductAndPrice(prod);
-            if (synced?.stripePriceId) {
-              const inv = await stripe.invoices.create({
-                customer: custId,
-                collection_method: 'send_invoice',
-                days_until_due: 0,
-                metadata: {
-                  milven: '1',
-                  purchase: '1',
-                  productId: String(prod.id),
-                  checkoutSession: String(session.id),
-                  userId: user.id
-                }
-              });
-              await stripe.invoiceItems.create({
-                customer: custId,
-                price: synced.stripePriceId,
-                invoice: inv.id,
-                quantity: 1,
-                description: prod.description || prod.name,
-                metadata: { milven: '1', type: 'purchase', productId: String(prod.id) }
-              });
-              const finalized = await stripe.invoices.finalizeInvoice(inv.id);
-              await stripe.invoices.pay(finalized.id, { paid_out_of_band: true });
-            }
-          }
+          await createPurchaseInvoiceForCheckoutSession({ session, custId, productId });
         } catch (e) {
-          console.warn('[billing] checkout-success invoice:', e?.message ?? e);
+          console.warn('[billing] checkout-success auto-invoice purchase failed:', e?.message ?? e);
         }
       }
+
+      // Only create/update a local Subscription record when this is actually a Stripe subscription.
       const subId = session.subscription || null;
-      let planValue = null;
-      if (productId) {
-        const prod = await prisma.product.findUnique({ where: { id: productId } }).catch(() => null);
-        if (prod) planValue = prod.name;
+      if (subId) {
+        let planValue = null;
+        if (productId) {
+          const prod = await prisma.product.findUnique({ where: { id: String(productId) } }).catch(() => null);
+          if (prod) planValue = prod.name;
+        }
+        await prisma.subscription.upsert({
+          where: { userId_provider: { userId: user.id, provider: 'STRIPE' } },
+          update: { status: 'ACTIVE', plan: planValue ?? 'PRODUCT', currency: 'usd', providerReference: String(subId) },
+          create: { userId: user.id, provider: 'STRIPE', status: 'ACTIVE', plan: planValue ?? 'PRODUCT', currency: 'usd', providerReference: String(subId) }
+        });
+        // Tag latest invoice (helps admin account-wide invoices view)
+        try {
+          const sub = await stripe.subscriptions.retrieve(String(subId), { expand: ['latest_invoice'] });
+          const latestId = typeof sub.latest_invoice === 'string' ? sub.latest_invoice : sub.latest_invoice?.id;
+          if (latestId) await ensureInvoiceTaggedMilven(latestId);
+        } catch {}
       }
-      await prisma.subscription.upsert({
-        where: { userId_provider: { userId: user.id, provider: 'STRIPE' } },
-        update: { status: 'ACTIVE', plan: planValue ?? 'PRODUCT', currency: 'usd', providerReference: subId ?? undefined },
-        create: { userId: user.id, provider: 'STRIPE', status: 'ACTIVE', plan: planValue ?? 'PRODUCT', currency: 'usd', providerReference: subId ?? undefined }
-      });
+
       return res.json({ ok: true, enrolled: true });
     } catch (err) {
       console.error('[billing] checkout-success error:', err?.message ?? err);
@@ -308,22 +345,20 @@ export function billingRouter(prisma) {
       if (!stripe) return res.status(500).json({ error: 'Stripe not configured' });
       const isAdmin = req.user.role === 'ADMIN';
       const requestedUserId = req.query.userId ? String(req.query.userId) : null;
+
       let customerId = null;
-      // Resolve customerId when a specific user is requested (or non-admin)
       if (requestedUserId || !isAdmin) {
         const userId = requestedUserId || req.user.id;
         const user = await prisma.user.findUnique({ where: { id: userId } });
         if (!user?.stripeCustomerId) return res.json({ purchases: [] });
         customerId = user.stripeCustomerId;
       }
-      // 1) Checkout Sessions (payment mode) - no deep expansions
-      const sessions = await stripe.checkout.sessions.list(
-        customerId ? { customer: customerId, limit: 50 } : { limit: 50 }
-      );
+
+      const sessions = await stripe.checkout.sessions.list(customerId ? { customer: customerId, limit: 50 } : { limit: 50 });
       const sessFiltered = (sessions.data || []).filter((s) =>
         s.mode === 'payment' && (s.status === 'complete' || s.payment_status === 'paid')
       );
-      // Fetch minimal line items per session (no product expansion)
+
       const sessWithLines = await Promise.all(
         sessFiltered.map(async (s) => {
           try {
@@ -334,20 +369,22 @@ export function billingRouter(prisma) {
           }
         })
       );
-      const sessProdIds = Array.from(
-        new Set(
-          sessWithLines.flatMap((sl) =>
-            (sl.items || [])
-              .map((li) => li.price?.product)
-              .filter(Boolean)
-              .map((p) => (typeof p === 'string' ? p : p.id))
-          )
+
+      const sessProdIds = Array.from(new Set(
+        sessWithLines.flatMap((sl) =>
+          (sl.items || [])
+            .map((li) => li.price?.product)
+            .filter(Boolean)
+            .map((p) => (typeof p === 'string' ? p : p.id))
         )
-      );
-      // Collect all customerIds from sessions to map back to users
-      const sessionCustomerIds = Array.from(
-        new Set(sessWithLines.map(sl => (typeof sl.session.customer === 'string' ? sl.session.customer : sl.session.customer?.id)).filter(Boolean))
-      );
+      ));
+
+      const sessionCustomerIds = Array.from(new Set(
+        sessWithLines
+          .map(sl => (typeof sl.session.customer === 'string' ? sl.session.customer : sl.session.customer?.id))
+          .filter(Boolean)
+      ));
+
       let localMap = {};
       if (sessProdIds.length) {
         const locals = await prisma.product.findMany({
@@ -356,7 +393,7 @@ export function billingRouter(prisma) {
         });
         localMap = Object.fromEntries(locals.map((p) => [p.stripeProductId, p.name]));
       }
-      // Build map customerId -> user
+
       let userByCustomer = {};
       if (sessionCustomerIds.length) {
         const ulist = await prisma.user.findMany({
@@ -365,73 +402,82 @@ export function billingRouter(prisma) {
         });
         userByCustomer = Object.fromEntries(ulist.map(u => [u.stripeCustomerId, { id: u.id, email: u.email }]));
       }
+
       let purchases = sessWithLines.map(({ session: s, items }) => {
         const li = items[0];
         const prod = li?.price?.product;
         const prodId = typeof prod === 'string' ? prod : prod?.id;
         const productName = (prodId && localMap[prodId]) || li?.price?.nickname || li?.description || undefined;
         const custId = typeof s.customer === 'string' ? s.customer : s.customer?.id;
-        const u = custId ? userByCustomer[custId] : null;
+        const u = (custId && userByCustomer[custId]) ? userByCustomer[custId] : null;
         return {
           id: s.id,
+          created: s.created,
+          status: s.status,
+          payment_status: s.payment_status,
+          mode: s.mode,
           amount_total: s.amount_total,
           currency: s.currency,
-          payment_status: s.payment_status,
-          status: s.status,
-          created: s.created,
-          url: s.url,
+          productId: prodId || null,
           productName,
+          url: s.url,
+          customerId: custId || null,
           userId: u?.id || null,
           userEmail: u?.email || null
         };
       });
-      // 2) Paid invoices that are one-time purchases only (exclude subscription/recurring invoices)
+
       try {
-        const invs = await stripe.invoices.list(
-          customerId ? { customer: customerId, limit: 50, status: 'paid' } : { limit: 50, status: 'paid' }
+        const invs = await stripe.invoices.list(customerId
+          ? { customer: customerId, limit: 50, status: 'paid' }
+          : { limit: 50, status: 'paid' }
         );
-        const purchaseInvs = (invs.data || []).filter(i =>
-          i?.metadata?.purchase === '1' || i?.metadata?.purchase === 1
-        );
-        // For each invoice, retrieve lines only (no product expansion)
+        const purchaseInvs = (invs.data || []).filter(i => i?.metadata?.purchase === '1' || i?.metadata?.purchase === 1);
         const invItems = await Promise.all(purchaseInvs.map(async (inv) => {
           let lines = inv.lines?.data;
           if (!lines) {
             try {
-              const detail = await stripe.invoices.retrieve(inv.id, { expand: ['lines'] });
-              lines = detail.lines?.data || [];
+              const full = await stripe.invoices.retrieve(inv.id, { expand: ['lines', 'lines.data.price'] });
+              lines = full?.lines?.data || [];
             } catch {
               lines = [];
             }
           }
-          const li = (lines || [])[0];
-          const prodId = typeof li?.price?.product === 'string' ? li.price.product : li?.price?.product?.id;
+          const li = lines?.[0];
+          const prod = li?.price?.product;
+          const prodId = typeof prod === 'string' ? prod : prod?.id;
           const productName = (prodId && localMap[prodId]) || li?.price?.nickname || li?.description || undefined;
           const custId = typeof inv.customer === 'string' ? inv.customer : inv.customer?.id;
-          let u = null;
           if (custId && !userByCustomer[custId]) {
             const one = await prisma.user.findFirst({ where: { stripeCustomerId: custId }, select: { id: true, email: true } });
             if (one) userByCustomer[custId] = { id: one.id, email: one.email };
           }
-          u = custId ? userByCustomer[custId] : null;
+          const u = custId ? userByCustomer[custId] : null;
           return {
             id: inv.id,
-            amount_total: inv.total ?? inv.amount_paid ?? 0,
-            currency: inv.currency,
-            payment_status: 'paid',
-            status: 'complete',
             created: inv.created,
-            url: inv.hosted_invoice_url,
+            status: inv.status,
+            payment_status: inv.status === 'paid' ? 'paid' : inv.status,
+            mode: 'payment',
+            amount_total: inv.amount_paid ?? inv.total ?? 0,
+            currency: inv.currency,
+            productId: prodId || null,
             productName,
+            url: inv.hosted_invoice_url || inv.invoice_pdf || null,
+            customerId: custId || null,
             userId: u?.id || null,
-            userEmail: u?.email || null
+            userEmail: u?.email || null,
+            checkoutSession: inv?.metadata?.checkoutSession ? String(inv.metadata.checkoutSession) : null
           };
         }));
+
+        const invoicedSessionIds = new Set(invItems.map(i => i.checkoutSession).filter(Boolean));
+        purchases = (purchases || []).filter(p => !invoicedSessionIds.has(p.id));
         purchases = [...purchases, ...invItems];
       } catch (e) {
         console.warn('[billing] purchases invoices list failed:', e?.message ?? e);
       }
-      // For non-admin (student billing): only return this user's purchases, not all
+
       if (!isAdmin) {
         purchases = (purchases || []).filter(p => p.userId === req.user.id);
       }
@@ -683,8 +729,6 @@ export function billingRouter(prisma) {
         stripeInvoices = await stripe.invoices.list({ ...listParams, customer: user.stripeCustomerId });
       }
       let data = Array.isArray(stripeInvoices?.data) ? stripeInvoices.data : [];
-      // Keep only invoices created by this system (tagged via metadata.milven)
-      data = data.filter(inv => inv?.metadata && (inv.metadata.milven === '1' || inv.metadata.milven === 1));
       // Map Stripe product IDs from line items to local product names
       const stripeProdIds = Array.from(new Set(
         data.flatMap(inv =>
@@ -701,6 +745,22 @@ export function billingRouter(prisma) {
           select: { stripeProductId: true, name: true }
         });
         localMap = Object.fromEntries(locals.map(p => [p.stripeProductId, p.name]));
+      }
+      // For admin account-wide listing (no userId), keep only invoices created by this system
+      // (tagged via metadata.milven) OR invoices that clearly match our local products.
+      // For a specific customer (student view or admin viewing a student), return all invoices for that customer
+      // so subscription invoices always appear even if webhook tagging was missed.
+      const isAccountWideAdminList = isAdmin && !requestedUserId;
+      if (isAccountWideAdminList) {
+        data = data.filter(inv => {
+          const metaOk = inv?.metadata && (inv.metadata.milven === '1' || inv.metadata.milven === 1);
+          if (metaOk) return true;
+          const prodIds = (inv.lines?.data || [])
+            .map(li => li.price?.product)
+            .map(p => (typeof p === 'string' ? p : p?.id))
+            .filter(Boolean);
+          return prodIds.some(pid => !!localMap[pid]);
+        });
       }
       let mapped = data.map(inv => ({
         id: inv.id,
@@ -1184,31 +1244,9 @@ export function billingRouter(prisma) {
               }
               // Also auto-create a paid invoice in Stripe for this one-time purchase
               try {
-                const prod = await prisma.product.findUnique({ where: { id: String(productId) } });
-                if (prod) {
-                  const synced = await ensureStripeProductAndPrice(prod);
-                  // Create draft invoice tagged as system-created
-                  const custId = typeof customerId === 'string' ? customerId : customerId?.id;
-                  let inv = custId ? await stripe.invoices.create({
-                    customer: custId,
-                    collection_method: 'send_invoice',
-                    days_until_due: 0,
-                    metadata: { milven: '1', purchase: '1', productId: String(prod.id), checkoutSession: String(session.id) }
-                  }) : null;
-                  if (inv) {
-                  // Attach invoice item using product price
-                  await stripe.invoiceItems.create({
-                    customer: custId,
-                    price: synced.stripePriceId,
-                    invoice: inv.id,
-                    quantity: 1,
-                    description: prod.description || prod.name,
-                    metadata: { milven: '1', type: 'purchase', productId: String(prod.id) }
-                  });
-                  // Finalize and mark as paid out-of-band (since checkout already charged)
-                  inv = await stripe.invoices.finalizeInvoice(inv.id);
-                  await stripe.invoices.pay(inv.id, { paid_out_of_band: true });
-                  }
+                const custId = typeof customerId === 'string' ? customerId : customerId?.id;
+                if (custId && !session.subscription) {
+                  await createPurchaseInvoiceForCheckoutSession({ session, custId, productId });
                 }
               } catch (e) {
                 console.warn('[billing] auto-invoice for purchase failed:', e?.message ?? e);
@@ -1235,7 +1273,8 @@ export function billingRouter(prisma) {
           }
           break;
         }
-        case 'invoice.payment_succeeded': {
+        case 'invoice.payment_succeeded':
+        case 'invoice.paid': {
           const inv = event.data.object;
           const customerId = typeof inv.customer === 'string' ? inv.customer : inv.customer?.id;
           const user = customerId ? await prisma.user.findFirst({ where: { stripeCustomerId: customerId } }) : null;

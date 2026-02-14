@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Space, Button, Typography, Modal, Form, Input, InputNumber, Switch, message } from 'antd';
+import { Card, Table, Space, Button, Typography, Modal, Form, Input, InputNumber, Switch, message, Grid } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 export function AdminTaxes() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [loading, setLoading] = useState(false);
   const [taxes, setTaxes] = useState([]);
   const [open, setOpen] = useState(false);
@@ -87,12 +89,19 @@ export function AdminTaxes() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <Typography.Title level={4} style={{ margin: 0 }}>Taxes</Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={onNew}>New Tax</Button>
-      </Space>
+      </div>
       <Card>
-        <Table rowKey="id" loading={loading} dataSource={taxes} columns={columns} />
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={taxes}
+          columns={columns}
+          size={isMobile ? 'small' : 'middle'}
+          scroll={isMobile ? { x: 'max-content' } : undefined}
+        />
       </Card>
       <Modal
         title={editing ? 'Edit Tax' : 'New Tax'}

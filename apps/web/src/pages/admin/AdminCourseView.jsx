@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, Descriptions, Typography, Space, Button, Tabs, Table, Tag, Select, Form, Input, Modal, Upload, Drawer, message, Steps, Radio, Divider, List, Layout } from 'antd';
+import { Card, Descriptions, Typography, Space, Button, Tabs, Table, Tag, Select, Form, Input, Modal, Upload, Drawer, message, Steps, Radio, Divider, List, Layout, Grid } from 'antd';
 import { ArrowLeftOutlined, UploadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, CheckCircleOutlined, StopOutlined, InfoCircleOutlined, TeamOutlined, ReadOutlined, FileTextOutlined, ExperimentOutlined, DollarOutlined, FolderOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import ReactQuill from 'react-quill';
@@ -17,6 +17,8 @@ export function AdminCourseView() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState(null);
   const [materialsByTopic, setMaterialsByTopic] = useState({});
@@ -82,6 +84,7 @@ export function AdminCourseView() {
       setSavingModule(true);
       await api.post('/api/cms/modules', {
         name: values.name,
+        courseId: String(id),
         level: values.level || course?.level,
         order: values.order != null ? Number(values.order) : undefined
       });
@@ -178,6 +181,7 @@ export function AdminCourseView() {
       setSavingTopic(true);
       const { data } = await api.post('/api/cms/topics', {
         name: values.name,
+        courseId: String(id),
         moduleId: values.moduleId || undefined,
         level: course.level
       });
@@ -439,6 +443,7 @@ export function AdminCourseView() {
                     size="small"
                     dataSource={course.enrollments || []}
                     columns={studentsColumns}
+                    scroll={isMobile ? { x: 'max-content' } : undefined}
                     pagination={false}
                   />
                 )
@@ -542,6 +547,7 @@ export function AdminCourseView() {
                                 size="small"
                                 dataSource={mod.topics || []}
                                 columns={topicTableColumns}
+                                scroll={isMobile ? { x: 'max-content' } : undefined}
                                 pagination={false}
                                 expandable={expandable}
                               />
@@ -554,6 +560,7 @@ export function AdminCourseView() {
                                 size="small"
                                 dataSource={standaloneTopics}
                                 columns={topicTableColumns}
+                                scroll={isMobile ? { x: 'max-content' } : undefined}
                                 pagination={false}
                                 expandable={expandable}
                               />
@@ -601,6 +608,7 @@ export function AdminCourseView() {
                       loading={lmLoading}
                       dataSource={lmTopicId ? (materialsByTopic[lmTopicId] || []) : []}
                       columns={materialsColumns}
+                      scroll={isMobile ? { x: 'max-content' } : undefined}
                       pagination={false}
                     />
                   </Space>
@@ -644,6 +652,7 @@ export function AdminCourseView() {
                       size="small"
                       dataSource={detail.exams || []}
                       columns={examsColumns}
+                      scroll={isMobile ? { x: 'max-content' } : undefined}
                       pagination={false}
                     />
                   </Space>
@@ -667,6 +676,7 @@ export function AdminCourseView() {
                       size="small"
                       dataSource={course.products || []}
                       columns={prodColumns}
+                      scroll={isMobile ? { x: 'max-content' } : undefined}
                       pagination={false}
                     />
                     <Typography.Title level={5} style={{ margin: 0 }}>Subscriptions (enrolled users)</Typography.Title>
@@ -675,6 +685,7 @@ export function AdminCourseView() {
                       size="small"
                       dataSource={detail.subscriptions || []}
                       columns={subsColumns}
+                      scroll={isMobile ? { x: 'max-content' } : undefined}
                       pagination={false}
                     />
                   </Space>
@@ -787,23 +798,28 @@ export function AdminCourseView() {
             layout="vertical"
             form={topicForm}
             onFinish={async (values) => {
-              if (selectedTopic) {
+              const saveEditTopic = async (values) => {
+                if (!selectedTopic) return;
                 // update
                 try {
                   setSavingTopic(true);
                   await api.put(`/api/cms/topics/${selectedTopic.id}`, {
                     name: values.name,
+                    courseId: String(id),
                     moduleId: values.moduleId || undefined,
                     level: course.level
                   });
                   message.success('Topic updated');
                   await fetchDetail();
-                  setTopicStep(1);
+                  setTopicModalOpen(false);
                 } catch {
                   message.error('Update failed');
                 } finally {
                   setSavingTopic(false);
                 }
+              };
+              if (selectedTopic) {
+                await saveEditTopic(values);
               } else {
                 await saveNewTopic(values);
               }

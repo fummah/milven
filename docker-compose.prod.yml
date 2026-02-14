@@ -1,52 +1,56 @@
-version: "3.9"
 services:
   db:
     image: postgres:16
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: Action15
       POSTGRES_DB: mutingwende
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-    networks:
-      - app_net
-
   api:
     build:
       context: ./apps/server
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/mutingwende?schema=public
+      DATABASE_URL: postgresql://postgres:Action15@db:5432/mutingwende?schema=public
       PORT: 4000
-      JWT_SECRET: ${JWT_SECRET:?set_a_strong_secret}
-      CORS_ORIGIN: https://your-domain.com
-      NODE_ENV: production
-    depends_on:
-      - db
-    networks:
-      - app_net
-
-  caddy:
-    image: caddy:2
+      JWT_SECRET: dev_secret
+      CORS_ORIGIN: http://localhost:5173,http://localhost:3000,exp://127.0.0.1:19000,http://164.90.156.5
+      ALLOW_DEBUG: "1"
+      DEFAULT_ADMIN_EMAIL: admin@milven.finance
+      DEFAULT_ADMIN_PASSWORD: Milven#2026
+      DEFAULT_ADMIN_FORCE_RESET: "1"
+      STRIPE_SECRET_KEY: sk_test_51T06nq3UQpf4neWtkATkRbDhjvT60FA7edwyLYLNe7iyYqHTIMSYgdYBgZ77832UZ1I1iW4owpX2u1TuTcNBxlhC00ZPO9efTG
+      WEB_BASE_URL: 164.90.156.5
+      SMTP_HOST: smtp.zbsburial.com
+      SMTP_PORT: "465"
+      SMTP_USER: info@zbsburial.com
+      SMTP_PASS: "6r5r34A71C64G0"
+      SMTP_FROM: info@zbsburial.com
     ports:
-      - "80:80"
-      - "443:443"
+      - "4000:4000"
     volumes:
-      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      - ./apps/server/uploads:/app/uploads
     depends_on:
-      - api
-    networks:
-      - app_net
-
-networks:
-  app_net:
-    driver: bridge
-
+      db:
+        condition: service_healthy
+    command: sh -c "npm run migrate && npm run dev"
+frontend:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: mutingwende_frontend
+    restart: always
+    ports:
+      - "80:80"  # serve React via Nginx in prod  
 volumes:
   db_data:
-  caddy_data:
-  caddy_config:
 
 

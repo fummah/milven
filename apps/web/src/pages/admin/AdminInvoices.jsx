@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Space, Button, Typography, Modal, Form, Select, message, DatePicker, Tag, Tooltip, Input, Dropdown } from 'antd';
+import { Card, Table, Space, Button, Typography, Modal, Form, Select, message, DatePicker, Tag, Tooltip, Input, Dropdown, Grid } from 'antd';
 import { PlusOutlined, FileTextOutlined, DownloadOutlined, SendOutlined, StopOutlined, ExclamationCircleOutlined, EditOutlined, DownOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../../lib/api';
@@ -7,6 +7,8 @@ import { api } from '../../lib/api';
 const { RangePicker } = DatePicker;
 
 export function AdminInvoices() {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
   const [loading, setLoading] = useState(false);
   const [invoices, setInvoices] = useState([]);
   const [users, setUsers] = useState([]);
@@ -278,17 +280,17 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <Typography.Title level={4} style={{ margin: 0 }}>Invoices</Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Create Invoice</Button>
-      </Space>
+      </div>
 
       <Space wrap style={{ width: '100%' }}>
         <Button onClick={loadInvoices}>Refresh</Button>
         <Select
           allowClear
           placeholder="Filter by user"
-          style={{ width: 260 }}
+          style={{ width: isMobile ? 260 : 260 }}
           value={filterUserId || undefined}
           onChange={setFilterUserId}
           showSearch
@@ -299,7 +301,7 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
         <Select
           allowClear
           placeholder="Status"
-          style={{ width: 160 }}
+          style={{ width: isMobile ? 160 : 160 }}
           value={statusFilter}
           onChange={setStatusFilter}
           options={[
@@ -314,7 +316,7 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
         <RangePicker
           value={dateRange}
           onChange={setDateRange}
-          style={{ width: 260 }}
+          style={{ width: isMobile ? 260 : 260 }}
           placeholder={['From invoice date', 'To invoice date']}
         />
         <Input.Search
@@ -323,7 +325,7 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onSearch={() => loadInvoices()}
-          style={{ width: 260 }}
+          style={{ width: isMobile ? 260 : 260 }}
         />
       </Space>
       <Card>
@@ -340,6 +342,8 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
           loading={loading}
           dataSource={filteredInvoices}
           columns={columns}
+          size={isMobile ? 'small' : 'middle'}
+          scroll={isMobile ? { x: 'max-content' } : undefined}
           expandable={{
             expandedRowRender: (r) => (
               <div>
@@ -349,6 +353,7 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
                   size="small"
                   pagination={false}
                   dataSource={r.lines || []}
+                  scroll={isMobile ? { x: 'max-content' } : undefined}
                   columns={[
                     { title: 'Product', dataIndex: 'productName' },
                     { title: 'Description', dataIndex: 'description' },

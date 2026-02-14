@@ -1,6 +1,6 @@
-import { Layout, Menu, Button, Typography, Grid, Dropdown, Space, Tag, Row, Col, Card, Modal } from 'antd';
+import { Layout, Menu, Button, Typography, Grid, Dropdown, Space, Tag, Row, Col, Card, Modal, Drawer } from 'antd';
 import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { DownOutlined, UserOutlined, PlayCircleFilled, BookOutlined, SolutionOutlined, DollarCircleOutlined, FacebookFilled, TwitterSquareFilled, LinkedinFilled, YoutubeFilled, LoginOutlined, UserAddOutlined, CrownOutlined, MobileOutlined, AndroidOutlined, AppleOutlined } from '@ant-design/icons';
+import { DownOutlined, UserOutlined, PlayCircleFilled, BookOutlined, SolutionOutlined, DollarCircleOutlined, FacebookFilled, TwitterSquareFilled, LinkedinFilled, YoutubeFilled, LoginOutlined, UserAddOutlined, CrownOutlined, MobileOutlined, AndroidOutlined, AppleOutlined, MenuOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import React, { useEffect, useState } from 'react';
 
@@ -63,6 +63,7 @@ const { useBreakpoint } = Grid;
 function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent, jobsMenu, accountMenuItems, screens, user, courseInProgress, location, navigate }) {
 	const [scrolled, setScrolled] = useState(false);
 	const [mobileAppModalOpen, setMobileAppModalOpen] = useState(false);
+	const [mobileNavOpen, setMobileNavOpen] = useState(false);
 	useEffect(() => {
 		let prev = window.scrollY > 8;
 		const onScroll = () => {
@@ -77,6 +78,14 @@ function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent,
 		return () => window.removeEventListener('scroll', onScroll);
 	}, []);
 	const HEADER_HEIGHT = 64;
+	const mobileMenuItems = [
+		{ key: 'home', label: <Link to="/">Home</Link> },
+		{ key: 'courses', label: <Link to="/courses">Courses</Link> },
+		{ key: 'faq', label: <Link to="/faq">FAQ</Link> },
+		{ key: 'careers', label: <Link to="/careers">Careers</Link> },
+		...(user ? [{ key: 'my-home', label: <Link to={user.role === 'ADMIN' ? '/admin' : '/student'}>My Home</Link> }] : []),
+		...(!user ? [{ key: 'login', label: <Link to="/login">Login</Link> }, { key: 'register', label: <Link to="/register">Register</Link> }] : [])
+	];
 	return (
 		<>
 		<Header
@@ -135,6 +144,36 @@ function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent,
 				</Dropdown>
 			</div>
 			<div className="flex items-center gap-3">
+				{!screens.md && (
+					<>
+						<Button
+							type="text"
+							icon={<MenuOutlined />}
+							onClick={() => setMobileNavOpen(true)}
+							style={{ width: 40, height: 40 }}
+						/>
+						<Drawer
+							title={brandName}
+							placement="left"
+							open={mobileNavOpen}
+							onClose={() => setMobileNavOpen(false)}
+							width={Math.min(320, typeof window !== 'undefined' ? window.innerWidth * 0.86 : 320)}
+						>
+							<Menu
+								mode="inline"
+								items={mobileMenuItems}
+								onClick={() => setMobileNavOpen(false)}
+							/>
+							{user?.role === 'STUDENT' && courseInProgress && !location.pathname.startsWith('/admin') && (
+								<div style={{ marginTop: 16 }}>
+									<Button block type="primary" icon={<PlayCircleFilled />} onClick={() => { setMobileNavOpen(false); navigate(`/student/learn/${courseInProgress.courseId}`); }}>
+										Continue Learning
+									</Button>
+								</div>
+							)}
+						</Drawer>
+					</>
+				)}
 				<div className="hidden md:block h-6 w-px bg-gray-200 mr-1" />
 				<motion.div
 					animate={{ scale: [1, 1.02, 1] }}
@@ -595,7 +634,7 @@ export default function App() {
 				</div>
 			</div>
 			)}
-			<Content style={{ padding: '24px', maxWidth: '100%', margin: '0 auto', width: '100%' }}>
+			<Content style={{ padding: screens.md ? '24px' : '12px', maxWidth: '100%', margin: '0 auto', width: '100%' }}>
 				<Routes>
 					<Route path="/" element={<Home />} />
 					<Route path="/login" element={<LoginPage />} />

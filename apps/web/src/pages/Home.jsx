@@ -24,12 +24,9 @@ import {
 } from '@ant-design/icons';
 
 const categories = [
-	'Information Technology',
-	'Business',
-	'Management',
-	'Health',
-	'Teaching',
-	'Personal Development'
+	'CFA Level I',
+	'CFA Level II',
+	'CFA Level III'
 ];
 
 const PLACEHOLDER_IMAGES = [
@@ -89,12 +86,9 @@ export function Home() {
 	}, []);
 	const suggestions = useMemo(
 		() => [
-			'Ethics',
-			'Quantitative Methods',
-			'Financial Reporting & Analysis',
-			'Derivatives',
-			'Fixed Income',
-			'Portfolio Management'
+			'CFA Level I',
+			'CFA Level II',
+			'CFA Level III'
 		],
 		[]
 	);
@@ -128,18 +122,12 @@ export function Home() {
 	const getCategoryVisual = (label) => {
 		// Returns icon element and gradient colors for avatar background
 		switch (label) {
-			case 'Information Technology':
+			case 'CFA Level I':
 				return { icon: <CloudOutlined />, from: 'from-cyan-500', to: 'to-teal-500', iconColor: '#06b6d4' };
-			case 'Business':
+			case 'CFA Level II':
 				return { icon: <LineChartOutlined />, from: 'from-pink-500', to: 'to-rose-500', iconColor: '#f43f5e' };
-			case 'Management':
+			case 'CFA Level III':
 				return { icon: <TeamOutlined />, from: 'from-blue-500', to: 'to-indigo-500', iconColor: '#3b82f6' };
-			case 'Health':
-				return { icon: <HeartOutlined />, from: 'from-red-500', to: 'to-orange-500', iconColor: '#ef4444' };
-			case 'Teaching':
-				return { icon: <ReadOutlined />, from: 'from-amber-500', to: 'to-orange-500', iconColor: '#f59e0b' };
-			case 'Personal Development':
-				return { icon: <BulbOutlined />, from: 'from-violet-500', to: 'to-fuchsia-500', iconColor: '#8b5cf6' };
 			default:
 				return { icon: null, from: 'from-gray-400', to: 'to-gray-500', iconColor: '#64748b' };
 		}
@@ -162,7 +150,7 @@ export function Home() {
 						animate={{ y: 0, opacity: 1 }}
 						transition={{ duration: 0.6 }}
 					>
-						Free Courses to Power Your CFA Journey
+						Courses to Power Your CFA Journey
 					</motion.h1>
 					<motion.p
 						className="mt-4 text-lg md:text-xl text-gray-600"
@@ -232,7 +220,7 @@ export function Home() {
 			<section className="w-full !mt-0 !mb-0">
 				<div className="mt-2 bg-[#0b2a3a] text-white">
 					<div className="px-6 md:px-10 py-5">
-						<div className="flex items-center justify-center gap-6 md:gap-10">
+						<div className="flex flex-wrap items-center justify-center gap-4 md:gap-10 text-center">
 							<div className="flex items-center gap-3">
 								<span className="text-gray-200">Rated</span>
 								<span className="font-semibold">Excellent</span>
@@ -242,17 +230,17 @@ export function Home() {
 							<div className="hidden md:block w-px h-6 bg-white/20" />
 							<div className="flex items-center gap-3">
 								<span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/10">👥</span>
-								<span className="text-gray-100"><span className="font-semibold">50+ Million</span> Learners</span>
+								<span className="text-gray-100"><span className="font-semibold">100+</span> Learners</span>
 							</div>
 							<div className="hidden md:block w-px h-6 bg-white/20" />
 							<div className="flex items-center gap-3">
 								<span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/10">🎓</span>
-								<span className="text-gray-100"><span className="font-semibold">15+ Million</span> Graduates</span>
+								<span className="text-gray-100"><span className="font-semibold">100+</span> Graduates</span>
 							</div>
 							<div className="hidden md:block w-px h-6 bg-white/20" />
 							<div className="flex items-center gap-3">
 								<span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/10">🌍</span>
-								<span className="text-gray-100"><span className="font-semibold">193</span> Countries</span>
+								<span className="text-gray-100"><span className="font-semibold">5</span> Countries</span>
 							</div>
 						</div>
 					</div>
@@ -262,18 +250,14 @@ export function Home() {
 			{/* Categories grid (Alison-style) */}
 			<section className="rounded-b-3xl rounded-t-none text-white p-6 md:p-10 !mt-0" style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 25%, #2563eb 50%, #6366f1 75%, #8b5cf6 100%)' }}>
 				<Typography.Title level={2} style={{ color: 'white', textAlign: 'center', marginBottom: 24 }}>
-					Explore 6,000+ Free Online Courses
+					Many Online Courses
 				</Typography.Title>
 				<Row gutter={[16, 16]}>
 					{[
-						{ title: 'Information Technology (IT)', count: '1,293 Courses', icon: <CloudOutlined /> },
-						{ title: 'Health', count: '1,097 Courses', icon: <HeartOutlined /> },
-						{ title: 'Language', count: '315 Courses', icon: <TranslationOutlined /> },
-						{ title: 'Business', count: '1,777 Courses', icon: <LineChartOutlined /> },
-						{ title: 'Management', count: '1,098 Courses', icon: <TeamOutlined /> },
-						{ title: 'English', count: '55 Courses', icon: <BookOutlined /> },
-						{ title: 'Engineering & Construction', count: '834 Courses', icon: <ToolOutlined /> },
-						{ title: 'Teaching & Academics', count: '1,647 Courses', icon: <ReadOutlined /> }
+						{ title: 'CFA Level I', count: '1 Course', icon: <CloudOutlined /> },
+						{ title: 'CFA Level II', count: '1 Course', icon: <HeartOutlined /> },
+						{ title: 'CFA Level III', count: '1 Course', icon: <TranslationOutlined /> },
+						{ title: 'Business', count: '3 Courses', icon: <LineChartOutlined /> }
 					].map((c, idx) => (
 						<Col key={c.title} xs={24} sm={12} md={12} lg={6}>
 							<motion.div
@@ -396,15 +380,15 @@ export function Home() {
 			</section>
 
 			{/* App CTA */}
-			<section className="rounded-2xl border border-gray-100 p-8 md:p-12 bg-white shadow-xl-soft flex items-center justify-between gap-6">
-				<div>
+			<section className="rounded-2xl border border-gray-100 p-8 md:p-12 bg-white shadow-xl-soft flex flex-col md:flex-row md:items-center justify-between gap-6">
+				<div className="text-center md:text-left">
 					<Typography.Title level={3} style={{ marginBottom: 8 }}>
 						Learn anywhere. Track progress everywhere.
 					</Typography.Title>
 					<Typography.Paragraph type="secondary" className="max-w-2xl">
 						Use Milven on web and mobile to keep your momentum and stay exam-ready.
 					</Typography.Paragraph>
-					<div className="flex gap-3">
+					<div className="flex gap-3 justify-center md:justify-start">
 						<Button type="primary" size="large" onClick={() => navigate('/register')}>
 							Create a free account
 						</Button>

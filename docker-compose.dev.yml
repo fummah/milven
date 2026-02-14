@@ -14,6 +14,7 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+
   api:
     build:
       context: ./apps/server
@@ -22,11 +23,12 @@ services:
       DATABASE_URL: postgresql://postgres:Action15@db:5432/mutingwende?schema=public
       PORT: 4000
       JWT_SECRET: dev_secret
-      CORS_ORIGIN: http://localhost:5173,http://localhost:3000,exp://127.0.0.1:19000
+      CORS_ORIGIN: http://localhost:5173,http://localhost:3000,exp://127.0.0.1:19000,http://164.90.156.5
       ALLOW_DEBUG: "1"
       DEFAULT_ADMIN_EMAIL: admin@milven.finance
       DEFAULT_ADMIN_PASSWORD: Milven#2026
       DEFAULT_ADMIN_FORCE_RESET: "1"
+      STRIPE_SECRET_KEY: sk_test_51T06nq3UQpf4neWtkATkRbDhjvT60FA7edwyLYLNe7iyYqHTIMSYgdYBgZ77832UZ1I1iW4owpX2u1TuTcNBxlhC00ZPO9efTG
       WEB_BASE_URL: http://localhost:5173
       SMTP_HOST: smtp.zbsburial.com
       SMTP_PORT: "465"
@@ -41,7 +43,6 @@ services:
       db:
         condition: service_healthy
     command: sh -c "npm run migrate && npm run dev"
+
 volumes:
   db_data:
-
-
