@@ -6,6 +6,22 @@ import { requireActiveSubscription } from '../middleware/requireActiveSubscripti
 export function examsRouter(prisma) {
 	const router = Router();
 
+	function shuffleInPlace(arr) {
+		for (let i = arr.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			const tmp = arr[i];
+			arr[i] = arr[j];
+			arr[j] = tmp;
+		}
+		return arr;
+	}
+
+	async function requireEnrollmentForCourseExam(userId, courseId) {
+		if (!userId || !courseId) return false;
+		const e = await prisma.enrollment.findFirst({ where: { userId: String(userId), courseId: String(courseId) }, select: { id: true } });
+		return !!e;
+	}
+
 	// Dev-friendly subscription bypass
 	const maybeRequireSubscription = (prisma) => (req, res, next) => {
 		// If ALLOW_DEBUG=1 or the user is ADMIN, skip subscription requirement
@@ -17,6 +33,7 @@ export function examsRouter(prisma) {
 
 	// Custom exam builder: create quiz (topic) or course exam
 	router.post('/custom', requireAuth(), maybeRequireSubscription(prisma), async (req, res) => {
+    const isStudent = req.user.role !== 'ADMIN';
     const schema = z.object({
 			name: z.string().min(3),
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3', 'NONE']).optional(), // level may be derived server-side
@@ -27,18 +44,62 @@ export function examsRouter(prisma) {
       examType: z.enum(['COURSE','QUIZ']).optional(),
       topicId: z.string().optional(),
       courseId: z.string().optional(),
-      startAt: z.coerce.date().optional().nullable(),
-      endAt: z.coerce.date().optional().nullable()
+      startAt: isStudent ? z.coerce.date() : z.coerce.date().optional().nullable(),
+      endAt: isStudent ? z.coerce.date() : z.coerce.date().optional().nullable()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
     const payload = parse.data;
-    const isQuiz = (payload.examType === 'QUIZ') || (!!payload.topicId);
+    // For students, validate that endAt is after startAt
+    if (isStudent && payload.startAt && payload.endAt) {
+      if (new Date(payload.endAt) <= new Date(payload.startAt)) {
+        return res.status(400).json({ error: 'End time must be after start time' });
+      }
+    }
+    // For students, check if they already have an open or pending custom exam
+    if (isStudent) {
+      const now = new Date();
+      const existingExams = await prisma.exam.findMany({
+        where: {
+          createdById: req.user.id,
+          active: true
+        },
+        select: {
+          id: true,
+          startAt: true,
+          endAt: true
+        }
+      });
+      const hasOpenExam = existingExams.some(exam => {
+        const startDate = exam.startAt ? new Date(exam.startAt) : null;
+        const endDate = exam.endAt ? new Date(exam.endAt) : null;
+        // Check if exam is pending (not started yet) or open (between start and end)
+        if (startDate && now < startDate) {
+          return true; // Pending
+        }
+        if (startDate && now >= startDate && endDate && now <= endDate) {
+          return true; // Open
+        }
+        if (!startDate && !endDate) {
+          return true; // Always available
+        }
+        if (startDate && now >= startDate && !endDate) {
+          return true; // Started but no end date
+        }
+        return false;
+      });
+      if (hasOpenExam) {
+        return res.status(400).json({ error: 'You already have an open or pending custom exam. Please complete or delete it before creating a new one.' });
+      }
+    }
+    // Prioritize examType - if explicitly set, use it; otherwise infer from topicIds
+    const isQuiz = payload.examType === 'QUIZ' || (payload.examType !== 'COURSE' && (!!payload.topicIds && payload.topicIds.length > 0) || (!!payload.topicId));
     // Derive level if not provided: for quiz from topic, for course from course
     let level = payload.level;
     try {
-      if (!level && isQuiz && payload.topicId) {
-        const t = await prisma.topic.findUnique({ where: { id: payload.topicId }, select: { level: true } });
+      const firstTopicId = payload.topicIds?.[0] || payload.topicId;
+      if (!level && isQuiz && firstTopicId) {
+        const t = await prisma.topic.findUnique({ where: { id: firstTopicId }, select: { level: true } });
         level = t?.level ?? 'LEVEL1';
       } else if (!level && payload.courseId) {
         const c = await prisma.course.findUnique({ where: { id: payload.courseId }, select: { level: true } });
@@ -46,16 +107,19 @@ export function examsRouter(prisma) {
       }
     } catch {}
     // Create exam record
+    // For admins creating exams via /admin/exams, set createdById to null (admin-created)
+    // For students creating exams, set createdById to their user ID (student-created)
+    const createdById = isStudent ? req.user.id : null;
 		const exam = await prisma.exam.create({
 			data: {
         name: payload.name,
         level: level ?? 'LEVEL1',
         timeLimitMinutes: payload.timeLimitMinutes,
-        createdById: req.user.id,
+        createdById: createdById,
         type: isQuiz ? 'QUIZ' : 'COURSE',
-        topicId: isQuiz ? (payload.topicId ?? (payload.topicIds?.[0] ?? null)) : null,
+        topicId: isQuiz ? (payload.topicIds?.[0] ?? payload.topicId ?? null) : null,
         courseId: payload.courseId ?? null,
-        active: false,
+        active: isStudent ? true : false, // Students' exams are active by default (only visible to them)
         startAt: payload.startAt ?? null,
         endAt: payload.endAt ?? null
       }
@@ -70,27 +134,170 @@ export function examsRouter(prisma) {
       const topicId = req.query.topicId?.toString();
       const type = req.query.type?.toString(); // 'COURSE' | 'QUIZ'
       const now = new Date();
+      const isStudent = req.user.role !== 'ADMIN';
+			// If requesting course exams for a course, require enrollment
+			if (courseId && (!type || type === 'COURSE')) {
+				const ok = await requireEnrollmentForCourseExam(req.user.id, courseId);
+				if (!ok && req.user.role !== 'ADMIN') return res.json({ exams: [] });
+			}
+      // Build where clause with proper time window handling
+      // Student-created exams: show regardless of time window
+      // Admin-created exams: show all (active, pending, completed) - no time restrictions
       const where = {
         AND: [
           { active: true },
           courseId ? { courseId } : {},
           topicId ? { topicId } : {},
           type ? { type } : {},
-          // Time window: no startAt means no start limit; no endAt means no end limit
-          { OR: [{ startAt: null }, { startAt: { lte: now } }] },
-          { OR: [{ endAt: null }, { endAt: { gte: now } }] }
+          // For students: show public exams (createdById is null/admin) OR their own exams
+          // For admins: show all active exams
+          isStudent ? {
+            OR: [
+              { createdById: null }, // Admin-created public exams
+              { createdById: req.user.id } // Student's own exams (show regardless of time)
+            ]
+          } : {}
+          // Removed time window restrictions - show all active exams (pending, active, completed)
         ]
       };
       const exams = await prisma.exam.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        select: { id: true, name: true, level: true, timeLimitMinutes: true, type: true, topicId: true, courseId: true, active: true, startAt: true, endAt: true }
+        select: { id: true, name: true, level: true, timeLimitMinutes: true, type: true, topicId: true, courseId: true, active: true, startAt: true, endAt: true, createdById: true }
       });
       return res.json({ exams });
     } catch (e) {
       return res.status(500).json({ error: 'Failed to list exams' });
     }
   });
+
+	// Admin/Student: randomize questions for an existing exam from question pool
+	router.post('/:examId/randomize', requireAuth(), async (req, res) => {
+		const { examId } = req.params;
+		// Check if user owns the exam (for students) or is admin
+		if (req.user.role !== 'ADMIN') {
+			const exam = await prisma.exam.findUnique({ where: { id: examId }, select: { createdById: true } });
+			if (!exam || exam.createdById !== req.user.id) {
+				return res.status(403).json({ error: 'Forbidden' });
+			}
+		}
+		const schema = z.object({
+			questionCount: z.number().int().positive(),
+			difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
+			difficulties: z.array(z.enum(['EASY', 'MEDIUM', 'HARD'])).optional(),
+			courseId: z.string().optional(),
+			volumeId: z.string().optional(),
+			moduleId: z.string().optional(),
+			topicId: z.string().optional(),
+			topicIds: z.array(z.string()).optional(),
+			replaceExisting: z.boolean().optional()
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+		const payload = parse.data;
+		const exam = await prisma.exam.findUnique({ where: { id: examId }, select: { id: true, level: true, courseId: true, topicId: true } });
+		if (!exam) return res.status(404).json({ error: 'Exam not found' });
+
+		const effectiveCourseId = payload.courseId ?? exam.courseId ?? undefined;
+		const topicIdList = payload.topicIds || (payload.topicId ? [payload.topicId] : (exam.topicId ? [exam.topicId] : []));
+		const difficulties = payload.difficulties || (payload.difficulty ? [payload.difficulty] : []);
+		const where = {
+			AND: [
+				effectiveCourseId ? { courseId: effectiveCourseId } : {},
+				payload.volumeId ? { volumeId: payload.volumeId } : {},
+				payload.moduleId ? { moduleId: payload.moduleId } : {},
+				topicIdList.length > 0 ? { topicId: { in: topicIdList } } : {},
+				difficulties.length > 0 ? { difficulty: { in: difficulties } } : {},
+				exam.level ? { level: exam.level } : {}
+			]
+		};
+
+		const pool = await prisma.question.findMany({ where, select: { id: true } });
+		if (pool.length < payload.questionCount) {
+			return res.status(400).json({ error: `Not enough questions in pool. Requested ${payload.questionCount}, found ${pool.length}.` });
+		}
+		const ids = shuffleInPlace(pool.map(p => p.id)).slice(0, payload.questionCount);
+
+		await prisma.$transaction(async (tx) => {
+			if (payload.replaceExisting !== false) {
+				await tx.examQuestion.deleteMany({ where: { examId } });
+			}
+			await tx.examQuestion.createMany({
+				data: ids.map((qid, idx) => ({ examId, questionId: qid, order: idx + 1 }))
+			});
+		});
+
+		return res.json({ ok: true, count: ids.length });
+	});
+
+	// Student: generate a practice exam from pool (materialized exam + randomized ExamQuestions)
+	router.post('/practice', requireAuth(), maybeRequireSubscription(prisma), async (req, res) => {
+		const schema = z.object({
+			name: z.string().min(3).optional(),
+			timeLimitMinutes: z.number().int().positive().optional(),
+			questionCount: z.number().int().positive(),
+			difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
+			courseId: z.string().optional(),
+			volumeId: z.string().optional(),
+			moduleId: z.string().optional(),
+			topicId: z.string().optional()
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+		const payload = parse.data;
+
+		if (payload.courseId) {
+			const ok = await requireEnrollmentForCourseExam(req.user.id, payload.courseId);
+			if (!ok && req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Not enrolled in course' });
+		}
+
+		let level = req.user.level;
+		if (payload.courseId) {
+			const c = await prisma.course.findUnique({ where: { id: payload.courseId }, select: { level: true } });
+			level = c?.level ?? level;
+		} else if (payload.topicId) {
+			const t = await prisma.topic.findUnique({ where: { id: payload.topicId }, select: { level: true } });
+			level = t?.level ?? level;
+		}
+
+		const where = {
+			AND: [
+				payload.courseId ? { courseId: payload.courseId } : {},
+				payload.volumeId ? { volumeId: payload.volumeId } : {},
+				payload.moduleId ? { moduleId: payload.moduleId } : {},
+				payload.topicId ? { topicId: payload.topicId } : {},
+				payload.difficulty ? { difficulty: payload.difficulty } : {},
+				level ? { level } : {}
+			]
+		};
+
+		const pool = await prisma.question.findMany({ where, select: { id: true } });
+		if (pool.length < payload.questionCount) {
+			return res.status(400).json({ error: `Not enough questions in pool. Requested ${payload.questionCount}, found ${pool.length}.` });
+		}
+		const ids = shuffleInPlace(pool.map(p => p.id)).slice(0, payload.questionCount);
+
+		const exam = await prisma.exam.create({
+			data: {
+				name: payload.name ?? 'Practice Exam',
+				level: level ?? 'LEVEL1',
+				timeLimitMinutes: payload.timeLimitMinutes ?? 60,
+				createdById: req.user.id,
+				type: 'PRACTICE',
+				courseId: payload.courseId ?? null,
+				topicId: payload.topicId ?? null,
+				active: true,
+				startAt: null,
+				endAt: null
+			}
+		});
+
+		await prisma.examQuestion.createMany({
+			data: ids.map((qid, idx) => ({ examId: exam.id, questionId: qid, order: idx + 1 }))
+		});
+
+		return res.status(201).json({ examId: exam.id });
+	});
 
 	// Get exam details
 	router.get('/:examId', requireAuth(), async (req, res) => {
@@ -158,9 +365,46 @@ export function examsRouter(prisma) {
     const exams = await prisma.exam.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, level: true, timeLimitMinutes: true, createdAt: true, type: true, topicId: true, courseId: true, active: true, startAt: true, endAt: true }
+      include: {
+        _count: {
+          select: {
+            examQuestions: true,
+            attempts: true
+          }
+        },
+        createdBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true
+          }
+        }
+      }
     });
-    return res.json({ exams });
+    // Map exams with stats
+    const examsWithStats = exams.map(exam => ({
+      id: exam.id,
+      name: exam.name,
+      level: exam.level,
+      timeLimitMinutes: exam.timeLimitMinutes,
+      createdAt: exam.createdAt,
+      type: exam.type,
+      topicId: exam.topicId,
+      courseId: exam.courseId,
+      active: exam.active,
+      startAt: exam.startAt,
+      endAt: exam.endAt,
+      createdById: exam.createdById,
+      questionCount: exam._count.examQuestions || 0,
+      attemptCount: exam._count.attempts || 0,
+      createdBy: exam.createdBy ? {
+        id: exam.createdBy.id,
+        name: [exam.createdBy.firstName, exam.createdBy.lastName].filter(Boolean).join(' ') || exam.createdBy.email || 'Unknown',
+        email: exam.createdBy.email
+      } : null
+    }));
+    return res.json({ exams: examsWithStats });
   });
 
   // Update exam (admin)
@@ -189,8 +433,14 @@ export function examsRouter(prisma) {
 
   // Delete exam (admin)
   router.delete('/:examId', requireAuth(), async (req, res) => {
-    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
     const { examId } = req.params;
+    // Check if user is admin OR if they created this exam (for students)
+    if (req.user.role !== 'ADMIN') {
+      const exam = await prisma.exam.findUnique({ where: { id: examId }, select: { createdById: true } });
+      if (!exam || exam.createdById !== req.user.id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
     // cascade delete attempts
     await prisma.examAttempt.deleteMany({ where: { examId } });
     await prisma.exam.delete({ where: { id: examId } });
@@ -219,9 +469,13 @@ export function examsRouter(prisma) {
 	// Start an attempt (timed); for COURSE exams enforce startAt/endAt window; create answer placeholders for each exam question
 	router.post('/:examId/attempts', requireAuth(), maybeRequireSubscription(prisma), async (req, res) => {
 		const { examId } = req.params;
-		const exam = await prisma.exam.findUnique({ where: { id: examId }, select: { id: true, active: true, timeLimitMinutes: true, startAt: true, endAt: true, type: true } });
+		const exam = await prisma.exam.findUnique({ where: { id: examId }, select: { id: true, active: true, timeLimitMinutes: true, startAt: true, endAt: true, type: true, courseId: true } });
 		if (!exam) return res.status(404).json({ error: 'Exam not found' });
 		if (!exam.active) return res.status(403).json({ error: 'Exam is not active' });
+		if (exam.type === 'COURSE' && exam.courseId && req.user.role !== 'ADMIN') {
+			const ok = await requireEnrollmentForCourseExam(req.user.id, exam.courseId);
+			if (!ok) return res.status(403).json({ error: 'Not enrolled in course' });
+		}
 		const now = new Date();
 		if (exam.startAt && now < exam.startAt) return res.status(403).json({ error: 'Exam has not started yet' });
 		if (exam.endAt && now > exam.endAt) return res.status(403).json({ error: 'Exam has ended' });

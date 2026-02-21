@@ -244,25 +244,33 @@ export function learningRouter(prisma) {
       if (!course) return res.status(404).json({ error: 'Not found' });
       let topics = [];
       let modules = [];
+      let volumes = [];
       try {
-        [topics, modules] = await Promise.all([
-          prisma.topic.findMany({
-            where: { courseId },
-            orderBy: [{ moduleId: 'asc' }, { moduleNumber: 'asc' }, { order: 'asc' }],
-            select: { id: true, name: true, moduleNumber: true, moduleId: true, order: true, level: true, courseId: true }
-          }),
-          prisma.module.findMany({
-            where: { courseId },
-            orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-            include: {
-              topics: {
-                where: { courseId },
-                orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-                select: { id: true, name: true, moduleNumber: true, order: true, level: true, courseId: true }
+        const links = await prisma.courseVolume.findMany({
+          where: { courseId },
+          orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            volume: {
+              include: {
+                modules: {
+                  where: { courseId },
+                  orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+                  include: {
+                    topics: {
+                      where: { courseId },
+                      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+                      select: { id: true, name: true, moduleNumber: true, moduleId: true, order: true, level: true, courseId: true }
+                    }
+                  }
+                }
               }
             }
-          })
-        ]);
+          }
+        });
+
+        volumes = links.map(l => ({ ...l.volume, order: l.order ?? null }));
+        modules = volumes.flatMap(v => (v.modules || []));
+        topics = modules.flatMap(m => (m.topics || []));
       } catch {
         [topics, modules] = await Promise.all([
           prisma.topic.findMany({
@@ -282,9 +290,31 @@ export function learningRouter(prisma) {
           })
         ]);
       }
-      return res.json({ course, topics, modules });
+      return res.json({ course, volumes, topics, modules });
     } catch (e) {
       return res.status(500).json({ error: 'Failed to load course' });
+    }
+  });
+
+  // Student-friendly: get topics for a course (for exam creation)
+  router.get('/courses/:courseId/topics', requireAuth(), async (req, res) => {
+    const { courseId } = req.params;
+    try {
+      // Verify enrollment
+      const enrollment = await prisma.enrollment.findFirst({
+        where: { userId: req.user.id, courseId }
+      });
+      if (!enrollment && req.user.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not enrolled in course' });
+      }
+      const topics = await prisma.topic.findMany({
+        where: { courseId },
+        orderBy: [{ moduleId: 'asc' }, { moduleNumber: 'asc' }, { order: 'asc' }],
+        select: { id: true, name: true, moduleId: true, moduleNumber: true }
+      });
+      return res.json({ topics });
+    } catch (e) {
+      return res.status(500).json({ error: 'Failed to load topics' });
     }
   });
 

@@ -3,7 +3,12 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import crypto from 'crypto';
-import nodemailer from 'nodemailer';
+import sgMail from '@sendgrid/mail';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 export function authRouter(prisma) {
 	const router = Router();
@@ -23,28 +28,28 @@ export function authRouter(prisma) {
 		password: z.string().min(8)
 	});
 
+	
 	async function sendEmail(to, subject, text, html) {
-		if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-			console.log(`[EMAIL] To: ${to} | Subject: ${subject}\n${text}`);
-			return;
+		try {
+			const msg = {
+				to,
+				from: process.env.EMAIL_FROM,
+				subject,
+				text,
+				...(html && { html })
+			};
+
+			await sgMail.send(msg);
+			console.log(`✅ Email sent to ${to}`);
+		} catch (error) {
+			console.error("❌ Email error:", error.response?.body || error.message);
+			// DO NOT throw → prevents crash
 		}
-		const port = Number(process.env.SMTP_PORT ?? 465);
-		const transporter = nodemailer.createTransport({
-			host: process.env.SMTP_HOST,
-			port,
-			secure: port === 465,
-			auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-		});
-		await transporter.sendMail({
-			from: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? 'no-reply@mutingwende.local',
-			to,
-			subject,
-			text,
-			...(html && { html })
-		});
 	}
 
+
 	router.post('/register', async (req, res) => {
+		try {
 		const parse = registerSchema.safeParse(req.body);
 		if (!parse.success) {
 			return res.status(400).json({ error: parse.error.flatten() });
@@ -78,9 +83,15 @@ export function authRouter(prisma) {
 		const html = `<p>Welcome! Please verify your email by clicking the link below.</p><p><a href="${verifyUrl}">Verify my email</a></p><p>Or copy this link: ${verifyUrl}</p><p>This link expires in 24 hours.</p>`;
 		await sendEmail(user.email, 'Verify your email – Milven Finance School', `Verify your email: ${verifyUrl}`, html);
 		return res.status(201).json({ user, message: 'Please check your email to verify your account before logging in.' });
+	} catch (err) {
+			console.error("Register error:", err);
+			return res.status(500).json({ error: 'Internal server error' });
+		}
 	});
+	
 
 	router.post('/login', async (req, res) => {
+		try{
 		const parse = loginSchema.safeParse(req.body);
 		if (!parse.success) {
 			return res.status(400).json({ error: parse.error.flatten() });
@@ -106,10 +117,15 @@ export function authRouter(prisma) {
 			token,
 			user: { id: user.id, email: user.email, role: user.role, level: user.level,firstName:user.firstName,lastName:user.lastName }
 		});
+		} catch (err) {
+			console.error("Login error:", err);
+			return res.status(500).json({ error: 'Internal server error' });
+		}
 	});
 
 	// Request email verification link
 	router.post('/verify-email/request', async (req, res) => {
+		try{
 		const bodySchema = z.object({ email: z.string().email() });
 		const parse = bodySchema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -126,10 +142,15 @@ export function authRouter(prisma) {
 		const html = `<p>Click to verify your email: <a href="${url}">${url}</a></p>`;
 		await sendEmail(user.email, 'Verify your email – Milven Finance School', `Click to verify: ${url}`, html);
 		return res.json({ ok: true });
+		} catch (err) {
+			console.error("Verify request error:", err);
+			return res.status(500).json({ error: 'Internal server error' });
+		}
 	});
 
 	// Confirm email verification
 	router.post('/verify-email/confirm', async (req, res) => {
+		try{
 		const bodySchema = z.object({ token: z.string().min(10) });
 		const parse = bodySchema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -142,10 +163,15 @@ export function authRouter(prisma) {
 			prisma.emailVerificationToken.update({ where: { id: record.id }, data: { usedAt: new Date() } })
 		]);
 		return res.json({ ok: true });
+		} catch (err) {
+			console.error("Verify confirm error:", err);
+			return res.status(500).json({ error: 'Internal server error' });
+		}
 	});
 
 	// Request password reset
 	router.post('/password/reset/request', async (req, res) => {
+		try{
 		const bodySchema = z.object({ email: z.string().email() });
 		const parse = bodySchema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -159,10 +185,15 @@ export function authRouter(prisma) {
 			await sendEmail(user.email, 'Password reset – Milven Finance School', `Reset your password: ${url}`, html);
 		}
 		return res.json({ ok: true });
+		} catch (err) {
+			console.error("Password reset request error:", err);
+			return res.status(500).json({ error: 'Internal server error' });
+		}
 	});
 
 	// Reset password
 	router.post('/password/reset/confirm', async (req, res) => {
+		try{
 		const bodySchema = z.object({ token: z.string().min(10), password: z.string().min(8) });
 		const parse = bodySchema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -176,6 +207,10 @@ export function authRouter(prisma) {
 			prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } })
 		]);
 		return res.json({ ok: true });
+		} catch (err) {
+			console.error("Password reset confirm error:", err);
+			return res.status(500).json({ error: 'Internal server error' });
+		}
 	});
 
 	return router;

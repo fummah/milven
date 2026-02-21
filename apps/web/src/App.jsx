@@ -50,9 +50,11 @@ import { AdminTopicPreview } from './pages/admin/AdminTopicPreview.jsx';
 import { AdminMaterials } from './pages/admin/AdminMaterials.jsx';
 import { AdminExamEditor } from './pages/admin/AdminExamEditor.jsx';
 import { AdminExams } from './pages/admin/AdminExams.jsx';
+import { AdminVolumes } from './pages/admin/AdminVolumes.jsx';
 import { Home } from './pages/Home.jsx';
 import { CoursesPage } from './pages/Courses.jsx';
 import { Careers } from './pages/Careers.jsx';
+import { CourseDetail } from './pages/CourseDetail.jsx';
 import { useSettings } from './contexts/SettingsContext.jsx';
 import { api } from './lib/api.js';
 
@@ -60,7 +62,7 @@ const { Header, Content, Footer } = Layout;
 const { useBreakpoint } = Grid;
 
 // Scroll state lives here so only the header re-renders on scroll, not the whole App (prevents content/form reset when scrolling to top)
-function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent, jobsMenu, accountMenuItems, screens, user, courseInProgress, location, navigate }) {
+function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent, jobsMenu, accountMenuItems, screens, user, courseInProgress, location, navigate, cfaCourses }) {
 	const [scrolled, setScrolled] = useState(false);
 	const [mobileAppModalOpen, setMobileAppModalOpen] = useState(false);
 	const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -121,6 +123,28 @@ function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent,
 					</Link>
 				) : (
 					<Link to="/" className="relative transition-colors duration-200 hover:text-gray-900 after:absolute after:left-0 after:-bottom-1 after:h-0.5 after:w-0 after:bg-[#102540] after:transition-all after:duration-300 hover:after:w-full">Home</Link>
+				)}
+				{cfaCourses.length > 0 && (
+					<Dropdown
+						trigger={['hover', 'click']}
+						menu={{
+							items: cfaCourses.map(course => ({
+								key: course.id,
+								label: (
+									<Link to={`/course/${course.id}`} style={{ color: '#102540' }}>
+										{course.name}
+									</Link>
+								)
+							}))
+						}}
+					>
+						<a className="relative transition-colors duration-200 hover:text-gray-900 after:absolute after:left-0 after:-bottom-1 after:h-0.5 after:w-0 after:bg-[#102540] after:transition-all after:duration-300 hover:after:w-full">
+							<Space size={4}>
+								CFA
+								<DownOutlined />
+							</Space>
+						</a>
+					</Dropdown>
 				)}
 				<Dropdown
 					trigger={['hover', 'click']}
@@ -279,6 +303,7 @@ export default function App() {
 	const [user, setUser] = useState(null);
 	const [authLoading, setAuthLoading] = useState(false);
 	const [courseInProgress, setCourseInProgress] = useState(null);
+	const [cfaCourses, setCfaCourses] = useState([]);
 	const screens = useBreakpoint();
 	const navigate = useNavigate();
 	const location = useLocation();
@@ -390,6 +415,26 @@ export default function App() {
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
+
+	// Fetch CFA courses for dropdown (fetch on mount and when user changes)
+	useEffect(() => {
+		api.get('/api/learning/courses/public')
+			.then((res) => {
+				const courses = res.data?.courses || [];
+				// Filter courses that start with "CFA" (case-insensitive)
+				const cfa = courses.filter(c => {
+					if (!c.name) return false;
+					const nameUpper = c.name.toUpperCase().trim();
+					return nameUpper.startsWith('CFA');
+				});
+				console.log('CFA courses found:', cfa.length, cfa.map(c => c.name));
+				setCfaCourses(cfa);
+			})
+			.catch((e) => {
+				console.error('Failed to fetch CFA courses:', e);
+				setCfaCourses([]);
+			});
+	}, []); // Fetch on mount
 
 	// Fetch course in progress for students (only when logged in as student); hide header button when no course in progress
 	useEffect(() => {
@@ -588,6 +633,7 @@ export default function App() {
 				courseInProgress={courseInProgress}
 				location={location}
 				navigate={navigate}
+				cfaCourses={cfaCourses}
 			/>
 			{/* CTA strip below header (only on homepage and when logged out) */}
 			{!isLoggedIn && location.pathname === '/' && (
@@ -612,7 +658,7 @@ export default function App() {
 										border: 'none',
 										boxShadow: '0 10px 22px rgba(16,37,64,0.35)'
 									}}
-									onClick={() => navigate('/videos')}
+									onClick={() => navigate('/courses')}
 								>
 									Learn & Get Certificates
 								</Button>
@@ -646,6 +692,7 @@ export default function App() {
 					<Route path="/exams/take/:attemptId" element={<ExamTake />} />
 					<Route path="/exams/result/:attemptId" element={<ExamResult />} />
 					<Route path="/courses" element={<CoursesPage />} />
+					<Route path="/course/:courseId" element={<CourseDetail />} />
 					<Route path="/videos" element={<Videos />} />
 					<Route path="/careers" element={<Careers />} />
 					<Route path="/faq" element={<Faq />} />
@@ -665,6 +712,8 @@ export default function App() {
 						<Route path="courses/pricing" element={<Placeholder title="Course Pricing" />} />
 						<Route path="materials" element={<AdminMaterials />} />
 						<Route path="topics" element={<AdminTopics />} />
+						<Route path="volumes" element={<AdminVolumes />} />
+						<Route path="questions" element={<AdminQuestions />} />
 						<Route path="topics/:id/preview" element={<AdminTopicPreview />} />
 						<Route path="exams/:id/edit" element={<AdminExamEditor />} />
 						<Route path="revision" element={<AdminRevision />} />
@@ -695,7 +744,6 @@ export default function App() {
 					{/* removed standalone /learn; now under /student/learn/:id */}
 					<Route path="/admin/login" element={<AdminLoginPage />} />
 					<Route path="/admin/topics" element={<AdminTopics />} />
-					<Route path="/admin/questions" element={<AdminQuestions />} />
 					<Route path="/admin/revision" element={<AdminRevision />} />
 					<Route path="/admin/videos" element={<AdminVideos />} />
 				</Routes>
@@ -704,7 +752,7 @@ export default function App() {
 				<Footer className="bg-[#102540] text-white" style={{ padding: '12px 24px' }}>
 					<div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
 						<Typography.Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>
-							© {new Date().getFullYear()} Milven Finance School
+							{new Date().getFullYear()} Milven Finance School
 						</Typography.Text>
 					</div>
 				</Footer>

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, List, Typography, Button, Space, Card, Tag, message, Avatar, Tooltip, Progress, Radio, Divider, Collapse, Modal, Drawer } from 'antd';
+import { Layout, List, Typography, Button, Space, Card, Tag, message, Avatar, Tooltip, Progress, Radio, Divider, Collapse, Modal, Drawer, Pagination } from 'antd';
 import { ArrowLeftOutlined, EyeOutlined, PlusOutlined, MenuFoldOutlined, MenuUnfoldOutlined, BookOutlined, ReadOutlined, FieldTimeOutlined, HistoryOutlined, CheckCircleFilled, LinkOutlined, FilePdfOutlined, FileImageOutlined, CaretRightOutlined, TrophyOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useSettings } from '../../contexts/SettingsContext.jsx';
@@ -258,14 +258,29 @@ export function AdminCoursePreview() {
   }, [id, isStudentPath]);
 
   const course = detail?.course;
-  const modules = detail?.modules ?? [];
-  const topics = (detail?.topics || []).slice().sort((a, b) => {
+  const volumes = (detail?.volumes ?? []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+  const hasVolumesTree = Array.isArray(volumes) && volumes.length > 0;
+  const modules = hasVolumesTree
+    ? volumes.flatMap((v) => (v.modules || []).map((m) => ({ ...m, _volumeId: v.id, _volumeName: v.name })))
+    : (detail?.modules ?? []);
+  const topicsFromTree = hasVolumesTree
+    ? volumes.flatMap((v) => (v.modules || []).flatMap((m, mIdx) => (m.topics || []).map((t) => ({
+      ...t,
+      moduleId: m.id,
+      moduleNumber: mIdx + 1,
+      _volumeId: v.id,
+      _volumeName: v.name
+    }))))
+    : (detail?.topics || []);
+  const topics = topicsFromTree.slice().sort((a, b) => {
     const am = a.moduleNumber ?? 0, bm = b.moduleNumber ?? 0;
     if (am !== bm) return am - bm;
     const ao = a.order ?? 0, bo = b.order ?? 0;
     return ao - bo;
   });
-  const standaloneTopics = (detail?.topics || []).filter(t => !t.moduleId).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const standaloneTopics = hasVolumesTree
+    ? []
+    : (topicsFromTree || []).filter(t => !t.moduleId).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
   const currentMaterials = currentTopicId ? (materialsByTopic[currentTopicId] || []) : [];
   const video = currentMaterials.find(m => m.kind === 'VIDEO' && m.url);
@@ -273,6 +288,24 @@ export function AdminCoursePreview() {
   const docs = currentMaterials.filter(m => m.kind !== 'VIDEO' && m.kind !== 'HTML' && m.url);
   const currentTopic = topics.find(t => t.id === currentTopicId);
   const currentQuiz = currentTopicId ? quizByTopic[currentTopicId] : null;
+
+  // Group modules by volume (for sidebar tree)
+  const modulesByVolume = {};
+  modules.forEach(mod => {
+    if (mod._volumeId) {
+      if (!modulesByVolume[mod._volumeId]) {
+        modulesByVolume[mod._volumeId] = [];
+      }
+      modulesByVolume[mod._volumeId].push(mod);
+    }
+  });
+
+  // Calculate module numbers per volume
+  const getModuleNumber = (mod, volumeId) => {
+    const volumeModules = modulesByVolume[volumeId] || [];
+    const sortedModules = [...volumeModules].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    return sortedModules.indexOf(mod) + 1;
+  };
 
   const startQuiz = async () => {
     const q = currentTopicId ? quizByTopic[currentTopicId] : null;
@@ -522,87 +555,127 @@ export function AdminCoursePreview() {
           <Typography.Text strong style={{ color: '#102540' }}>Course Modules</Typography.Text>
         </Space>
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto', marginBottom: 8, contain: 'strict' }}>
-        {modules.length > 0 ? (
+        {hasVolumesTree && volumes.length > 0 ? (
         <Collapse
-          defaultActiveKey={[...modules.map(m => m.id), ...(standaloneTopics.length > 0 ? ['_standalone'] : [])]}
+          defaultActiveKey={[...volumes.map(v => `vol_${v.id}`), ...modules.map(m => m.id), ...(standaloneTopics.length > 0 ? ['_standalone'] : [])]}
           expandIcon={({ isActive }) => <CaretRightOutlined rotate={isActive ? 90 : 0} style={{ color: '#102540' }} />}
           expandIconPosition="end"
           ghost
           style={{ background: 'transparent', border: 'none' }}
           items={[
-            ...modules.map((mod, modIndex) => ({
-              key: mod.id,
-              label: (
-                <Space direction="vertical" size={0} align="flex-start">
-                  <span style={{ color: '#102540', fontWeight: 700, fontSize: 13 }}>Module {modIndex + 1}:</span>
-                  <span style={{ color: '#4b5563', fontWeight: 500, fontSize: 12 }}>{mod.name}</span>
-                </Space>
-              ),
-              children: (
-                <List
-                  size="small"
-                  dataSource={mod.topics || []}
-                  style={{ paddingLeft: 8, border: 'none' }}
-                  renderItem={(t) => {
-                    const itemCount = (materialsByTopic[t.id] || []).length;
-                    return (
-                      <List.Item
-                        style={{
-                          background: (t.id === currentTopicId) ? 'rgba(16,37,64,0.08)' : 'transparent',
-                          borderRadius: 6,
-                          cursor: 'pointer',
-                          padding: '8px 10px',
-                          marginBottom: 4,
-                          border: '1px solid rgba(16,37,64,0.06)'
-                        }}
-                        onClick={async () => {
-                          userClickedTopicIdRef.current = t.id;
-                          setCurrentTopicId(t.id);
-                          await loadMaterialsFor(t.id);
-                          await loadQuizFor(t.id);
-                          try {
-                            const { data } = await api.get(`/api/learning/topics/${t.id}/progress`);
-                            setProgressByTopic(prev => ({ ...prev, [t.id]: data?.percent ?? 0 }));
-                            if (typeof data?.remainingSeconds === 'number') {
-                              setRemainingByTopic(prev => ({ ...prev, [t.id]: Math.max(0, Math.ceil(data.remainingSeconds / 60)) }));
-                            } else {
-                              const estMin = etaByTopic[t.id] ?? 0;
-                              const perc = data?.percent ?? 0;
-                              const remain = Math.max(0, Math.ceil(estMin * (1 - perc / 100)));
-                              setRemainingByTopic(prev => ({ ...prev, [t.id]: remain }));
-                            }
-                            if (typeof data?.estimatedSeconds === 'number') {
-                              setEtaByTopic(prev => ({ ...prev, [t.id]: Math.max(1, Math.ceil(data.estimatedSeconds / 60)) }));
-                            }
-                            if (typeof data?.timeSpentSec === 'number') {
-                              setTimeSpentByTopic(prev => ({ ...prev, [t.id]: data.timeSpentSec }));
-                            }
-                          } catch {}
-                        }}
-                      >
-                        <List.Item.Meta
-                          avatar={<Avatar size="small" style={{ background: '#e5e7eb', color: '#4b5563' }}>{((mod.topics || []).indexOf(t) + 1)}</Avatar>}
-                          title={
-                            <Space align="center" size={4}>
-                              <span style={{ color: '#102540', fontSize: 13 }}>{t.name}</span>
-                              {(progressByTopic[t.id] ?? 0) >= 100 && (
-                                <CheckCircleFilled style={{ color: '#52c41a', fontSize: 14 }} />
-                              )}
+            ...volumes.map((volume) => {
+              const volumeModules = (modulesByVolume[volume.id] || []).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+              return {
+                key: `vol_${volume.id}`,
+                label: (
+                  <Space direction="vertical" size={0} align="flex-start">
+                    <span style={{ color: 'rgb(14, 38, 59)', fontWeight: 700, fontSize: 13, textDecoration: 'underline' }}>Volume: {volume.name}</span>
+                    {volume.description && (
+                      <span style={{ color: 'rgb(14, 38, 59)', fontWeight: 400, fontSize: 11, fontStyle: 'italic' }}>
+                        {volume.description}
+                      </span>
+                    )}
+                  </Space>
+                ),
+                children: volumeModules.length > 0 ? (
+                  <Collapse
+                    ghost
+                    expandIcon={({ isActive }) => <CaretRightOutlined rotate={isActive ? 90 : 0} style={{ color: 'rgb(14, 38, 59)', fontSize: 12 }} />}
+                    expandIconPosition="end"
+                    items={volumeModules.map((mod) => {
+                      const moduleNumber = getModuleNumber(mod, volume.id);
+                      return {
+                        key: mod.id,
+                        label: (
+                          <Space direction="vertical" size={0} align="flex-start">
+                            <Space align="center" size={6}>
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: 22,
+                                  height: 22,
+                                  borderRadius: '999px',
+                                  backgroundColor: '#102540'
+                                }}
+                              >
+                                <ReadOutlined style={{ color: '#ffffff', fontSize: 12 }} />
+                              </span>
+                              <span style={{ color: '#102540', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                                Learning Module {moduleNumber}
+                              </span>
                             </Space>
-                          }
-                          description={
-                            <Space direction="vertical" size={0}>
-                              <Space size={8} wrap>
-                                <span style={{ color: '#6b7280', fontSize: 12 }}>
-                                  <FieldTimeOutlined style={{ marginRight: 2 }} />
-                                  {etaByTopic[t.id] ?? 0} min
-                                </span>
-                                {itemCount > 0 && (
-                                  <span style={{ color: '#6b7280', fontSize: 12 }}>
-                                    {itemCount} item{itemCount !== 1 ? 's' : ''}/pages
-                                  </span>
-                                )}
-                              </Space>
+                            <span style={{ color: '#4b5563', fontWeight: 600, fontSize: 12, paddingLeft: 28, fontStyle: 'italic' }}>
+                              {mod.name}
+                            </span>
+                          </Space>
+                        ),
+                        children: (
+                          <List
+                            size="small"
+                            dataSource={mod.topics || []}
+                            style={{ paddingLeft: 8, border: 'none' }}
+                            renderItem={(t) => {
+                              const itemCount = (materialsByTopic[t.id] || []).length;
+                              return (
+                                <List.Item
+                                  style={{
+                                    background: (t.id === currentTopicId) ? 'rgba(16,37,64,0.08)' : 'transparent',
+                                    borderRadius: 6,
+                                    cursor: 'pointer',
+                                    padding: '8px 10px',
+                                    marginBottom: 4,
+                                    border: '1px solid rgba(16,37,64,0.06)'
+                                  }}
+                                  onClick={async () => {
+                                    userClickedTopicIdRef.current = t.id;
+                                    setCurrentTopicId(t.id);
+                                    await loadMaterialsFor(t.id);
+                                    await loadQuizFor(t.id);
+                                    try {
+                                      const { data } = await api.get(`/api/learning/topics/${t.id}/progress`);
+                                      setProgressByTopic(prev => ({ ...prev, [t.id]: data?.percent ?? 0 }));
+                                      if (typeof data?.remainingSeconds === 'number') {
+                                        setRemainingByTopic(prev => ({ ...prev, [t.id]: Math.max(0, Math.ceil(data.remainingSeconds / 60)) }));
+                                      } else {
+                                        const estMin = etaByTopic[t.id] ?? 0;
+                                        const perc = data?.percent ?? 0;
+                                        const remain = Math.max(0, Math.ceil(estMin * (1 - perc / 100)));
+                                        setRemainingByTopic(prev => ({ ...prev, [t.id]: remain }));
+                                      }
+                                      if (typeof data?.estimatedSeconds === 'number') {
+                                        setEtaByTopic(prev => ({ ...prev, [t.id]: Math.max(1, Math.ceil(data.estimatedSeconds / 60)) }));
+                                      }
+                                      if (typeof data?.timeSpentSec === 'number') {
+                                        setTimeSpentByTopic(prev => ({ ...prev, [t.id]: data.timeSpentSec }));
+                                      }
+                                    } catch {}
+                                  }}
+                                >
+                                  <List.Item.Meta
+                                    avatar={<Avatar size="small" style={{ background: '#e5e7eb', color: '#4b5563' }}>{((mod.topics || []).indexOf(t) + 1)}</Avatar>}
+                              title={
+                                <Space align="center" size={4}>
+                                  <span style={{ color: '#102540', fontSize: 13 }}>{t.name}</span>
+                                  {(progressByTopic[t.id] ?? 0) >= 100 && (
+                                    <CheckCircleFilled style={{ color: '#52c41a', fontSize: 14 }} />
+                                  )}
+                                </Space>
+                              }
+                              description={
+                                <Space direction="vertical" size={0}>
+                                  <Space size={8} wrap>
+                                    <span style={{ color: '#6b7280', fontSize: 12 }}>
+                                      <FieldTimeOutlined style={{ marginRight: 2 }} />
+                                      {etaByTopic[t.id] ?? 0} min
+                                    </span>
+                                    {itemCount > 0 && (
+                                      <span style={{ color: '#6b7280', fontSize: 12 }}>
+                                        {itemCount} item{itemCount !== 1 ? 's' : ''}/pages
+                                      </span>
+                                    )}
+                                  </Space>
                                   <Progress
                                     percent={progressByTopic[t.id] ?? 0}
                                     size="small"
@@ -610,15 +683,20 @@ export function AdminCoursePreview() {
                                     style={{ marginTop: 2 }}
                                     format={(p) => `${Math.round(p ?? 0)}%`}
                                   />
-                            </Space>
-                          }
-                        />
-                      </List.Item>
-                    );
-                  }}
-                />
-              )
-            })),
+                                </Space>
+                              }
+                                  />
+                                </List.Item>
+                              );
+                            }}
+                          />
+                        )
+                      };
+                    })}
+                  />
+                ) : null
+              };
+            }),
             ...(standaloneTopics.length > 0
               ? [{
                   key: '_standalone',

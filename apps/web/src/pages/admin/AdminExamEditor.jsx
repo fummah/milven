@@ -1,15 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { Card, Typography, Space, Form, Input, Select, Button, InputNumber, Table, message, DatePicker } from 'antd';
+import { Card, Typography, Space, Form, Input, Select, Button, InputNumber, Table, message, DatePicker, Drawer, Tag } from 'antd';
 import { ArrowLeftOutlined, CalendarOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../../lib/api';
 
-const FORM_INITIAL_VALUES = {
-  type: 'MCQ',
-  difficulty: 'MEDIUM',
-  options: [{ text: '', isCorrect: false }]
-};
 
 export function AdminExamEditor() {
   const { id } = useParams(); // exam id
@@ -24,10 +19,16 @@ export function AdminExamEditor() {
   const [loading, setLoading] = useState(false);
   const [questions, setQuestions] = useState([]);
   const [topics, setTopics] = useState([]);
-  const [form] = Form.useForm();
+  const [poolOpen, setPoolOpen] = useState(false);
+  const [poolLoading, setPoolLoading] = useState(false);
+  const [poolQuestions, setPoolQuestions] = useState([]);
+  const [poolSelectedRowKeys, setPoolSelectedRowKeys] = useState([]);
+  const [poolFilters, setPoolFilters] = useState({ q: '', topicId: '', difficulty: '' });
   const [settingsForm] = Form.useForm();
+  const [randomForm] = Form.useForm();
   const [savingSettings, setSavingSettings] = useState(false);
-  const formInitialValues = useMemo(() => ({ ...FORM_INITIAL_VALUES }), []);
+
+  const existingQuestionIds = useMemo(() => new Set((questions || []).map(q => q.id)), [questions]);
 
   const loadExam = async () => {
     setLoading(true);
@@ -54,9 +55,6 @@ export function AdminExamEditor() {
       const { data } = await api.get('/api/cms/topics', { params: { level } });
       const list = data.topics || [];
       setTopics(list);
-      if (list.length) {
-        form.setFieldsValue({ topicId: list[0].id });
-      }
     } catch {
       setTopics([]);
     }
@@ -79,6 +77,59 @@ export function AdminExamEditor() {
     // eslint-disable-next-line
   }, [exam?.id]);
 
+	const loadPoolQuestions = async (override = {}) => {
+		if (!exam) return;
+		setPoolLoading(true);
+		try {
+			const effective = { ...poolFilters, ...override };
+			const params = {
+				...(effective.q ? { q: effective.q } : {}),
+				...(effective.topicId ? { topicId: effective.topicId } : {}),
+				...(effective.difficulty ? { difficulty: effective.difficulty } : {}),
+				...(exam.level ? { level: exam.level } : {})
+			};
+			const { data } = await api.get('/api/cms/questions', { params });
+			setPoolQuestions(data?.questions || []);
+		} catch {
+			setPoolQuestions([]);
+		} finally {
+			setPoolLoading(false);
+		}
+	};
+
+	const linkSelectedQuestions = async () => {
+		if (poolSelectedRowKeys.length === 0) return;
+		try {
+			const toLink = poolSelectedRowKeys.filter(qid => !existingQuestionIds.has(qid));
+			if (toLink.length === 0) {
+				message.info('All selected questions are already in this exam');
+				return;
+			}
+			await Promise.all(toLink.map((questionId) => api.post(`/api/exams/${id}/questions`, { questionId })));
+			message.success(`Added ${toLink.length} question(s) to exam`);
+			setPoolSelectedRowKeys([]);
+			await loadQuestions();
+		} catch (e) {
+			message.error(e?.response?.data?.error || 'Failed to add questions');
+		}
+	};
+
+	const randomizeFromPool = async (values) => {
+		try {
+			await api.post(`/api/exams/${id}/randomize`, {
+				questionCount: Number(values.questionCount),
+				difficulties: values.difficulties && values.difficulties.length > 0 ? values.difficulties : undefined,
+				courseId: exam?.courseId || undefined,
+				topicIds: values.topicIds && values.topicIds.length > 0 ? values.topicIds : (values.topicId ? [values.topicId] : (exam?.topicId ? [exam.topicId] : undefined)),
+				replaceExisting: values.replaceExisting !== false
+			});
+			message.success('Exam randomized from pool');
+			await loadQuestions();
+		} catch (e) {
+			message.error(e?.response?.data?.error || 'Randomize failed');
+		}
+	};
+
   const onSaveSettings = async (values) => {
     setSavingSettings(true);
     try {
@@ -95,50 +146,6 @@ export function AdminExamEditor() {
     }
   };
 
-  const onAddQuestion = async (values) => {
-    try {
-      const chosenTopicId = topicId || values.topicId;
-      if (!chosenTopicId) {
-        message.error('Please select a topic for this question.');
-        return;
-      }
-      const payload = {
-        stem: values.stem,
-        type: values.type,
-        level: exam.level,
-        difficulty: values.difficulty,
-        topicId: chosenTopicId,
-        vignetteText: values.type === 'VIGNETTE_MCQ' ? (values.vignetteText || undefined) : undefined,
-        options: values.type !== 'CONSTRUCTED_RESPONSE' ? (values.options || []).map(o => ({ text: o.text, isCorrect: !!o.isCorrect })) : undefined
-      };
-      const created = await api.post('/api/cms/questions', payload);
-      const qid = created?.data?.question?.id;
-      if (qid) {
-        await api.post(`/api/exams/${id}/questions`, { questionId: qid });
-      }
-      message.success('Question added');
-      form.resetFields();
-      loadQuestions();
-    } catch {
-      message.error('Failed to add question');
-    }
-  };
-
-  const loadQuestionDetailToForm = async (qid) => {
-    try {
-      const { data } = await api.get(`/api/cms/questions/${qid}`);
-      const q = data.question;
-      form.setFieldsValue({
-        stem: q.stem,
-        type: q.type,
-        difficulty: q.difficulty,
-        vignetteText: q.vignette?.text || undefined,
-        options: (q.options || []).map(o => ({ text: o.text, isCorrect: o.isCorrect }))
-      });
-    } catch {
-      message.error('Failed to load question');
-    }
-  };
 
   const deleteQuestion = async (qid) => {
     try {
@@ -159,12 +166,19 @@ export function AdminExamEditor() {
       title: 'Actions',
       render: (_, row) => (
         <Space>
-          <Button size="small" onClick={() => loadQuestionDetailToForm(row.id)}>Edit</Button>
+          <Button size="small" onClick={() => navigate(`/admin/questions/${row.id}/edit`)}>Edit</Button>
           <Button size="small" danger onClick={() => deleteQuestion(row.id)}>Remove</Button>
         </Space>
       )
     }
   ];
+
+	const poolColumns = [
+		{ title: 'Question', dataIndex: 'stem', ellipsis: true },
+		{ title: 'Type', dataIndex: 'type', width: 120, render: (v) => <Tag color={v === 'MCQ' ? 'blue' : (v === 'VIGNETTE_MCQ' ? 'purple' : 'default')}>{v}</Tag> },
+		{ title: 'Difficulty', dataIndex: 'difficulty', width: 120 },
+		{ title: 'In exam', dataIndex: 'id', width: 90, render: (qid) => (existingQuestionIds.has(qid) ? <Tag color="green">Yes</Tag> : <Tag>No</Tag>) }
+	];
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -188,12 +202,12 @@ export function AdminExamEditor() {
         </Space>
       </Space>
 
-      {exam?.type === 'COURSE' && (
+      {exam && (
         <Card
           title={
             <Space>
               <CalendarOutlined />
-              <span>Exam schedule (when students can take it)</span>
+              <span>Exam Schedule (when students can take it)</span>
             </Space>
           }
           style={{ marginBottom: 16 }}
@@ -210,100 +224,136 @@ export function AdminExamEditor() {
                 <Button type="primary" htmlType="submit" loading={savingSettings}>Save schedule</Button>
               </Form.Item>
             </Space>
-            <Typography.Text type="secondary">Students will only see and be able to take this exam between start and end. Leave both empty for always available.</Typography.Text>
           </Form>
         </Card>
       )}
 
-      <Card loading={loading} title="Add Question">
-        <Form
-          key={id}
-          layout="vertical"
-          form={form}
-          onFinish={onAddQuestion}
-          initialValues={formInitialValues}
-        >
-          {!topicId && (
-            <Form.Item name="topicId" label="Topic" rules={[{ required: true, message: 'Select a topic for this question' }]}>
+      <Card loading={loading} title="Add Questions">
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Typography.Text type="secondary">Questions must be loaded from the Questions page. Use the options below to add questions to this exam.</Typography.Text>
+          <Space wrap>
+            <Button type="primary" onClick={() => {
+              setPoolOpen(true);
+              setPoolSelectedRowKeys([]);
+              loadPoolQuestions();
+            }}>
+              Search & Select from Pool
+            </Button>
+          </Space>
+        </Space>
+
+        <Card size="small" title="Random from Pool" style={{ marginTop: 16 }}>
+          <Form
+            layout="inline"
+            form={randomForm}
+            onFinish={randomizeFromPool}
+						initialValues={{ questionCount: 20, difficulties: [], topicIds: topicId ? [topicId] : [], replaceExisting: true }}
+          >
+            <Form.Item name="questionCount" label="Count" rules={[{ required: true }]}>
+              <InputNumber min={1} max={200} />
+            </Form.Item>
+            <Form.Item name="difficulties" label="Difficulty">
               <Select
-                style={{ minWidth: 260 }}
-                options={(topics || []).map(t => ({
-                  value: t.id,
-                  label: `${t.moduleNumber ?? ''} ${t.name}`.trim()
-                }))}
-                placeholder="Select a topic"
+                mode="multiple"
+                allowClear
+                style={{ width: 200 }}
+                placeholder="Select difficulties"
+                options={[
+                  { label: 'Easy', value: 'EASY' },
+                  { label: 'Medium', value: 'MEDIUM' },
+                  { label: 'Hard', value: 'HARD' }
+                ]}
               />
             </Form.Item>
-          )}
-          <Form.Item name="stem" label="Question Text" rules={[{ required: true, min: 5 }]}>
-            <Input.TextArea rows={3} placeholder="Enter question stem..." />
-          </Form.Item>
-          <Space size="large" wrap>
-            <Form.Item name="type" label="Type" rules={[{ required: true }]}>
-              <Select style={{ minWidth: 160 }} options={[
-                { value: 'MCQ', label: 'MCQ' },
-                { value: 'VIGNETTE_MCQ', label: 'Vignette MCQ' },
-                { value: 'CONSTRUCTED_RESPONSE', label: 'Constructed Response' }
-              ]} />
+						{!topicId && (
+							<Form.Item name="topicIds" label="Topic (optional filter)">
+								<Select
+									mode="multiple"
+									allowClear
+									showSearch
+									style={{ width: 260 }}
+									placeholder="Select topics (multiple)"
+									options={(topics || []).map(t => ({ value: t.id, label: t.name }))}
+									optionFilterProp="label"
+								/>
+							</Form.Item>
+						)}
+            <Form.Item name="replaceExisting" label="Replace" rules={[{ required: false }]}>
+              <Select style={{ width: 140 }} options={[{ label: 'Yes', value: true }, { label: 'No', value: false }]} />
             </Form.Item>
-            <Form.Item name="difficulty" label="Difficulty" rules={[{ required: true }]}>
-              <Select style={{ minWidth: 160 }} options={[
-                { value: 'EASY', label: 'Easy' },
-                { value: 'MEDIUM', label: 'Medium' },
-                { value: 'HARD', label: 'Hard' }
-              ]} />
+            <Form.Item>
+              <Button type="primary" htmlType="submit">Randomize</Button>
             </Form.Item>
-          </Space>
-          <Form.Item noStyle shouldUpdate>
-            {({ getFieldValue }) => {
-              const type = getFieldValue('type');
-              if (type === 'VIGNETTE_MCQ') {
-                return (
-                  <Form.Item name="vignetteText" label="Vignette Text">
-                    <Input.TextArea rows={4} placeholder="Enter vignette passage..." />
-                  </Form.Item>
-                );
-              }
-              return null;
-            }}
-          </Form.Item>
-          <Form.List name="options">
-            {(fields, { add, remove }) => (
-              <>
-                <Form.Item noStyle shouldUpdate>
-                  {({ getFieldValue }) => {
-                    const type = getFieldValue('type');
-                    if (type === 'CONSTRUCTED_RESPONSE') return null;
-                    return (
-                      <Space direction="vertical" style={{ width: '100%' }}>
-                        <Typography.Text strong>Options</Typography.Text>
-                        {fields.map(field => (
-                          <Space key={field.key} align="baseline" style={{ display: 'flex' }}>
-                            <Form.Item {...field} name={[field.name, 'text']} rules={[{ required: true }]} style={{ width: 420 }}>
-                              <Input placeholder="Option text" />
-                            </Form.Item>
-                            <Form.Item {...field} name={[field.name, 'isCorrect']} valuePropName="checked">
-                              <Select style={{ width: 140 }} options={[{ value: true, label: 'Correct' }, { value: false, label: 'Incorrect' }]} />
-                            </Form.Item>
-                            <Button onClick={() => remove(field.name)}>Remove</Button>
-                          </Space>
-                        ))}
-                        <Button onClick={() => add({ text: '', isCorrect: false })}>Add Option</Button>
-                      </Space>
-                    );
-                  }}
-                </Form.Item>
-              </>
-            )}
-          </Form.List>
-          <div style={{ marginTop: 16 }} />
-          <Button type="primary" htmlType="submit">Add Question</Button>
-        </Form>
+          </Form>
+        </Card>
       </Card>
 
       <Card title="Questions">
         <Table rowKey="id" dataSource={questions} columns={columns} pagination={false} />
       </Card>
+
+			<Drawer
+				title="Question Pool"
+				open={poolOpen}
+				onClose={() => setPoolOpen(false)}
+				width={860}
+				destroyOnClose
+			>
+				<Space direction="vertical" size={12} style={{ width: '100%' }}>
+					<Space wrap>
+						<Input
+							placeholder="Search question text"
+							value={poolFilters.q}
+							onChange={(e) => setPoolFilters((p) => ({ ...p, q: e.target.value }))}
+							style={{ width: 320 }}
+							allowClear
+							onPressEnter={() => loadPoolQuestions()}
+						/>
+						<Select
+							placeholder="Topic"
+							allowClear
+							value={poolFilters.topicId || undefined}
+							onChange={(v) => setPoolFilters((p) => ({ ...p, topicId: v ?? '' }))}
+							style={{ width: 280 }}
+							showSearch
+							optionFilterProp="label"
+							options={(topics || []).map(t => ({ value: t.id, label: t.name }))}
+						/>
+						<Select
+							placeholder="Difficulty"
+							allowClear
+							value={poolFilters.difficulty || undefined}
+							onChange={(v) => setPoolFilters((p) => ({ ...p, difficulty: v ?? '' }))}
+							style={{ width: 180 }}
+							options={[
+								{ label: 'Easy', value: 'EASY' },
+								{ label: 'Medium', value: 'MEDIUM' },
+								{ label: 'Hard', value: 'HARD' }
+							]}
+						/>
+						<Button type="primary" onClick={() => loadPoolQuestions()}>Search</Button>
+						<Button onClick={() => {
+							setPoolFilters({ q: '', topicId: '', difficulty: '' });
+							loadPoolQuestions({ q: '', topicId: '', difficulty: '' });
+						}}>Reset</Button>
+						<Button disabled={poolSelectedRowKeys.length === 0} type="primary" onClick={linkSelectedQuestions}>
+							Add selected ({poolSelectedRowKeys.length})
+						</Button>
+					</Space>
+					<Table
+						rowKey="id"
+						loading={poolLoading}
+						dataSource={poolQuestions}
+						columns={poolColumns}
+						rowSelection={{
+							selectedRowKeys: poolSelectedRowKeys,
+							onChange: setPoolSelectedRowKeys
+						}}
+						pagination={{ pageSize: 10 }}
+						size="small"
+					/>
+				</Space>
+			</Drawer>
     </Space>
   );
 }

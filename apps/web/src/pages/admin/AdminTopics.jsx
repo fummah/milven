@@ -30,6 +30,7 @@ export function AdminTopics() {
   const [data, setData] = useState([]);
   const [total, setTotal] = useState(0);
   const [modules, setModules] = useState([]);
+  const [volumes, setVolumes] = useState([]);
   const [moduleDrawerOpen, setModuleDrawerOpen] = useState(false);
   const [editingModule, setEditingModule] = useState(null);
   const [manageOpen, setManageOpen] = useState(false);
@@ -43,6 +44,8 @@ export function AdminTopics() {
   const [filterModuleId, setFilterModuleId] = useState('');
   const [filterQ, setFilterQ] = useState('');
   const [filterModuleCourseId, setFilterModuleCourseId] = useState('');
+  const [filterVolumeId, setFilterVolumeId] = useState('');
+  const [moduleCourseId, setModuleCourseId] = useState('');
   const [courses, setCourses] = useState([]);
   const [topicStep, setTopicStep] = useState(0);
   const [savingTopic, setSavingTopic] = useState(false);
@@ -64,7 +67,9 @@ export function AdminTopics() {
       if (filterModuleId) params.moduleId = filterModuleId;
       if (filterQ) params.q = filterQ;
       const moduleLevel = filterModuleCourseId ? (courses.find(c => c.id === filterModuleCourseId)?.level) : undefined;
-      const moduleParams = filterModuleCourseId ? { courseId: filterModuleCourseId, ...(moduleLevel ? { level: moduleLevel } : {}) } : (moduleLevel ? { level: moduleLevel } : {});
+      const moduleParams = filterVolumeId
+        ? { volumeId: filterVolumeId }
+        : (filterModuleCourseId ? { courseId: filterModuleCourseId, ...(moduleLevel ? { level: moduleLevel } : {}) } : (moduleLevel ? { level: moduleLevel } : {}));
       const [topicsRes, modulesRes, coursesRes] = await Promise.all([
         api.get('/api/cms/topics', { params }),
         api.get('/api/cms/modules', { params: moduleParams }),
@@ -74,6 +79,14 @@ export function AdminTopics() {
       setTotal(topicsRes.data.total ?? 0);
       setModules(modulesRes.data.modules ?? []);
       setCourses((coursesRes.data.courses ?? []).map(c => ({ id: c.id, name: c.name, level: c.level })));
+
+      try {
+        const volRes = await api.get('/api/cms/volumes', { params: filterCourseId ? { courseId: filterCourseId } : {} });
+        const volList = (volRes.data.volumes ?? []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+        setVolumes(volList);
+      } catch {
+        setVolumes([]);
+      }
     } catch {
       message.error('Failed to load topics');
     } finally {
@@ -84,7 +97,7 @@ export function AdminTopics() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterCourseId, filterModuleId, filterModuleCourseId]);
+  }, [filterCourseId, filterModuleId, filterModuleCourseId, filterVolumeId]);
 
   const loadMaterials = async (topicId) => {
     try {
@@ -146,10 +159,14 @@ export function AdminTopics() {
         message.error('Please select a course');
         return;
       }
+      if (!values.moduleId) {
+        message.error('Please select a module');
+        return;
+      }
       const payload = {
         name: values.name,
         courseId: values.courseId,
-        moduleId: values.moduleId || undefined,
+        moduleId: values.moduleId,
         level
       };
       if (editing) {
@@ -182,26 +199,34 @@ export function AdminTopics() {
 
   const submitModule = async (values) => {
     try {
-      const courseId = values.courseId || null;
+      const volumeId = values.volumeId ? String(values.volumeId) : '';
+      const courseId = values.courseId ? String(values.courseId) : '';
       if (!courseId) {
         message.error('Please select a course');
         return;
       }
+      if (!volumeId) {
+        message.error('Please select a volume');
+        return;
+      }
+
       const course = courses.find(c => c.id === courseId);
       const level = course?.level;
       if (editingModule) {
         await api.put(`/api/cms/modules/${editingModule.id}`, {
           name: values.name,
-          courseId,
-          level,
+          ...(courseId ? { courseId } : {}),
+          ...(typeof level !== 'undefined' ? { level } : {}),
+          volumeId,
           order: values.order != null ? Number(values.order) : undefined
         });
         message.success('Module updated');
       } else {
         await api.post('/api/cms/modules', {
           name: values.name,
-          courseId,
-          level,
+          ...(courseId ? { courseId } : {}),
+          ...(typeof level !== 'undefined' ? { level } : {}),
+          volumeId,
           order: values.order != null ? Number(values.order) : undefined
         });
         message.success('Module created');
@@ -376,6 +401,20 @@ export function AdminTopics() {
                   showSearch
                   optionFilterProp="label"
                 />
+                <span>Volume:</span>
+                <Select
+                  value={filterVolumeId || undefined}
+                  onChange={(v) => setFilterVolumeId(v ?? '')}
+                  placeholder="All volumes"
+                  allowClear
+                  style={{ minWidth: 220 }}
+                  options={[
+                    { label: 'All volumes', value: '' },
+                    ...(volumes || []).map(v => ({ value: v.id, label: `${v.name}` }))
+                  ]}
+                  showSearch
+                  optionFilterProp="label"
+                />
                 <Button onClick={() => setFilterModuleCourseId('')}>Reset</Button>
               </Space>
               <Table
@@ -537,6 +576,25 @@ export function AdminTopics() {
               options={courses.map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))}
               showSearch
               optionFilterProp="label"
+														onChange={async (v) => {
+															setModuleCourseId(v ?? '');
+															moduleForm.setFieldsValue({ volumeId: undefined });
+															try {
+																const volRes = await api.get('/api/cms/volumes', { params: v ? { courseId: v } : {} });
+																const volList = (volRes.data.volumes ?? []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+																setVolumes(volList);
+															} catch {
+																setVolumes([]);
+															}
+														}}
+            />
+          </Form.Item>
+          <Form.Item name="volumeId" label="Volume" rules={[{ required: true, message: 'Select a volume' }]}>
+            <Select
+              placeholder="Select a volume"
+              options={(volumes || []).map(v => ({ value: v.id, label: v.name }))}
+              showSearch
+              optionFilterProp="label"
             />
           </Form.Item>
           <Form.Item name="level" label="Level" hidden>
@@ -585,11 +643,10 @@ export function AdminTopics() {
                         .map(m => ({ value: m.id, label: `${m.name} (${m.level})` }))
                       : moduleOptions;
                     return (
-                      <Form.Item name="moduleId" label="Module">
+                      <Form.Item name="moduleId" label="Module" rules={[{ required: true, message: 'Select a module' }]}>
                         <Select
-                          allowClear
-                          placeholder="Select a module (optional)"
-                          options={[{ value: '', label: '— No module —' }, ...moduleOpts]}
+                          placeholder="Select a module"
+                          options={moduleOpts}
                         />
                       </Form.Item>
                     );

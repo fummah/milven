@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, List, Progress, Space, Button, Typography, Empty, Row, Col, Statistic, Tag, message, Spin } from 'antd';
+import { Card, List, Progress, Space, Button, Typography, Empty, Row, Col, Statistic, Tag, message, Spin, Divider } from 'antd';
 import { ReadOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, CreditCardOutlined, BookOutlined, ShoppingCartOutlined, RiseOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -101,24 +101,63 @@ export function StudentDashboard() {
 
   useEffect(() => {
     (async () => {
-      if (enrolledCourseIds.length === 0) {
-        setExamsByCourse({});
-        return;
-      }
+      const obj = {};
+      // Load all exams (admin-created for enrolled courses + student's own exams)
       try {
-        const byCourse = {};
-        for (const cid of enrolledCourseIds) {
-          try {
-            const { data } = await api.get('/api/exams/public', { params: { courseId: cid, type: 'COURSE' } });
-            byCourse[cid] = data.exams || [];
-          } catch {
-            byCourse[cid] = [];
+        // Load all public exams (includes admin-created for enrolled courses and student's own)
+        const { data } = await api.get('/api/exams/public');
+        const allExams = data.exams || [];
+        
+        // Separate exams by course and student-created
+        const examsByCourseMap = {};
+        const studentExams = [];
+        
+        allExams.forEach(exam => {
+          if (exam.createdById) {
+            // Student-created exam
+            studentExams.push(exam);
+          } else if (exam.courseId && enrolledCourseIds.includes(exam.courseId)) {
+            // Admin-created exam for enrolled course
+            if (!examsByCourseMap[exam.courseId]) {
+              examsByCourseMap[exam.courseId] = [];
+            }
+            examsByCourseMap[exam.courseId].push(exam);
           }
+        });
+        
+        // Add exams to obj by course
+        enrolledCourseIds.forEach(cid => {
+          obj[cid] = examsByCourseMap[cid] || [];
+        });
+        
+        // Load attempt info for student's own exams
+        if (studentExams.length > 0) {
+          const examIds = studentExams.map(e => e.id);
+          try {
+            const { data: attemptsData } = await api.get('/api/exams/attempts/me');
+            const attempts = attemptsData?.attempts || [];
+            const attemptsByExam = {};
+            attempts.forEach(a => {
+              if (examIds.includes(a.examId)) {
+                if (!attemptsByExam[a.examId]) attemptsByExam[a.examId] = [];
+                attemptsByExam[a.examId].push(a);
+              }
+            });
+            // Add attempt info to each exam
+            studentExams.forEach(exam => {
+              exam.attempts = attemptsByExam[exam.id] || [];
+              exam.hasAttempts = (attemptsByExam[exam.id] || []).length > 0;
+              exam.latestAttempt = (attemptsByExam[exam.id] || []).sort((a, b) => 
+                new Date(b.startedAt || 0) - new Date(a.startedAt || 0)
+              )[0];
+            });
+          } catch {}
+          obj['_my_custom'] = studentExams;
         }
-        setExamsByCourse(byCourse);
-      } catch {
-        setExamsByCourse({});
+      } catch (e) {
+        console.error('Failed to load exams:', e);
       }
+      setExamsByCourse(obj);
     })();
   }, [enrolledCourseIds.join(',')]);
 
@@ -147,17 +186,37 @@ export function StudentDashboard() {
     return { totalCourses, avgProgress, learningTime, activeSubs };
   }, [courses, subs]);
 
-  // Available exams: only enrolled courses, with exams currently in window
+  // Available exams: admin exams grouped by course + custom exams as individual items
   const examItems = useMemo(() => {
-    const map = {};
+    const items = [];
+    // Add admin exams grouped by course
     (courses || []).forEach(c => {
       if (!c.courseId) return;
-      map[c.courseId] = { course: c, exams: examsByCourse[c.courseId] || [] };
+      const courseExams = examsByCourse[c.courseId] || [];
+      if (courseExams.length > 0) {
+        courseExams.forEach(exam => {
+          items.push({ 
+            type: 'admin', 
+            course: c, 
+            exam,
+            courseId: c.courseId 
+          });
+        });
+      }
     });
-    return Object.values(map).filter(row => row.exams.length > 0);
+    // Add custom exams as individual items
+    const customExams = examsByCourse['_my_custom'] || [];
+    customExams.forEach(exam => {
+      items.push({ 
+        type: 'custom', 
+        exam,
+        courseId: '_my_custom' 
+      });
+    });
+    return items;
   }, [courses, examsByCourse]);
 
-  const examCounts = examItems.reduce((acc, row) => acc + row.exams.length, 0);
+  const examCounts = examItems.length;
 
   const completedCourses = useMemo(
     () => (courses || []).filter(c => c.enrollmentStatus === 'COMPLETED'),
@@ -428,74 +487,134 @@ export function StudentDashboard() {
               {!examItems.length ? (
                 <Empty description="No exams available at this time" />
               ) : (
-                <List
-                  dataSource={examItems.slice(0, 8)}
-                  renderItem={(row) => {
-                    const firstExam = (row.exams || [])[0];
-                    const submitted = row.course?.examResult?.attemptId;
+                <div style={{ maxHeight: 400, overflowY: 'auto', paddingRight: 8 }}>
+                  {examItems.slice(0, 8).map((item, index) => {
+                    const { type, exam, course } = item;
+                    const isCustom = type === 'custom';
+                    const now = new Date();
+                    const startDate = exam.startAt ? new Date(exam.startAt) : null;
+                    const endDate = exam.endAt ? new Date(exam.endAt) : null;
+                    
+                    // Check if exam has been submitted
+                    const submitted = isCustom ? exam.latestAttempt?.status === 'SUBMITTED' : course?.examResult?.attemptId;
+                    const hasAttempts = isCustom ? exam.hasAttempts : submitted;
+                    
+                    // Determine exam status
+                    let status = null;
+                    let statusColor = 'default';
+                    let statusText = '';
+                    if (startDate && now < startDate) {
+                      status = 'pending';
+                      statusColor = 'orange';
+                      statusText = 'Pending';
+                    } else if (endDate && now > endDate) {
+                      if (hasAttempts) {
+                        status = 'completed';
+                        statusColor = 'green';
+                        statusText = 'Completed';
+                      } else {
+                        status = 'missed';
+                        statusColor = 'red';
+                        statusText = 'Missed';
+                      }
+                    } else if (startDate && now >= startDate && endDate && now <= endDate) {
+                      status = 'open';
+                      statusColor = 'blue';
+                      statusText = 'Open';
+                    } else if (!startDate && !endDate) {
+                      status = 'open';
+                      statusColor = 'blue';
+                      statusText = 'Available';
+                    } else if (startDate && now >= startDate && !endDate) {
+                      status = 'open';
+                      statusColor = 'blue';
+                      statusText = 'Open';
+                    }
+                    
+                    const canTake = status === 'open' && !submitted;
+                    
+                    const duration = exam.timeLimitMinutes != null ? formatExamDuration(exam.timeLimitMinutes) : null;
+                    const countdown = startDate && now < startDate 
+                      ? { text: `Starts in ${formatCountdown(startDate.getTime() - now.getTime())}`, type: 'blue' }
+                      : endDate && now < endDate
+                      ? { text: `Ends in ${formatCountdown(endDate.getTime() - now.getTime())}`, type: 'orange' }
+                      : null;
+                    
                     return (
-                    <List.Item
-                      actions={[
-                        submitted ? (
-                          <Space size="small">
-                            <Tag color="green">Complete</Tag>
-                            <Button
-                              size="small"
-                              type="primary"
-                              onClick={() => navigate(`/student/exams/result/${submitted}`)}
-                            >
-                              View results
-                            </Button>
+                      <React.Fragment key={`${type}_${exam.id}_${index}`}>
+                        <div style={{ padding: '12px 0' }}>
+                          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                              <Space direction="vertical" size={4} style={{ flex: 1 }}>
+                                {isCustom ? (
+                                  <>
+                                    <Space wrap size={4}>
+                                      <Tag color="green">{exam.name}</Tag>
+                                      {status && <Tag color={statusColor}>{statusText}</Tag>}
+                                      {duration && <Tag icon={<ClockCircleOutlined />}>{duration}</Tag>}
+                                      {countdown && <Tag color={countdown.type}>{countdown.text}</Tag>}
+                                    </Space>
+                                    {exam.latestAttempt && (
+                                      <Space>
+                                        <Tag color={exam.latestAttempt.status === 'SUBMITTED' ? 'green' : 'orange'}>
+                                          {exam.latestAttempt.status === 'SUBMITTED' 
+                                            ? `Score: ${Math.round(exam.latestAttempt.scorePercent || 0)}%`
+                                            : 'In Progress'}
+                                        </Tag>
+                                      </Space>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    <Space>
+                                      <Typography.Text strong>{course?.name}</Typography.Text>
+                                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                        Level: {course?.level}
+                                      </Typography.Text>
+                                    </Space>
+                                    <Space wrap size={4}>
+                                      <Tag color="green">{exam.name}</Tag>
+                                      {duration && <Tag icon={<ClockCircleOutlined />}>{duration}</Tag>}
+                                      {countdown && <Tag color={countdown.type}>{countdown.text}</Tag>}
+                                    </Space>
+                                  </>
+                                )}
+                              </Space>
+                              <Space>
+                                {submitted ? (
+                                  <Button
+                                    size="small"
+                                    type="primary"
+                                    onClick={() => navigate(`/student/exams/result/${isCustom ? exam.latestAttempt.id : submitted}`)}
+                                  >
+                                    View results
+                                  </Button>
+                                ) : canTake ? (
+                                  <Button
+                                    size="small"
+                                    type="primary"
+                                    loading={startingExamId === exam.id}
+                                    onClick={() => startExam(exam.id)}
+                                  >
+                                    Take exam
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="small"
+                                    disabled
+                                  >
+                                    {statusText}
+                                  </Button>
+                                )}
+                              </Space>
+                            </Space>
                           </Space>
-                        ) : (
-                          <Button
-                            size="small"
-                            type="primary"
-                            loading={firstExam && startingExamId === firstExam.id}
-                            disabled={!firstExam}
-                            onClick={() => firstExam && startExam(firstExam.id)}
-                          >
-                            Take exam
-                          </Button>
-                        )
-                      ]}
-                    >
-                      <List.Item.Meta
-                        title={row.course?.name}
-                        description={
-                          <Space direction="vertical" size={4}>
-                            <span>Level: {row.course?.level}</span>
-                            {(row.exams || []).map(ex => {
-                              const startAt = ex.startAt ? new Date(ex.startAt).getTime() : null;
-                              const endAt = ex.endAt ? new Date(ex.endAt).getTime() : null;
-                              let countdown = null;
-                              if (startAt && now < startAt) {
-                                countdown = { text: `Starts in ${formatCountdown(startAt - now)}`, type: 'blue' };
-                              } else if (endAt && now < endAt) {
-                                countdown = { text: `Ends in ${formatCountdown(endAt - now)}`, type: 'orange' };
-                              } else if (!endAt && startAt && now >= startAt) {
-                                countdown = { text: 'Available', type: 'green' };
-                              } else if (!startAt && !endAt) {
-                                countdown = { text: 'Available', type: 'green' };
-                              }
-                              const duration = ex.timeLimitMinutes != null ? formatExamDuration(ex.timeLimitMinutes) : null;
-                              return (
-                                <div key={ex.id} style={{ marginTop: 4 }}>
-                                  <Space wrap size={4}>
-                                    <Tag color="green">{ex.name}</Tag>
-                                    {duration && <Tag icon={<ClockCircleOutlined />}>{duration}</Tag>}
-                                    {countdown && <Tag color={countdown.type}>{countdown.text}</Tag>}
-                                  </Space>
-                                </div>
-                              );
-                            })}
-                          </Space>
-                        }
-                      />
-                    </List.Item>
+                        </div>
+                        {index < examItems.slice(0, 8).length - 1 && <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #f0f0f0' }} />}
+                      </React.Fragment>
                     );
-                  }}
-                />
+                  })}
+                </div>
               )}
             </Space>
           </Card>

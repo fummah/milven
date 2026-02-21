@@ -119,6 +119,16 @@ export function Home() {
 		return () => clearTimeout(timeout);
 	}, [typed, isDeleting, loopIndex, suggestions]);
 
+	const levelToLabel = { LEVEL1: 'CFA Level I', LEVEL2: 'CFA Level II', LEVEL3: 'CFA Level III' };
+	const courseByCategory = useMemo(() => {
+		const map = {};
+		courses.forEach((c) => {
+			const label = levelToLabel[c.level];
+			if (label && !map[label]) map[label] = c;
+		});
+		return map;
+	}, [courses]);
+
 	const getCategoryVisual = (label) => {
 		// Returns icon element and gradient colors for avatar background
 		switch (label) {
@@ -131,6 +141,15 @@ export function Home() {
 			default:
 				return { icon: null, from: 'from-gray-400', to: 'to-gray-500', iconColor: '#64748b' };
 		}
+	};
+
+	const handleCategoryClick = (categoryLabel) => {
+		const course = courseByCategory[categoryLabel];
+		if (!course) {
+			message.info('No course available for this level yet.');
+			return;
+		}
+		navigate(`/course/${course.id}`);
 	};
 
 	return (
@@ -197,7 +216,10 @@ export function Home() {
 							const { icon, from, to, iconColor } = getCategoryVisual(c);
 							return (
 								<motion.span key={c} whileHover={{ y: -2, scale: 1.03 }} whileTap={{ scale: 0.98 }}>
-									<Tag className="px-3 py-1.5 text-sm rounded-full bg-white shadow hover:shadow-md transition-all flex items-center gap-2">
+									<Tag
+										className="px-3 py-1.5 text-sm rounded-full bg-white shadow hover:shadow-md transition-all flex items-center gap-2 cursor-pointer"
+										onClick={() => handleCategoryClick(c)}
+									>
 										<span className={`inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${from} ${to} shadow-sm`}>
 											<span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-white">
 												<span style={{ color: iconColor, fontSize: 14, lineHeight: 0 }}>{icon}</span>

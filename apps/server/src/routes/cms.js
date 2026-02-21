@@ -13,6 +13,83 @@ export function cmsRouter(prisma) {
   const stripeKey = process.env.STRIPE_SECRET_KEY || '';
   const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: '2023-10-16' }) : null;
 
+  async function getDefaultVolumeIdForCourse(courseId) {
+    if (!courseId) return null;
+    const existingLink = await prisma.courseVolume.findFirst({
+      where: { courseId: String(courseId) },
+      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+      select: { volumeId: true }
+    });
+    if (existingLink?.volumeId) return existingLink.volumeId;
+
+    const createdVolume = await prisma.volume.create({
+      data: { name: 'Volume 1' },
+      select: { id: true }
+    });
+    await prisma.courseVolume.create({
+      data: { courseId: String(courseId), volumeId: createdVolume.id, order: 1 }
+    });
+    return createdVolume.id;
+  }
+
+  async function getOrCreateUnassignedModuleForCourse(courseId) {
+    if (!courseId) return null;
+    const course = await prisma.course.findUnique({ where: { id: String(courseId) }, select: { id: true, level: true } });
+    if (!course) return null;
+    const volumeId = await getDefaultVolumeIdForCourse(course.id);
+    if (!volumeId) return null;
+    const existing = await prisma.module.findFirst({
+      where: { volumeId, courseId: course.id, name: 'Unassigned' },
+      select: { id: true }
+    });
+    if (existing?.id) return existing.id;
+    const max = await prisma.module.findFirst({
+      where: { volumeId, courseId: course.id },
+      orderBy: [{ order: 'desc' }, { createdAt: 'desc' }],
+      select: { order: true }
+    });
+    const created = await prisma.module.create({
+      data: {
+        name: 'Unassigned',
+        level: course.level,
+        courseId: course.id,
+        volumeId,
+        order: (max?.order ?? 0) + 1
+      },
+      select: { id: true }
+    });
+    return created.id;
+  }
+
+  async function deriveQuestionPathIdsFromTopic(topicId) {
+    if (!topicId) return { courseId: null, volumeId: null, moduleId: null };
+    const topic = await prisma.topic.findUnique({
+      where: { id: String(topicId) },
+      select: {
+        moduleId: true,
+        module: {
+          select: {
+            courseId: true,
+            volumeId: true
+          }
+        }
+      }
+    });
+    const moduleId = topic?.moduleId ?? null;
+    const volumeId = topic?.module?.volumeId ?? null;
+    const courseId = topic?.module?.courseId ?? null;
+    return { courseId, volumeId, moduleId };
+  }
+
+  async function assertVolumeLinkedToCourse({ courseId, volumeId }) {
+    if (!courseId || !volumeId) return false;
+    const link = await prisma.courseVolume.findUnique({
+      where: { courseId_volumeId: { courseId: String(courseId), volumeId: String(volumeId) } },
+      select: { courseId: true }
+    }).catch(() => null);
+    return !!link;
+  }
+
   async function ensureStripeProductAndPriceLocal(p) {
     if (!stripe) return p;
     let sp = p.stripeProductId ? await stripe.products.retrieve(p.stripeProductId).catch(() => null) : null;
@@ -155,7 +232,12 @@ export function cmsRouter(prisma) {
     });
     if (!course) return res.status(404).json({ error: 'Not found' });
     const level = course.level;
-    const [modulesWithTopics, topics] = await Promise.all([
+    const [volLinks, modulesWithTopics, topics] = await Promise.all([
+      prisma.courseVolume.findMany({
+        where: { courseId: id },
+        orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+        include: { volume: true }
+      }),
       prisma.module.findMany({
         where: { courseId: id },
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
@@ -201,12 +283,15 @@ export function cmsRouter(prisma) {
       }
     }
     const uniqueEnrollments = Array.from(seen.values()).map(e => ({ id: e.id, createdAt: e.createdAt, user: e.user }));
+    const volumes = (volLinks || []).map(l => ({ ...l.volume, order: l.order ?? null }));
+    volumes.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
     return res.json({
       course: {
         ...course,
         products,
         enrollments: uniqueEnrollments
       },
+      volumes,
       modules: modulesWithTopics,
       topics,
       revisionSummaries,
@@ -287,13 +372,155 @@ export function cmsRouter(prisma) {
     return res.json({ ok: true });
   });
 
+	// Volumes
+	router.get('/volumes', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const courseId = (req.query.courseId ?? '').toString().trim();
+		if (courseId) {
+			const links = await prisma.courseVolume.findMany({
+				where: { courseId },
+				orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+				include: {
+					volume: {
+						include: {
+							modules: {
+								where: { courseId },
+								orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+								select: { id: true }
+							}
+						}
+					}
+				}
+			});
+			const volumes = links.map(l => ({ ...l.volume, order: l.order ?? null }));
+			volumes.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+			return res.json({ volumes });
+		}
+		const volumes = await prisma.volume.findMany({
+			orderBy: [{ name: 'asc' }],
+			include: {
+				courseLinks: {
+					orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+					include: { course: { select: { id: true, name: true, level: true } } }
+				}
+			}
+		});
+		return res.json({ volumes });
+	});
+	router.post('/volumes', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const schema = z.object({
+			name: z.string().min(2),
+			description: z.string().optional(),
+			courseId: z.string().optional(),
+			courseIds: z.array(z.string()).optional(),
+			order: z.number().int().optional()
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+		const volume = await prisma.volume.create({ data: { name: parse.data.name, description: parse.data.description } });
+		// Handle multiple course links
+		const courseIds = parse.data.courseIds || (parse.data.courseId ? [parse.data.courseId] : []);
+		if (courseIds.length > 0) {
+			for (const courseId of courseIds) {
+				const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true } });
+				if (!course) continue; // Skip invalid course IDs
+				const max = await prisma.courseVolume.findFirst({ where: { courseId }, orderBy: { order: 'desc' }, select: { order: true } });
+				const order = parse.data.order ?? ((max?.order ?? 0) + 1);
+				await prisma.courseVolume.upsert({
+					where: { courseId_volumeId: { courseId, volumeId: volume.id } },
+					update: { order },
+					create: { courseId, volumeId: volume.id, order }
+				});
+			}
+		}
+		return res.status(201).json({ volume });
+	});
+	router.get('/volumes/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const id = req.params.id;
+		const volume = await prisma.volume.findUnique({
+			where: { id },
+			include: {
+				courseLinks: {
+					orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+					include: { course: { select: { id: true, name: true, level: true } } }
+				}
+			}
+		});
+		if (!volume) return res.status(404).json({ error: 'Volume not found' });
+		return res.json({ volume });
+	});
+
+	router.put('/volumes/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const id = req.params.id;
+		const schema = z.object({
+			name: z.string().min(2).optional(),
+			description: z.string().optional(),
+			// course linkage is managed via /courses/:courseId/volumes endpoints
+			order: z.number().int().optional()
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+		const volume = await prisma.volume.update({ 
+		where: { id }, 
+		data: { 
+			...(parse.data.name ? { name: parse.data.name } : {}),
+			...(parse.data.description ? { description: parse.data.description } : {})
+		} 
+	});
+		return res.json({ volume });
+	});
+	router.delete('/volumes/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const id = req.params.id;
+		await prisma.volume.delete({ where: { id } });
+		return res.json({ ok: true });
+	});
+
+	// Course ↔ Volume links
+	router.get('/courses/:courseId/volumes', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const courseId = req.params.courseId;
+		const links = await prisma.courseVolume.findMany({
+			where: { courseId },
+			orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+			include: { volume: true }
+		});
+		const volumes = links.map(l => ({ ...l.volume, order: l.order ?? null }));
+		volumes.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+		return res.json({ volumes });
+	});
+	router.post('/courses/:courseId/volumes', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const courseId = req.params.courseId;
+		const schema = z.object({ volumeId: z.string().min(1), order: z.number().int().optional() });
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true } });
+		if (!course) return res.status(400).json({ error: 'Invalid courseId' });
+		const volume = await prisma.volume.findUnique({ where: { id: parse.data.volumeId }, select: { id: true } });
+		if (!volume) return res.status(400).json({ error: 'Invalid volumeId' });
+		const max = await prisma.courseVolume.findFirst({ where: { courseId }, orderBy: { order: 'desc' }, select: { order: true } });
+		const order = parse.data.order ?? ((max?.order ?? 0) + 1);
+		const link = await prisma.courseVolume.upsert({
+			where: { courseId_volumeId: { courseId, volumeId: parse.data.volumeId } },
+			update: { order },
+			create: { courseId, volumeId: parse.data.volumeId, order }
+		});
+		return res.status(201).json({ link });
+	});
+	router.delete('/courses/:courseId/volumes/:volumeId', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const { courseId, volumeId } = req.params;
+		// ensure no modules under this course use this volume
+		const used = await prisma.module.count({ where: { courseId, volumeId } });
+		if (used > 0) return res.status(400).json({ error: 'Cannot detach: modules exist under this course+volume' });
+		await prisma.courseVolume.delete({ where: { courseId_volumeId: { courseId, volumeId } } });
+		return res.json({ ok: true });
+	});
+
   	// Modules (containers for topics; a module has many topics)
 	router.get('/modules', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const level = req.query.level;
 		const courseId = (req.query.courseId ?? '').toString().trim();
+		const volumeId = (req.query.volumeId ?? '').toString().trim();
 		const where = courseId
 			? { courseId }
-			: (level ? { level } : {});
+			: (volumeId ? { volumeId } : (level ? { level } : {}));
 		const modules = await prisma.module.findMany({
 			where,
 			orderBy: [{ level: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
@@ -310,40 +537,53 @@ export function cmsRouter(prisma) {
 		const schema = z.object({
 			name: z.string().min(2),
 			courseId: z.string().min(1),
+			volumeId: z.string().min(1),
 			order: z.number().int().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const courseId = parse.data.courseId;
+		const volumeId = String(parse.data.volumeId);
+		const courseId = String(parse.data.courseId);
 		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, level: true } });
 		if (!course) return res.status(400).json({ error: 'Invalid courseId' });
+		const volume = await prisma.volume.findUnique({ where: { id: volumeId }, select: { id: true } });
+		if (!volume) return res.status(400).json({ error: 'Invalid volumeId' });
+		const linked = await assertVolumeLinkedToCourse({ courseId, volumeId });
+		if (!linked) return res.status(400).json({ error: 'Volume is not linked to this course' });
 		const level = course.level;
-		const max = await prisma.module.findFirst({ where: { courseId }, orderBy: { order: 'desc' }, select: { order: true } });
+		const max = await prisma.module.findFirst({ where: { volumeId }, orderBy: { order: 'desc' }, select: { order: true } });
 		const order = parse.data.order ?? (max?.order ?? 0) + 1;
-		const module_ = await prisma.module.create({ data: { name: parse.data.name, level, courseId, order } });
+		const module_ = await prisma.module.create({ data: { name: parse.data.name, level, courseId, volumeId, order } });
 		return res.status(201).json({ module: module_ });
 	});
 	router.put('/modules/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const id = req.params.id;
 		const schema = z.object({
 			name: z.string().min(2).optional(),
-			courseId: z.string().optional().nullable(),
+			courseId: z.string().optional(),
+			volumeId: z.string().optional(),
 			order: z.number().int().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const courseId = typeof parse.data.courseId === 'undefined'
-			? undefined
-			: (parse.data.courseId || null);
-		const course = courseId ? await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, level: true } }) : null;
-		if (courseId && !course) return res.status(400).json({ error: 'Invalid courseId' });
-		const level = course ? course.level : undefined;
+		const existing = await prisma.module.findUnique({ where: { id }, select: { id: true, courseId: true, volumeId: true } });
+		if (!existing) return res.status(404).json({ error: 'Not found' });
+		const nextCourseId = parse.data.courseId ? String(parse.data.courseId) : existing.courseId;
+		const nextVolumeId = parse.data.volumeId ? String(parse.data.volumeId) : existing.volumeId;
+		const course = await prisma.course.findUnique({ where: { id: nextCourseId }, select: { id: true, level: true } });
+		if (!course) return res.status(400).json({ error: 'Invalid courseId' });
+		const volume = await prisma.volume.findUnique({ where: { id: nextVolumeId }, select: { id: true } });
+		if (!volume) return res.status(400).json({ error: 'Invalid volumeId' });
+		const linked = await assertVolumeLinkedToCourse({ courseId: nextCourseId, volumeId: nextVolumeId });
+		if (!linked) return res.status(400).json({ error: 'Volume is not linked to this course' });
+		const level = course.level;
 		const module_ = await prisma.module.update({
 			where: { id },
 			data: {
 				...(typeof parse.data.name !== 'undefined' ? { name: parse.data.name } : {}),
-				...(typeof level !== 'undefined' ? { level } : {}),
-				...(typeof courseId !== 'undefined' ? { courseId } : {}),
+				level,
+				courseId: nextCourseId,
+				volumeId: nextVolumeId,
 				...(typeof parse.data.order !== 'undefined' ? { order: parse.data.order } : {})
 			}
 		});
@@ -351,7 +591,11 @@ export function cmsRouter(prisma) {
 	});
 	router.delete('/modules/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const id = req.params.id;
-		await prisma.topic.updateMany({ where: { moduleId: id }, data: { moduleId: null } });
+		const mod = await prisma.module.findUnique({ where: { id }, select: { id: true, courseId: true } });
+		if (!mod) return res.status(404).json({ error: 'Not found' });
+		const unassignedId = mod.courseId ? await getOrCreateUnassignedModuleForCourse(mod.courseId) : null;
+		if (!unassignedId) return res.status(400).json({ error: 'Unable to find course/unassigned module for this module. Fix module.courseId first.' });
+		await prisma.topic.updateMany({ where: { moduleId: id }, data: { moduleId: unassignedId } });
 		await prisma.module.delete({ where: { id } });
 		return res.json({ ok: true });
 	});
@@ -361,12 +605,14 @@ export function cmsRouter(prisma) {
 		const level = req.query.level;
 		const courseId = (req.query.courseId ?? '').toString().trim();
 		const moduleId = req.query.moduleId;
+		const volumeId = req.query.volumeId?.toString();
 		const q = (req.query.q ?? '').toString().trim();
 		const where = {
 			AND: [
 				courseId ? { courseId } : {},
 				(!courseId && level) ? { level } : {},
 				moduleId ? { moduleId } : {},
+				volumeId ? { module: { volumeId } } : {},
 				q ? { name: { contains: q, mode: 'insensitive' } } : {}
 			]
 		};
@@ -384,7 +630,7 @@ export function cmsRouter(prisma) {
 		const schema = z.object({
 			name: z.string().min(2),
 			courseId: z.string().min(1),
-			moduleId: z.string().optional().nullable(),
+			moduleId: z.string().min(1),
 			moduleNumber: z.number().int().optional()
 		});
 		const parse = schema.safeParse(req.body);
@@ -393,14 +639,13 @@ export function cmsRouter(prisma) {
 		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, level: true } });
 		if (!course) return res.status(400).json({ error: 'Invalid courseId' });
 		const level = course.level;
-		if (parse.data.moduleId) {
-			const m = await prisma.module.findUnique({ where: { id: parse.data.moduleId }, select: { id: true, courseId: true } });
-			if (!m) return res.status(400).json({ error: 'Invalid moduleId' });
-			if (m.courseId && m.courseId !== courseId) return res.status(400).json({ error: 'Module does not belong to this course' });
-		}
-		const data = { ...parse.data, courseId, level, moduleId: parse.data.moduleId || undefined };
+		const m = await prisma.module.findUnique({ where: { id: parse.data.moduleId }, select: { id: true, courseId: true, volumeId: true } });
+		if (!m) return res.status(400).json({ error: 'Invalid moduleId' });
+		if (m.courseId && m.courseId !== courseId) return res.status(400).json({ error: 'Module does not belong to this course' });
+		if (!m.volumeId) return res.status(400).json({ error: 'Module is missing volumeId. Run backfill or fix module.' });
+		const data = { ...parse.data, courseId, level, moduleId: parse.data.moduleId };
 		const max = await prisma.topic.findFirst({
-			where: data.moduleId ? { moduleId: data.moduleId, courseId } : { courseId },
+			where: { moduleId: data.moduleId, courseId },
 			orderBy: { order: 'desc' },
 			select: { order: true }
 		});
@@ -430,6 +675,9 @@ export function cmsRouter(prisma) {
 		const nextModuleId = (typeof parse.data.moduleId === 'undefined')
 			? undefined
 			: (parse.data.moduleId === null || parse.data.moduleId === '' ? null : parse.data.moduleId);
+		if (nextModuleId === null) {
+			return res.status(400).json({ error: 'moduleId is required' });
+		}
 		if (nextModuleId) {
 			const m = await prisma.module.findUnique({ where: { id: nextModuleId }, select: { id: true, courseId: true } });
 			if (!m) return res.status(400).json({ error: 'Invalid moduleId' });
@@ -579,19 +827,233 @@ export function cmsRouter(prisma) {
   });
 
 	// Questions (MCQ or Vignette-based, CR)
+	function escapeCsvCell(v) {
+		const s = String(v ?? '');
+		if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+		return s;
+	}
+	function parseCsv(content) {
+		const rows = [];
+		let i = 0;
+		let cell = '';
+		let row = [];
+		let inQuotes = false;
+		while (i < content.length) {
+			const ch = content[i];
+			const next = content[i + 1];
+			if (inQuotes) {
+				if (ch === '"' && next === '"') {
+					cell += '"';
+					i += 2;
+					continue;
+				}
+				if (ch === '"') {
+					inQuotes = false;
+					i += 1;
+					continue;
+				}
+				cell += ch;
+				i += 1;
+				continue;
+			}
+			if (ch === '"') {
+				inQuotes = true;
+				i += 1;
+				continue;
+			}
+			if (ch === ',') {
+				row.push(cell);
+				cell = '';
+				i += 1;
+				continue;
+			}
+			if (ch === '\n') {
+				row.push(cell);
+				rows.push(row);
+				row = [];
+				cell = '';
+				i += 1;
+				continue;
+			}
+			if (ch === '\r' && next === '\n') {
+				row.push(cell);
+				rows.push(row);
+				row = [];
+				cell = '';
+				i += 2;
+				continue;
+			}
+			cell += ch;
+			i += 1;
+		}
+		if (cell.length > 0 || row.length > 0) {
+			row.push(cell);
+			rows.push(row);
+		}
+		return rows;
+	}
+
+	router.get('/questions/template.csv', requireAuth(), requireRole('ADMIN'), async (_req, res) => {
+		const headers = [
+			'topic_id',
+			'question_text',
+			'question_type',
+			'answers',
+			'correct_answer',
+			'difficulty',
+			'marks'
+		];
+		const sample = [
+			'',
+			'What is 2+2?',
+			'MCQ',
+			'1|2|3|4',
+			'4',
+			'EASY',
+			'1'
+		];
+		const csv = `${headers.join(',')}\n${sample.map(escapeCsvCell).join(',')}\n`;
+		res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+		res.setHeader('Content-Disposition', 'attachment; filename="question_template.csv"');
+		return res.send(csv);
+	});
+
+	router.post('/questions/bulk-upload', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const schema = z.object({ csv: z.string().min(1) });
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+		const csv = parse.data.csv;
+		const rows = parseCsv(csv);
+		if (rows.length < 2) return res.status(400).json({ error: 'CSV must include header and at least one row' });
+		const header = rows[0].map(h => (h ?? '').toString().trim().toLowerCase());
+		const idx = (name) => header.indexOf(name);
+		const required = ['topic_id','question_text','question_type','difficulty','marks'];
+		for (const r of required) {
+			if (idx(r) < 0) return res.status(400).json({ error: `Missing column: ${r}` });
+		}
+		const errors = [];
+		let createdCount = 0;
+
+		for (let r = 1; r < rows.length; r++) {
+			const row = rows[r];
+			if (!row || row.every(c => !String(c ?? '').trim())) continue;
+			const get = (col) => (row[idx(col)] ?? '').toString().trim();
+			const topicId = get('topic_id');
+			const questionText = get('question_text');
+			const questionType = get('question_type');
+			const answersRaw = (idx('answers') >= 0) ? get('answers') : '';
+			const correctAnswerRaw = (idx('correct_answer') >= 0) ? get('correct_answer') : '';
+			const difficulty = get('difficulty');
+			const marksRaw = get('marks');
+
+			const rowNum = r + 1;
+			if (!topicId) {
+				errors.push({ row: rowNum, error: 'Missing required topic_id' });
+				continue;
+			}
+			if (!questionText) {
+				errors.push({ row: rowNum, error: 'question_text required' });
+				continue;
+			}
+			if (!['MCQ','VIGNETTE_MCQ','CONSTRUCTED_RESPONSE','TRUE_FALSE','SHORT_ANSWER'].includes(questionType)) {
+				errors.push({ row: rowNum, error: `Unsupported question_type: ${questionType}` });
+				continue;
+			}
+			if (!['EASY','MEDIUM','HARD'].includes(difficulty)) {
+				errors.push({ row: rowNum, error: `Invalid difficulty: ${difficulty}` });
+				continue;
+			}
+			const marks = Number(marksRaw || 1);
+			if (!Number.isFinite(marks) || marks <= 0) {
+				errors.push({ row: rowNum, error: 'marks must be a positive number' });
+				continue;
+			}
+
+			try {
+				// Derive hierarchy from topic
+				const pathIds = await deriveQuestionPathIdsFromTopic(topicId);
+				if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) {
+					throw new Error('Topic path is incomplete. Ensure topic has module and module has volume.');
+				}
+
+				const { courseId, volumeId, moduleId } = pathIds;
+				const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, level: true } });
+				if (!course) throw new Error('Derived course not found');
+
+				const type = questionType === 'TRUE_FALSE'
+					? 'MCQ'
+					: (questionType === 'SHORT_ANSWER' ? 'CONSTRUCTED_RESPONSE' : questionType);
+
+				const options = (type !== 'CONSTRUCTED_RESPONSE')
+					? (answersRaw ? answersRaw.split('|').map(s => s.trim()).filter(Boolean) : [])
+					: [];
+				if (type !== 'CONSTRUCTED_RESPONSE') {
+					if (options.length < 2) throw new Error('answers must include at least 2 options separated by |');
+					if (!correctAnswerRaw) throw new Error('correct_answer required for MCQ');
+					if (!options.includes(correctAnswerRaw)) throw new Error('correct_answer must match one of answers options exactly');
+				}
+
+				await prisma.$transaction(async (tx) => {
+					const created = await tx.question.create({
+						data: {
+							stem: questionText,
+							type,
+							level: course.level,
+							difficulty,
+							marks,
+							topicId,
+							courseId,
+							volumeId,
+							moduleId
+						}
+					});
+					if (type !== 'CONSTRUCTED_RESPONSE') {
+						await tx.mcqOption.createMany({
+							data: options.map(opt => ({
+								questionId: created.id,
+								text: opt,
+								isCorrect: opt === correctAnswerRaw
+							}))
+						});
+					}
+				});
+
+				createdCount += 1;
+			} catch (e) {
+				errors.push({ row: rowNum, error: e?.message ?? String(e) });
+			}
+		}
+
+		return res.json({ created: createdCount, errors });
+	});
+
 	router.get('/questions', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const q = (req.query.q ?? '').toString().trim();
 		const topicId = req.query.topicId?.toString();
+		const topicIds = req.query.topicIds?.toString();
 		const level = req.query.level?.toString();
+		const courseId = req.query.courseId?.toString();
+		const volumeId = req.query.volumeId?.toString();
+		const moduleId = req.query.moduleId?.toString();
+		const difficulty = req.query.difficulty?.toString();
+		const difficulties = req.query.difficulties?.toString();
+		const topicIdList = topicIds ? topicIds.split(',').filter(Boolean) : (topicId ? [topicId] : []);
+		const difficultyList = difficulties ? difficulties.split(',').filter(Boolean) : (difficulty ? [difficulty] : []);
 		const where = {
 			AND: [
-				topicId ? { topicId } : {},
-				level ? { level } : {}
+				q ? { stem: { contains: q, mode: 'insensitive' } } : {},
+				topicIdList.length > 0 ? { topicId: { in: topicIdList } } : {},
+				level ? { level } : {},
+				courseId ? { courseId } : {},
+				volumeId ? { volumeId } : {},
+				moduleId ? { moduleId } : {},
+				difficultyList.length > 0 ? { difficulty: { in: difficultyList } } : {}
 			]
 		};
 		const questions = await prisma.question.findMany({
 			where,
 			orderBy: { createdAt: 'desc' },
-			select: { id: true, stem: true, type: true, level: true, difficulty: true, createdAt: true }
+			select: { id: true, stem: true, type: true, level: true, difficulty: true, marks: true, topicId: true, courseId: true, volumeId: true, moduleId: true, createdAt: true }
 		});
 		return res.json({ questions });
   });
@@ -602,18 +1064,24 @@ export function cmsRouter(prisma) {
 			level: z.enum(['NONE','LEVEL1', 'LEVEL2', 'LEVEL3']),
 			difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']),
 			topicId: z.string(),
+			marks: z.number().int().positive().optional(),
 			vignetteText: z.string().optional(),
+			imageUrl: z.string().url().optional().nullable(),
 			options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
 		const { vignetteText, options, ...q } = parse.data;
+		const pathIds = await deriveQuestionPathIdsFromTopic(q.topicId);
+		if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) {
+			return res.status(400).json({ error: 'Topic path is incomplete. Ensure topic has module and module has volume.' });
+		}
 		let vignette = null;
 		if (q.type === 'VIGNETTE_MCQ' && vignetteText) {
 			vignette = await prisma.vignette.create({ data: { text: vignetteText } });
 		}
 		const question = await prisma.question.create({
-			data: { ...q, vignetteId: vignette?.id ?? null }
+			data: { ...q, ...pathIds, vignetteId: vignette?.id ?? null, imageUrl: parse.data.imageUrl || null }
 		});
 		if (q.type !== 'CONSTRUCTED_RESPONSE' && options && options.length) {
 			await prisma.mcqOption.createMany({
@@ -643,7 +1111,9 @@ export function cmsRouter(prisma) {
       level: z.enum(['NONE','LEVEL1', 'LEVEL2', 'LEVEL3']).optional(),
       difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
       topicId: z.string().optional(),
+      marks: z.number().int().positive().optional(),
       vignetteText: z.string().optional(),
+      imageUrl: z.string().url().optional().nullable(),
       options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional()
     });
     const parse = schema.safeParse(req.body);
@@ -668,6 +1138,13 @@ export function cmsRouter(prisma) {
       vignetteId = null;
     }
     // Update core question fields
+		let pathIds = null;
+		if (typeof payload.topicId !== 'undefined') {
+			pathIds = await deriveQuestionPathIdsFromTopic(payload.topicId);
+			if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) {
+				return res.status(400).json({ error: 'Topic path is incomplete. Ensure topic has module and module has volume.' });
+			}
+		}
     const updated = await prisma.question.update({
       where: { id },
       data: {
@@ -676,6 +1153,9 @@ export function cmsRouter(prisma) {
         ...(typeof payload.level !== 'undefined' ? { level: payload.level } : {}),
         ...(typeof payload.difficulty !== 'undefined' ? { difficulty: payload.difficulty } : {}),
         ...(typeof payload.topicId !== 'undefined' ? { topicId: payload.topicId } : {}),
+			...(typeof payload.marks !== 'undefined' ? { marks: payload.marks } : {}),
+			...(typeof payload.imageUrl !== 'undefined' ? { imageUrl: payload.imageUrl } : {}),
+			...(pathIds ? pathIds : {}),
         vignetteId
       }
     });

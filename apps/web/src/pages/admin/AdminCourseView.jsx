@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, Descriptions, Typography, Space, Button, Tabs, Table, Tag, Select, Form, Input, Modal, Upload, Drawer, message, Steps, Radio, Divider, List, Layout, Grid } from 'antd';
+import { Card, Descriptions, Typography, Space, Button, Tabs, Table, Tag, Select, Form, Input, Modal, Upload, Drawer, message, Steps, Radio, Divider, List, Layout, Grid, Pagination } from 'antd';
 import { ArrowLeftOutlined, UploadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, CheckCircleOutlined, StopOutlined, InfoCircleOutlined, TeamOutlined, ReadOutlined, FileTextOutlined, ExperimentOutlined, DollarOutlined, FolderOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import ReactQuill from 'react-quill';
@@ -48,6 +48,12 @@ export function AdminCourseView() {
   const [moduleDrawerOpen, setModuleDrawerOpen] = useState(false);
   const [moduleForm] = Form.useForm();
   const [savingModule, setSavingModule] = useState(false);
+  const [questions, setQuestions] = useState([]);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [questionDrawerOpen, setQuestionDrawerOpen] = useState(false);
+  const [questionForm] = Form.useForm();
+  const [submittingQuestion, setSubmittingQuestion] = useState(false);
+  const [currentVolumePage, setCurrentVolumePage] = useState(1);
 
   const addQuiz = (topic) => {
     // Navigate to exam builder; could pass query params in the future
@@ -71,11 +77,22 @@ export function AdminCourseView() {
     }
   };
 
-  const openModuleDrawer = () => {
+  const openModuleDrawer = async () => {
     const modulesList = detail?.modules ?? [];
     const maxOrder = modulesList.length ? Math.max(...modulesList.map(m => m.order ?? 0), 0) : 0;
     moduleForm.resetFields();
-    moduleForm.setFieldsValue({ name: '', level: course?.level ?? 'LEVEL1', order: maxOrder + 1 });
+    moduleForm.setFieldsValue({ name: '', level: course?.level ?? 'LEVEL1', order: maxOrder + 1, volumeId: undefined });
+    // Ensure volumes are loaded for this course
+    if (id && detail?.volumes?.length === 0) {
+      try {
+        const { data } = await api.get(`/api/cms/courses/${id}`);
+        if (data?.volumes) {
+          setDetail(prev => ({ ...prev, volumes: data.volumes }));
+        }
+      } catch {
+        // Silently fail, volumes might be empty
+      }
+    }
     setModuleDrawerOpen(true);
   };
 
@@ -85,6 +102,7 @@ export function AdminCourseView() {
       await api.post('/api/cms/modules', {
         name: values.name,
         courseId: String(id),
+        volumeId: values.volumeId,
         level: values.level || course?.level,
         order: values.order != null ? Number(values.order) : undefined
       });
@@ -115,6 +133,57 @@ export function AdminCourseView() {
     }
   };
 
+  const fetchQuestions = async () => {
+    setQuestionsLoading(true);
+    try {
+      const { data } = await api.get('/api/cms/questions', { params: { courseId: id } });
+      setQuestions(data.questions || []);
+    } catch {
+      setQuestions([]);
+    } finally {
+      setQuestionsLoading(false);
+    }
+  };
+
+  const loadTopicsForCourse = async () => {
+    try {
+      const { data } = await api.get('/api/cms/topics', { params: { courseId: id } });
+      return data?.topics || [];
+    } catch {
+      return [];
+    }
+  };
+
+  const submitQuestion = async (values) => {
+    try {
+      setSubmittingQuestion(true);
+      const chosenTopicId = values.topicId;
+      const topicsList = await loadTopicsForCourse();
+      const t = topicsList.find(x => x.id === chosenTopicId);
+      await api.post('/api/cms/questions', {
+        stem: values.stem,
+        type: values.type,
+        level: t?.level ?? course?.level ?? 'LEVEL1',
+        difficulty: values.difficulty,
+        topicId: chosenTopicId,
+        marks: values.marks ? Number(values.marks) : undefined,
+        vignetteText: values.type === 'VIGNETTE_MCQ' ? (values.vignetteText || undefined) : undefined,
+        options: values.type !== 'CONSTRUCTED_RESPONSE'
+          ? (values.options || []).map(o => ({ text: o.text, isCorrect: !!o.isCorrect }))
+          : []
+      });
+      message.success('Question created');
+      questionForm.resetFields();
+      questionForm.setFieldsValue({ courseId: id });
+      setQuestionDrawerOpen(false);
+      fetchQuestions();
+    } catch (e) {
+      message.error(e?.response?.data?.error || 'Failed to create question');
+    } finally {
+      setSubmittingQuestion(false);
+    }
+  };
+
   const openExamView = async (examRow) => {
     try {
       setExamViewLoading(true);
@@ -139,6 +208,12 @@ export function AdminCourseView() {
     if (tab) setActiveTabKey(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
+  useEffect(() => {
+    if (activeTabKey === 'questions') {
+      fetchQuestions();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabKey, id]);
 
   const course = detail?.course;
   // Topics sorted by module order then topic order (for preview sidebar and learning list)
@@ -295,7 +370,8 @@ export function AdminCourseView() {
   ];
 
   const topicsColumns = [
-    { title: 'Module', dataIndex: ['module', 'name'], width: 140, render: v => v ? <Tag color="default">{v}</Tag> : '—' },
+    { title: 'Module', dataIndex: ['module', 'name'], width: 160, render: v => v ? <Tag color="default">{v}</Tag> : '—' },
+    { title: 'Topic ID', dataIndex: 'id', width: 220, render: v => <Typography.Text type="secondary" style={{ fontSize: 12 }}>{v}</Typography.Text> },
     { title: 'Name', dataIndex: 'name' },
     { title: 'Level', dataIndex: 'level' },
     { title: 'Created', dataIndex: 'createdAt', render: v => v ? new Date(v).toLocaleString() : '-' },
@@ -396,6 +472,35 @@ export function AdminCourseView() {
     { title: 'Currency', dataIndex: 'currency', render: v => v || '-' },
     { title: 'Current Period End', dataIndex: 'currentPeriodEnd', render: v => v ? new Date(v).toLocaleString() : '-' },
     { title: 'Updated', dataIndex: 'updatedAt', render: v => v ? new Date(v).toLocaleString() : '-' }
+  ];
+
+  const questionsColumns = [
+    { title: 'Question', dataIndex: 'stem', render: (text) => text.length > 100 ? `${text.substring(0, 100)}...` : text },
+    { title: 'Type', dataIndex: 'type', render: (type) => <Tag>{type}</Tag> },
+    { title: 'Difficulty', dataIndex: 'difficulty', render: (difficulty) => <Tag color={difficulty === 'EASY' ? 'green' : difficulty === 'MEDIUM' ? 'orange' : 'red'}>{difficulty}</Tag> },
+    { title: 'Level', dataIndex: 'level' },
+    { title: 'Topic', dataIndex: ['topic', 'name'], render: (_, record) => {
+      const topic = detail?.topics?.find(t => t.id === record.topicId);
+      return topic ? `${topic.module?.name ?? '—'} · ${topic.name}` : '—';
+    }},
+    { title: 'Created', dataIndex: 'createdAt', render: v => v ? new Date(v).toLocaleString() : '-' },
+    {
+      title: 'Actions',
+      render: (_, record) => (
+        <Space size={4}>
+          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => navigate(`/admin/questions/${record.id}/edit`)} />
+          <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={async () => {
+            try {
+              await api.delete(`/api/cms/questions/${record.id}`);
+              message.success('Question deleted');
+              fetchQuestions();
+            } catch {
+              message.error('Delete failed');
+            }
+          }} />
+        </Space>
+      )
+    }
   ];
 
   return (
@@ -537,22 +642,114 @@ export function AdminCourseView() {
                         }
                       };
                       const modulesList = detail?.modules ?? [];
+                      const volumesList = (detail?.volumes ?? []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
                       const standaloneTopics = (detail?.topics ?? []).filter(t => !t.moduleId);
+                      
+                      // Volume pagination - one volume per page
+                      const volumesPerPage = 1; // Show 1 volume per page
+                      const totalVolumePages = Math.ceil(volumesList.length / volumesPerPage);
+                      const startVolumeIndex = (currentVolumePage - 1) * volumesPerPage;
+                      const endVolumeIndex = startVolumeIndex + volumesPerPage;
+                      const currentVolumes = volumesList.slice(startVolumeIndex, endVolumeIndex);
+                      
+                      // Group modules by volume for current page
+                      const modulesByVolume = {};
+                      modulesList.forEach(mod => {
+                        const volId = mod.volumeId;
+                        if (currentVolumes.some(v => v.id === volId)) {
+                          if (!modulesByVolume[volId]) {
+                            modulesByVolume[volId] = [];
+                          }
+                          modulesByVolume[volId].push(mod);
+                        }
+                      });
+                      
+                      // Get volume info for each volumeId
+                      const getVolumeInfo = (volId) => {
+                        return volumesList.find(v => v.id === volId) || { name: 'Unknown Volume', description: '' };
+                      };
+                      
+                      // Calculate module numbers per volume
+                      const getModuleNumber = (mod, volumeId) => {
+                        const volumeModules = modulesByVolume[volumeId] || [];
+                        const sortedModules = [...volumeModules].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                        return sortedModules.indexOf(mod) + 1;
+                      };
+                      
                       return (
                         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                          {modulesList.map((mod) => (
-                            <Card key={mod.id} size="small" title={<Space><ReadOutlined /><span>{mod.name}</span><Tag color="blue">{mod.level}</Tag></Space>}>
-                              <Table
-                                rowKey="id"
-                                size="small"
-                                dataSource={mod.topics || []}
-                                columns={topicTableColumns}
-                                scroll={isMobile ? { x: 'max-content' } : undefined}
-                                pagination={false}
-                                expandable={expandable}
-                              />
+                          {/* Volume Pagination at Top */}
+                          {volumesList.length > volumesPerPage && (
+                            <Card size="small" style={{ marginBottom: 8 }}>
+                              <Space style={{ width: '100%', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                <Pagination
+                                  current={currentVolumePage}
+                                  total={volumesList.length}
+                                  pageSize={volumesPerPage}
+                                  size="small"
+                                  showSizeChanger={false}
+                                  onChange={(page) => setCurrentVolumePage(page)}
+                                  showTotal={(total, range) => `Page ${range[0]} of ${total}`}
+                                />
+                              </Space>
                             </Card>
-                          ))}
+                          )}
+                          
+                          {Object.entries(modulesByVolume).map(([volId, mods]) => {
+                            const volume = getVolumeInfo(volId);
+                            const sortedMods = [...mods].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                            return (
+                              <Card 
+                                key={volId} 
+                                size="small" 
+                                title={
+                                  <Space direction="vertical" size={0} align="flex-start" style={{ width: '100%' }}>
+                                    <Space>
+                                      <FolderOutlined style={{ color: '#1890ff' }} />
+                                      <Typography.Text strong style={{ color: '#1890ff', fontSize: 16 }}>
+                                        Volume {volume.name}
+                                      </Typography.Text>
+                                    </Space>
+                                    {volume.description && (
+                                      <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 24 }}>
+                                        {volume.description}
+                                      </Typography.Text>
+                                    )}
+                                  </Space>
+                                }
+                                style={{ borderLeft: '4px solid #1890ff' }}
+                              >
+                                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                  {sortedMods.map((mod) => {
+                                    const moduleNumber = getModuleNumber(mod, volId);
+                                    return (
+                                      <Card 
+                                        key={mod.id} 
+                                        size="small" 
+                                        style={{ marginLeft: 16, borderLeft: '3px solid #52c41a' }}
+                                        title={
+                                          <Space>
+                                            <ReadOutlined style={{ color: '#52c41a' }} />
+                                            <span>Learning Module {moduleNumber}: {mod.name}</span>
+                                          </Space>
+                                        }
+                                      >
+                                        <Table
+                                          rowKey="id"
+                                          size="small"
+                                          dataSource={mod.topics || []}
+                                          columns={topicTableColumns}
+                                          scroll={isMobile ? { x: 'max-content' } : undefined}
+                                          pagination={false}
+                                          expandable={expandable}
+                                        />
+                                      </Card>
+                                    );
+                                  })}
+                                </Space>
+                              </Card>
+                            );
+                          })}
                           {standaloneTopics.length > 0 && (
                             <Card size="small" title="Standalone topics">
                               <Table
@@ -652,6 +849,53 @@ export function AdminCourseView() {
                       size="small"
                       dataSource={detail.exams || []}
                       columns={examsColumns}
+                      scroll={isMobile ? { x: 'max-content' } : undefined}
+                      pagination={false}
+                    />
+                  </Space>
+                )
+              },
+              {
+                key: 'questions',
+                label: (
+                  <Space size={6}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#fff1f0', color: '#f5222d', border: '1px solid rgba(0,0,0,0.08)', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.6)', fontSize: 14 }}>
+                      <FileTextOutlined />
+                    </span>
+                    <span>Questions</span>
+                  </Space>
+                ),
+                children: (
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Space align="center">
+                      <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={async () => {
+                          const topicsList = await loadTopicsForCourse();
+                          questionForm.resetFields();
+                          questionForm.setFieldsValue({ 
+                            courseId: id,
+                            type: 'MCQ',
+                            difficulty: 'MEDIUM',
+                            marks: 1,
+                            options: [{ text: '', isCorrect: false }]
+                          });
+                          setQuestionDrawerOpen(true);
+                        }}
+                      >
+                        Add Question
+                      </Button>
+                      <Typography.Text type="secondary">
+                        Showing questions for this course ({questions.length} total)
+                      </Typography.Text>
+                    </Space>
+                    <Table
+                      rowKey="id"
+                      size="small"
+                      loading={questionsLoading}
+                      dataSource={questions}
+                      columns={questionsColumns}
                       scroll={isMobile ? { x: 'max-content' } : undefined}
                       pagination={false}
                     />
@@ -811,7 +1055,8 @@ export function AdminCourseView() {
                   });
                   message.success('Topic updated');
                   await fetchDetail();
-                  setTopicModalOpen(false);
+                  await loadMaterialsFor(selectedTopic.id);
+                  setTopicStep(1);
                 } catch {
                   message.error('Update failed');
                 } finally {
@@ -947,6 +1192,19 @@ export function AdminCourseView() {
           <Form.Item name="name" label="Module Name" rules={[{ required: true, min: 2 }]}>
             <Input placeholder="e.g. Module 1: Ethics" />
           </Form.Item>
+          <Form.Item name="volumeId" label="Volume" rules={[{ required: true, message: 'Select a volume' }]}>
+            <Select
+              placeholder="Select a volume"
+              options={(detail?.volumes || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })).map(v => ({ 
+                value: v.id, 
+                label: v.description ? `${v.name} - ${v.description}` : v.name,
+                title: v.description || v.name
+              }))}
+              showSearch
+              optionFilterProp="label"
+              notFoundContent={detail?.volumes?.length === 0 ? "No volumes linked to this course" : "Loading volumes..."}
+            />
+          </Form.Item>
           <Form.Item name="level" label="Level" hidden>
             <Input />
           </Form.Item>
@@ -964,6 +1222,116 @@ export function AdminCourseView() {
       </Drawer>
 
       {/* Removed separate Manage and Material modals; handled inside topic drawer */}
+
+      {/* Question Builder Drawer for Course View */}
+      <Drawer
+        title="Add Question"
+        open={questionDrawerOpen}
+        onClose={() => {
+          setQuestionDrawerOpen(false);
+          questionForm.resetFields();
+        }}
+        width={720}
+      >
+        <Form layout="vertical" form={questionForm} onFinish={submitQuestion} initialValues={{ type: 'MCQ', difficulty: 'MEDIUM', marks: 1, options: [{ text: '', isCorrect: false }], courseId: id }}>
+          <Form.Item name="courseId" label="Course" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.courseId !== curr.courseId}>
+            {({ getFieldValue }) => {
+              const selectedCourseId = getFieldValue('courseId') || id;
+              return (
+                <Form.Item name="topicId" label="Topic" rules={[{ required: true }]}>
+                  <Select
+                    placeholder="Select topic"
+                    showSearch
+                    optionFilterProp="label"
+                    loading={questionsLoading}
+                    options={(() => {
+                      const courseTopics = (detail?.topics || []).filter(t => !selectedCourseId || t.courseId === selectedCourseId);
+                      return courseTopics.map(t => ({ value: t.id, label: t.name }));
+                    })()}
+                  />
+                </Form.Item>
+              );
+            }}
+          </Form.Item>
+          <Form.Item name="stem" label="Question Text" rules={[{ required: true, min: 5 }]}>
+            <Input.TextArea rows={3} placeholder="Enter question stem..." />
+          </Form.Item>
+          <Space size="large" wrap>
+            <Form.Item name="type" label="Type" rules={[{ required: true }]}>
+              <Select style={{ minWidth: 180 }} options={[
+                { value: 'MCQ', label: 'MCQ' },
+                { value: 'VIGNETTE_MCQ', label: 'Vignette MCQ' },
+                { value: 'CONSTRUCTED_RESPONSE', label: 'Constructed Response' }
+              ]} />
+            </Form.Item>
+            <Form.Item name="difficulty" label="Difficulty" rules={[{ required: true }]}>
+              <Select style={{ minWidth: 160 }} options={[
+                { value: 'EASY', label: 'Easy' },
+                { value: 'MEDIUM', label: 'Medium' },
+                { value: 'HARD', label: 'Hard' }
+              ]} />
+            </Form.Item>
+            <Form.Item name="marks" label="Marks" rules={[{ required: true }]}>
+              <Input type="number" min={1} style={{ width: 120 }} />
+            </Form.Item>
+          </Space>
+          <Form.Item noStyle shouldUpdate>
+            {({ getFieldValue }) => {
+              const type = getFieldValue('type');
+              if (type === 'VIGNETTE_MCQ') {
+                return (
+                  <Form.Item name="vignetteText" label="Vignette Text">
+                    <Input.TextArea rows={4} placeholder="Enter vignette passage..." />
+                  </Form.Item>
+                );
+              }
+              return null;
+            }}
+          </Form.Item>
+          <Form.List name="options">
+            {(fields, { add, remove }) => (
+              <>
+                <Form.Item noStyle shouldUpdate>
+                  {({ getFieldValue }) => {
+                    const type = getFieldValue('type');
+                    if (type === 'CONSTRUCTED_RESPONSE') return null;
+                    return (
+                      <Space direction="vertical" style={{ width: '100%' }}>
+                        <Typography.Text strong>Options</Typography.Text>
+                        {fields.map(field => (
+                          <Space key={field.key} align="baseline" style={{ display: 'flex', width: '100%' }}>
+                            <Form.Item {...field} name={[field.name, 'text']} rules={[{ required: true }]} style={{ flex: 1 }}>
+                              <Input placeholder="Option text" />
+                            </Form.Item>
+                            <Form.Item {...field} name={[field.name, 'isCorrect']}>
+                              <Select
+                                style={{ width: 140 }}
+                                options={[{ value: true, label: 'Correct' }, { value: false, label: 'Incorrect' }]}
+                              />
+                            </Form.Item>
+                            <Button onClick={() => remove(field.name)}>Remove</Button>
+                          </Space>
+                        ))}
+                        <Button onClick={() => add({ text: '', isCorrect: false })}>Add Option</Button>
+                      </Space>
+                    );
+                  }}
+                </Form.Item>
+              </>
+            )}
+          </Form.List>
+          <Space style={{ marginTop: 12, width: '100%', justifyContent: 'flex-end' }}>
+            <Button onClick={() => {
+              setQuestionDrawerOpen(false);
+              questionForm.resetFields();
+            }}>Cancel</Button>
+            <Button type="primary" loading={submittingQuestion} htmlType="submit">Create Question</Button>
+          </Space>
+        </Form>
+      </Drawer>
 
       {/* Preview Drawer */}
       <Drawer

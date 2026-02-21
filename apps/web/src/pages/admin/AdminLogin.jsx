@@ -16,6 +16,7 @@ export function AdminLoginPage() {
     try {
       setLoading(true);
       const res = await axios.post(`${API_URL}/api/auth/login`, values);
+      console.log(res);
       if (res.data?.user?.role !== 'ADMIN') {
         message.error('Admin access required');
         return;

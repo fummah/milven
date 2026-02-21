@@ -62,16 +62,43 @@ enum QuestionType {
   CONSTRUCTED_RESPONSE
 }
 
+model Volume {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  courseLinks CourseVolume[]
+  modules    Module[]
+}
+
+model CourseVolume {
+  courseId  String
+  volumeId  String
+  order     Int?
+  createdAt DateTime @default(now())
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  volume    Volume   @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+
+  @@id([courseId, volumeId])
+  @@index([courseId, order])
+  @@index([volumeId])
+}
+
 model Module {
   id        String   @id @default(cuid())
   name      String
   level     CfaLevel
-  courseId  String?
-  course    Course?  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  volumeId  String
+  volume    Volume   @relation(fields: [volumeId], references: [id], onDelete: Cascade)
   order     Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   topics    Topic[]
+  @@index([volumeId, order])
+  @@index([courseId, order])
 }
 
 model Topic {
@@ -82,8 +109,8 @@ model Topic {
   course       Course?   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   order        Int?
   moduleNumber Int?      // deprecated: use moduleId; kept for migration/display
-  moduleId     String?
-  module       Module?   @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  moduleId     String
+  module       Module    @relation(fields: [moduleId], references: [id], onDelete: Restrict)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   // Relations
@@ -91,6 +118,7 @@ model Topic {
   videos    Video[]
   revisionSummaries RevisionSummary[]
   materials LearningMaterial[]
+  @@index([moduleId, order])
 }
 
 model Vignette {
@@ -109,12 +137,21 @@ model Question {
   difficulty Difficulty
   topicId    String
   topic      Topic        @relation(fields: [topicId], references: [id])
+  // Denormalized path fields for filtering and bulk import; derived from topic.module.volume.course
+  courseId   String?
+  volumeId   String?
+  moduleId   String?
+  marks      Int          @default(1)
   vignetteId String?
   vignette   Vignette?    @relation(fields: [vignetteId], references: [id])
+  imageUrl   String?
   createdAt  DateTime     @default(now())
   options    McqOption[]
   answers    ExamAnswer[]
   usedInExams ExamQuestion[]
+  @@index([topicId, difficulty])
+  @@index([courseId, difficulty])
+  @@index([moduleId, difficulty])
 }
 
 model McqOption {
@@ -265,6 +302,7 @@ model Course {
   updatedAt      DateTime  @updatedAt
   enrollments    Enrollment[]
   courseProducts CourseProduct[]
+  volumes        CourseVolume[]
   modules        Module[]
   topics         Topic[]
 }

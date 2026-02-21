@@ -12,7 +12,8 @@ import {
   SettingOutlined,
   ScheduleOutlined,
   SolutionOutlined,
-  ProfileOutlined
+  ProfileOutlined,
+  FolderOutlined
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
@@ -55,7 +56,9 @@ const menuItems = [
     label: 'Courses',
     children: [
       { key: 'courses-list', icon: badge(<BookOutlined />, '#722ed1', '#f9f0ff'), label: <Link to="/admin/courses">Courses</Link> },
+      { key: 'volumes', icon: badge(<FolderOutlined />, '#2f54eb', '#f0f5ff'), label: <Link to="/admin/volumes">Volumes</Link> },
       { key: 'topics', icon: badge(<FileTextOutlined />, '#722ed1', '#f9f0ff'), label: <Link to="/admin/topics">Modules & Topics</Link> },
+      { key: 'questions', icon: badge(<FileTextOutlined />, '#2f54eb', '#f0f5ff'), label: <Link to="/admin/questions">Questions</Link> },
       { key: 'materials', icon: badge(<FileTextOutlined />, '#13c2c2', '#e6fffb'), label: <Link to="/admin/materials">Learning Materials</Link> },
       { key: 'levels', icon: badge(<ProfileOutlined />, '#2f54eb', '#f0f5ff'), label: <Link to="/admin/levels">Levels</Link> }
     ]
@@ -95,7 +98,7 @@ const menuItems = [
 // Parent key for each submenu item so we keep the parent open when a child is selected
 const childToParentKey = {
   'users-list': 'users', students: 'users', roles: 'users',
-  'courses-list': 'courses', topics: 'courses', materials: 'courses', levels: 'courses',
+  'courses-list': 'courses', volumes: 'courses', topics: 'courses', questions: 'courses', materials: 'courses', levels: 'courses',
   'exams-list': 'exams', 'exam-builder': 'exams',
   'reports-overview': 'reports',
   products: 'billing', purchases: 'billing', invoices: 'billing', subscriptions: 'billing', taxes: 'billing'
@@ -128,7 +131,9 @@ export default function AdminLayout() {
       'roles',
       'levels',
       'courses-list',
+      'volumes',
       'topics',
+      'questions',
       'materials',
       'exams',
       'exams-list',
