@@ -36,6 +36,7 @@ const tips = [
 
 const resources = [
 	{ label: 'LinkedIn', icon: <LinkedinOutlined />, href: 'https://linkedin.com', color: '#0a66c2' },
+	{ label: 'CFA Institute Career Insights', icon: <RiseOutlined />, href: 'https://www.cfainstitute.org/en/community/career', color: '#102540' },
 	{ label: 'Job boards', icon: <MailOutlined />, href: '#', color: '#102540' }
 ];
 
@@ -64,7 +65,7 @@ export function Careers() {
 						Careers & Jobs
 					</Typography.Title>
 					<Typography.Paragraph style={{ color: 'rgba(255,255,255,0.9)', fontSize: 18, marginBottom: 0 }}>
-						Resources and tips to help you land your next role. Use your certifications to stand out.
+						Resources and tips to advance in investment management. CFA® charterholders are highly valued by employers globally.
 					</Typography.Paragraph>
 				</motion.div>
 			</section>
@@ -153,7 +154,7 @@ export function Careers() {
 								Ready to apply?
 							</Typography.Title>
 							<Typography.Text type="secondary">
-								Complete your courses and claim your certificates to strengthen your profile.
+								Complete your CFA® prep courses and practice exams to strengthen your profile for roles in investment management.
 							</Typography.Text>
 						</div>
 					</div>

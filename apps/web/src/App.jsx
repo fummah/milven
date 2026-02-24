@@ -55,6 +55,7 @@ import { Home } from './pages/Home.jsx';
 import { CoursesPage } from './pages/Courses.jsx';
 import { Careers } from './pages/Careers.jsx';
 import { CourseDetail } from './pages/CourseDetail.jsx';
+import { AboutCfa } from './pages/AboutCfa.jsx';
 import { useSettings } from './contexts/SettingsContext.jsx';
 import { api } from './lib/api.js';
 
@@ -62,7 +63,9 @@ const { Header, Content, Footer } = Layout;
 const { useBreakpoint } = Grid;
 
 // Scroll state lives here so only the header re-renders on scroll, not the whole App (prevents content/form reset when scrolling to top)
-function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent, jobsMenu, accountMenuItems, screens, user, courseInProgress, location, navigate, cfaCourses }) {
+const TOP_BAR_HEIGHT = 32;
+
+function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent, jobsMenu, accountMenuItems, screens, user, courseInProgress, location, navigate, cfaCourses, hasTopBar }) {
 	const [scrolled, setScrolled] = useState(false);
 	const [mobileAppModalOpen, setMobileAppModalOpen] = useState(false);
 	const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -80,9 +83,12 @@ function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent,
 		return () => window.removeEventListener('scroll', onScroll);
 	}, []);
 	const HEADER_HEIGHT = 64;
+	const headerTop = hasTopBar ? TOP_BAR_HEIGHT : 0;
+	const spacerHeight = HEADER_HEIGHT + headerTop;
 	const mobileMenuItems = [
 		{ key: 'home', label: <Link to="/">Home</Link> },
 		{ key: 'courses', label: <Link to="/courses">Courses</Link> },
+		{ key: 'about-cfa', label: <Link to="/about-cfa">About CFA</Link> },
 		{ key: 'faq', label: <Link to="/faq">FAQ</Link> },
 		{ key: 'careers', label: <Link to="/careers">Careers</Link> },
 		...(user ? [{ key: 'my-home', label: <Link to={user.role === 'ADMIN' ? '/admin' : '/student'}>My Home</Link> }] : []),
@@ -95,7 +101,7 @@ function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent,
 				display: 'flex',
 				alignItems: 'center',
 				position: 'fixed',
-				top: 0,
+				top: headerTop,
 				left: 0,
 				right: 0,
 				zIndex: 1000,
@@ -294,7 +300,7 @@ function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent,
 				)}
 			</div>
 		</Header>
-		<div style={{ height: HEADER_HEIGHT, flexShrink: 0 }} aria-hidden />
+		<div style={{ height: spacerHeight, flexShrink: 0 }} aria-hidden />
 		</>
 	);
 }
@@ -464,7 +470,9 @@ export default function App() {
 	const exploreMenu = {
 		items: [
 			{ key: 'courses', label: <Link to="/courses">Courses</Link> },
-			{ key: 'faq', label: <Link to="/faq">FAQ</Link> }
+			{ key: 'about-cfa', label: <Link to="/about-cfa">About CFA</Link> },
+			{ key: 'faq', label: <Link to="/faq">FAQ</Link> },
+			{ key: 'careers', label: <Link to="/careers">Careers</Link> }
 		]
 	};
 
@@ -473,7 +481,9 @@ export default function App() {
 			<Typography.Text strong style={{ color: '#102540' }}>Explore</Typography.Text>
 			<div style={{ marginTop: 8 }}>
 				<Link to="/courses" style={{ display: 'block', padding: '6px 0', color: '#102540' }}>Courses</Link>
+				<Link to="/about-cfa" style={{ display: 'block', padding: '6px 0', color: '#102540' }}>About CFA Program</Link>
 				<Link to="/faq" style={{ display: 'block', padding: '6px 0', color: '#102540' }}>FAQ</Link>
+				<Link to="/careers" style={{ display: 'block', padding: '6px 0', color: '#102540' }}>Careers</Link>
 			</div>
 		</Card>
 	);
@@ -619,8 +629,66 @@ export default function App() {
 		}
 		return children;
 	}
+	const isPublicPage = !location.pathname.startsWith('/admin') && !location.pathname.startsWith('/student');
+
 	return (
 		<Layout style={{ minHeight: '100vh' }} className="bg-gray-50">
+			{isPublicPage && (
+				<div
+					style={{
+						position: 'fixed',
+						top: 0,
+						left: 0,
+						right: 0,
+						height: TOP_BAR_HEIGHT,
+						background: '#0b2a3a',
+						zIndex: 1001,
+						display: 'flex',
+						alignItems: 'center',
+						overflow: 'hidden'
+					}}
+				>
+					<style>{`
+						@keyframes cfa-marquee {
+							0% { transform: translateX(0); }
+							100% { transform: translateX(-50%); }
+						}
+						.cfa-marquee-track {
+							animation: cfa-marquee 25s linear infinite;
+							display: flex;
+							width: max-content;
+							gap: 4em;
+						}
+						.cfa-marquee-track span { white-space: nowrap; }
+					`}</style>
+					<div className="cfa-marquee-track">
+						<Typography.Text
+							component="span"
+							style={{
+								color: 'rgba(255,255,255,0.95)',
+								fontSize: 13,
+								fontWeight: 600,
+								letterSpacing: '0.04em',
+								textTransform: 'uppercase'
+							}}
+						>
+							Prepare for the CFA® Program — Study. Practice. Pass.
+						</Typography.Text>
+						<Typography.Text
+							component="span"
+							style={{
+								color: 'rgba(255,255,255,0.95)',
+								fontSize: 13,
+								fontWeight: 600,
+								letterSpacing: '0.04em',
+								textTransform: 'uppercase'
+							}}
+						>
+							Prepare for the CFA® Program — Study. Practice. Pass.
+						</Typography.Text>
+					</div>
+				</div>
+			)}
 			<PublicHeader
 				logoUrl={logoUrl}
 				brandName={brandName}
@@ -634,6 +702,7 @@ export default function App() {
 				location={location}
 				navigate={navigate}
 				cfaCourses={cfaCourses}
+				hasTopBar={isPublicPage}
 			/>
 			{/* CTA strip below header (only on homepage and when logged out) */}
 			{!isLoggedIn && location.pathname === '/' && (
@@ -695,6 +764,7 @@ export default function App() {
 					<Route path="/course/:courseId" element={<CourseDetail />} />
 					<Route path="/videos" element={<Videos />} />
 					<Route path="/careers" element={<Careers />} />
+					<Route path="/about-cfa" element={<AboutCfa />} />
 					<Route path="/faq" element={<Faq />} />
 					<Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
 					<Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
@@ -761,44 +831,39 @@ export default function App() {
 					<div className="max-w-screen-xl mx-auto px-4 py-12">
 						<Row gutter={[24, 24]}>
 							<Col xs={24} sm={12} lg={6}>
-								<Typography.Title level={5} style={{ color: 'white', marginBottom: 12 }}>CERTIFIED COURSES</Typography.Title>
+								<Typography.Title level={5} style={{ color: 'white', marginBottom: 12 }}>PROGRAMS</Typography.Title>
 								<div className="h-px bg-white/10 mb-4" />
 								<ul className="space-y-2 text-gray-200">
-									<li><a className="hover:text-white" href="#">Business</a></li>
-										<li><a className="hover:text-white" href="#">Teaching & Academics</a></li>
+									<li><Link to="/courses" className="hover:text-white text-gray-200">CFA Courses</Link></li>
+									<li><Link to="/about-cfa" className="hover:text-white text-gray-200">About the CFA® Program</Link></li>
 								</ul>
 							</Col>
 							<Col xs={24} sm={12} lg={6}>
-								<Typography.Title level={5} style={{ color: 'white', marginBottom: 12 }}>ABOUT</Typography.Title>
+								<Typography.Title level={5} style={{ color: 'white', marginBottom: 12 }}>RESOURCES</Typography.Title>
 								<div className="h-px bg-white/10 mb-4" />
 								<ul className="space-y-2 text-gray-200">
-									<li><a className="hover:text-white" href="#">Our Story</a></li>
-									<li><a className="hover:text-white" href="#">Our Team & Culture</a></li>
-									<li><a className="hover:text-white" href="#">Learning on Milven</a></li>
-									</ul>
-							</Col>
-							<Col xs={24} sm={12} lg={6}>
-								<Typography.Title level={5} style={{ color: 'white', marginBottom: 12 }}>QUALITY LEARNING</Typography.Title>
-								<div className="h-px bg-white/10 mb-4" />
-								<ul className="space-y-2 text-gray-200">
-									<li><a className="hover:text-white" href="#">Accreditation</a></li>
-									<li><a className="hover:text-white" href="#">All Certificates</a></li>
-									<li><a className="hover:text-white" href="#">Free Courses</a></li>
+									<li><Link to="/faq" className="hover:text-white text-gray-200">FAQ</Link></li>
+									<li><Link to="/careers" className="hover:text-white text-gray-200">Careers</Link></li>
 								</ul>
 							</Col>
 							<Col xs={24} sm={12} lg={6}>
-								<Typography.Title level={5} style={{ color: 'white', marginBottom: 12 }}>DISCOVER MORE</Typography.Title>
+								<Typography.Title level={5} style={{ color: 'white', marginBottom: 12 }}>CFA INSTITUTE</Typography.Title>
 								<div className="h-px bg-white/10 mb-4" />
 								<ul className="space-y-2 text-gray-200">
-										<li><a className="hover:text-white" href="#">Contact Us</a></li>
-										<li><a className="hover:text-white" href="#">About Us</a></li>
-									<li><a className="hover:text-white" href="#">Download App</a></li>
-								
+									<li><a className="hover:text-white text-gray-200" href="https://www.cfainstitute.org/" target="_blank" rel="noopener noreferrer">Official website</a></li>
+									<li><a className="hover:text-white text-gray-200" href="https://www.cfainstitute.org/en/programs/cfa" target="_blank" rel="noopener noreferrer">CFA Program</a></li>
+								</ul>
+							</Col>
+							<Col xs={24} sm={12} lg={6}>
+								<Typography.Title level={5} style={{ color: 'white', marginBottom: 12 }}>CONNECT</Typography.Title>
+								<div className="h-px bg-white/10 mb-4" />
+								<ul className="space-y-2 text-gray-200">
+									<li><a className="hover:text-white text-gray-200" href="#">Contact Us</a></li>
 									<li className="flex gap-3 mt-2">
 										<a href="#" aria-label="Facebook" className="text-white/70 hover:text-white"><FacebookFilled /></a>
 										<a href="#" aria-label="Twitter" className="text-white/70 hover:text-white"><TwitterSquareFilled /></a>
 										<a href="#" aria-label="LinkedIn" className="text-white/70 hover:text-white"><LinkedinFilled /></a>
-										</li>
+									</li>
 								</ul>
 							</Col>
 						</Row>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Avatar, Button, Card, Col, Input, Row, Tag, Typography, Badge, message } from 'antd';
+import { Avatar, Button, Card, Col, Input, Row, Space, Tag, Typography, Badge, message } from 'antd';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -20,7 +20,15 @@ import {
 	StarTwoTone,
 	LikeOutlined,
 	ClockCircleOutlined,
-	UsergroupAddOutlined
+	UsergroupAddOutlined,
+	TrophyOutlined,
+	SafetyCertificateOutlined,
+	RiseOutlined,
+	BookFilled,
+	CheckCircleOutlined,
+	FileTextOutlined,
+	ExperimentOutlined,
+	QuestionCircleOutlined
 } from '@ant-design/icons';
 
 const categories = [
@@ -169,15 +177,15 @@ export function Home() {
 						animate={{ y: 0, opacity: 1 }}
 						transition={{ duration: 0.6 }}
 					>
-						Courses to Power Your CFA Journey
+						Prepare for the CFA® Program
 					</motion.h1>
 					<motion.p
-						className="mt-4 text-lg md:text-xl text-gray-600"
+						className="mt-4 text-lg md:text-xl text-gray-600 max-w-2xl mx-auto"
 						initial={{ y: 20, opacity: 0 }}
 						animate={{ y: 0, opacity: 1 }}
 						transition={{ delay: 0.1, duration: 0.6 }}
 					>
-						Learn exam topics, practice with MCQs and vignettes, and track your progress — all in one place.
+						Master the curriculum for Levels I, II & III. Study topics, practice with MCQs and vignettes, and track your progress — all in one place.
 					</motion.p>
 					<motion.div
 						className="mt-8 w-full flex justify-center"
@@ -238,16 +246,61 @@ export function Home() {
 				<div className="pointer-events-none absolute right-1/3 -bottom-24 h-64 w-64 rounded-full bg-fuchsia-300/20 blur-3xl" />
 			</section>
 
-			{/* Trust + Stats band (restored) */}
+			{/* Why the CFA Program */}
+			<section className="max-w-6xl mx-auto px-4">
+				<Typography.Title level={2} style={{ textAlign: 'center', marginBottom: 32, color: '#102540' }}>
+					Why the CFA® Program?
+				</Typography.Title>
+				<Row gutter={[20, 20]}>
+					{[
+						{ icon: <GlobalOutlined />, title: 'Global recognition', desc: 'The CFA charter is the most respected credential in investment management worldwide, recognized by employers in over 190+ markets.' },
+						{ icon: <SafetyCertificateOutlined />, title: 'Ethics & standards', desc: 'The program emphasizes the Code of Ethics and Standards of Professional Conduct, building trust and integrity in the industry.' },
+						{ icon: <RiseOutlined />, title: 'Career advancement', desc: 'Charterholders often see stronger hiring preference and compensation. Stand out in portfolio management, research, and advisory roles.' },
+						{ icon: <BookFilled />, title: 'Rigorous curriculum', desc: 'Three levels cover ethical standards, quantitative methods, economics, financial reporting, equity, fixed income, derivatives, and more.' }
+					].map((item, idx) => (
+						<Col xs={24} sm={12} lg={6} key={idx}>
+							<motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ delay: idx * 0.06, duration: 0.4 }}>
+								<Card bordered={false} className="h-full shadow-sm hover:shadow-md transition-shadow" style={{ borderRadius: 16 }} styles={{ body: { padding: 24 } }}>
+									<div className="inline-flex items-center justify-center w-12 h-12 rounded-xl mb-4 text-white" style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)' }}>
+										<span style={{ fontSize: 22 }}>{item.icon}</span>
+									</div>
+									<Typography.Title level={5} style={{ marginBottom: 8, color: '#102540' }}>{item.title}</Typography.Title>
+									<Typography.Text type="secondary" style={{ fontSize: 14, lineHeight: 1.6 }}>{item.desc}</Typography.Text>
+								</Card>
+							</motion.div>
+						</Col>
+					))}
+				</Row>
+			</section>
+
+			{/* CFA at a glance */}
+			<section className="max-w-4xl mx-auto px-4 mt-16">
+				<Card bordered={false} className="shadow-md" style={{ borderRadius: 20, background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' }} styles={{ body: { padding: 32 } }}>
+					<Typography.Title level={4} style={{ textAlign: 'center', marginBottom: 20, color: '#102540' }}>
+						CFA® Program at a glance
+					</Typography.Title>
+					<Row gutter={[24, 16]}>
+						<Col xs={24} sm={12}><Space><CheckCircleOutlined style={{ color: '#16a34a' }} /><span>Three levels: Level I, II, and III</span></Space></Col>
+						<Col xs={24} sm={12}><Space><CheckCircleOutlined style={{ color: '#16a34a' }} /><span>Computer-based exams; Level I offered year-round</span></Space></Col>
+						<Col xs={24} sm={12}><Space><CheckCircleOutlined style={{ color: '#16a34a' }} /><span>Ethics, quant, economics, FRA, equity, fixed income, derivatives, alternatives</span></Space></Col>
+						<Col xs={24} sm={12}><Space><CheckCircleOutlined style={{ color: '#16a34a' }} /><span>~300 hours study per level (recommended)</span></Space></Col>
+					</Row>
+					<div className="text-center mt-6">
+						<Typography.Link href="https://www.cfainstitute.org/en/programs/cfa" target="_blank" rel="noopener noreferrer" style={{ fontSize: 14 }}>
+							Official program details at CFA Institute →
+						</Typography.Link>
+					</div>
+				</Card>
+			</section>
+
+			{/* Trust + Stats band */}
 			<section className="w-full !mt-0 !mb-0">
 				<div className="mt-2 bg-[#0b2a3a] text-white">
 					<div className="px-6 md:px-10 py-5">
 						<div className="flex flex-wrap items-center justify-center gap-4 md:gap-10 text-center">
 							<div className="flex items-center gap-3">
-								<span className="text-gray-200">Rated</span>
-								<span className="font-semibold">Excellent</span>
-								<span className="ml-1 text-[#00b67a]">★★★★★</span>
-								<span className="text-gray-300">on Trustpilot</span>
+								<span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/10"><TrophyOutlined /></span>
+								<span className="text-gray-100">CFA® Levels <span className="font-semibold">I, II & III</span></span>
 							</div>
 							<div className="hidden md:block w-px h-6 bg-white/20" />
 							<div className="flex items-center gap-3">
@@ -261,18 +314,19 @@ export function Home() {
 							</div>
 							<div className="hidden md:block w-px h-6 bg-white/20" />
 							<div className="flex items-center gap-3">
-								<span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/10">🌍</span>
-								<span className="text-gray-100"><span className="font-semibold">5</span> Countries</span>
+								<span className="text-gray-200">Rated</span>
+								<span className="font-semibold">Excellent</span>
+								<span className="ml-1 text-[#00b67a]">★★★★★</span>
 							</div>
 						</div>
 					</div>
 				</div>
 			</section>
 
-			{/* Categories grid (Alison-style) */}
+			{/* CFA Level courses grid */}
 			<section className="rounded-b-3xl rounded-t-none text-white p-6 md:p-10 !mt-0" style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 25%, #2563eb 50%, #6366f1 75%, #8b5cf6 100%)' }}>
 				<Typography.Title level={2} style={{ color: 'white', textAlign: 'center', marginBottom: 24 }}>
-					Many Online Courses
+					CFA Level Courses
 				</Typography.Title>
 				<Row gutter={[16, 16]}>
 					{[
@@ -399,6 +453,46 @@ export function Home() {
 						<Typography.Text>No courses available yet.</Typography.Text>
 					</div>
 				)}
+			</section>
+
+			{/* How we help you prepare */}
+			<section className="max-w-6xl mx-auto px-4">
+				<Typography.Title level={2} style={{ textAlign: 'center', marginBottom: 32, color: '#102540' }}>
+					How we help you prepare
+				</Typography.Title>
+				<Row gutter={[24, 24]}>
+					{[
+						{ icon: <ReadOutlined />, title: 'Structured curriculum', desc: 'Topics and modules aligned to the CFA curriculum. Study at your own pace with volumes and learning materials.' },
+						{ icon: <FileTextOutlined />, title: 'Practice exams & MCQs', desc: 'Mock exams and vignette-style questions to build exam readiness and time management.' },
+						{ icon: <ExperimentOutlined />, title: 'Track progress', desc: 'See what you’ve covered and where to focus. Stay on track for your exam date.' }
+					].map((item, idx) => (
+						<Col xs={24} md={8} key={idx}>
+							<motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ delay: idx * 0.08, duration: 0.4 }}>
+								<Card bordered={false} className="h-full shadow-sm hover:shadow-md transition-shadow" style={{ borderRadius: 16 }} styles={{ body: { padding: 28 } }}>
+									<div className="inline-flex items-center justify-center w-14 h-14 rounded-xl mb-4 text-white" style={{ background: 'linear-gradient(135deg, #2563eb 0%, #6366f1 100%)' }}>
+										<span style={{ fontSize: 24 }}>{item.icon}</span>
+									</div>
+									<Typography.Title level={5} style={{ marginBottom: 10, color: '#102540' }}>{item.title}</Typography.Title>
+									<Typography.Text type="secondary" style={{ fontSize: 15, lineHeight: 1.65 }}>{item.desc}</Typography.Text>
+								</Card>
+							</motion.div>
+						</Col>
+					))}
+				</Row>
+			</section>
+
+			{/* Resources */}
+			<section className="max-w-4xl mx-auto px-4">
+				<Typography.Title level={3} style={{ textAlign: 'center', marginBottom: 24, color: '#102540' }}>
+					Resources
+				</Typography.Title>
+				<Row gutter={[16, 16]} justify="center">
+					<Col><Button type="outline" size="large" onClick={() => navigate('/courses')} icon={<BookOutlined />} style={{ borderRadius: 8 }}>Browse courses</Button></Col>
+					<Col><Button type="outline" size="large" onClick={() => navigate('/about-cfa')} icon={<TrophyOutlined />} style={{ borderRadius: 8 }}>About CFA</Button></Col>
+					<Col><Button type="outline" size="large" onClick={() => navigate('/faq')} icon={<QuestionCircleOutlined />} style={{ borderRadius: 8 }}>FAQ</Button></Col>
+					<Col><Button type="outline" size="large" onClick={() => navigate('/careers')} icon={<RiseOutlined />} style={{ borderRadius: 8 }}>Careers</Button></Col>
+					<Col><Button type="outline" size="large" onClick={() => window.open('https://www.cfainstitute.org/', '_blank')} icon={<GlobalOutlined />} style={{ borderRadius: 8 }}>CFA Institute</Button></Col>
+				</Row>
 			</section>
 
 			{/* App CTA */}

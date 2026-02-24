@@ -39,7 +39,7 @@ export function Faq() {
 						Frequently Asked Questions
 					</Typography.Title>
 					<Typography.Paragraph style={{ color: 'rgba(255,255,255,0.9)', fontSize: 17, marginBottom: 0 }}>
-						Find answers to common questions about courses, certificates, and support.
+						Find answers about our CFA® prep courses, study materials, practice exams, and support.
 					</Typography.Paragraph>
 				</motion.div>
 			</section>
