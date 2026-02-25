@@ -1,8 +1,26 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Form, Input, Button, Select, message, Table, Drawer, Space, Popconfirm, Tag, Tabs, Modal, Upload, Steps, Layout, List, Divider, Radio, Descriptions, Typography, Grid } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, UploadOutlined, FolderOutlined, SearchOutlined, EyeOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
+
+// Natural sort comparison - handles "Volume 1", "Volume 10" correctly
+function naturalCompare(a, b) {
+  const ax = [], bx = [];
+  (a || '').replace(/(\d+)|(\D+)/g, (_, $1, $2) => { ax.push([$1 || Infinity, $2 || '']); });
+  (b || '').replace(/(\d+)|(\D+)/g, (_, $1, $2) => { bx.push([$1 || Infinity, $2 || '']); });
+  while (ax.length && bx.length) {
+    const an = ax.shift();
+    const bn = bx.shift();
+    const nn = (parseInt(an[0], 10) || 0) - (parseInt(bn[0], 10) || 0) || an[1].localeCompare(bn[1]);
+    if (nn) return nn;
+  }
+  return ax.length - bx.length;
+}
+
+function sortByNaturalName(arr) {
+  return arr.slice().sort((a, b) => naturalCompare(a.name, b.name));
+}
 
 const LEVEL_OPTIONS = [
   { label: 'None', value: 'NONE' },
@@ -82,7 +100,7 @@ export function AdminTopics() {
 
       try {
         const volRes = await api.get('/api/cms/volumes', { params: filterCourseId ? { courseId: filterCourseId } : {} });
-        const volList = (volRes.data.volumes ?? []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+        const volList = sortByNaturalName(volRes.data.volumes ?? []);
         setVolumes(volList);
       } catch {
         setVolumes([]);
@@ -364,7 +382,55 @@ export function AdminTopics() {
     }
   ];
 
-  const moduleOptions = modules.map(m => ({ value: m.id, label: `${m.name} (${m.level})` }));
+  // Group modules by volume and sort by volume name (natural), then by module order
+  const moduleOptions = useMemo(() => {
+    const grouped = {};
+    const noVolume = [];
+    
+    modules.forEach(m => {
+      if (m.volumeId && m.volume) {
+        if (!grouped[m.volumeId]) {
+          grouped[m.volumeId] = { volume: m.volume, modules: [] };
+        }
+        grouped[m.volumeId].modules.push(m);
+      } else {
+        noVolume.push(m);
+      }
+    });
+
+    // Sort volumes naturally
+    const sortedVolumeIds = Object.keys(grouped).sort((a, b) => 
+      naturalCompare(grouped[a].volume?.name || '', grouped[b].volume?.name || '')
+    );
+
+    const options = [];
+    sortedVolumeIds.forEach(volId => {
+      const { volume, modules: volModules } = grouped[volId];
+      // Sort modules by order within each volume
+      const sortedModules = volModules.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+      options.push({
+        label: volume?.name || 'Unknown Volume',
+        options: sortedModules.map(m => ({ 
+          value: m.id, 
+          label: m.order != null ? `${m.order}. ${m.name}` : m.name 
+        }))
+      });
+    });
+
+    // Add modules without volume at the end
+    if (noVolume.length > 0) {
+      const sortedNoVolume = noVolume.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+      options.push({
+        label: 'No Volume',
+        options: sortedNoVolume.map(m => ({ 
+          value: m.id, 
+          label: m.order != null ? `${m.order}. ${m.name} (${m.level})` : `${m.name} (${m.level})` 
+        }))
+      });
+    }
+
+    return options;
+  }, [modules]);
 
   return (
     <Card
@@ -526,20 +592,63 @@ export function AdminTopics() {
                 <Select
                   value={filterModuleId || undefined}
                   onChange={(v) => setFilterModuleId(v ?? '')}
-                  options={[
-                    { label: 'All modules', value: '' },
-                    ...modules
-                      .filter(m => {
-                        if (!filterCourseId) return true;
-                        if (m.courseId) return m.courseId === filterCourseId;
-                        const lvl = courses.find(c => c.id === filterCourseId)?.level;
-                        return lvl ? m.level === lvl : true;
-                      })
-                      .map(m => ({ value: m.id, label: `${m.name} (${m.level})` }))
-                  ]}
+                  options={(() => {
+                    // Filter modules by course
+                    const filteredMods = modules.filter(m => {
+                      if (!filterCourseId) return true;
+                      if (m.courseId) return m.courseId === filterCourseId;
+                      const lvl = courses.find(c => c.id === filterCourseId)?.level;
+                      return lvl ? m.level === lvl : true;
+                    });
+                    
+                    // Group by volume
+                    const grouped = {};
+                    const noVol = [];
+                    filteredMods.forEach(m => {
+                      if (m.volumeId && m.volume) {
+                        if (!grouped[m.volumeId]) grouped[m.volumeId] = { volume: m.volume, modules: [] };
+                        grouped[m.volumeId].modules.push(m);
+                      } else {
+                        noVol.push(m);
+                      }
+                    });
+                    
+                    // Sort volumes naturally
+                    const sortedVolIds = Object.keys(grouped).sort((a, b) => 
+                      naturalCompare(grouped[a].volume?.name || '', grouped[b].volume?.name || '')
+                    );
+                    
+                    const opts = [{ label: 'All modules', value: '' }];
+                    sortedVolIds.forEach(volId => {
+                      const { volume, modules: volMods } = grouped[volId];
+                      const sortedMods = volMods.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+                      opts.push({
+                        label: volume?.name || 'Unknown Volume',
+                        options: sortedMods.map(m => ({ 
+                          value: m.id, 
+                          label: m.order != null ? `${m.order}. ${m.name}` : m.name 
+                        }))
+                      });
+                    });
+                    
+                    if (noVol.length > 0) {
+                      const sortedNoVol = noVol.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+                      opts.push({
+                        label: 'No Volume',
+                        options: sortedNoVol.map(m => ({ 
+                          value: m.id, 
+                          label: m.order != null ? `${m.order}. ${m.name} (${m.level})` : `${m.name} (${m.level})` 
+                        }))
+                      });
+                    }
+                    
+                    return opts;
+                  })()}
                   style={{ minWidth: 200 }}
                   allowClear
                   placeholder="All modules"
+                  showSearch
+                  optionFilterProp="label"
                 />
                 <Input
                   prefix={<SearchOutlined />}
@@ -581,7 +690,7 @@ export function AdminTopics() {
 															moduleForm.setFieldsValue({ volumeId: undefined });
 															try {
 																const volRes = await api.get('/api/cms/volumes', { params: v ? { courseId: v } : {} });
-																const volList = (volRes.data.volumes ?? []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+																const volList = sortByNaturalName(volRes.data.volumes ?? []);
 																setVolumes(volList);
 															} catch {
 																setVolumes([]);
@@ -637,16 +746,62 @@ export function AdminTopics() {
                   {({ getFieldValue }) => {
                     const courseId = getFieldValue('courseId');
                     const course = courses.find(c => c.id === courseId);
-                    const moduleOpts = courseId
-                      ? modules
-                        .filter(m => (m.courseId ? m.courseId === courseId : (course ? m.level === course.level : true)))
-                        .map(m => ({ value: m.id, label: `${m.name} (${m.level})` }))
-                      : moduleOptions;
+                    
+                    // Filter modules by course and group by volume
+                    const filteredModules = courseId
+                      ? modules.filter(m => (m.courseId ? m.courseId === courseId : (course ? m.level === course.level : true)))
+                      : modules;
+                    
+                    // Group by volume
+                    const grouped = {};
+                    const noVolume = [];
+                    filteredModules.forEach(m => {
+                      if (m.volumeId && m.volume) {
+                        if (!grouped[m.volumeId]) {
+                          grouped[m.volumeId] = { volume: m.volume, modules: [] };
+                        }
+                        grouped[m.volumeId].modules.push(m);
+                      } else {
+                        noVolume.push(m);
+                      }
+                    });
+
+                    // Sort volumes naturally, then modules by order
+                    const sortedVolumeIds = Object.keys(grouped).sort((a, b) => 
+                      naturalCompare(grouped[a].volume?.name || '', grouped[b].volume?.name || '')
+                    );
+
+                    const moduleOpts = [];
+                    sortedVolumeIds.forEach(volId => {
+                      const { volume, modules: volModules } = grouped[volId];
+                      const sortedModules = volModules.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+                      moduleOpts.push({
+                        label: volume?.name || 'Unknown Volume',
+                        options: sortedModules.map((m, idx) => ({ 
+                          value: m.id, 
+                          label: m.order != null ? `${m.order}. ${m.name}` : m.name 
+                        }))
+                      });
+                    });
+
+                    if (noVolume.length > 0) {
+                      const sortedNoVolume = noVolume.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+                      moduleOpts.push({
+                        label: 'No Volume',
+                        options: sortedNoVolume.map(m => ({ 
+                          value: m.id, 
+                          label: m.order != null ? `${m.order}. ${m.name} (${m.level})` : `${m.name} (${m.level})` 
+                        }))
+                      });
+                    }
+
                     return (
                       <Form.Item name="moduleId" label="Module" rules={[{ required: true, message: 'Select a module' }]}>
                         <Select
                           placeholder="Select a module"
                           options={moduleOpts}
+                          showSearch
+                          optionFilterProp="label"
                         />
                       </Form.Item>
                     );

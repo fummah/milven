@@ -19,6 +19,7 @@ import { Faq } from './pages/Faq.jsx';
 import { Account } from './pages/Account.jsx';
 import { AdminTopics } from './pages/admin/AdminTopics.jsx';
 import { AdminQuestions } from './pages/admin/AdminQuestions.jsx';
+import { AdminQuestionEdit } from './pages/admin/AdminQuestionEdit.jsx';
 import { AdminRevision } from './pages/admin/AdminRevision.jsx';
 import { AdminVideos } from './pages/admin/AdminVideos.jsx';
 import { AdminLoginPage } from './pages/admin/AdminLogin.jsx';
@@ -784,6 +785,7 @@ export default function App() {
 						<Route path="topics" element={<AdminTopics />} />
 						<Route path="volumes" element={<AdminVolumes />} />
 						<Route path="questions" element={<AdminQuestions />} />
+						<Route path="questions/:id/edit" element={<AdminQuestionEdit />} />
 						<Route path="topics/:id/preview" element={<AdminTopicPreview />} />
 						<Route path="exams/:id/edit" element={<AdminExamEditor />} />
 						<Route path="revision" element={<AdminRevision />} />

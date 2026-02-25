@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Upload, Modal, Drawer, Tag, Tooltip, Radio, Divider } from 'antd';
-import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PictureOutlined, DeleteFilled } from '@ant-design/icons';
+import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Upload, Modal, Drawer, Tag, Tooltip, Radio, Divider, Collapse, Spin } from 'antd';
+import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PictureOutlined, DeleteFilled, FilterOutlined } from '@ant-design/icons';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 
@@ -16,6 +16,7 @@ export function AdminQuestions() {
 	const [loading, setLoading] = useState(false);
 	const [bulkOpen, setBulkOpen] = useState(false);
 	const [bulkResult, setBulkResult] = useState(null);
+	const [bulkUploading, setBulkUploading] = useState(false);
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [previewOpen, setPreviewOpen] = useState(false);
@@ -25,6 +26,7 @@ export function AdminQuestions() {
 	const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
 	// Filters
+	const [filtersVisible, setFiltersVisible] = useState(false);
 	const [courseId, setCourseId] = useState(searchParams.get('courseId') || '');
 	const [topicId, setTopicId] = useState(() => {
 		const topicIds = searchParams.get('topicIds');
@@ -202,7 +204,13 @@ export function AdminQuestions() {
 				imageUrl: values.imageUrl || null,
 				options: values.type !== 'CONSTRUCTED_RESPONSE'
 					? (values.options || []).map(o => ({ text: o.text, isCorrect: !!o.isCorrect }))
-					: []
+					: [],
+				qid: values.qid || null,
+				los: values.los || null,
+				traceSection: values.traceSection || null,
+				tracePage: values.tracePage || null,
+				keyFormulas: values.keyFormulas || null,
+				workedSolution: values.workedSolution || null
 			});
 			message.success('Question created');
 			form.resetFields();
@@ -220,8 +228,9 @@ export function AdminQuestions() {
 			await api.delete(`/api/cms/questions/${questionId}`);
 			message.success('Question deleted');
 			loadQuestions();
-		} catch {
-			message.error('Delete failed');
+		} catch (e) {
+			const errMsg = e?.response?.data?.error || e?.message || 'Delete failed';
+			message.error(typeof errMsg === 'string' ? errMsg : 'Delete failed - question may be used in exams');
 		}
 	};
 
@@ -241,12 +250,12 @@ export function AdminQuestions() {
 
 	const downloadTemplate = async () => {
 		try {
-			const res = await api.get('/api/cms/questions/template.csv', { responseType: 'blob' });
-			const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+			const res = await api.get('/api/cms/questions/template.xlsx', { responseType: 'blob' });
+			const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 			const url = window.URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;
-			a.download = 'question_template.csv';
+			a.download = 'question_template.xlsx';
 			a.click();
 			window.URL.revokeObjectURL(url);
 		} catch {
@@ -254,14 +263,18 @@ export function AdminQuestions() {
 		}
 	};
 
-	const doBulkUpload = async (csv) => {
+	const doBulkUpload = async (content, isExcel = false) => {
 		try {
-			const { data } = await api.post('/api/cms/questions/bulk-upload', { csv });
+			setBulkUploading(true);
+			const payload = isExcel ? { xlsx: content } : { csv: content };
+			const { data } = await api.post('/api/cms/questions/bulk-upload', payload);
 			setBulkResult(data);
 			message.success(`Created ${data?.created ?? 0} questions`);
 			loadQuestions();
 		} catch (e) {
 			message.error(e?.response?.data?.error || 'Upload failed');
+		} finally {
+			setBulkUploading(false);
 		}
 	};
 
@@ -277,7 +290,8 @@ export function AdminQuestions() {
 		{ title: 'Created', dataIndex: 'createdAt', width: 150, render: v => v ? new Date(v).toLocaleDateString() : '-' },
 		{
 			title: 'Actions',
-			width: 150,
+			width: 120,
+			fixed: 'right',
 			render: (_, record) => (
 				<Space size={4}>
 					<Tooltip title="Preview">
@@ -294,87 +308,119 @@ export function AdminQuestions() {
 		}
 	];
 
+	// Check if any filters are active
+	const hasActiveFilters = courseId || (Array.isArray(topicId) ? topicId.length > 0 : topicId) || (Array.isArray(difficulty) ? difficulty.length > 0 : difficulty) || wording;
+
 	return (
 		<Space key="admin-questions-page" direction="vertical" size={16} style={{ width: '100%' }}>
-			{/* Filters */}
-			<Card>
-				<Space wrap size={12}>
-					<Form.Item label="Course" style={{ margin: 0 }}>
-						<Select
-							style={{ minWidth: 200 }}
-							allowClear
-							placeholder="All courses"
-							value={courseId || undefined}
-							onChange={(v) => {
-								setCourseId(v || '');
-								setTopicId(''); // Reset topic when course changes
-								// Don't auto-apply, wait for filter button
-							}}
-							options={filteredCoursesOptions}
-							showSearch
-							optionFilterProp="label"
-						/>
-					</Form.Item>
-					<Form.Item label="Topic" style={{ margin: 0 }}>
-						<Select
-							mode="multiple"
-							style={{ minWidth: 200 }}
-							allowClear
-							placeholder="All topics"
-							value={Array.isArray(topicId) ? topicId : (topicId ? [topicId] : [])}
-							onChange={(v) => {
-								setTopicId(Array.isArray(v) ? (v.length > 0 ? v : '') : (v || ''));
-								// Don't auto-apply, wait for filter button
-							}}
-							options={filteredTopicOptions}
-							showSearch
-							optionFilterProp="label"
-						/>
-					</Form.Item>
-					<Form.Item name="difficulty" label="Difficulty" style={{ margin: 0 }}>
-					<Select
-						mode="multiple"
-						style={{ minWidth: 200 }}
-						allowClear
-						placeholder="All"
-						value={Array.isArray(difficulty) ? difficulty : (difficulty ? [difficulty] : [])}
-						onChange={(v) => {
-							setDifficulty(Array.isArray(v) ? (v.length > 0 ? v : '') : (v || ''));
-							// Don't auto-apply, wait for filter button
+			{/* Filter Toggle Button */}
+			<div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+				<Button 
+					icon={<FilterOutlined />} 
+					onClick={() => setFiltersVisible(!filtersVisible)}
+					type={hasActiveFilters ? 'primary' : 'default'}
+				>
+					{filtersVisible ? 'Hide Filters' : 'Show Filters'}
+					{hasActiveFilters && !filtersVisible && ' (Active)'}
+				</Button>
+				{hasActiveFilters && !filtersVisible && (
+					<Button 
+						size="small" 
+						onClick={() => {
+							setCourseId('');
+							setTopicId('');
+							setDifficulty('');
+							setWording('');
+							form.setFieldsValue({ courseId: undefined });
+							setApplyFilters(true);
 						}}
-						options={[
-							{ value: 'EASY', label: 'Easy' },
-							{ value: 'MEDIUM', label: 'Medium' },
-							{ value: 'HARD', label: 'Hard' }
-						]}
-					/>
-				</Form.Item>
-					<Form.Item label="Search" style={{ margin: 0 }}>
-						<Input
-							style={{ minWidth: 200 }}
-							placeholder="Search in question text..."
-							value={wording}
-							onChange={(e) => setWording(e.target.value)}
-						/>
-					</Form.Item>
-					<Button type="primary" onClick={() => setApplyFilters(true)}>Apply Filters</Button>
-					<Button onClick={() => {
-						setCourseId('');
-						setTopicId('');
-						setDifficulty('');
-						setWording('');
-						form.setFieldsValue({ courseId: undefined });
-						setApplyFilters(true);
-					}}>Clear Filters</Button>
-				</Space>
-			</Card>
+					>
+						Clear Filters
+					</Button>
+				)}
+			</div>
+
+			{/* Collapsible Filters */}
+			{filtersVisible && (
+				<Card size="small">
+					<Space wrap size={12}>
+						<Form.Item label="Course" style={{ margin: 0 }}>
+							<Select
+								style={{ minWidth: 200 }}
+								allowClear
+								placeholder="All courses"
+								value={courseId || undefined}
+								onChange={(v) => {
+									setCourseId(v || '');
+									setTopicId(''); // Reset topic when course changes
+									// Don't auto-apply, wait for filter button
+								}}
+								options={filteredCoursesOptions}
+								showSearch
+								optionFilterProp="label"
+							/>
+						</Form.Item>
+						<Form.Item label="Topic" style={{ margin: 0 }}>
+							<Select
+								mode="multiple"
+								style={{ minWidth: 200 }}
+								allowClear
+								placeholder="All topics"
+								value={Array.isArray(topicId) ? topicId : (topicId ? [topicId] : [])}
+								onChange={(v) => {
+									setTopicId(Array.isArray(v) ? (v.length > 0 ? v : '') : (v || ''));
+									// Don't auto-apply, wait for filter button
+								}}
+								options={filteredTopicOptions}
+								showSearch
+								optionFilterProp="label"
+							/>
+						</Form.Item>
+						<Form.Item name="difficulty" label="Difficulty" style={{ margin: 0 }}>
+							<Select
+								mode="multiple"
+								style={{ minWidth: 200 }}
+								allowClear
+								placeholder="All"
+								value={Array.isArray(difficulty) ? difficulty : (difficulty ? [difficulty] : [])}
+								onChange={(v) => {
+									setDifficulty(Array.isArray(v) ? (v.length > 0 ? v : '') : (v || ''));
+									// Don't auto-apply, wait for filter button
+								}}
+								options={[
+									{ value: 'EASY', label: 'Easy' },
+									{ value: 'MEDIUM', label: 'Medium' },
+									{ value: 'HARD', label: 'Hard' }
+								]}
+							/>
+						</Form.Item>
+						<Form.Item label="Search" style={{ margin: 0 }}>
+							<Input
+								style={{ minWidth: 200 }}
+								placeholder="Search in question text..."
+								value={wording}
+								onChange={(e) => setWording(e.target.value)}
+							/>
+						</Form.Item>
+						<Button type="primary" onClick={() => setApplyFilters(true)}>Apply Filters</Button>
+						<Button onClick={() => {
+							setCourseId('');
+							setTopicId('');
+							setDifficulty('');
+							setWording('');
+							form.setFieldsValue({ courseId: undefined });
+							setApplyFilters(true);
+						}}>Clear Filters</Button>
+					</Space>
+				</Card>
+			)}
 
 			{/* Questions Table */}
 			<Card
 				title="Question Bank"
 				extra={
 					<Space>
-						<Button icon={<DownloadOutlined />} onClick={downloadTemplate}>CSV Template</Button>
+						<Button icon={<DownloadOutlined />} onClick={downloadTemplate}>Excel Template</Button>
 						<Button icon={<UploadOutlined />} type="primary" onClick={() => { setBulkOpen(true); setBulkResult(null); bulkForm.resetFields(); }}>Bulk Upload</Button>
 					</Space>
 				}
@@ -400,40 +446,59 @@ export function AdminQuestions() {
 					loading={loading}
 					dataSource={questions}
 					columns={columns}
-					scroll={{ x: 'max-content' }}
-					pagination={{ pageSize: 20 }}
+					scroll={{ x: 1200 }}
+					pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'] }}
 				/>
 			</Card>
 
 			<Modal
-				title="Bulk Upload Questions (CSV)"
+				title="Bulk Upload Questions (Excel/CSV)"
 				open={bulkOpen}
-				onCancel={() => setBulkOpen(false)}
+				onCancel={() => !bulkUploading && setBulkOpen(false)}
+				closable={!bulkUploading}
+				maskClosable={!bulkUploading}
 				onOk={() => {
 					const csv = bulkForm.getFieldValue('csv');
-					if (!csv) return message.error('Paste CSV content or upload a CSV file');
-					doBulkUpload(csv);
+					const xlsx = bulkForm.getFieldValue('xlsx');
+					if (!csv && !xlsx) return message.error('Upload an Excel file or paste CSV content');
+					if (xlsx) {
+						doBulkUpload(xlsx, true);
+					} else {
+						doBulkUpload(csv, false);
+					}
 				}}
-				okText="Upload"
+				okText={bulkUploading ? 'Uploading...' : 'Upload'}
+				okButtonProps={{ loading: bulkUploading }}
+				cancelButtonProps={{ disabled: bulkUploading }}
 			>
-				<Form form={bulkForm} layout="vertical">
-					<Form.Item label="Paste CSV" name="csv">
-						<Input.TextArea rows={8} placeholder="Paste CSV here..." />
-					</Form.Item>
-					<Upload
-						beforeUpload={(file) => {
-							const reader = new FileReader();
-							reader.onload = (e) => {
-								bulkForm.setFieldsValue({ csv: String(e.target?.result || '') });
-							};
-							reader.readAsText(file);
-							return false;
-						}}
-						maxCount={1}
-					>
-						<Button icon={<UploadOutlined />}>Select CSV File</Button>
-					</Upload>
-				</Form>
+				<Spin spinning={bulkUploading} tip="Uploading questions...">
+					<Form form={bulkForm} layout="vertical">
+						<Form.Item label="Upload Excel File (Recommended)" name="xlsx">
+							<Upload
+								beforeUpload={(file) => {
+									const reader = new FileReader();
+									reader.onload = (e) => {
+										const base64 = btoa(
+											new Uint8Array(e.target?.result).reduce((data, byte) => data + String.fromCharCode(byte), '')
+										);
+										bulkForm.setFieldsValue({ xlsx: base64, csv: '' });
+									};
+									reader.readAsArrayBuffer(file);
+									return false;
+								}}
+								maxCount={1}
+								accept=".xlsx,.xls"
+								disabled={bulkUploading}
+							>
+								<Button icon={<UploadOutlined />} disabled={bulkUploading}>Select Excel File (.xlsx)</Button>
+							</Upload>
+						</Form.Item>
+						<Divider plain>Or paste CSV</Divider>
+						<Form.Item label="Paste CSV Content" name="csv">
+							<Input.TextArea rows={6} placeholder="Paste CSV here..." onChange={() => bulkForm.setFieldsValue({ xlsx: '' })} disabled={bulkUploading} />
+						</Form.Item>
+					</Form>
+				</Spin>
 
 				{bulkResult && (
 					<div style={{ marginTop: 12 }}>
@@ -603,6 +668,29 @@ export function AdminQuestions() {
 							<Input type="number" min={1} style={{ width: 120 }} />
 						</Form.Item>
 					</Space>
+					<Divider orientation="left" plain style={{ marginTop: 24 }}>Optional Fields</Divider>
+					<Space size="large" wrap style={{ width: '100%' }}>
+						<Form.Item name="qid" label="QID (External ID)">
+							<Input placeholder="e.g. IND9-001" style={{ width: 160 }} />
+						</Form.Item>
+						<Form.Item name="los" label="LOS (Learning Outcome Statement)">
+							<Input placeholder="e.g. t-test for correlation" style={{ width: 280 }} />
+						</Form.Item>
+					</Space>
+					<Space size="large" wrap style={{ width: '100%' }}>
+						<Form.Item name="traceSection" label="Trace (Section)">
+							<Input placeholder="e.g. Section 4.2" style={{ width: 180 }} />
+						</Form.Item>
+						<Form.Item name="tracePage" label="Trace (Page)">
+							<Input placeholder="e.g. 125" style={{ width: 120 }} />
+						</Form.Item>
+					</Space>
+					<Form.Item name="keyFormulas" label="Key Formula(s)">
+						<Input.TextArea rows={2} placeholder="e.g. t = r√((n-2)/(1-r²))" />
+					</Form.Item>
+					<Form.Item name="workedSolution" label="Worked Solution (concise)">
+						<Input.TextArea rows={3} placeholder="Brief step-by-step solution..." />
+					</Form.Item>
 					<Form.Item noStyle shouldUpdate>
 						{({ getFieldValue }) => {
 							const type = getFieldValue('type');
@@ -719,6 +807,44 @@ export function AdminQuestions() {
 						{previewQuestion.type === 'CONSTRUCTED_RESPONSE' && (
 							<Card size="small">
 								<Typography.Text type="secondary">Constructed Response - No multiple choice options</Typography.Text>
+							</Card>
+						)}
+						{(previewQuestion.qid || previewQuestion.los || previewQuestion.traceSection || previewQuestion.tracePage || previewQuestion.keyFormulas || previewQuestion.workedSolution) && (
+							<Card size="small" title="Additional Info">
+								<Space direction="vertical" size={8} style={{ width: '100%' }}>
+									{previewQuestion.qid && (
+										<div><Typography.Text strong>QID:</Typography.Text> <Typography.Text>{previewQuestion.qid}</Typography.Text></div>
+									)}
+									{previewQuestion.los && (
+										<div><Typography.Text strong>LOS:</Typography.Text> <Typography.Text>{previewQuestion.los}</Typography.Text></div>
+									)}
+									{(previewQuestion.traceSection || previewQuestion.tracePage) && (
+										<div>
+											<Typography.Text strong>Trace:</Typography.Text>{' '}
+											<Typography.Text>
+												{previewQuestion.traceSection && <span>{previewQuestion.traceSection}</span>}
+												{previewQuestion.traceSection && previewQuestion.tracePage && <span>, </span>}
+												{previewQuestion.tracePage && <span>Page {previewQuestion.tracePage}</span>}
+											</Typography.Text>
+										</div>
+									)}
+									{previewQuestion.keyFormulas && (
+										<div>
+											<Typography.Text strong>Key Formula(s):</Typography.Text>
+											<Typography.Paragraph style={{ margin: '4px 0 0 0', padding: '6px', background: '#f5f5f5', borderRadius: 4, fontFamily: 'monospace' }}>
+												{previewQuestion.keyFormulas}
+											</Typography.Paragraph>
+										</div>
+									)}
+									{previewQuestion.workedSolution && (
+										<div>
+											<Typography.Text strong>Worked Solution:</Typography.Text>
+											<Typography.Paragraph style={{ margin: '4px 0 0 0', padding: '6px', background: '#e6f7ff', borderRadius: 4 }}>
+												{previewQuestion.workedSolution}
+											</Typography.Paragraph>
+										</div>
+									)}
+								</Space>
 							</Card>
 						)}
 					</Space>

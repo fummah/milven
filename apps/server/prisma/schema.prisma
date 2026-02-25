@@ -130,25 +130,31 @@ model Vignette {
 }
 
 model Question {
-  id         String       @id @default(cuid())
-  stem       String
-  type       QuestionType
-  level      CfaLevel
-  difficulty Difficulty
-  topicId    String
-  topic      Topic        @relation(fields: [topicId], references: [id])
+  id             String       @id @default(cuid())
+  qid            String?      // Optional external Question ID (e.g. IND9-001)
+  stem           String
+  type           QuestionType
+  level          CfaLevel
+  difficulty     Difficulty
+  topicId        String
+  topic          Topic        @relation(fields: [topicId], references: [id])
   // Denormalized path fields for filtering and bulk import; derived from topic.module.volume.course
-  courseId   String?
-  volumeId   String?
-  moduleId   String?
-  marks      Int          @default(1)
-  vignetteId String?
-  vignette   Vignette?    @relation(fields: [vignetteId], references: [id])
-  imageUrl   String?
-  createdAt  DateTime     @default(now())
-  options    McqOption[]
-  answers    ExamAnswer[]
-  usedInExams ExamQuestion[]
+  courseId       String?
+  volumeId       String?
+  moduleId       String?
+  marks          Int          @default(1)
+  vignetteId     String?
+  vignette       Vignette?    @relation(fields: [vignetteId], references: [id])
+  imageUrl       String?
+  los            String?      // Learning Outcome Statement
+  traceSection   String?      // Trace (Section)
+  tracePage      String?      // Trace (Page)
+  keyFormulas    String?      // Key Formula(s)
+  workedSolution String?      // Worked Solution (concise)
+  createdAt      DateTime     @default(now())
+  options        McqOption[]
+  answers        ExamAnswer[]
+  usedInExams    ExamQuestion[]
   @@index([topicId, difficulty])
   @@index([courseId, difficulty])
   @@index([moduleId, difficulty])

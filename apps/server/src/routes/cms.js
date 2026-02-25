@@ -4,11 +4,32 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
+import * as XLSX from 'xlsx';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 
 export function cmsRouter(prisma) {
 	const router = Router();
+
+  // Natural sort comparison - handles "Volume 1", "Volume 10" correctly
+  function naturalCompare(a, b) {
+    const ax = [], bx = [];
+    (a || '').replace(/(\d+)|(\D+)/g, (_, $1, $2) => { ax.push([$1 || Infinity, $2 || '']); });
+    (b || '').replace(/(\d+)|(\D+)/g, (_, $1, $2) => { bx.push([$1 || Infinity, $2 || '']); });
+    while (ax.length && bx.length) {
+      const an = ax.shift();
+      const bn = bx.shift();
+      const nn = (parseInt(an[0], 10) || 0) - (parseInt(bn[0], 10) || 0) || an[1].localeCompare(bn[1]);
+      if (nn) return nn;
+    }
+    return ax.length - bx.length;
+  }
+
+  // Sort volumes by natural order (handles "Volume 1", "Volume 2", "Volume 10" correctly)
+  function sortVolumes(volumes) {
+    return volumes.slice().sort((a, b) => naturalCompare(a.name, b.name));
+  }
+
   // Local Stripe helper (mirrors billing.ensureStripeProductAndPrice)
   const stripeKey = process.env.STRIPE_SECRET_KEY || '';
   const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: '2023-10-16' }) : null;
@@ -242,6 +263,7 @@ export function cmsRouter(prisma) {
         where: { courseId: id },
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
         include: {
+          volume: { select: { id: true, name: true } },
           topics: {
             where: { courseId: id },
             orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
@@ -283,8 +305,7 @@ export function cmsRouter(prisma) {
       }
     }
     const uniqueEnrollments = Array.from(seen.values()).map(e => ({ id: e.id, createdAt: e.createdAt, user: e.user }));
-    const volumes = (volLinks || []).map(l => ({ ...l.volume, order: l.order ?? null }));
-    volumes.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+    const volumes = sortVolumes((volLinks || []).map(l => ({ ...l.volume, order: l.order ?? null })));
     return res.json({
       course: {
         ...course,
@@ -391,11 +412,10 @@ export function cmsRouter(prisma) {
 					}
 				}
 			});
-			const volumes = links.map(l => ({ ...l.volume, order: l.order ?? null }));
-			volumes.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+			const volumes = sortVolumes(links.map(l => ({ ...l.volume, order: l.order ?? null })));
 			return res.json({ volumes });
 		}
-		const volumes = await prisma.volume.findMany({
+		const allVolumes = await prisma.volume.findMany({
 			orderBy: [{ name: 'asc' }],
 			include: {
 				courseLinks: {
@@ -404,7 +424,7 @@ export function cmsRouter(prisma) {
 				}
 			}
 		});
-		return res.json({ volumes });
+		return res.json({ volumes: sortVolumes(allVolumes) });
 	});
 	router.post('/volumes', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const schema = z.object({
@@ -482,8 +502,7 @@ export function cmsRouter(prisma) {
 			orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
 			include: { volume: true }
 		});
-		const volumes = links.map(l => ({ ...l.volume, order: l.order ?? null }));
-		volumes.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+		const volumes = sortVolumes(links.map(l => ({ ...l.volume, order: l.order ?? null })));
 		return res.json({ volumes });
 	});
 	router.post('/courses/:courseId/volumes', requireAuth(), requireRole('ADMIN'), async (req, res) => {
@@ -525,6 +544,7 @@ export function cmsRouter(prisma) {
 			where,
 			orderBy: [{ level: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
 			include: {
+				volume: { select: { id: true, name: true } },
 				topics: {
 					...(courseId ? { where: { courseId } } : {}),
 					orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
@@ -918,19 +938,93 @@ export function cmsRouter(prisma) {
 		return res.send(csv);
 	});
 
+	router.get('/questions/template.xlsx', requireAuth(), requireRole('ADMIN'), async (_req, res) => {
+		// Column order: QID, Difficulty, LOS, Trace (Section), Trace (Page), Question (Stem), A, B, C, Correct, Key Formula(s), Worked Solution (concise), topic_id
+		const headers = ['QID', 'Difficulty', 'LOS', 'Trace (Section)', 'Trace (Page)', 'Question (Stem)', 'A', 'B', 'C', 'Correct', 'Key Formula(s)', 'Worked Solution (concise)', 'topic_id'];
+		// Difficulty: 1 = EASY, 2 = MEDIUM, 3 = HARD
+		const sampleData = [
+			['IND9-001', 1, 't-test for correlation', 'Section 4.2', '125', 'Sample correlation r=0.35 with n=28. Test H0: ρ=0. The t-statistic is:', '1.91', '2.10', '1.71', 'A', 't = r√((n-2)/(1-r²))', 't=1.9052.', ''],
+			['IND9-002', 2, 'Chi-square test of independence', 'Section 5.1', '180', '2×2 table observed: [[40,10],[20,30]]. χ² statistic is closest to:', '16.67', '18.33', '15.00', 'A', 'χ² = Σ (O-E)²/E', 'χ²=16.666...≈7.', ''],
+			['IND9-003', 3, 'Hypothesis testing', 'Section 6.3', '210', 'A sample has mean 52, std 8, n=64. Test if population mean > 50 at 5% level:', 'Reject H0', 'Fail to reject H0', 'Inconclusive', 'A', 'z = (x̄ - μ) / (σ/√n)', 'z=2, p<0.05, reject.', '']
+		];
+		const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
+		ws['!cols'] = [
+			{ wch: 12 },  // QID
+			{ wch: 10 },  // Difficulty
+			{ wch: 25 },  // LOS
+			{ wch: 15 },  // Trace (Section)
+			{ wch: 12 },  // Trace (Page)
+			{ wch: 50 },  // Question (Stem)
+			{ wch: 20 },  // A
+			{ wch: 20 },  // B
+			{ wch: 20 },  // C
+			{ wch: 8 },   // Correct
+			{ wch: 25 },  // Key Formula(s)
+			{ wch: 30 },  // Worked Solution
+			{ wch: 30 }   // topic_id
+		];
+		const wb = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(wb, ws, 'Questions');
+		const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+		res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		res.setHeader('Content-Disposition', 'attachment; filename="question_template.xlsx"');
+		return res.send(buf);
+	});
+
 	router.post('/questions/bulk-upload', requireAuth(), requireRole('ADMIN'), async (req, res) => {
-		const schema = z.object({ csv: z.string().min(1) });
+		const schema = z.object({ csv: z.string().min(1).optional(), xlsx: z.string().min(1).optional() });
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const csv = parse.data.csv;
-		const rows = parseCsv(csv);
-		if (rows.length < 2) return res.status(400).json({ error: 'CSV must include header and at least one row' });
-		const header = rows[0].map(h => (h ?? '').toString().trim().toLowerCase());
-		const idx = (name) => header.indexOf(name);
-		const required = ['topic_id','question_text','question_type','difficulty','marks'];
-		for (const r of required) {
-			if (idx(r) < 0) return res.status(400).json({ error: `Missing column: ${r}` });
+
+		let rows = [];
+		if (parse.data.xlsx) {
+			try {
+				const buf = Buffer.from(parse.data.xlsx, 'base64');
+				const wb = XLSX.read(buf, { type: 'buffer' });
+				const ws = wb.Sheets[wb.SheetNames[0]];
+				rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+			} catch (e) {
+				return res.status(400).json({ error: 'Invalid Excel file format' });
+			}
+		} else if (parse.data.csv) {
+			rows = parseCsv(parse.data.csv);
+		} else {
+			return res.status(400).json({ error: 'Must provide csv or xlsx content' });
 		}
+
+		if (rows.length < 2) return res.status(400).json({ error: 'File must include header and at least one data row' });
+
+		const headerRaw = rows[0].map(h => (h ?? '').toString().trim().toLowerCase());
+		const header = headerRaw.map(h => {
+			if (h === 'question (stem)' || h === 'question_stem' || h === 'stem') return 'question_text';
+			if (h === 'a') return 'option_a';
+			if (h === 'b') return 'option_b';
+			if (h === 'c') return 'option_c';
+			if (h === 'd') return 'option_d';
+			if (h === 'key formula(s)' || h === 'key_formulas' || h === 'keyformulas') return 'key_formulas';
+			if (h === 'worked solution (concise)' || h === 'worked_solution' || h === 'workedsolution') return 'worked_solution';
+			if (h === 'trace (section)' || h === 'trace_section' || h === 'tracesection') return 'trace_section';
+			if (h === 'trace (page)' || h === 'trace_page' || h === 'tracepage') return 'trace_page';
+			return h.replace(/\s+/g, '_');
+		});
+
+		const idx = (name) => header.indexOf(name);
+		const hasNewFormat = idx('option_a') >= 0 || idx('qid') >= 0;
+		const hasOldFormat = idx('question_text') >= 0 && idx('question_type') >= 0;
+
+		if (!hasNewFormat && !hasOldFormat) {
+			return res.status(400).json({ error: 'Invalid template format. Use the Excel template from the download.' });
+		}
+
+		// Difficulty mapping: 1=EASY, 2=MEDIUM, 3=HARD (or text values)
+		const mapDifficulty = (val) => {
+			const v = String(val ?? '').trim();
+			if (v === '1' || v.toUpperCase() === 'EASY') return 'EASY';
+			if (v === '2' || v.toUpperCase() === 'MEDIUM') return 'MEDIUM';
+			if (v === '3' || v.toUpperCase() === 'HARD') return 'HARD';
+			return v.toUpperCase();
+		};
+
 		const errors = [];
 		let createdCount = 0;
 
@@ -938,39 +1032,97 @@ export function cmsRouter(prisma) {
 			const row = rows[r];
 			if (!row || row.every(c => !String(c ?? '').trim())) continue;
 			const get = (col) => (row[idx(col)] ?? '').toString().trim();
-			const topicId = get('topic_id');
-			const questionText = get('question_text');
-			const questionType = get('question_type');
-			const answersRaw = (idx('answers') >= 0) ? get('answers') : '';
-			const correctAnswerRaw = (idx('correct_answer') >= 0) ? get('correct_answer') : '';
-			const difficulty = get('difficulty');
-			const marksRaw = get('marks');
-
 			const rowNum = r + 1;
+
+			let topicId, questionText, questionType, difficulty, marks, options, correctAnswer;
+			let qid = '', los = '', traceSection = '', tracePage = '', keyFormulas = '', workedSolution = '';
+
+			if (hasNewFormat && idx('option_a') >= 0) {
+				topicId = get('topic_id');
+				questionText = get('question_text');
+				difficulty = mapDifficulty(get('difficulty'));
+				qid = get('qid') || '';
+				los = get('los') || '';
+				traceSection = get('trace_section') || '';
+				tracePage = get('trace_page') || '';
+				keyFormulas = get('key_formulas') || '';
+				workedSolution = get('worked_solution') || '';
+
+				const optA = get('option_a');
+				const optB = get('option_b');
+				const optC = get('option_c');
+				const optD = idx('option_d') >= 0 ? get('option_d') : '';
+				options = [optA, optB, optC, optD].filter(Boolean);
+
+				// Map correct answer: A->optA, B->optB, C->optC, D->optD
+				const correctRaw = get('correct').toUpperCase().trim();
+				if (correctRaw === 'A') correctAnswer = optA;
+				else if (correctRaw === 'B') correctAnswer = optB;
+				else if (correctRaw === 'C') correctAnswer = optC;
+				else if (correctRaw === 'D') correctAnswer = optD;
+				else correctAnswer = correctRaw; // fallback to literal value
+
+				questionType = options.length > 0 ? 'MCQ' : 'CONSTRUCTED_RESPONSE';
+				marks = idx('marks') >= 0 ? Number(get('marks') || 1) : 1;
+			} else {
+				topicId = get('topic_id');
+				questionText = get('question_text');
+				questionType = get('question_type');
+				const answersRaw = idx('answers') >= 0 ? get('answers') : '';
+				correctAnswer = idx('correct_answer') >= 0 ? get('correct_answer') : '';
+				difficulty = mapDifficulty(get('difficulty'));
+				marks = Number(get('marks') || 1);
+				options = answersRaw ? answersRaw.split('|').map(s => s.trim()).filter(Boolean) : [];
+
+				qid = idx('qid') >= 0 ? get('qid') : '';
+				los = idx('los') >= 0 ? get('los') : '';
+				traceSection = idx('trace_section') >= 0 ? get('trace_section') : '';
+				tracePage = idx('trace_page') >= 0 ? get('trace_page') : '';
+				keyFormulas = idx('key_formulas') >= 0 ? get('key_formulas') : '';
+				workedSolution = idx('worked_solution') >= 0 ? get('worked_solution') : '';
+			}
+
 			if (!topicId) {
 				errors.push({ row: rowNum, error: 'Missing required topic_id' });
 				continue;
 			}
 			if (!questionText) {
-				errors.push({ row: rowNum, error: 'question_text required' });
+				errors.push({ row: rowNum, error: 'question_text/Question (Stem) required' });
 				continue;
 			}
-			if (!['MCQ','VIGNETTE_MCQ','CONSTRUCTED_RESPONSE','TRUE_FALSE','SHORT_ANSWER'].includes(questionType)) {
-				errors.push({ row: rowNum, error: `Unsupported question_type: ${questionType}` });
+			if (!['EASY', 'MEDIUM', 'HARD'].includes(difficulty)) {
+				errors.push({ row: rowNum, error: `Invalid difficulty: ${difficulty}. Must be 1 (EASY), 2 (MEDIUM), 3 (HARD) or text EASY/MEDIUM/HARD` });
 				continue;
 			}
-			if (!['EASY','MEDIUM','HARD'].includes(difficulty)) {
-				errors.push({ row: rowNum, error: `Invalid difficulty: ${difficulty}` });
-				continue;
-			}
-			const marks = Number(marksRaw || 1);
 			if (!Number.isFinite(marks) || marks <= 0) {
 				errors.push({ row: rowNum, error: 'marks must be a positive number' });
 				continue;
 			}
 
+			const normalizedType = questionType === 'TRUE_FALSE' ? 'MCQ' :
+				(questionType === 'SHORT_ANSWER' ? 'CONSTRUCTED_RESPONSE' : (questionType || 'MCQ'));
+
+			if (!['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE'].includes(normalizedType)) {
+				errors.push({ row: rowNum, error: `Unsupported question_type: ${questionType}` });
+				continue;
+			}
+
+			if (normalizedType !== 'CONSTRUCTED_RESPONSE') {
+				if (options.length < 2) {
+					errors.push({ row: rowNum, error: 'At least 2 answer options required (A, B columns or answers column with | separator)' });
+					continue;
+				}
+				if (!correctAnswer) {
+					errors.push({ row: rowNum, error: 'Correct answer required for MCQ (use A, B, C, or D in Correct column)' });
+					continue;
+				}
+				if (!options.includes(correctAnswer)) {
+					errors.push({ row: rowNum, error: `Correct answer "${correctAnswer}" must match one of the options exactly` });
+					continue;
+				}
+			}
+
 			try {
-				// Derive hierarchy from topic
 				const pathIds = await deriveQuestionPathIdsFromTopic(topicId);
 				if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) {
 					throw new Error('Topic path is incomplete. Ensure topic has module and module has volume.');
@@ -980,39 +1132,32 @@ export function cmsRouter(prisma) {
 				const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, level: true } });
 				if (!course) throw new Error('Derived course not found');
 
-				const type = questionType === 'TRUE_FALSE'
-					? 'MCQ'
-					: (questionType === 'SHORT_ANSWER' ? 'CONSTRUCTED_RESPONSE' : questionType);
-
-				const options = (type !== 'CONSTRUCTED_RESPONSE')
-					? (answersRaw ? answersRaw.split('|').map(s => s.trim()).filter(Boolean) : [])
-					: [];
-				if (type !== 'CONSTRUCTED_RESPONSE') {
-					if (options.length < 2) throw new Error('answers must include at least 2 options separated by |');
-					if (!correctAnswerRaw) throw new Error('correct_answer required for MCQ');
-					if (!options.includes(correctAnswerRaw)) throw new Error('correct_answer must match one of answers options exactly');
-				}
-
 				await prisma.$transaction(async (tx) => {
 					const created = await tx.question.create({
 						data: {
 							stem: questionText,
-							type,
+							type: normalizedType,
 							level: course.level,
 							difficulty,
 							marks,
 							topicId,
 							courseId,
 							volumeId,
-							moduleId
+							moduleId,
+							qid: qid || null,
+							los: los || null,
+							traceSection: traceSection || null,
+							tracePage: tracePage || null,
+							keyFormulas: keyFormulas || null,
+							workedSolution: workedSolution || null
 						}
 					});
-					if (type !== 'CONSTRUCTED_RESPONSE') {
+					if (normalizedType !== 'CONSTRUCTED_RESPONSE' && options.length > 0) {
 						await tx.mcqOption.createMany({
 							data: options.map(opt => ({
 								questionId: created.id,
 								text: opt,
-								isCorrect: opt === correctAnswerRaw
+								isCorrect: opt === correctAnswer
 							}))
 						});
 					}
@@ -1067,11 +1212,17 @@ export function cmsRouter(prisma) {
 			marks: z.number().int().positive().optional(),
 			vignetteText: z.string().optional(),
 			imageUrl: z.string().url().optional().nullable(),
-			options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional()
+			options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional(),
+			qid: z.string().optional().nullable(),
+			los: z.string().optional().nullable(),
+			traceSection: z.string().optional().nullable(),
+			tracePage: z.string().optional().nullable(),
+			keyFormulas: z.string().optional().nullable(),
+			workedSolution: z.string().optional().nullable()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const { vignetteText, options, ...q } = parse.data;
+		const { vignetteText, options, qid, los, traceSection, tracePage, keyFormulas, workedSolution, ...q } = parse.data;
 		const pathIds = await deriveQuestionPathIdsFromTopic(q.topicId);
 		if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) {
 			return res.status(400).json({ error: 'Topic path is incomplete. Ensure topic has module and module has volume.' });
@@ -1081,7 +1232,18 @@ export function cmsRouter(prisma) {
 			vignette = await prisma.vignette.create({ data: { text: vignetteText } });
 		}
 		const question = await prisma.question.create({
-			data: { ...q, ...pathIds, vignetteId: vignette?.id ?? null, imageUrl: parse.data.imageUrl || null }
+			data: {
+				...q,
+				...pathIds,
+				vignetteId: vignette?.id ?? null,
+				imageUrl: parse.data.imageUrl || null,
+				qid: qid || null,
+				los: los || null,
+				traceSection: traceSection || null,
+				tracePage: tracePage || null,
+				keyFormulas: keyFormulas || null,
+				workedSolution: workedSolution || null
+			}
 		});
 		if (q.type !== 'CONSTRUCTED_RESPONSE' && options && options.length) {
 			await prisma.mcqOption.createMany({
@@ -1114,7 +1276,13 @@ export function cmsRouter(prisma) {
       marks: z.number().int().positive().optional(),
       vignetteText: z.string().optional(),
       imageUrl: z.string().url().optional().nullable(),
-      options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional()
+      options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional(),
+      qid: z.string().optional().nullable(),
+      los: z.string().optional().nullable(),
+      traceSection: z.string().optional().nullable(),
+      tracePage: z.string().optional().nullable(),
+      keyFormulas: z.string().optional().nullable(),
+      workedSolution: z.string().optional().nullable()
     });
     const parse = schema.safeParse(req.body);
     if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -1153,9 +1321,15 @@ export function cmsRouter(prisma) {
         ...(typeof payload.level !== 'undefined' ? { level: payload.level } : {}),
         ...(typeof payload.difficulty !== 'undefined' ? { difficulty: payload.difficulty } : {}),
         ...(typeof payload.topicId !== 'undefined' ? { topicId: payload.topicId } : {}),
-			...(typeof payload.marks !== 'undefined' ? { marks: payload.marks } : {}),
-			...(typeof payload.imageUrl !== 'undefined' ? { imageUrl: payload.imageUrl } : {}),
-			...(pathIds ? pathIds : {}),
+        ...(typeof payload.marks !== 'undefined' ? { marks: payload.marks } : {}),
+        ...(typeof payload.imageUrl !== 'undefined' ? { imageUrl: payload.imageUrl } : {}),
+        ...(typeof payload.qid !== 'undefined' ? { qid: payload.qid || null } : {}),
+        ...(typeof payload.los !== 'undefined' ? { los: payload.los || null } : {}),
+        ...(typeof payload.traceSection !== 'undefined' ? { traceSection: payload.traceSection || null } : {}),
+        ...(typeof payload.tracePage !== 'undefined' ? { tracePage: payload.tracePage || null } : {}),
+        ...(typeof payload.keyFormulas !== 'undefined' ? { keyFormulas: payload.keyFormulas || null } : {}),
+        ...(typeof payload.workedSolution !== 'undefined' ? { workedSolution: payload.workedSolution || null } : {}),
+        ...(pathIds ? pathIds : {}),
         vignetteId
       }
     });

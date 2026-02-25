@@ -5,6 +5,24 @@ import { ArrowLeftOutlined, EyeOutlined, PlusOutlined, MenuFoldOutlined, MenuUnf
 import { api } from '../../lib/api';
 import { useSettings } from '../../contexts/SettingsContext.jsx';
 
+// Natural sort comparison - handles "Volume 1", "Volume 10" correctly
+function naturalCompare(a, b) {
+  const ax = [], bx = [];
+  (a || '').replace(/(\d+)|(\D+)/g, (_, $1, $2) => { ax.push([$1 || Infinity, $2 || '']); });
+  (b || '').replace(/(\d+)|(\D+)/g, (_, $1, $2) => { bx.push([$1 || Infinity, $2 || '']); });
+  while (ax.length && bx.length) {
+    const an = ax.shift();
+    const bn = bx.shift();
+    const nn = (parseInt(an[0], 10) || 0) - (parseInt(bn[0], 10) || 0) || an[1].localeCompare(bn[1]);
+    if (nn) return nn;
+  }
+  return ax.length - bx.length;
+}
+
+function sortByNaturalName(arr) {
+  return arr.slice().sort((a, b) => naturalCompare(a.name, b.name));
+}
+
 export function AdminCoursePreview() {
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
   const asUrl = (u) => {
@@ -258,7 +276,7 @@ export function AdminCoursePreview() {
   }, [id, isStudentPath]);
 
   const course = detail?.course;
-  const volumes = (detail?.volumes ?? []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+  const volumes = sortByNaturalName(detail?.volumes ?? []);
   const hasVolumesTree = Array.isArray(volumes) && volumes.length > 0;
   const modules = hasVolumesTree
     ? volumes.flatMap((v) => (v.modules || []).map((m) => ({ ...m, _volumeId: v.id, _volumeName: v.name })))

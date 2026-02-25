@@ -3,6 +3,24 @@ import { Button, Card, Drawer, Form, Input, Select, Space, Table, Tag, Typograph
 import { PlusOutlined, LinkOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
+// Natural sort comparison - handles "Volume 1", "Volume 10" correctly
+function naturalCompare(a, b) {
+  const ax = [], bx = [];
+  (a || '').replace(/(\d+)|(\D+)/g, (_, $1, $2) => { ax.push([$1 || Infinity, $2 || '']); });
+  (b || '').replace(/(\d+)|(\D+)/g, (_, $1, $2) => { bx.push([$1 || Infinity, $2 || '']); });
+  while (ax.length && bx.length) {
+    const an = ax.shift();
+    const bn = bx.shift();
+    const nn = (parseInt(an[0], 10) || 0) - (parseInt(bn[0], 10) || 0) || an[1].localeCompare(bn[1]);
+    if (nn) return nn;
+  }
+  return ax.length - bx.length;
+}
+
+function sortByNaturalName(arr) {
+  return arr.slice().sort((a, b) => naturalCompare(a.name, b.name));
+}
+
 export function AdminVolumes() {
   const [loading, setLoading] = useState(false);
   const [volumes, setVolumes] = useState([]);
@@ -20,7 +38,7 @@ export function AdminVolumes() {
         api.get('/api/cms/volumes', { params: filterCourseId ? { courseId: filterCourseId } : {} }),
         api.get('/api/cms/courses')
       ]);
-      const volList = (volRes.data.volumes || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+      const volList = sortByNaturalName(volRes.data.volumes || []);
       setVolumes(volList);
       setCourses(courseRes.data.courses || []);
     } catch {
