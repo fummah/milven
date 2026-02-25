@@ -130,3 +130,46 @@ h1, h2, h3, h4, h5, h6 {
   background: transparent !important;
 }
 
+/* System header dropdown menu styling - navy blue background with white text */
+.ant-dropdown .ant-dropdown-menu {
+  background: #102540 !important;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(16, 37, 64, 0.25);
+}
+.ant-dropdown .ant-dropdown-menu-item {
+  color: #ffffff !important;
+}
+.ant-dropdown .ant-dropdown-menu-item:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+.ant-dropdown .ant-dropdown-menu-item a,
+.ant-dropdown .ant-dropdown-menu-item button {
+  color: #ffffff !important;
+}
+.ant-dropdown .ant-dropdown-menu-item-divider {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+/* Submenu items text and icons */
+.ant-dropdown .ant-dropdown-menu-item .font-medium,
+.ant-dropdown .ant-dropdown-menu-item .text-xs {
+  color: #ffffff !important;
+}
+.ant-dropdown .ant-dropdown-menu-item .text-gray-500 {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+.ant-dropdown .ant-dropdown-menu-item .anticon {
+  color: #ffffff !important;
+}
+/* Card-based dropdown content (Explore Courses) */
+.ant-dropdown .ant-card {
+  background: #102540 !important;
+  border: none;
+}
+.ant-dropdown .ant-card .ant-typography,
+.ant-dropdown .ant-card a {
+  color: #ffffff !important;
+}
+.ant-dropdown .ant-card a:hover {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+

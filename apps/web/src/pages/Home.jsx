@@ -194,7 +194,7 @@ export function Home() {
 						transition={{ duration: 0.5, delay: 0.15 }}
 					>
 						{/* Gradient glow wrapper to mimic Canva-like effect */}
-						<div className="w-full max-w-3xl p-[2px] rounded-full bg-gradient-to-r from-cyan-400/60 via-fuchsia-400/60 to-pink-400/60 animate-pulse">
+						<div className="w-full max-w-3xl p-[2px] rounded-full bg-gradient-to-r from-[#102540]/70 via-cyan-400/60 to-[#1b3a5b]/70 animate-pulse">
 							<div
 								className="rounded-full bg-white/90 backdrop-blur ring-1 ring-black/5 transition-all duration-300"
 								style={{ boxShadow: '0 12px 28px rgba(56,189,248,0.20), 0 8px 20px rgba(168,85,247,0.15)' }}
@@ -260,12 +260,12 @@ export function Home() {
 					].map((item, idx) => (
 						<Col xs={24} sm={12} lg={6} key={idx}>
 							<motion.div initial={{ opacity: 0, y: 14 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ delay: idx * 0.06, duration: 0.4 }}>
-								<Card bordered={false} className="h-full shadow-sm hover:shadow-md transition-shadow" style={{ borderRadius: 16 }} styles={{ body: { padding: 24 } }}>
-									<div className="inline-flex items-center justify-center w-12 h-12 rounded-xl mb-4 text-white" style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)' }}>
-										<span style={{ fontSize: 22 }}>{item.icon}</span>
+								<Card bordered={false} className="h-full shadow-lg hover:shadow-xl transition-shadow" style={{ borderRadius: 16, background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 50%, #274a74 100%)' }} styles={{ body: { padding: 24 } }}>
+									<div className="inline-flex items-center justify-center w-12 h-12 rounded-xl mb-4" style={{ background: 'rgba(255, 255, 255, 0.15)', border: '1px solid rgba(255, 255, 255, 0.2)' }}>
+										<span style={{ fontSize: 22, color: '#ffffff' }}>{item.icon}</span>
 									</div>
-									<Typography.Title level={5} style={{ marginBottom: 8, color: '#102540' }}>{item.title}</Typography.Title>
-									<Typography.Text type="secondary" style={{ fontSize: 14, lineHeight: 1.6 }}>{item.desc}</Typography.Text>
+									<Typography.Title level={5} style={{ marginBottom: 8, color: '#ffffff' }}>{item.title}</Typography.Title>
+									<Typography.Text style={{ fontSize: 14, lineHeight: 1.6, color: 'rgba(255, 255, 255, 0.85)' }}>{item.desc}</Typography.Text>
 								</Card>
 							</motion.div>
 						</Col>
