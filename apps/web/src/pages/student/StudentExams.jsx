@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, List, Space, Button, Typography, Tag, Empty, message, Modal, Form, InputNumber, Select, Input, DatePicker, Popconfirm, Divider } from 'antd';
-import { FileTextOutlined, DeleteOutlined, PlusOutlined, ClockCircleOutlined, CheckCircleOutlined, PlayCircleOutlined, TrophyOutlined, CalendarOutlined, BookOutlined } from '@ant-design/icons';
+import { FileTextOutlined, DeleteOutlined, PlusOutlined, ClockCircleOutlined, CheckCircleOutlined, PlayCircleOutlined, TrophyOutlined, CalendarOutlined, BookOutlined, CloseCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -350,15 +350,15 @@ export function StudentExams() {
                           }
                           return (
                             <Space key={ex.id} direction="vertical" align="end" size={4}>
-                              <Tag color="green">{ex.name}</Tag>
-                              {status && <Tag color={statusColor}>{status}</Tag>}
+                              <Tag color="blue" icon={<FileTextOutlined />}>{ex.name}</Tag>
+                              {status && <Tag color={statusColor} icon={status === 'Open' ? <PlayCircleOutlined /> : status === 'Completed' ? <CheckCircleOutlined /> : status === 'Missed' ? <CloseCircleOutlined /> : <ClockCircleOutlined />}>{status}</Tag>}
                             </Space>
                           );
                         })}
                       </Space>
                       {submitted ? (
                         <Space>
-                          <Tag color="green">Complete</Tag>
+                          <Tag color="green" icon={<CheckCircleOutlined />}>Complete</Tag>
                           <Button
                             type="primary"
                             onClick={() => navigate(`/student/exams/result/${submitted}`)}
@@ -478,15 +478,15 @@ export function StudentExams() {
                       title={exam.name}
                       description={
                         <Space direction="vertical" size={4}>
-                          <Space>
-                            {status && <Tag color={statusColor}>{status}</Tag>}
+                          <Space wrap size={6}>
+                            {status && <Tag color={statusColor} icon={status === 'Open' ? <PlayCircleOutlined /> : status === 'Completed' ? <CheckCircleOutlined /> : status === 'Missed' ? <CloseCircleOutlined /> : <ClockCircleOutlined />}>{status}</Tag>}
                             {showInProgress && (
-                              <Tag color="orange">
+                              <Tag color="orange" icon={<ClockCircleOutlined />}>
                                 In Progress
                               </Tag>
                             )}
                             {exam.latestAttempt?.status === 'SUBMITTED' && (
-                              <Tag color="green">
+                              <Tag color="green" icon={<TrophyOutlined />}>
                                 Score: {Math.round(exam.latestAttempt.scorePercent || 0)}%
                               </Tag>
                             )}

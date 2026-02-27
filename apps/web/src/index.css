@@ -564,3 +564,271 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: 3px;
 }
 
+/* Modern Tag/Badge Styles */
+.ant-tag {
+  border-radius: 8px !important;
+  padding: 4px 12px !important;
+  font-weight: 500 !important;
+  font-size: 12px !important;
+  border: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  line-height: 1.4 !important;
+}
+
+/* Tag color overrides with gradients */
+.ant-tag-green {
+  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%) !important;
+  color: #15803d !important;
+}
+.ant-tag-blue {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%) !important;
+  color: #1d4ed8 !important;
+}
+.ant-tag-orange {
+  background: linear-gradient(135deg, #ffedd5 0%, #fed7aa 100%) !important;
+  color: #c2410c !important;
+}
+.ant-tag-red {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%) !important;
+  color: #b91c1c !important;
+}
+.ant-tag-purple {
+  background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%) !important;
+  color: #6d28d9 !important;
+}
+.ant-tag-cyan {
+  background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%) !important;
+  color: #0e7490 !important;
+}
+.ant-tag-gold, .ant-tag-warning {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%) !important;
+  color: #b45309 !important;
+}
+.ant-tag-magenta, .ant-tag-pink {
+  background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%) !important;
+  color: #be185d !important;
+}
+.ant-tag-volcano {
+  background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%) !important;
+  color: #c2410c !important;
+}
+.ant-tag-geekblue {
+  background: linear-gradient(135deg, #eef2ff 0%, #c7d2fe 100%) !important;
+  color: #4338ca !important;
+}
+.ant-tag-lime {
+  background: linear-gradient(135deg, #ecfccb 0%, #d9f99d 100%) !important;
+  color: #4d7c0f !important;
+}
+
+/* Default tag (no color specified) */
+.ant-tag-default, .ant-tag:not([class*="ant-tag-"]) {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
+  color: #475569 !important;
+}
+
+/* Success/Error/Processing tags */
+.ant-tag-success {
+  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%) !important;
+  color: #15803d !important;
+}
+.ant-tag-error {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%) !important;
+  color: #b91c1c !important;
+}
+.ant-tag-processing {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%) !important;
+  color: #1d4ed8 !important;
+}
+
+/* Tag with icon styling */
+.ant-tag .anticon {
+  font-size: 12px !important;
+}
+
+/* Pill-shaped tags (for special badges) */
+.tag-pill {
+  border-radius: 20px !important;
+  padding: 4px 14px !important;
+}
+
+/* Small tags */
+.ant-tag-sm, .tag-sm {
+  padding: 2px 8px !important;
+  font-size: 11px !important;
+  border-radius: 6px !important;
+}
+
+/* Status indicator tags with dot */
+.tag-status {
+  position: relative;
+  padding-left: 20px !important;
+}
+.tag-status::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Outline style tags */
+.tag-outline {
+  background: transparent !important;
+  border: 1.5px solid currentColor !important;
+}
+.tag-outline.ant-tag-green {
+  border-color: #22c55e !important;
+  color: #15803d !important;
+}
+.tag-outline.ant-tag-blue {
+  border-color: #3b82f6 !important;
+  color: #1d4ed8 !important;
+}
+.tag-outline.ant-tag-orange {
+  border-color: #f97316 !important;
+  color: #c2410c !important;
+}
+.tag-outline.ant-tag-red {
+  border-color: #ef4444 !important;
+  color: #b91c1c !important;
+}
+
+/* ========================================
+   Modern Sidebar Styles
+   ======================================== */
+
+/* Modern Sider base styles */
+.modern-sider {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.modern-sider .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Modern Menu Styles */
+.modern-sider .ant-menu {
+  font-weight: 500;
+}
+
+.modern-sider .ant-menu-item,
+.modern-sider .ant-menu-submenu-title {
+  margin: 4px 0 !important;
+  padding: 8px 12px !important;
+  height: auto !important;
+  min-height: 44px !important;
+  line-height: 1.5 !important;
+  border-radius: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  transition: all 0.2s ease !important;
+}
+
+.modern-sider .ant-menu-item:hover,
+.modern-sider .ant-menu-submenu-title:hover {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
+  transform: translateX(2px);
+}
+
+.modern-sider .ant-menu-item-selected {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%) !important;
+  border-left: 3px solid #3b82f6 !important;
+}
+
+.modern-sider .ant-menu-item-selected::after {
+  display: none !important;
+}
+
+/* Submenu styling */
+.modern-sider .ant-menu-sub {
+  background: transparent !important;
+  padding-left: 8px !important;
+}
+
+.modern-sider .ant-menu-sub .ant-menu-item {
+  padding-left: 20px !important;
+}
+
+/* Menu item text styling */
+.modern-sider .ant-menu-item a,
+.modern-sider .ant-menu-submenu-title span {
+  font-size: 14px;
+  color: #334155;
+}
+
+.modern-sider .ant-menu-item-selected a {
+  color: #1d4ed8 !important;
+  font-weight: 600;
+}
+
+/* Submenu arrow */
+.modern-sider .ant-menu-submenu-arrow {
+  color: #94a3b8 !important;
+}
+
+.modern-sider .ant-menu-submenu-open > .ant-menu-submenu-title .ant-menu-submenu-arrow {
+  color: #3b82f6 !important;
+}
+
+/* Collapsed state styles */
+.modern-sider.ant-layout-sider-collapsed .ant-menu-item,
+.modern-sider.ant-layout-sider-collapsed .ant-menu-submenu-title {
+  padding: 8px !important;
+  justify-content: center !important;
+}
+
+.modern-sider.ant-layout-sider-collapsed .ant-menu-item span:not(.anticon),
+.modern-sider.ant-layout-sider-collapsed .ant-menu-submenu-title span:not(.anticon) {
+  display: none;
+}
+
+/* Modern Drawer styles */
+.modern-drawer .ant-drawer-header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+  border-bottom: none;
+  padding: 16px 20px;
+}
+
+.modern-drawer .ant-drawer-title {
+  color: #ffffff !important;
+}
+
+.modern-drawer .ant-drawer-close {
+  color: rgba(255,255,255,0.8);
+}
+
+.modern-drawer .ant-drawer-body {
+  padding: 16px 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.modern-drawer .ant-menu-item,
+.modern-drawer .ant-menu-submenu-title {
+  margin: 4px 0 !important;
+  padding: 10px 16px !important;
+  height: auto !important;
+  min-height: 48px !important;
+  border-radius: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.modern-drawer .ant-menu-item:hover,
+.modern-drawer .ant-menu-submenu-title:hover {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
+}
+
+.modern-drawer .ant-menu-item-selected {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%) !important;
+}
+

@@ -648,6 +648,154 @@ export function examsRouter(prisma) {
 		return res.json({ byTopic });
 	});
 
+	// Student Performance Analytics (aggregated across all attempts)
+	router.get('/analytics/me', requireAuth(), async (req, res) => {
+		try {
+			const userId = req.user.id;
+			
+			// Get all submitted attempts for this user with answers and topic info
+			const attempts = await prisma.examAttempt.findMany({
+				where: { 
+					userId,
+					status: 'SUBMITTED',
+					scorePercent: { not: null }
+				},
+				include: {
+					exam: { select: { name: true, courseId: true } },
+					answers: {
+						include: { question: { include: { topic: true } } }
+					}
+				},
+				orderBy: { submittedAt: 'asc' }
+			});
+
+			if (attempts.length === 0) {
+				return res.json({
+					hasData: false,
+					readinessScore: 0,
+					passEstimate: 0,
+					totalAttempts: 0,
+					totalQuestions: 0,
+					avgScore: 0,
+					scoreTrend: [],
+					topicPerformance: [],
+					weeklyProgress: [],
+					improvement: 0
+				});
+			}
+
+			// Calculate score trend over time (by week)
+			const weeklyScores = new Map();
+			const scoreTrend = [];
+			
+			attempts.forEach(attempt => {
+				if (attempt.submittedAt && attempt.scorePercent != null) {
+					scoreTrend.push({
+						date: attempt.submittedAt,
+						score: Math.round(attempt.scorePercent),
+						examName: attempt.exam?.name || 'Exam'
+					});
+					
+					// Group by week for weekly progress
+					const weekStart = new Date(attempt.submittedAt);
+					weekStart.setHours(0, 0, 0, 0);
+					weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+					const weekKey = weekStart.toISOString().split('T')[0];
+					
+					if (!weeklyScores.has(weekKey)) {
+						weeklyScores.set(weekKey, { total: 0, count: 0 });
+					}
+					const ws = weeklyScores.get(weekKey);
+					ws.total += attempt.scorePercent;
+					ws.count += 1;
+				}
+			});
+
+			// Convert weekly scores to array
+			const weeklyProgress = Array.from(weeklyScores.entries())
+				.sort((a, b) => a[0].localeCompare(b[0]))
+				.slice(-8) // Last 8 weeks
+				.map(([week, data], idx) => ({
+					week: `Week ${idx + 1}`,
+					weekDate: week,
+					avgScore: Math.round(data.total / data.count)
+				}));
+
+			// Aggregate topic performance across all attempts
+			const topicMap = new Map();
+			let totalCorrect = 0;
+			let totalQuestions = 0;
+
+			attempts.forEach(attempt => {
+				attempt.answers.forEach(answer => {
+					const topicName = answer.question?.topic?.name || 'General';
+					if (!topicMap.has(topicName)) {
+						topicMap.set(topicName, { correct: 0, total: 0 });
+					}
+					const topic = topicMap.get(topicName);
+					topic.total += 1;
+					totalQuestions += 1;
+					if (answer.isCorrect) {
+						topic.correct += 1;
+						totalCorrect += 1;
+					}
+				});
+			});
+
+			const topicPerformance = Array.from(topicMap.entries())
+				.map(([topic, data]) => ({
+					topic,
+					correct: data.correct,
+					total: data.total,
+					percent: Math.round((data.correct / (data.total || 1)) * 100)
+				}))
+				.sort((a, b) => b.total - a.total) // Sort by most questions
+				.slice(0, 10); // Top 10 topics
+
+			// Calculate overall stats
+			const avgScore = Math.round(attempts.reduce((sum, a) => sum + (a.scorePercent || 0), 0) / attempts.length);
+			
+			// Calculate improvement (first vs last attempt)
+			const firstScore = attempts[0]?.scorePercent || 0;
+			const lastScore = attempts[attempts.length - 1]?.scorePercent || 0;
+			const improvement = Math.round(lastScore - firstScore);
+
+			// Calculate readiness score (weighted average of recent performance)
+			// Weights more recent attempts higher
+			let weightedSum = 0;
+			let weightTotal = 0;
+			attempts.slice(-5).forEach((attempt, idx) => {
+				const weight = idx + 1; // More recent = higher weight
+				weightedSum += (attempt.scorePercent || 0) * weight;
+				weightTotal += weight;
+			});
+			const readinessScore = weightTotal > 0 ? Math.round(weightedSum / weightTotal) : 0;
+
+			// Estimate pass probability (simplified model based on readiness and trend)
+			let passEstimate = readinessScore;
+			if (improvement > 0) passEstimate = Math.min(95, passEstimate + Math.round(improvement / 2));
+			if (readinessScore >= 70) passEstimate = Math.min(95, passEstimate + 5);
+			passEstimate = Math.max(5, Math.min(95, passEstimate));
+
+			return res.json({
+				hasData: true,
+				readinessScore,
+				passEstimate,
+				totalAttempts: attempts.length,
+				totalQuestions,
+				avgScore,
+				scoreTrend,
+				topicPerformance,
+				weeklyProgress,
+				improvement,
+				lastAttemptDate: attempts[attempts.length - 1]?.submittedAt
+			});
+		} catch (err) {
+			console.error('Analytics error:', err);
+			return res.status(500).json({ error: 'Failed to compute analytics' });
+		}
+	});
+
 	return router;
 }
 

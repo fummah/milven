@@ -1,8 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, List, Progress, Space, Button, Typography, Empty, Row, Col, Statistic, Tag, message, Spin, Divider } from 'antd';
-import { ReadOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, CreditCardOutlined, BookOutlined, ShoppingCartOutlined, RiseOutlined, TrophyOutlined, FileTextOutlined, CalendarOutlined, PlayCircleOutlined, ArrowRightOutlined } from '@ant-design/icons';
+import { ReadOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, CreditCardOutlined, BookOutlined, ShoppingCartOutlined, RiseOutlined, TrophyOutlined, FileTextOutlined, CalendarOutlined, PlayCircleOutlined, ArrowRightOutlined, LineChartOutlined, DashboardOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Line } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
 function formatPrice(priceCents, interval) {
   if (!priceCents) return 'Free';
@@ -48,6 +52,8 @@ export function StudentDashboard() {
   const [examsByCourse, setExamsByCourse] = useState({});
   const [now, setNow] = useState(() => Date.now());
   const [startingExamId, setStartingExamId] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -66,6 +72,20 @@ export function StudentDashboard() {
       setCourses([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load performance analytics
+  const loadAnalytics = async () => {
+    setAnalyticsLoading(true);
+    try {
+      const { data } = await api.get('/api/exams/analytics/me');
+      setAnalytics(data);
+    } catch (err) {
+      console.error('Failed to load analytics:', err);
+      setAnalytics({ hasData: false });
+    } finally {
+      setAnalyticsLoading(false);
     }
   };
 
@@ -94,7 +114,10 @@ export function StudentDashboard() {
     return () => { cancelled = true; };
   }, [loading, hasSubscriptionOrPurchase]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { 
+    load(); 
+    loadAnalytics();
+  }, []);
 
   // Only enrolled courses for available exams (no subs)
   const enrolledCourseIds = useMemo(() => (courses || []).map(c => c.courseId).filter(Boolean), [courses]);
@@ -490,6 +513,8 @@ export function StudentDashboard() {
           </Card>
         </Col>
       </Row>
+
+      {/* Continue Learning & Available Exams */}
       <Row gutter={[16, 16]}>
         <Col xs={24} md={16}>
           <Card 
@@ -651,15 +676,15 @@ export function StudentDashboard() {
                               <Space direction="vertical" size={4} style={{ flex: 1 }}>
                                 {isCustom ? (
                                   <>
-                                    <Space wrap size={4}>
-                                      <Tag color="green">{exam.name}</Tag>
-                                      {status && <Tag color={statusColor}>{statusText}</Tag>}
+                                    <Space wrap size={6}>
+                                      <Tag color="blue" icon={<FileTextOutlined />}>{exam.name}</Tag>
+                                      {status && <Tag color={statusColor} icon={status === 'open' ? <PlayCircleOutlined /> : status === 'completed' ? <CheckCircleOutlined /> : status === 'missed' ? <CloseCircleOutlined /> : <ClockCircleOutlined />}>{statusText}</Tag>}
                                       {duration && <Tag icon={<ClockCircleOutlined />}>{duration}</Tag>}
                                       {countdown && <Tag color={countdown.type}>{countdown.text}</Tag>}
                                     </Space>
                                     {exam.latestAttempt && (
-                                      <Space>
-                                        <Tag color={exam.latestAttempt.status === 'SUBMITTED' ? 'green' : 'orange'}>
+                                      <Space style={{ marginTop: 4 }}>
+                                        <Tag color={exam.latestAttempt.status === 'SUBMITTED' ? 'green' : 'orange'} icon={exam.latestAttempt.status === 'SUBMITTED' ? <CheckCircleOutlined /> : <ClockCircleOutlined />}>
                                           {exam.latestAttempt.status === 'SUBMITTED' 
                                             ? `Score: ${Math.round(exam.latestAttempt.scorePercent || 0)}%`
                                             : 'In Progress'}
@@ -671,14 +696,13 @@ export function StudentDashboard() {
                                   <>
                                     <Space>
                                       <Typography.Text strong>{course?.name}</Typography.Text>
-                                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                        Level: {course?.level}
-                                      </Typography.Text>
+                                      <Tag color="purple" style={{ marginLeft: 4 }}>{course?.level}</Tag>
                                     </Space>
-                                    <Space wrap size={4}>
-                                      <Tag color="green">{exam.name}</Tag>
+                                    <Space wrap size={6} style={{ marginTop: 4 }}>
+                                      <Tag color="blue" icon={<FileTextOutlined />}>{exam.name}</Tag>
                                       {duration && <Tag icon={<ClockCircleOutlined />}>{duration}</Tag>}
                                       {countdown && <Tag color={countdown.type}>{countdown.text}</Tag>}
+                                      {status && <Tag color={statusColor} icon={status === 'open' ? <PlayCircleOutlined /> : status === 'completed' ? <CheckCircleOutlined /> : status === 'missed' ? <CloseCircleOutlined /> : <ClockCircleOutlined />}>{statusText}</Tag>}
                                     </Space>
                                   </>
                                 )}
@@ -720,6 +744,232 @@ export function StudentDashboard() {
                 </div>
               )}
             </Space>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Performance Analytics Section */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={16}>
+          <Card 
+            className="modern-card"
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div className="icon-badge-sm icon-badge-purple">
+                  <LineChartOutlined />
+                </div>
+                <span style={{ fontWeight: 600 }}>Performance Trends</span>
+                {analytics?.improvement !== undefined && analytics.improvement !== 0 && (
+                  <Tag color={analytics.improvement > 0 ? 'green' : 'orange'} style={{ marginLeft: 8 }}>
+                    {analytics.improvement > 0 ? '+' : ''}{analytics.improvement}% improvement
+                  </Tag>
+                )}
+              </div>
+            }
+            loading={analyticsLoading}
+          >
+            {!analytics?.hasData ? (
+              <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Empty 
+                  description={
+                    <Space direction="vertical" size={8}>
+                      <Typography.Text type="secondary">No exam data yet</Typography.Text>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        Complete some exams to see your performance trends
+                      </Typography.Text>
+                    </Space>
+                  }
+                />
+              </div>
+            ) : (
+              <div style={{ height: 280 }}>
+                <Line
+                  data={{
+                    labels: analytics.weeklyProgress?.length > 0 
+                      ? analytics.weeklyProgress.map(w => w.week)
+                      : analytics.scoreTrend?.slice(-8).map((_, i) => `Exam ${i + 1}`) || [],
+                    datasets: [
+                      {
+                        label: 'Score %',
+                        data: analytics.weeklyProgress?.length > 0 
+                          ? analytics.weeklyProgress.map(w => w.avgScore)
+                          : analytics.scoreTrend?.slice(-8).map(s => s.score) || [],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#3b82f6',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                      },
+                      {
+                        label: 'Target (70%)',
+                        data: Array((analytics.weeklyProgress?.length || analytics.scoreTrend?.slice(-8).length || 1)).fill(70),
+                        borderColor: '#22c55e',
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        fill: false,
+                      }
+                    ]
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: {
+                        position: 'top',
+                        labels: { usePointStyle: true, padding: 20 }
+                      },
+                      tooltip: {
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        titleColor: '#fff',
+                        bodyColor: '#e2e8f0',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1,
+                        cornerRadius: 8,
+                        padding: 12
+                      }
+                    },
+                    scales: {
+                      y: {
+                        min: 0,
+                        max: 100,
+                        grid: { color: 'rgba(0,0,0,0.05)' },
+                        ticks: { callback: (v) => v + '%' }
+                      },
+                      x: {
+                        grid: { display: false }
+                      }
+                    }
+                  }}
+                />
+              </div>
+            )}
+            {analytics?.hasData && (
+              <div style={{ display: 'flex', gap: 24, marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+                <div>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>Total Attempts</Typography.Text>
+                  <Typography.Title level={4} style={{ margin: 0 }}>{analytics.totalAttempts}</Typography.Title>
+                </div>
+                <div>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>Questions Answered</Typography.Text>
+                  <Typography.Title level={4} style={{ margin: 0 }}>{analytics.totalQuestions}</Typography.Title>
+                </div>
+                <div>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>Average Score</Typography.Text>
+                  <Typography.Title level={4} style={{ margin: 0, color: analytics.avgScore >= 70 ? '#22c55e' : analytics.avgScore >= 50 ? '#f59e0b' : '#ef4444' }}>
+                    {analytics.avgScore}%
+                  </Typography.Title>
+                </div>
+              </div>
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card 
+            className="modern-card"
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div className="icon-badge-sm icon-badge-cyan">
+                  <DashboardOutlined />
+                </div>
+                <span style={{ fontWeight: 600 }}>Readiness Score</span>
+              </div>
+            }
+            style={{ height: '100%' }}
+            loading={analyticsLoading}
+          >
+            {!analytics?.hasData ? (
+              <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                <Empty description="Complete exams to see your readiness score" />
+              </div>
+            ) : (
+              <>
+                <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                  <div style={{ 
+                    width: 140, 
+                    height: 140, 
+                    margin: '0 auto 20px',
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    position: 'relative'
+                  }}>
+                    <div style={{
+                      width: 110,
+                      height: 110,
+                      borderRadius: '50%',
+                      background: analytics.readinessScore >= 70 
+                        ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                        : analytics.readinessScore >= 50 
+                        ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                        : 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexDirection: 'column'
+                    }}>
+                      <Typography.Text style={{ fontSize: 36, fontWeight: 700, color: '#fff', lineHeight: 1 }}>
+                        {analytics.readinessScore}
+                      </Typography.Text>
+                      <Typography.Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
+                        / 100
+                      </Typography.Text>
+                    </div>
+                  </div>
+                  <Tag 
+                    color={analytics.readinessScore >= 70 ? 'green' : analytics.readinessScore >= 50 ? 'orange' : 'blue'} 
+                    style={{ marginBottom: 12, padding: '4px 12px', borderRadius: 12 }}
+                  >
+                    {analytics.readinessScore >= 70 ? (
+                      <><CheckCircleOutlined /> On Track</>
+                    ) : analytics.readinessScore >= 50 ? (
+                      <><ClockCircleOutlined /> Getting There</>
+                    ) : (
+                      <><RiseOutlined /> Keep Going</>
+                    )}
+                  </Tag>
+                  <Typography.Text type="secondary" style={{ display: 'block', fontSize: 13 }}>
+                    Estimated pass probability: <strong style={{ color: analytics.passEstimate >= 70 ? '#22c55e' : '#f59e0b' }}>{analytics.passEstimate}%</strong>
+                  </Typography.Text>
+                </div>
+                <Divider style={{ margin: '16px 0' }} />
+                <div>
+                  <Typography.Text strong style={{ display: 'block', marginBottom: 12, fontSize: 13 }}>
+                    Topic Performance
+                  </Typography.Text>
+                  {analytics.topicPerformance?.length > 0 ? (
+                    <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                      {analytics.topicPerformance.slice(0, 6).map((item, idx) => {
+                        const color = item.percent >= 70 ? '#22c55e' : item.percent >= 50 ? '#f59e0b' : '#ef4444';
+                        return (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <Typography.Text style={{ width: 90, fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.topic}>
+                              {item.topic}
+                            </Typography.Text>
+                            <div style={{ flex: 1 }}>
+                              <Progress 
+                                percent={item.percent} 
+                                size="small"
+                                strokeColor={color}
+                                trailColor="rgba(0,0,0,0.06)"
+                                format={(p) => <span style={{ color, fontSize: 11, fontWeight: 600 }}>{p}%</span>}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </Space>
+                  ) : (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>No topic data available</Typography.Text>
+                  )}
+                </div>
+              </>
+            )}
           </Card>
         </Col>
       </Row>

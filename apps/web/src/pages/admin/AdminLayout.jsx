@@ -13,25 +13,27 @@ import {
   ScheduleOutlined,
   SolutionOutlined,
   ProfileOutlined,
-  FolderOutlined
+  FolderOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const { Sider, Content } = Layout;
 
-const badge = (iconNode, fg, bg) => (
+const modernBadge = (iconNode, gradient) => (
   <span
     style={{
       display: 'inline-flex',
       alignItems: 'center',
       justifyContent: 'center',
-      width: 26,
-      height: 26,
-      borderRadius: '50%',
-      background: bg,
-      color: fg,
-      border: '1px solid rgba(0,0,0,0.06)',
-      boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.6)'
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      background: gradient,
+      color: '#fff',
+      fontSize: 15,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
     }}
   >
     {iconNode}
@@ -39,61 +41,63 @@ const badge = (iconNode, fg, bg) => (
 );
 
 const menuItems = [
-  { key: 'dashboard', icon: badge(<DashboardOutlined />, '#102540', '#e6f4ff'), label: <Link to="/admin">Dashboard</Link> },
+  { key: 'dashboard', icon: modernBadge(<DashboardOutlined />, 'linear-gradient(135deg, #3b82f6, #1d4ed8)'), label: <Link to="/admin">Dashboard</Link> },
   {
     key: 'users',
-    icon: badge(<UserOutlined />, '#13c2c2', '#e6fffb'),
+    icon: modernBadge(<UserOutlined />, 'linear-gradient(135deg, #06b6d4, #0891b2)'),
     label: 'Users',
     children: [
-      { key: 'users-list', icon: badge(<TeamOutlined />, '#13c2c2', '#e6fffb'), label: <Link to="/admin/users">Users</Link> },
-      { key: 'students', icon: badge(<TeamOutlined />, '#13c2c2', '#e6fffb'), label: <Link to="/admin/students">Students</Link> },
-      { key: 'roles', icon: badge(<SolutionOutlined />, '#52c41a', '#f6ffed'), label: <Link to="/admin/roles">Roles</Link> }
+      { key: 'users-list', icon: modernBadge(<TeamOutlined />, 'linear-gradient(135deg, #06b6d4, #0891b2)'), label: <Link to="/admin/users">Users</Link> },
+      { key: 'students', icon: modernBadge(<TeamOutlined />, 'linear-gradient(135deg, #14b8a6, #0d9488)'), label: <Link to="/admin/students">Students</Link> },
+      { key: 'roles', icon: modernBadge(<SolutionOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'), label: <Link to="/admin/roles">Roles</Link> }
     ]
   },
   {
     key: 'courses',
-    icon: badge(<BookOutlined />, '#722ed1', '#f9f0ff'),
+    icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'),
     label: 'Courses',
     children: [
-      { key: 'courses-list', icon: badge(<BookOutlined />, '#722ed1', '#f9f0ff'), label: <Link to="/admin/courses">Courses</Link> },
-      { key: 'volumes', icon: badge(<FolderOutlined />, '#2f54eb', '#f0f5ff'), label: <Link to="/admin/volumes">Volumes</Link> },
-      { key: 'topics', icon: badge(<FileTextOutlined />, '#722ed1', '#f9f0ff'), label: <Link to="/admin/topics">Modules & Topics</Link> },
-      { key: 'questions', icon: badge(<FileTextOutlined />, '#2f54eb', '#f0f5ff'), label: <Link to="/admin/questions">Questions</Link> },
-      { key: 'materials', icon: badge(<FileTextOutlined />, '#13c2c2', '#e6fffb'), label: <Link to="/admin/materials">Learning Materials</Link> },
-      { key: 'levels', icon: badge(<ProfileOutlined />, '#2f54eb', '#f0f5ff'), label: <Link to="/admin/levels">Levels</Link> }
+      { key: 'courses-list', icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'), label: <Link to="/admin/courses">Courses</Link> },
+      { key: 'volumes', icon: modernBadge(<FolderOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/volumes">Volumes</Link> },
+      { key: 'topics', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #a855f7, #9333ea)'), label: <Link to="/admin/topics">Modules & Topics</Link> },
+      { key: 'questions', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/questions">Questions</Link> },
+      { key: 'materials', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #06b6d4, #0891b2)'), label: <Link to="/admin/materials">Learning Materials</Link> },
+      { key: 'levels', icon: modernBadge(<ProfileOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/levels">Levels</Link> }
     ]
   },
   {
     key: 'exams',
-    icon: badge(<ScheduleOutlined />, '#fa8c16', '#fff7e6'),
+    icon: modernBadge(<ScheduleOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'),
     label: 'Exams',
     children: [
-      { key: 'exams-list', icon: badge(<FileTextOutlined />, '#eb2f96', '#fff0f6'), label: <Link to="/admin/exams">Exams</Link> },
-      { key: 'exam-builder', icon: badge(<ScheduleOutlined />, '#fa8c16', '#fff7e6'), label: <Link to="/admin/exams/builder">Exam Builder</Link> }
+      { key: 'exams-list', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #ec4899, #db2777)'), label: <Link to="/admin/exams">Exams</Link> },
+      { key: 'exam-builder', icon: modernBadge(<ScheduleOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'), label: <Link to="/admin/exams/builder">Exam Builder</Link> }
     ]
   },
   {
     key: 'reports',
-    icon: badge(<BarChartOutlined />, '#faad14', '#fffbe6'),
+    icon: modernBadge(<BarChartOutlined />, 'linear-gradient(135deg, #eab308, #ca8a04)'),
     label: 'Reports',
     children: [
-      { key: 'reports-overview', icon: badge(<PieChartOutlined />, '#1890ff', '#e6f7ff'), label: <Link to="/admin/reports">Overview</Link> }
+      { key: 'reports-overview', icon: modernBadge(<PieChartOutlined />, 'linear-gradient(135deg, #3b82f6, #2563eb)'), label: <Link to="/admin/reports">Overview</Link> }
     ]
   },
   {
     key: 'billing',
-    icon: badge(<DollarOutlined />, '#52c41a', '#f6ffed'),
+    icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'),
     label: 'Billing',
     children: [
-      { key: 'products', icon: badge(<DollarOutlined />, '#52c41a', '#f6ffed'), label: <Link to="/admin/products">Products</Link> },
-      { key: 'purchases', icon: badge(<DollarOutlined />, '#2f54eb', '#f0f5ff'), label: <Link to="/admin/purchases">Purchases</Link> },
-      { key: 'invoices', icon: badge(<FileTextOutlined />, '#722ed1', '#f9f0ff'), label: <Link to="/admin/invoices">Invoices</Link> },
-      { key: 'subscriptions', icon: badge(<DollarOutlined />, '#52c41a', '#f6ffed'), label: <Link to="/admin/subscriptions">Subscriptions</Link> },
-      { key: 'taxes', icon: badge(<FileTextOutlined />, '#fa541c', '#fff2e8'), label: <Link to="/admin/taxes">Taxes</Link> }
+      { key: 'products', icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'), label: <Link to="/admin/products">Products</Link> },
+      { key: 'purchases', icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/purchases">Purchases</Link> },
+      { key: 'invoices', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'), label: <Link to="/admin/invoices">Invoices</Link> },
+      { key: 'subscriptions', icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'), label: <Link to="/admin/subscriptions">Subscriptions</Link> },
+      { key: 'taxes', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'), label: <Link to="/admin/taxes">Taxes</Link> }
     ]
   },
-  { key: 'settings', icon: badge(<SettingOutlined />, '#595959', '#fafafa'), label: <Link to="/admin/settings">Settings</Link> }
+  { key: 'settings', icon: modernBadge(<SettingOutlined />, 'linear-gradient(135deg, #64748b, #475569)'), label: <Link to="/admin/settings">Settings</Link> }
 ];
+
+const isPreviewPath = (pathname) => /^\/admin\/courses\/[^/]+\/preview$/.test(pathname);
 
 // Parent key for each submenu item so we keep the parent open when a child is selected
 const childToParentKey = {
@@ -105,19 +109,24 @@ const childToParentKey = {
 };
 
 export default function AdminLayout() {
-  const [collapsed, setCollapsed] = useState(false);
-  const [openKeys, setOpenKeys] = useState([]);
-  const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
-  // Auto-collapse for immersive preview pages
+  const isPreview = isPreviewPath(location.pathname);
+  
+  // Only collapse by default on preview pages
+  const [collapsed, setCollapsed] = useState(isPreview);
+  const [openKeys, setOpenKeys] = useState([]);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Auto-collapse/expand based on preview page
   useEffect(() => {
-    const p = location.pathname;
-    if (/^\/admin\/courses\/[^/]+\/preview$/.test(p)) {
+    if (isPreview) {
       setCollapsed(true);
+    } else if (!isMobile) {
+      setCollapsed(false);
     }
-  }, [location.pathname]);
+  }, [isPreview, isMobile]);
 
   // derive selected keys from path
   const selected = (() => {
@@ -165,9 +174,10 @@ export default function AdminLayout() {
     if (isMobile) setMobileOpen(false);
   }, [isMobile, location.pathname]);
 
-  const siderWidth = (isMobile ? 0 : (collapsed ? 80 : 260));
+  const siderWidth = (isMobile ? 0 : (collapsed ? 80 : 280));
   const HEADER_OFFSET = 64;
-  const SIDER_TOP_GAP = 12; // extra space below header
+  const SIDER_TOP_GAP = 12;
+  
   return (
     <Layout style={{ minHeight: '100vh' }}>
       {!isMobile && (
@@ -178,8 +188,9 @@ export default function AdminLayout() {
             setCollapsed(v);
             if (v) setOpenKeys([]);
           }}
+          trigger={null}
           theme="light"
-          width={260}
+          width={280}
           collapsedWidth={80}
           style={{
             position: 'fixed',
@@ -189,20 +200,66 @@ export default function AdminLayout() {
             height: `calc(100vh - ${HEADER_OFFSET + SIDER_TOP_GAP}px)`,
             overflow: 'auto',
             zIndex: 999,
-            borderRight: '1px solid #eef2f7',
-            paddingLeft: 12
+            background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)',
+            borderRight: '1px solid #e2e8f0',
+            boxShadow: '4px 0 24px rgba(0,0,0,0.03)'
           }}
-          className="admin-sider"
+          className="admin-sider modern-sider"
         >
-          <div className="flex items-center gap-2 px-2 py-4 border-b border-gray-100">
-            <Avatar style={{ background: '#102540' }} icon={<UserOutlined />} />
-            {!collapsed && (
-              <div className="leading-tight">
-                <Typography.Text strong>MILVEN Admin</Typography.Text>
-                <div className="text-xs text-gray-500">Control Panel</div>
-              </div>
-            )}
+          {/* Sidebar Header */}
+          <div style={{
+            padding: '20px 16px',
+            borderBottom: '1px solid #f1f5f9',
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)',
+            margin: collapsed ? 8 : 12,
+            borderRadius: 16,
+            marginBottom: 16
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Avatar 
+                size={collapsed ? 40 : 44} 
+                style={{ 
+                  background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+                  flexShrink: 0
+                }} 
+                icon={<UserOutlined />} 
+              />
+              {!collapsed && (
+                <div style={{ overflow: 'hidden' }}>
+                  <Typography.Text strong style={{ color: '#ffffff', fontSize: 15, display: 'block' }}>
+                    MILVEN Admin
+                  </Typography.Text>
+                  <Typography.Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
+                    Control Panel
+                  </Typography.Text>
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* Collapse Toggle Button */}
+          <div style={{ padding: '0 12px', marginBottom: 12 }}>
+            <Button 
+              type="text" 
+              onClick={() => setCollapsed(!collapsed)}
+              style={{
+                width: '100%',
+                height: 40,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                gap: 10,
+                borderRadius: 10,
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                color: '#64748b',
+                fontWeight: 500
+              }}
+            >
+              {collapsed ? <MenuUnfoldOutlined /> : <><MenuFoldOutlined /> <span>Collapse Menu</span></>}
+            </Button>
+          </div>
+
           <Menu
             mode="inline"
             inlineCollapsed={collapsed}
@@ -213,21 +270,37 @@ export default function AdminLayout() {
             onOpenChange={(keys) => {
               if (!collapsed) setOpenKeys(keys);
             }}
-            style={{ borderRight: 0 }}
+            style={{ 
+              borderRight: 0,
+              padding: '0 8px',
+              background: 'transparent'
+            }}
           />
         </Sider>
       )}
-      <Layout style={{ marginLeft: siderWidth, minHeight: '100vh' }}>
+      <Layout style={{ marginLeft: siderWidth, minHeight: '100vh', transition: 'margin-left 0.2s ease' }}>
         <Content style={{ padding: isMobile ? 12 : 24 }}>
           {isMobile && (
             <div style={{ marginBottom: 12 }}>
-              <Button onClick={() => setMobileOpen(true)}>Menu</Button>
+              <Button 
+                onClick={() => setMobileOpen(true)}
+                icon={<MenuUnfoldOutlined />}
+                style={{ borderRadius: 10 }}
+              >
+                Menu
+              </Button>
               <Drawer
-                title="Admin"
+                title={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <Avatar style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }} icon={<UserOutlined />} />
+                    <span>Admin Menu</span>
+                  </div>
+                }
                 placement="left"
                 open={mobileOpen}
                 onClose={() => setMobileOpen(false)}
                 width={Math.min(320, typeof window !== 'undefined' ? window.innerWidth * 0.86 : 320)}
+                className="modern-drawer"
               >
                 <Menu mode="inline" items={menuItems} selectedKeys={selected} onClick={() => setMobileOpen(false)} />
               </Drawer>
