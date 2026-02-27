@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Input, Space, Button, Modal, Form, Select, message, Drawer, Row, Col, Popconfirm, Tooltip, Grid } from 'antd';
+import { Table, Typography, Input, Space, Button, Modal, Form, Select, message, Drawer, Row, Col, Popconfirm, Tooltip, Grid, Card, Tag } from 'antd';
 import { countriesOptions } from '../../constants/countries';
-import { PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined, FilterOutlined } from '@ant-design/icons';
+import { PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined, FilterOutlined, TeamOutlined, SearchOutlined, UserAddOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useEffect as useReactEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -104,57 +104,79 @@ export function AdminStudents() {
   }, []);
 
   const columns = [
-    { title: 'First Name', dataIndex: 'firstName' },
-    { title: 'Last Name', dataIndex: 'lastName' },
-    { title: 'Email', dataIndex: 'email' },
-    { title: 'Phone', dataIndex: 'phone' },
-    { title: 'Country', dataIndex: 'country' },
+    { 
+      title: 'Student', 
+      render: (_, record) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="icon-badge-sm icon-badge-purple">
+            <TeamOutlined style={{ fontSize: 14 }} />
+          </div>
+          <div>
+            <Typography.Text strong style={{ display: 'block', color: '#1e293b' }}>
+              {[record.firstName, record.lastName].filter(Boolean).join(' ') || '—'}
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {record.email}
+            </Typography.Text>
+          </div>
+        </div>
+      )
+    },
+    { title: 'Phone', dataIndex: 'phone', render: v => v || '—' },
+    { title: 'Country', dataIndex: 'country', render: v => v || '—' },
     { title: 'Course', dataIndex: ['course','name'], render: (_v, record) => {
       const c = record.course;
-      if (!c) return '-';
+      if (!c) return <Tag>No course</Tag>;
       const lv = c.level;
       const label = lv === 'LEVEL1' ? 'Level I' : lv === 'LEVEL2' ? 'Level II' : lv === 'LEVEL3' ? 'Level III' : lv === 'NONE' ? 'None' : lv;
-      return `${c.name} — ${label}`;
+      return (
+        <div>
+          <Typography.Text style={{ display: 'block' }}>{c.name}</Typography.Text>
+          <Tag color="blue" style={{ fontSize: 11 }}>{label}</Tag>
+        </div>
+      );
     }},
     { title: 'Subscription', dataIndex: 'subscription', render: (v) => {
-      const color = v === 'ACTIVE' ? '#16a34a' : v === 'PAST_DUE' ? '#f59e0b' : v === 'CANCELED' ? '#ef4444' : '#64748b';
-      return <span style={{ color, fontWeight: 600 }}>{v ?? 'INCOMPLETE'}</span>;
+      const statusMap = {
+        ACTIVE: { color: 'success', text: 'Active' },
+        PAST_DUE: { color: 'warning', text: 'Past Due' },
+        CANCELED: { color: 'error', text: 'Canceled' }
+      };
+      const status = statusMap[v] || { color: 'default', text: 'Incomplete' };
+      return <Tag color={status.color}>{status.text}</Tag>;
     }},
-    { title: 'Verified', dataIndex: 'emailVerifiedAt', render: (v) => (v ? 'Yes' : 'No') },
-    { title: 'Created', dataIndex: 'createdAt', render: (v) => (v ? new Date(v).toLocaleString() : '-') },
+    { title: 'Verified', dataIndex: 'emailVerifiedAt', render: (v) => (
+      v ? <Tag color="success">Verified</Tag> : <Tag>Unverified</Tag>
+    )},
+    { title: 'Joined', dataIndex: 'createdAt', render: (v) => (
+      v ? <Typography.Text type="secondary" style={{ fontSize: 13 }}>{new Date(v).toLocaleDateString()}</Typography.Text> : '—'
+    )},
     {
       title: 'Actions',
+      width: 140,
       render: (_, record) => (
-        <Space size={6}>
-          <Tooltip title="View">
-            <Button
-              size="small"
-              shape="circle"
-              type="text"
-              icon={<EyeOutlined />}
-              style={{ background: '#e6f4ff', color: '#102540' }}
+        <Space size={8}>
+          <Tooltip title="View Details">
+            <button
+              className="action-btn action-btn-view"
               onClick={() => navigate(`/admin/students/${record.id}`)}
-            />
+            >
+              <EyeOutlined />
+            </button>
           </Tooltip>
           <Tooltip title="Edit">
-            <Button
-              size="small"
-              shape="circle"
-              type="text"
-              icon={<EditOutlined />}
-              style={{ background: '#fff7e6', color: '#fa8c16' }}
+            <button
+              className="action-btn action-btn-edit"
               onClick={() => { setEditing(record); editForm.setFieldsValue(record); setEditOpen(true); }}
-            />
+            >
+              <EditOutlined />
+            </button>
           </Tooltip>
           <Popconfirm title="Delete this student?" onConfirm={() => removeUser(record)}>
             <Tooltip title="Delete">
-              <Button
-                size="small"
-                shape="circle"
-                type="text"
-                icon={<DeleteOutlined />}
-                style={{ background: '#fff1f0', color: '#cf1322' }}
-              />
+              <button className="action-btn action-btn-delete">
+                <DeleteOutlined />
+              </button>
             </Tooltip>
           </Popconfirm>
         </Space>
@@ -174,14 +196,54 @@ export function AdminStudents() {
 
   return (
     <div>
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 gap-3">
-        <Typography.Title level={4} style={{ margin: 0 }}>Students</Typography.Title>
-        <Space wrap>
-          <Input.Search placeholder="Search email" allowClear onSearch={() => fetchUsers()} value={q} onChange={e => setQ(e.target.value)} style={{ width: isMobile ? 260 : undefined }} />
-          <Select
-            placeholder="Level"
+      {/* Page Header */}
+      <div className="page-header">
+        <div>
+          <Typography.Title level={2} className="page-header-title">
+            Students
+          </Typography.Title>
+          <div className="page-header-subtitle">
+            Manage student accounts, enrollments, and subscriptions
+          </div>
+        </div>
+        <Button 
+          type="primary" 
+          size="large"
+          icon={<UserAddOutlined />} 
+          onClick={() => setOpen(true)}
+          style={{ 
+            background: 'linear-gradient(135deg, #102540, #1e3a5f)',
+            border: 'none',
+            borderRadius: 12,
+            height: 44,
+            paddingInline: 24,
+            fontWeight: 600
+          }}
+        >
+          Add Student
+        </Button>
+      </div>
+
+      {/* Filters Card */}
+      <Card 
+        className="modern-card" 
+        style={{ marginBottom: 24 }}
+        styles={{ body: { padding: '16px 24px' } }}
+      >
+        <Space wrap size={12} style={{ width: '100%' }}>
+          <Input
+            placeholder="Search by name or email..."
+            prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
             allowClear
-            style={{ width: isMobile ? 180 : 160 }}
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            onPressEnter={() => fetchUsers()}
+            style={{ width: 280, borderRadius: 10 }}
+          />
+          <Select
+            placeholder="Filter by level"
+            allowClear
+            style={{ width: 160 }}
             value={level}
             onChange={setLevel}
             options={[
@@ -190,31 +252,60 @@ export function AdminStudents() {
               { value: 'LEVEL3', label: 'Level III' }
             ]}
           />
-          <Button icon={<FilterOutlined />} onClick={() => fetchUsers()}>Filter</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>New Student</Button>
+          <Button 
+            icon={<FilterOutlined />} 
+            onClick={() => fetchUsers()}
+            style={{ borderRadius: 10 }}
+          >
+            Apply Filters
+          </Button>
         </Space>
-      </div>
-      <Table
-        rowKey="id"
-        loading={loading}
-        dataSource={data}
-        columns={columns}
-        size={isMobile ? 'small' : 'middle'}
-        scroll={isMobile ? { x: 'max-content' } : undefined}
-        pagination={{
-          total,
-          pageSize: 20,
-          onChange: (page) => fetchUsers({ skip: (page - 1) * 20, take: 20 })
-        }}
-      />
+      </Card>
+
+      {/* Data Table */}
+      <Card className="modern-card" styles={{ body: { padding: 0 } }}>
+        <div className="modern-table">
+          <Table
+            rowKey="id"
+            loading={loading}
+            dataSource={data}
+            columns={columns}
+            size={isMobile ? 'small' : 'middle'}
+            scroll={isMobile ? { x: 'max-content' } : undefined}
+            pagination={{
+              total,
+              pageSize: 20,
+              onChange: (page) => fetchUsers({ skip: (page - 1) * 20, take: 20 }),
+              style: { padding: '16px 24px', margin: 0 }
+            }}
+          />
+        </div>
+      </Card>
 
       <Drawer
-        title="Edit Student"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge-sm icon-badge-orange">
+              <EditOutlined />
+            </div>
+            <span>Edit Student</span>
+          </div>
+        }
         open={editOpen}
         onClose={() => setEditOpen(false)}
         width={720}
         destroyOnClose
-        extra={<Button type="primary" loading={saving} onClick={() => editForm.submit()}>Save</Button>}
+        className="modern-drawer"
+        extra={
+          <Button 
+            type="primary" 
+            loading={saving} 
+            onClick={() => editForm.submit()}
+            style={{ borderRadius: 10, background: 'linear-gradient(135deg, #102540, #1e3a5f)', border: 'none' }}
+          >
+            Save Changes
+          </Button>
+        }
       >
         <Form form={editForm} layout="vertical" onFinish={async (values) => {
           try {
@@ -285,13 +376,25 @@ export function AdminStudents() {
       </Drawer>
 
       <Modal
-        title="Create Student"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge-sm icon-badge-green">
+              <UserAddOutlined />
+            </div>
+            <span>Create New Student</span>
+          </div>
+        }
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => form.submit()}
-        okText="Create"
+        okText="Create Student"
         width={720}
         confirmLoading={creating}
+        className="modern-modal"
+        okButtonProps={{ 
+          style: { borderRadius: 10, background: 'linear-gradient(135deg, #102540, #1e3a5f)', border: 'none' }
+        }}
+        cancelButtonProps={{ style: { borderRadius: 10 } }}
       >
         <Form form={form} layout="vertical" onFinish={onCreate} initialValues={{ level: 'LEVEL1' }}>
           <Row gutter={12}>

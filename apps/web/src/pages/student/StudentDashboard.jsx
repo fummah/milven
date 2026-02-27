@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, List, Progress, Space, Button, Typography, Empty, Row, Col, Statistic, Tag, message, Spin, Divider } from 'antd';
-import { ReadOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, CreditCardOutlined, BookOutlined, ShoppingCartOutlined, RiseOutlined } from '@ant-design/icons';
+import { ReadOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, CreditCardOutlined, BookOutlined, ShoppingCartOutlined, RiseOutlined, TrophyOutlined, FileTextOutlined, CalendarOutlined, PlayCircleOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -288,11 +288,21 @@ export function StudentDashboard() {
   }, [stripeSessionId]);
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Typography.Title level={4} style={{ margin: 0 }}>My Dashboard</Typography.Title>
+    <Space direction="vertical" size={24} style={{ width: '100%' }}>
+      {/* Page Header */}
+      <div className="page-header">
+        <div>
+          <Typography.Title level={2} className="page-header-title">
+            My Dashboard
+          </Typography.Title>
+          <div className="page-header-subtitle">
+            Track your learning progress and upcoming exams
+          </div>
+        </div>
+      </div>
 
       {loading ? (
-        <Card>
+        <Card className="stat-card">
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 280, padding: 48 }}>
             <Spin size="large" tip="Loading your dashboard…" />
           </div>
@@ -301,19 +311,26 @@ export function StudentDashboard() {
         <>
       {!hasSubscriptionOrPurchase && (
         <Card
+          className="stat-card"
           style={{
             background: 'linear-gradient(135deg, #f0f7ff 0%, #e6f4ff 100%)',
-            border: '1px solid #91caff',
-            borderRadius: 12
+            border: '1px solid #91caff'
           }}
         >
           <div style={{ marginBottom: 20 }}>
-            <Typography.Title level={5} style={{ color: '#102540', margin: '0 0 8px' }}>
-              You have not yet purchased any subscription
-            </Typography.Title>
-            <Typography.Text type="secondary">
-              Please select any course below to subscribe (monthly, yearly, or one-time purchase) and start learning.
-            </Typography.Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <div className="icon-badge icon-badge-blue">
+                <BookOutlined style={{ fontSize: 24 }} />
+              </div>
+              <div>
+                <Typography.Title level={4} style={{ color: '#102540', margin: 0 }}>
+                  Get Started with Your Learning Journey
+                </Typography.Title>
+                <Typography.Text type="secondary">
+                  Subscribe to a course to unlock all learning materials and exams
+                </Typography.Text>
+              </div>
+            </div>
           </div>
           <Typography.Text strong style={{ display: 'block', marginBottom: 12, color: '#102540' }}>
             Top courses to subscribe
@@ -402,66 +419,152 @@ export function StudentDashboard() {
         </Card>
       )}
 
+      {/* Stats Cards */}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic title="My Courses" value={kpis.totalCourses} prefix={<BookOutlined style={{ color: '#102540' }} />} />
+          <Card className="stat-card stat-card-gradient stat-card-blue">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div>
+                <Typography.Text style={{ color: '#64748b', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 8 }}>
+                  My Courses
+                </Typography.Text>
+                <Typography.Title level={2} style={{ margin: 0, color: '#1e293b', fontWeight: 700 }}>
+                  {kpis.totalCourses}
+                </Typography.Title>
+              </div>
+              <div className="icon-badge" style={{ background: 'linear-gradient(135deg, #dbeafe, #bfdbfe)' }}>
+                <BookOutlined style={{ fontSize: 22, color: '#3b82f6' }} />
+              </div>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic title="Average Progress" value={kpis.avgProgress} suffix="%" prefix={<RiseOutlined style={{ color: '#102540' }} />} />
+          <Card className="stat-card stat-card-gradient stat-card-purple">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div>
+                <Typography.Text style={{ color: '#64748b', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 8 }}>
+                  Average Progress
+                </Typography.Text>
+                <Typography.Title level={2} style={{ margin: 0, color: '#1e293b', fontWeight: 700 }}>
+                  {kpis.avgProgress}%
+                </Typography.Title>
+              </div>
+              <div className="icon-badge" style={{ background: 'linear-gradient(135deg, #ede9fe, #ddd6fe)' }}>
+                <RiseOutlined style={{ fontSize: 22, color: '#8b5cf6' }} />
+              </div>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic title="Learning Time" value={kpis.learningTime} prefix={<ClockCircleOutlined style={{ color: '#102540' }} />} />
+          <Card className="stat-card stat-card-gradient stat-card-green">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div>
+                <Typography.Text style={{ color: '#64748b', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 8 }}>
+                  Learning Time
+                </Typography.Text>
+                <Typography.Title level={2} style={{ margin: 0, color: '#1e293b', fontWeight: 700 }}>
+                  {kpis.learningTime}
+                </Typography.Title>
+              </div>
+              <div className="icon-badge" style={{ background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)' }}>
+                <ClockCircleOutlined style={{ fontSize: 22, color: '#22c55e' }} />
+              </div>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic title="Active Subs" value={kpis.activeSubs} prefix={<CreditCardOutlined style={{ color: '#102540' }} />} />
+          <Card className="stat-card stat-card-gradient stat-card-orange">
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div>
+                <Typography.Text style={{ color: '#64748b', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 8 }}>
+                  Active Subs
+                </Typography.Text>
+                <Typography.Title level={2} style={{ margin: 0, color: '#1e293b', fontWeight: 700 }}>
+                  {kpis.activeSubs}
+                </Typography.Title>
+              </div>
+              <div className="icon-badge" style={{ background: 'linear-gradient(135deg, #ffedd5, #fed7aa)' }}>
+                <CreditCardOutlined style={{ fontSize: 22, color: '#f97316' }} />
+              </div>
+            </div>
           </Card>
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
         <Col xs={24} md={16}>
-          <Card title="Continue Learning" loading={loading}>
+          <Card 
+            className="modern-card"
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div className="icon-badge-sm icon-badge-blue">
+                  <PlayCircleOutlined />
+                </div>
+                <span style={{ fontWeight: 600 }}>Continue Learning</span>
+              </div>
+            }
+            loading={loading}
+          >
             {continueLearningCourses.length === 0 ? (
-              <Empty description={courses.length === 0 ? 'No courses yet' : 'No courses in progress'} />
+              <div className="empty-state">
+                <div className="empty-state-icon">
+                  <BookOutlined />
+                </div>
+                <Typography.Text type="secondary">
+                  {courses.length === 0 ? 'No courses yet' : 'No courses in progress'}
+                </Typography.Text>
+              </div>
             ) : (
               <List
                 dataSource={continueLearningCourses}
                 renderItem={(c) => (
-                  <List.Item
-                    actions={[
+                  <div className="modern-list-item">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                        <div className="icon-badge-sm icon-badge-purple">
+                          <BookOutlined style={{ fontSize: 14 }} />
+                        </div>
+                        <div>
+                          <Typography.Text strong style={{ display: 'block', color: '#1e293b' }}>{c.name}</Typography.Text>
+                          <Tag color="blue" style={{ marginTop: 4 }}>{c.level}</Tag>
+                        </div>
+                      </div>
+                      <div style={{ minWidth: 180 }} className="progress-enhanced">
+                        <Progress percent={c.progressPercent || 0} size="small" />
+                      </div>
                       <Button
                         type="primary"
-                        icon={<ReadOutlined />}
+                        icon={<ArrowRightOutlined />}
                         onClick={() => {
                           const back = encodeURIComponent('/student');
                           navigate(`/student/learn/${c.courseId}?back=${back}`);
                         }}
+                        style={{ 
+                          background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                          border: 'none',
+                          borderRadius: 10
+                        }}
                       >
                         Continue
                       </Button>
-                    ]}
-                  >
-                    <List.Item.Meta
-                      title={c.name}
-                      description={<span>Level: {c.level}</span>}
-                    />
-                    <div style={{ minWidth: 220 }}>
-                      <Progress percent={c.progressPercent || 0} />
                     </div>
-                  </List.Item>
+                  </div>
                 )}
               />
             )}
           </Card>
         </Col>
         <Col xs={24} md={8}>
-          <Card title="Available Exams" loading={loading}>
+          <Card 
+            className="modern-card"
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div className="icon-badge-sm icon-badge-orange">
+                  <FileTextOutlined />
+                </div>
+                <span style={{ fontWeight: 600 }}>Available Exams</span>
+              </div>
+            }
+            loading={loading}>
             <Space direction="vertical" style={{ width: '100%' }}>
               <Typography.Text type="secondary">Exams for enrolled courses</Typography.Text>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -621,7 +724,17 @@ export function StudentDashboard() {
         </Col>
       </Row>
 
-      <Card title="Completed Courses & Exam Results">
+      <Card 
+        className="modern-card"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge-sm icon-badge-green">
+              <TrophyOutlined />
+            </div>
+            <span style={{ fontWeight: 600 }}>Completed Courses & Exam Results</span>
+          </div>
+        }
+      >
         <Typography.Text type="secondary">Courses you have completed, with overall exam result.</Typography.Text>
         {completedCourses.length === 0 ? (
           <Empty description="No completed courses yet" style={{ marginTop: 16 }} />
@@ -666,7 +779,18 @@ export function StudentDashboard() {
         )}
       </Card>
 
-      <Card title="Current Subscriptions" loading={loading}>
+      <Card 
+        className="modern-card"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge-sm icon-badge-purple">
+              <CreditCardOutlined />
+            </div>
+            <span style={{ fontWeight: 600 }}>Current Subscriptions</span>
+          </div>
+        }
+        loading={loading}
+      >
         <Typography.Text type="secondary">Your active and past-due subscriptions.</Typography.Text>
         {!subs.length ? (
           <Empty description="No subscriptions" style={{ marginTop: 16 }} />

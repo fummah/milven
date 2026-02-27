@@ -353,9 +353,23 @@ export function AdminSettings() {
   ];
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Typography.Title level={4} style={{ margin: 0 }}>Settings</Typography.Title>
-      <Tabs items={items} />
+    <Space direction="vertical" size={24} style={{ width: '100%' }}>
+      {/* Page Header */}
+      <div className="page-header">
+        <div>
+          <Typography.Title level={2} className="page-header-title">
+            Settings
+          </Typography.Title>
+          <div className="page-header-subtitle">
+            Configure your application settings and preferences
+          </div>
+        </div>
+      </div>
+
+      {/* Settings Tabs */}
+      <Card className="modern-card" styles={{ body: { padding: 0 } }}>
+        <Tabs items={items} className="modern-tabs" style={{ padding: '0 24px' }} />
+      </Card>
     </Space>
   );
 }

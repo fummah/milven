@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Table, Space, Button, Typography, Modal, Form, Select, message, DatePicker, Tag, Tooltip, Input, Dropdown, Grid } from 'antd';
-import { PlusOutlined, FileTextOutlined, DownloadOutlined, SendOutlined, StopOutlined, ExclamationCircleOutlined, EditOutlined, DownOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, FileTextOutlined, DownloadOutlined, SendOutlined, StopOutlined, ExclamationCircleOutlined, EditOutlined, DownOutlined, DeleteOutlined, DollarOutlined, SearchOutlined, FilterOutlined, CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, UserOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../../lib/api';
 
@@ -207,16 +207,65 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
   };
 
   const columns = [
-    { title: 'Invoice #', dataIndex: 'number' },
-    { title: 'User', dataIndex: 'customerEmail', render: v => v || '-' },
-    { title: 'Total', dataIndex: 'total', render: v => v != null ? `$${(v/100).toFixed(2)}` : '-' },
-    { title: 'Amount Due', render: (_, r) => `$${(getInvoiceAmountDue(r)/100).toFixed(2)}` },
-    { title: 'Amount Paid', render: (_, r) => `$${(getInvoiceAmountPaid(r)/100).toFixed(2)}` },
-    { title: 'Currency', dataIndex: 'currency' },
+    { 
+      title: 'Invoice #', 
+      dataIndex: 'number',
+      render: (num) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="icon-badge-sm icon-badge-blue">
+            <FileTextOutlined style={{ fontSize: 14 }} />
+          </div>
+          <Typography.Text strong style={{ color: '#1e293b' }}>{num || '-'}</Typography.Text>
+        </div>
+      )
+    },
+    { 
+      title: 'User', 
+      dataIndex: 'customerEmail', 
+      render: v => (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <UserOutlined style={{ color: '#64748b' }} />
+          {v || '-'}
+        </span>
+      )
+    },
+    { 
+      title: 'Total', 
+      dataIndex: 'total', 
+      render: v => (
+        <Typography.Text strong style={{ color: '#3b82f6' }}>
+          {v != null ? `$${(v/100).toFixed(2)}` : '-'}
+        </Typography.Text>
+      )
+    },
+    { 
+      title: 'Amount Due', 
+      render: (_, r) => {
+        const due = getInvoiceAmountDue(r);
+        return (
+          <Typography.Text style={{ color: due > 0 ? '#f97316' : '#64748b' }}>
+            ${(due/100).toFixed(2)}
+          </Typography.Text>
+        );
+      }
+    },
+    { 
+      title: 'Amount Paid', 
+      render: (_, r) => {
+        const paid = getInvoiceAmountPaid(r);
+        return (
+          <Typography.Text style={{ color: paid > 0 ? '#22c55e' : '#64748b' }}>
+            ${(paid/100).toFixed(2)}
+          </Typography.Text>
+        );
+      }
+    },
+    { title: 'Currency', dataIndex: 'currency', render: v => <Tag>{v?.toUpperCase() || 'USD'}</Tag> },
     { title: 'Status', dataIndex: 'displayStatus', render: s => {
       const value = s || 'Pending';
-      const color = value === 'Paid' ? 'green' : value === 'Pending' ? 'blue' : value === 'Cancelled' ? 'default' : value === 'Unpaid' ? 'orange' : 'red';
-      return <Tag color={color}>{value}</Tag>;
+      const color = value === 'Paid' ? 'success' : value === 'Pending' ? 'processing' : value === 'Cancelled' ? 'default' : value === 'Unpaid' ? 'warning' : 'error';
+      const icon = value === 'Paid' ? <CheckCircleOutlined /> : value === 'Pending' ? <ClockCircleOutlined /> : null;
+      return <Tag icon={icon} color={color}>{value}</Tag>;
     } },
     { title: 'Actions', render: (_, r) => {
         const items = [
@@ -280,55 +329,75 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <Typography.Title level={4} style={{ margin: 0 }}>Invoices</Typography.Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>Create Invoice</Button>
+      <div className="page-header">
+        <div>
+          <Typography.Title level={3} className="page-header-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge icon-badge-blue">
+              <FileTextOutlined style={{ fontSize: 20 }} />
+            </div>
+            Invoices
+          </Typography.Title>
+          <Typography.Text type="secondary" className="page-header-subtitle">
+            Manage billing invoices and payments
+          </Typography.Text>
+        </div>
+        <Button 
+          type="primary" 
+          icon={<PlusOutlined />} 
+          onClick={() => setOpen(true)}
+          style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', border: 'none', borderRadius: 10, height: 40, fontWeight: 500 }}
+        >
+          Create Invoice
+        </Button>
       </div>
 
-      <Space wrap style={{ width: '100%' }}>
-        <Button onClick={loadInvoices}>Refresh</Button>
-        <Select
-          allowClear
-          placeholder="Filter by user"
-          style={{ width: isMobile ? 260 : 260 }}
-          value={filterUserId || undefined}
-          onChange={setFilterUserId}
-          showSearch
-          onSearch={(v) => loadUsers(v)}
-          optionFilterProp="label"
-          options={(users || []).map(u => ({ label: `${u.email}${u.firstName ? ' - ' + u.firstName : ''}`, value: u.id }))}
-        />
-        <Select
-          allowClear
-          placeholder="Status"
-          style={{ width: isMobile ? 160 : 160 }}
-          value={statusFilter}
-          onChange={setStatusFilter}
-          options={[
-            { label: 'Open', value: 'open' },
-            { label: 'Paid', value: 'paid' },
-            { label: 'Uncollectible', value: 'uncollectible' },
-            { label: 'Void', value: 'void' },
-            { label: 'Draft', value: 'draft' }
-          ]}
-        >
-        </Select>
-        <RangePicker
-          value={dateRange}
-          onChange={setDateRange}
-          style={{ width: isMobile ? 260 : 260 }}
-          placeholder={['From invoice date', 'To invoice date']}
-        />
-        <Input.Search
-          placeholder="Search number, user, product…"
-          allowClear
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onSearch={() => loadInvoices()}
-          style={{ width: isMobile ? 260 : 260 }}
-        />
-      </Space>
-      <Card>
+      <Card className="modern-card">
+        <Space wrap size={12}>
+          <Button onClick={loadInvoices} style={{ borderRadius: 10 }}>Refresh</Button>
+          <Select
+            allowClear
+            placeholder="Filter by user"
+            style={{ width: isMobile ? '100%' : 260, borderRadius: 10 }}
+            value={filterUserId || undefined}
+            onChange={setFilterUserId}
+            showSearch
+            onSearch={(v) => loadUsers(v)}
+            optionFilterProp="label"
+            options={(users || []).map(u => ({ label: `${u.email}${u.firstName ? ' - ' + u.firstName : ''}`, value: u.id }))}
+          />
+          <Select
+            allowClear
+            placeholder="Status"
+            style={{ width: isMobile ? '100%' : 160, borderRadius: 10 }}
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[
+              { label: 'Open', value: 'open' },
+              { label: 'Paid', value: 'paid' },
+              { label: 'Uncollectible', value: 'uncollectible' },
+              { label: 'Void', value: 'void' },
+              { label: 'Draft', value: 'draft' }
+            ]}
+          />
+          <RangePicker
+            value={dateRange}
+            onChange={setDateRange}
+            style={{ width: isMobile ? '100%' : 260, borderRadius: 10 }}
+            placeholder={['From invoice date', 'To invoice date']}
+          />
+          <Input
+            placeholder="Search number, user, product…"
+            prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+            allowClear
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onPressEnter={() => loadInvoices()}
+            style={{ width: isMobile ? '100%' : 260, borderRadius: 10 }}
+          />
+        </Space>
+      </Card>
+
+      <Card className="modern-card">
         <Space direction="vertical" size={8} style={{ width: '100%', marginBottom: 8 }}>
           <Typography.Text strong>Totals (current filters)</Typography.Text>
           <Space size={8} wrap>
@@ -342,8 +411,10 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
           loading={loading}
           dataSource={filteredInvoices}
           columns={columns}
+          className="modern-table"
           size={isMobile ? 'small' : 'middle'}
           scroll={isMobile ? { x: 'max-content' } : undefined}
+          pagination={{ showTotal: (total) => `${total} invoices`, showSizeChanger: false }}
           expandable={{
             expandedRowRender: (r) => (
               <div>
@@ -372,6 +443,9 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
         onCancel={() => setOpen(false)}
         onOk={() => form.submit()}
         confirmLoading={creating}
+        className="modern-modal"
+        okButtonProps={{ style: { background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', border: 'none', borderRadius: 8 } }}
+        cancelButtonProps={{ style: { borderRadius: 8 } }}
       >
         <Form form={form} layout="vertical" onFinish={onCreate}>
           <Form.Item name="userId" label="User" rules={[{ required: true }]}>
@@ -395,6 +469,9 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
         onCancel={() => setEditOpen(false)}
         onOk={() => editForm.submit()}
         confirmLoading={editLoading}
+        className="modern-modal"
+        okButtonProps={{ style: { background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', border: 'none', borderRadius: 8 } }}
+        cancelButtonProps={{ style: { borderRadius: 8 } }}
       >
         <Form form={editForm} layout="vertical" onFinish={onSaveEdit}>
           <Form.Item name="dueDate" label="Due Date">
@@ -476,8 +553,9 @@ useEffect(() => { loadInvoices(); /* eslint-disable-next-line */ }, [filterUserI
         title={`Invoice Details${detailInvoice?.number ? ' · #' + detailInvoice.number : ''}`}
         open={detailOpen}
         onCancel={() => setDetailOpen(false)}
-        footer={<Button onClick={() => setDetailOpen(false)}>Close</Button>}
+        footer={<Button onClick={() => setDetailOpen(false)} style={{ borderRadius: 8 }}>Close</Button>}
         width={800}
+        className="modern-modal"
       >
         {detailInvoice ? (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>

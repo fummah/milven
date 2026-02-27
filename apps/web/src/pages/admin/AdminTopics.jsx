@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Form, Input, Button, Select, message, Table, Drawer, Space, Popconfirm, Tag, Tabs, Modal, Upload, Steps, Layout, List, Divider, Radio, Descriptions, Typography, Grid } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, UploadOutlined, FolderOutlined, SearchOutlined, EyeOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, UploadOutlined, FolderOutlined, SearchOutlined, EyeOutlined, BookOutlined, FileTextOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 // Natural sort comparison - handles "Volume 1", "Volume 10" correctly
@@ -433,20 +433,39 @@ export function AdminTopics() {
   }, [modules]);
 
   return (
-    <Card
-      title="Admin · Modules & Topics"
-      extra={
+    <div>
+      <div className="page-header">
+        <div>
+          <Typography.Title level={3} className="page-header-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge icon-badge-cyan">
+              <BookOutlined style={{ fontSize: 20 }} />
+            </div>
+            Modules & Topics
+          </Typography.Title>
+          <Typography.Text type="secondary" className="page-header-subtitle">
+            Organize course content into modules and topics
+          </Typography.Text>
+        </div>
         <Space>
-          <Button icon={<FolderOutlined />} onClick={() => { setEditingModule(null); moduleForm.resetFields(); moduleForm.setFieldsValue({ courseId: filterModuleCourseId || '', level: 'LEVEL1' }); setModuleDrawerOpen(true); }}>
+          <Button 
+            icon={<FolderOutlined />} 
+            onClick={() => { setEditingModule(null); moduleForm.resetFields(); moduleForm.setFieldsValue({ courseId: filterModuleCourseId || '', level: 'LEVEL1' }); setModuleDrawerOpen(true); }}
+            style={{ borderRadius: 10 }}
+          >
             New Module
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setTopicStep(0); form.resetFields(); form.setFieldsValue({ courseId: '', moduleId: '' }); setDrawerOpen(true); }}>
+          <Button 
+            type="primary" 
+            icon={<PlusOutlined />} 
+            onClick={() => { setEditing(null); setTopicStep(0); form.resetFields(); form.setFieldsValue({ courseId: '', moduleId: '' }); setDrawerOpen(true); }}
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', border: 'none', borderRadius: 10, height: 40, fontWeight: 500 }}
+          >
             New Topic
           </Button>
         </Space>
-      }
-    >
-      <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
+      </div>
+    <Card className="modern-card">
+      <Tabs activeKey={activeTab} onChange={setActiveTab} className="modern-tabs" items={[
         {
           key: 'modules',
           label: 'Modules',
@@ -674,6 +693,7 @@ export function AdminTopics() {
         onClose={() => setModuleDrawerOpen(false)}
         width={400}
         destroyOnClose
+        className="modern-drawer"
       >
         <Form layout="vertical" form={moduleForm} onFinish={submitModule} initialValues={{ level: 'LEVEL1' }}>
           <Form.Item name="name" label="Module Name" rules={[{ required: true }]}>
@@ -713,8 +733,8 @@ export function AdminTopics() {
             <Input type="number" min={0} placeholder="Display order" />
           </Form.Item>
           <Space>
-            <Button onClick={() => setModuleDrawerOpen(false)}>Cancel</Button>
-            <Button type="primary" htmlType="submit">{editingModule ? 'Update' : 'Create'}</Button>
+            <Button onClick={() => setModuleDrawerOpen(false)} style={{ borderRadius: 8 }}>Cancel</Button>
+            <Button type="primary" htmlType="submit" style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', border: 'none', borderRadius: 8 }}>{editingModule ? 'Update' : 'Create'}</Button>
           </Space>
         </Form>
       </Drawer>
@@ -725,6 +745,7 @@ export function AdminTopics() {
         onClose={() => { setDrawerOpen(false); setTopicStep(0); setEditing(null); }}
         width={860}
         destroyOnClose={false}
+        className="modern-drawer"
       >
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Steps size="small" current={topicStep} items={[{ title: 'Details' }, { title: 'Learning Materials' }]} />
@@ -844,6 +865,7 @@ export function AdminTopics() {
         onClose={() => setManageOpen(false)}
         width={840}
         destroyOnClose
+        className="modern-drawer"
       >
         <Tabs
           defaultActiveKey="materials"
@@ -879,6 +901,7 @@ export function AdminTopics() {
         open={examViewOpen}
         width={820}
         onClose={() => setExamViewOpen(false)}
+        className="modern-drawer"
       >
         {examViewLoading ? (
           <Typography.Text>Loading...</Typography.Text>
@@ -923,6 +946,9 @@ export function AdminTopics() {
         open={materialModalOpen}
         onCancel={() => setMaterialModalOpen(false)}
         onOk={() => materialForm.submit()}
+        className="modern-modal"
+        okButtonProps={{ style: { background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', border: 'none', borderRadius: 8 } }}
+        cancelButtonProps={{ style: { borderRadius: 8 } }}
       >
         <Form layout="vertical" form={materialForm} onFinish={saveMaterial}>
           <Form.Item name="id" hidden><Input /></Form.Item>
@@ -1035,5 +1061,6 @@ export function AdminTopics() {
         </Form>
       </Modal>
     </Card>
+    </div>
   );
 }

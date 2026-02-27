@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Input, Space, Select, Button, Modal, Form, message, Drawer, Popconfirm, Descriptions, Tag, Divider, Row, Col, Switch, Grid } from 'antd';
-import { PlusOutlined, EditOutlined, EyeOutlined, DeleteOutlined, UserOutlined, MailOutlined, PhoneOutlined, GlobalOutlined, SafetyCertificateOutlined, CalendarOutlined } from '@ant-design/icons';
+import { Table, Typography, Input, Space, Select, Button, Modal, Form, message, Drawer, Popconfirm, Descriptions, Tag, Divider, Row, Col, Switch, Grid, Card } from 'antd';
+import { PlusOutlined, EditOutlined, EyeOutlined, DeleteOutlined, UserOutlined, MailOutlined, PhoneOutlined, GlobalOutlined, SafetyCertificateOutlined, CalendarOutlined, SearchOutlined, FilterOutlined, UserAddOutlined, TeamOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { countriesOptions } from '../../constants/countries';
 
@@ -81,34 +81,65 @@ export function AdminUsers() {
   }, [viewing?.id]);
 
   const columns = [
-    { title: 'First Name', dataIndex: 'firstName' },
-    { title: 'Last Name', dataIndex: 'lastName' },
-    { title: 'Email', dataIndex: 'email' },
-    { title: 'Phone', dataIndex: 'phone' },
-    { title: 'Country', dataIndex: 'country' },
-    { title: 'Role', dataIndex: 'role' },
-    { title: 'Verified', dataIndex: 'emailVerifiedAt', render: (v) => (v ? 'Yes' : 'No') },
-    { title: 'Created', dataIndex: 'createdAt', render: (v) => (v ? new Date(v).toLocaleString() : '-') },
+    { 
+      title: 'User', 
+      render: (_, record) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className={`icon-badge-sm ${record.role === 'ADMIN' ? 'icon-badge-orange' : 'icon-badge-blue'}`}>
+            <UserOutlined style={{ fontSize: 14 }} />
+          </div>
+          <div>
+            <Typography.Text strong style={{ display: 'block', color: '#1e293b' }}>
+              {[record.firstName, record.lastName].filter(Boolean).join(' ') || '—'}
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {record.email}
+            </Typography.Text>
+          </div>
+        </div>
+      )
+    },
+    { title: 'Phone', dataIndex: 'phone', render: v => v || '—' },
+    { title: 'Country', dataIndex: 'country', render: v => v || '—' },
+    { title: 'Role', dataIndex: 'role', render: v => (
+      <Tag color={v === 'ADMIN' ? 'gold' : 'blue'}>{v}</Tag>
+    )},
+    { title: 'Verified', dataIndex: 'emailVerifiedAt', render: (v) => (
+      v ? <Tag color="success">Verified</Tag> : <Tag>Unverified</Tag>
+    )},
+    { title: 'Joined', dataIndex: 'createdAt', render: (v) => (
+      v ? <Typography.Text type="secondary" style={{ fontSize: 13 }}>{new Date(v).toLocaleDateString()}</Typography.Text> : '—'
+    )},
     {
       title: 'Actions',
+      width: 140,
       render: (_, record) => (
-        <Space>
-          <Button icon={<EyeOutlined />} size="small" onClick={() => setViewing(record)}>View</Button>
-          <Button icon={<EditOutlined />} size="small" onClick={() => {
-            setEditing(record);
-            form.setFieldsValue({
-              role: record.role,
-              level: record.level,
-              firstName: record.firstName,
-              lastName: record.lastName,
-              phone: record.phone,
-              country: record.country,
-              verified: !!record.emailVerifiedAt
-            });
-            setOpen(true);
-          }}>Edit</Button>
+        <Space size={8}>
+          <button className="action-btn action-btn-view" onClick={() => setViewing(record)}>
+            <EyeOutlined />
+          </button>
+          <button 
+            className="action-btn action-btn-edit" 
+            onClick={() => {
+              setEditing(record);
+              form.setFieldsValue({
+                role: record.role,
+                level: record.level,
+                firstName: record.firstName,
+                lastName: record.lastName,
+                phone: record.phone,
+                country: record.country,
+                verified: !!record.emailVerifiedAt
+              });
+              setOpen(true);
+            }}
+          >
+            <EditOutlined />
+          </button>
           <Popconfirm title="Delete user?" onConfirm={() => removeUser(record)}>
-            <Button danger icon={<DeleteOutlined />} size="small">Delete</Button>
+            <button className="action-btn action-btn-delete">
+              <DeleteOutlined />
+            </button>
           </Popconfirm>
         </Space>
       )
@@ -117,44 +148,113 @@ export function AdminUsers() {
 
   return (
     <div>
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 gap-3">
-        <Typography.Title level={4} style={{ margin: 0 }}>Users</Typography.Title>
-        <Space wrap>
-          <Input.Search placeholder="Search email" allowClear onSearch={() => fetchUsers()} value={q} onChange={e => setQ(e.target.value)} style={{ width: isMobile ? 260 : undefined }} />
-          <Select placeholder="Role" allowClear style={{ width: isMobile ? 160 : 140 }} value={role} onChange={setRole}
+      {/* Page Header */}
+      <div className="page-header">
+        <div>
+          <Typography.Title level={2} className="page-header-title">
+            Users
+          </Typography.Title>
+          <div className="page-header-subtitle">
+            Manage all user accounts and permissions
+          </div>
+        </div>
+        <Button 
+          type="primary" 
+          size="large"
+          icon={<UserAddOutlined />} 
+          onClick={() => { setEditing(null); form.resetFields(); setOpen(true); }}
+          style={{ 
+            background: 'linear-gradient(135deg, #102540, #1e3a5f)',
+            border: 'none',
+            borderRadius: 12,
+            height: 44,
+            paddingInline: 24,
+            fontWeight: 600
+          }}
+        >
+          Add User
+        </Button>
+      </div>
+
+      {/* Filters Card */}
+      <Card 
+        className="modern-card" 
+        style={{ marginBottom: 24 }}
+        styles={{ body: { padding: '16px 24px' } }}
+      >
+        <Space wrap size={12} style={{ width: '100%' }}>
+          <Input
+            placeholder="Search by name or email..."
+            prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+            allowClear
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            onPressEnter={() => fetchUsers()}
+            style={{ width: 280, borderRadius: 10 }}
+          />
+          <Select 
+            placeholder="Filter by role" 
+            allowClear 
+            style={{ width: 140 }} 
+            value={role} 
+            onChange={setRole}
             options={[{ value: 'ADMIN', label: 'Admin' }, { value: 'STUDENT', label: 'Student' }]}
           />
-          <Select placeholder="Level" allowClear style={{ width: isMobile ? 180 : 160 }} value={level} onChange={setLevel}
+          <Select 
+            placeholder="Filter by level" 
+            allowClear 
+            style={{ width: 160 }} 
+            value={level} 
+            onChange={setLevel}
             options={[{ value: 'LEVEL1', label: 'Level I' }, { value: 'LEVEL2', label: 'Level II' }, { value: 'LEVEL3', label: 'Level III' }]}
           />
-          <Button onClick={() => fetchUsers()}>Filter</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.resetFields(); setOpen(true); }}>New User</Button>
+          <Button 
+            icon={<FilterOutlined />}
+            onClick={() => fetchUsers()}
+            style={{ borderRadius: 10 }}
+          >
+            Apply Filters
+          </Button>
         </Space>
-      </div>
-      <Table
-        rowKey="id"
-        loading={loading}
-        dataSource={data}
-        columns={columns}
-        size={isMobile ? 'small' : 'middle'}
-        scroll={isMobile ? { x: 'max-content' } : undefined}
-        pagination={{
-          total,
-          pageSize: 20,
-          onChange: (page) => fetchUsers({ skip: (page - 1) * 20, take: 20 })
-        }}
-      />
+      </Card>
+
+      {/* Data Table */}
+      <Card className="modern-card" styles={{ body: { padding: 0 } }}>
+        <div className="modern-table">
+          <Table
+            rowKey="id"
+            loading={loading}
+            dataSource={data}
+            columns={columns}
+            size={isMobile ? 'small' : 'middle'}
+            scroll={isMobile ? { x: 'max-content' } : undefined}
+            pagination={{
+              total,
+              pageSize: 20,
+              onChange: (page) => fetchUsers({ skip: (page - 1) * 20, take: 20 }),
+              style: { padding: '16px 24px', margin: 0 }
+            }}
+          />
+        </div>
+      </Card>
       <Drawer
-        title="User Details"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge-sm icon-badge-blue">
+              <UserOutlined />
+            </div>
+            <span>User Details</span>
+          </div>
+        }
         open={!!viewing}
         onClose={() => { setViewing(null); setViewingFull(null); }}
         width={480}
+        className="modern-drawer"
         extra={
           viewing && (
             <Button
               type="primary"
               icon={<EditOutlined />}
-              size="small"
               onClick={() => {
                 const u = viewingFull || viewing;
                 setViewing(null);
@@ -163,8 +263,9 @@ export function AdminUsers() {
                 form.setFieldsValue({ role: u.role, level: u.level, firstName: u.firstName, lastName: u.lastName, phone: u.phone, country: u.country, verified: !!u.emailVerifiedAt });
                 setOpen(true);
               }}
+              style={{ borderRadius: 10, background: 'linear-gradient(135deg, #102540, #1e3a5f)', border: 'none' }}
             >
-              Edit
+              Edit User
             </Button>
           )
         }
@@ -286,11 +387,23 @@ export function AdminUsers() {
         })()}
       </Drawer>
       <Modal
-        title={editing ? 'Edit User' : 'Create User'}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className={`icon-badge-sm ${editing ? 'icon-badge-orange' : 'icon-badge-green'}`}>
+              {editing ? <EditOutlined /> : <UserAddOutlined />}
+            </div>
+            <span>{editing ? 'Edit User' : 'Create New User'}</span>
+          </div>
+        }
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => form.submit()}
-        okText={editing ? 'Save' : 'Create'}
+        okText={editing ? 'Save Changes' : 'Create User'}
+        className="modern-modal"
+        okButtonProps={{ 
+          style: { borderRadius: 10, background: 'linear-gradient(135deg, #102540, #1e3a5f)', border: 'none' }
+        }}
+        cancelButtonProps={{ style: { borderRadius: 10 } }}
       >
         <Form form={form} layout="vertical" onFinish={async (values) => {
           try {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Input, Space, Button, Modal, Form, Select, InputNumber, Switch, message, Drawer, Radio, Tooltip, Grid } from 'antd';
-import { PlusOutlined, EditOutlined, EyeOutlined, DeleteOutlined, FilterOutlined } from '@ant-design/icons';
+import { Table, Typography, Input, Space, Button, Modal, Form, Select, InputNumber, Switch, message, Drawer, Radio, Tooltip, Grid, Card, Tag } from 'antd';
+import { PlusOutlined, EditOutlined, EyeOutlined, DeleteOutlined, FilterOutlined, BookOutlined, SearchOutlined, DollarOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useNavigate } from 'react-router-dom';
 
@@ -80,69 +80,96 @@ export function AdminCourses() {
   useEffect(() => { fetchCourses(); fetchProducts(); fetchLevels(); /* eslint-disable-next-line */ }, []);
 
   const columns = [
-    { title: 'Course Name', dataIndex: 'name' },
+    { 
+      title: 'Course', 
+      render: (_, record) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="icon-badge-sm icon-badge-purple">
+            <BookOutlined style={{ fontSize: 14 }} />
+          </div>
+          <div>
+            <Typography.Text strong style={{ display: 'block', color: '#1e293b' }}>
+              {record.name}
+            </Typography.Text>
+            {record.description && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {record.description?.substring(0, 50)}{record.description?.length > 50 ? '...' : ''}
+              </Typography.Text>
+            )}
+          </div>
+        </div>
+      )
+    },
     { title: 'Level', dataIndex: 'level', render: (v) => {
       const found = levelsList.find(l => l.value === v);
-      if (found) return found.label;
-      if (v === 'NONE') return 'None';
-      if (v === 'LEVEL1') return 'Level I';
-      if (v === 'LEVEL2') return 'Level II';
-      if (v === 'LEVEL3') return 'Level III';
-      return v ?? '-';
+      const label = found ? found.label : (v === 'NONE' ? 'None' : v === 'LEVEL1' ? 'Level I' : v === 'LEVEL2' ? 'Level II' : v === 'LEVEL3' ? 'Level III' : v ?? '-');
+      const colorMap = { 'LEVEL1': 'blue', 'LEVEL2': 'purple', 'LEVEL3': 'gold', 'NONE': 'default' };
+      return <Tag color={colorMap[v] || 'default'}>{label}</Tag>;
     }},
-    { title: 'Duration (hrs)', dataIndex: 'durationHours', render: (v) => v ?? '-' },
+    { title: 'Duration', dataIndex: 'durationHours', render: (v) => v ? `${v} hrs` : '—' },
     {
-      title: 'Price (from products)',
+      title: 'Price',
       key: 'price',
       render: (_, rec) => {
         const products = rec?.products || (rec?.courseProducts ? (rec.courseProducts || []).map(cp => cp.product) : []);
-        if (!products || products.length === 0) return '—';
+        if (!products || products.length === 0) return <Tag>No pricing</Tag>;
         if (products.length === 1) {
           const p = products[0] || {};
           const cents = typeof p.priceCents === "number" ? p.priceCents : 0;
           const dollars = (cents / 100).toFixed(2);
           const suffix = p.interval === 'MONTHLY' ? '/mo' : (p.interval === 'YEARLY' ? '/yr' : '');
-          return `$${dollars}${suffix ? ' ' + suffix : ''}`;
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <DollarOutlined style={{ color: '#22c55e' }} />
+              <Typography.Text strong style={{ color: '#22c55e' }}>${dollars}{suffix}</Typography.Text>
+            </div>
+          );
         }
         const amounts = products.map(p => (typeof p.priceCents === "number" ? p.priceCents : 0));
         const min = Math.min(...amounts);
-        return `from $${(min / 100).toFixed(2)}`;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <DollarOutlined style={{ color: '#22c55e' }} />
+            <Typography.Text style={{ color: '#22c55e' }}>from ${(min / 100).toFixed(2)}</Typography.Text>
+          </div>
+        );
       }
     },
-    { title: 'Active', dataIndex: 'active', render: (v) => v ? 'Yes' : 'No' },
+    { title: 'Status', dataIndex: 'active', render: (v) => (
+      v ? (
+        <Tag icon={<CheckCircleOutlined />} color="success">Active</Tag>
+      ) : (
+        <Tag icon={<CloseCircleOutlined />} color="default">Inactive</Tag>
+      )
+    )},
     {
       title: 'Actions',
+      width: 140,
       render: (_, record) => (
-        <Space size={6}>
-          <Tooltip title="View">
-            <Button
-              size="small"
-              shape="circle"
-              type="text"
-              icon={<EyeOutlined />}
-              style={{ background: '#e6f4ff', color: '#102540' }}
+        <Space size={8}>
+          <Tooltip title="View Details">
+            <button
+              className="action-btn action-btn-view"
               onClick={() => navigate(`/admin/courses/${record.id}`)}
-            />
+            >
+              <EyeOutlined />
+            </button>
           </Tooltip>
           <Tooltip title="Edit">
-            <Button
-              size="small"
-              shape="circle"
-              type="text"
-              icon={<EditOutlined />}
-              style={{ background: '#fff7e6', color: '#fa8c16' }}
+            <button
+              className="action-btn action-btn-edit"
               onClick={() => { setEditing(record); form.setFieldsValue(record); setOpen(true); }}
-            />
+            >
+              <EditOutlined />
+            </button>
           </Tooltip>
           <Tooltip title="Delete">
-            <Button
-              size="small"
-              shape="circle"
-              type="text"
-              icon={<DeleteOutlined />}
-              style={{ background: '#fff1f0', color: '#cf1322' }}
+            <button
+              className="action-btn action-btn-delete"
               onClick={() => removeCourse(record)}
-            />
+            >
+              <DeleteOutlined />
+            </button>
           </Tooltip>
         </Space>
       )
@@ -161,39 +188,125 @@ export function AdminCourses() {
 
   return (
     <div>
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 gap-3">
-        <Typography.Title level={4} style={{ margin: 0 }}>Courses</Typography.Title>
-        <Space wrap>
-          <Input.Search placeholder="Search name/description" allowClear onSearch={() => fetchCourses()} value={q} onChange={e => setQ(e.target.value)} style={{ width: isMobile ? 260 : undefined }} />
-          <Select placeholder="Level" allowClear style={{ width: isMobile ? 180 : 160 }} value={level} onChange={setLevel}
-            options={levelsList}
-          />
-          <Select placeholder="Active" allowClear style={{ width: isMobile ? 160 : 140 }} value={onlyActive}
-            onChange={setOnlyActive}
-            options={[{ value: true, label: 'Active' }, { value: false, label: 'Inactive' }]}
-          />
-          <Button icon={<FilterOutlined />} onClick={() => fetchCourses()}>Filter</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => {
+      {/* Page Header */}
+      <div className="page-header">
+        <div>
+          <Typography.Title level={2} className="page-header-title">
+            Courses
+          </Typography.Title>
+          <div className="page-header-subtitle">
+            Create and manage your course catalog
+          </div>
+        </div>
+        <Button 
+          type="primary" 
+          size="large"
+          icon={<PlusOutlined />} 
+          onClick={() => {
             setEditing(null);
             form.resetFields();
             const none = levelsList.find(l => l.value === 'NONE');
             form.setFieldsValue({ active: true, level: none ? 'NONE' : undefined });
             setOpen(true);
-          }}>New Course</Button>
-        </Space>
+          }}
+          style={{ 
+            background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+            border: 'none',
+            borderRadius: 12,
+            height: 44,
+            paddingInline: 24,
+            fontWeight: 600
+          }}
+        >
+          Create Course
+        </Button>
       </div>
-      <Table
-        rowKey="id"
-        loading={loading}
-        dataSource={data}
-        columns={columns}
-        size={isMobile ? 'small' : 'middle'}
-        scroll={isMobile ? { x: 'max-content' } : undefined}
-        pagination={{ total, pageSize: 20, onChange: () => {} }}
-      />
 
-      <Drawer title={editing ? 'Edit Course' : 'New Course'} open={open} onClose={() => setOpen(false)} width={800}
-        extra={<Button type="primary" loading={submitting} onClick={() => form.submit()}>{editing ? 'Save' : 'Create'}</Button>}>
+      {/* Filters Card */}
+      <Card 
+        className="modern-card" 
+        style={{ marginBottom: 24 }}
+        styles={{ body: { padding: '16px 24px' } }}
+      >
+        <Space wrap size={12} style={{ width: '100%' }}>
+          <Input
+            placeholder="Search courses..."
+            prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+            allowClear
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            onPressEnter={() => fetchCourses()}
+            style={{ width: 260, borderRadius: 10 }}
+          />
+          <Select 
+            placeholder="Filter by level" 
+            allowClear 
+            style={{ width: 160 }} 
+            value={level} 
+            onChange={setLevel}
+            options={levelsList}
+          />
+          <Select 
+            placeholder="Status" 
+            allowClear 
+            style={{ width: 140 }} 
+            value={onlyActive}
+            onChange={setOnlyActive}
+            options={[{ value: true, label: 'Active' }, { value: false, label: 'Inactive' }]}
+          />
+          <Button 
+            icon={<FilterOutlined />} 
+            onClick={() => fetchCourses()}
+            style={{ borderRadius: 10 }}
+          >
+            Apply Filters
+          </Button>
+        </Space>
+      </Card>
+
+      {/* Data Table */}
+      <Card className="modern-card" styles={{ body: { padding: 0 } }}>
+        <div className="modern-table">
+          <Table
+            rowKey="id"
+            loading={loading}
+            dataSource={data}
+            columns={columns}
+            size={isMobile ? 'small' : 'middle'}
+            scroll={isMobile ? { x: 'max-content' } : undefined}
+            pagination={{ 
+              total, 
+              pageSize: 20, 
+              onChange: () => {},
+              style: { padding: '16px 24px', margin: 0 }
+            }}
+          />
+        </div>
+      </Card>
+
+      <Drawer 
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className={`icon-badge-sm ${editing ? 'icon-badge-orange' : 'icon-badge-purple'}`}>
+              {editing ? <EditOutlined /> : <BookOutlined />}
+            </div>
+            <span>{editing ? 'Edit Course' : 'Create New Course'}</span>
+          </div>
+        }
+        open={open} 
+        onClose={() => setOpen(false)} 
+        width={800}
+        className="modern-drawer"
+        extra={
+          <Button 
+            type="primary" 
+            loading={submitting} 
+            onClick={() => form.submit()}
+            style={{ borderRadius: 10, background: 'linear-gradient(135deg, #7c3aed, #6d28d9)', border: 'none' }}
+          >
+            {editing ? 'Save Changes' : 'Create Course'}
+          </Button>
+        }>
         <Form form={form} layout="vertical" onFinish={async (values) => {
           try {
             setSubmitting(true);

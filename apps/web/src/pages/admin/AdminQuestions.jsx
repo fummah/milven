@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Upload, Modal, Drawer, Tag, Tooltip, Radio, Divider, Collapse, Spin } from 'antd';
-import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PictureOutlined, DeleteFilled, FilterOutlined } from '@ant-design/icons';
+import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PictureOutlined, DeleteFilled, FilterOutlined, QuestionCircleOutlined, BookOutlined, SearchOutlined, CalendarOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 
@@ -279,29 +279,98 @@ export function AdminQuestions() {
 	};
 
 	const columns = [
-		{ title: 'Question', dataIndex: 'stem', ellipsis: true, render: (text) => text.length > 100 ? `${text.substring(0, 100)}...` : text },
-		{ title: 'Type', dataIndex: 'type', width: 140, render: (v) => <Tag color={v === 'MCQ' ? 'blue' : (v === 'VIGNETTE_MCQ' ? 'purple' : 'default')}>{v}</Tag> },
-		{ title: 'Difficulty', dataIndex: 'difficulty', width: 120, render: (d) => <Tag color={d === 'EASY' ? 'green' : d === 'MEDIUM' ? 'orange' : 'red'}>{d}</Tag> },
-		{ title: 'Marks', dataIndex: 'marks', width: 90 },
-		{ title: 'Topic', dataIndex: 'topicId', width: 200, render: (topicId) => {
-			const topic = topics.find(t => t.id === topicId);
-			return topic ? topic.name : '—';
-		}},
-		{ title: 'Created', dataIndex: 'createdAt', width: 150, render: v => v ? new Date(v).toLocaleDateString() : '-' },
+		{ 
+			title: 'Question', 
+			dataIndex: 'stem', 
+			ellipsis: true, 
+			render: (text, record) => (
+				<div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+					<div className="icon-badge-sm icon-badge-purple">
+						<QuestionCircleOutlined style={{ fontSize: 14 }} />
+					</div>
+					<div style={{ flex: 1, minWidth: 0 }}>
+						<Typography.Text style={{ display: 'block', color: '#1e293b' }}>
+							{text.length > 80 ? `${text.substring(0, 80)}...` : text}
+						</Typography.Text>
+						{record.qid && (
+							<Typography.Text type="secondary" style={{ fontSize: 11 }}>
+								ID: {record.qid}
+							</Typography.Text>
+						)}
+					</div>
+				</div>
+			)
+		},
+		{ 
+			title: 'Type', 
+			dataIndex: 'type', 
+			width: 150, 
+			render: (v) => {
+				const iconMap = { MCQ: <CheckCircleOutlined />, VIGNETTE_MCQ: <BookOutlined />, CONSTRUCTED_RESPONSE: <EditOutlined /> };
+				return <Tag icon={iconMap[v]} color={v === 'MCQ' ? 'blue' : (v === 'VIGNETTE_MCQ' ? 'purple' : 'cyan')}>{v === 'CONSTRUCTED_RESPONSE' ? 'Constructed' : v}</Tag>;
+			}
+		},
+		{ 
+			title: 'Difficulty', 
+			dataIndex: 'difficulty', 
+			width: 120, 
+			render: (d) => <Tag color={d === 'EASY' ? 'success' : d === 'MEDIUM' ? 'warning' : 'error'}>{d}</Tag> 
+		},
+		{ 
+			title: 'Marks', 
+			dataIndex: 'marks', 
+			width: 90,
+			render: (v) => <Typography.Text strong style={{ color: '#3b82f6' }}>{v || 1}</Typography.Text>
+		},
+		{ 
+			title: 'Topic', 
+			dataIndex: 'topicId', 
+			width: 180,
+			ellipsis: true,
+			render: (topicId) => {
+				const topic = topics.find(t => t.id === topicId);
+				return topic ? (
+					<Tag 
+						icon={<BookOutlined />} 
+						style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+						title={topic.name}
+					>
+						{topic.name.length > 20 ? `${topic.name.substring(0, 20)}...` : topic.name}
+					</Tag>
+				) : <Tag>—</Tag>;
+			}
+		},
+		{ 
+			title: 'Created', 
+			dataIndex: 'createdAt', 
+			width: 120, 
+			render: v => v ? (
+				<span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#64748b', fontSize: 12, whiteSpace: 'nowrap' }}>
+					<CalendarOutlined />
+					{new Date(v).toLocaleDateString()}
+				</span>
+			) : '-' 
+		},
 		{
 			title: 'Actions',
-			width: 120,
+			width: 140,
 			fixed: 'right',
 			render: (_, record) => (
-				<Space size={4}>
+				<Space size={8}>
 					<Tooltip title="Preview">
-						<Button size="small" type="text" icon={<EyeOutlined />} onClick={() => openPreview(record.id)} />
+						<button className="action-btn action-btn-view" onClick={() => openPreview(record.id)}>
+							<EyeOutlined />
+						</button>
 					</Tooltip>
 					<Tooltip title="Edit">
-						<Button size="small" type="text" icon={<EditOutlined />} onClick={() => navigate(`/admin/questions/${record.id}/edit`)} />
+						<button className="action-btn action-btn-edit" onClick={() => navigate(`/admin/questions/${record.id}/edit`)}>
+							<EditOutlined />
+						</button>
 					</Tooltip>
 					<Tooltip title="Delete">
-						<Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => deleteQuestion(record.id)} />
+						<button className="action-btn action-btn-delete" onClick={() => deleteQuestion(record.id)}>
+							<DeleteOutlined />
+						</button>
 					</Tooltip>
 				</Space>
 			)
@@ -313,12 +382,56 @@ export function AdminQuestions() {
 
 	return (
 		<Space key="admin-questions-page" direction="vertical" size={16} style={{ width: '100%' }}>
+			{/* Page Header */}
+			<div className="page-header">
+				<div>
+					<Typography.Title level={3} className="page-header-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+						<div className="icon-badge icon-badge-purple">
+							<QuestionCircleOutlined style={{ fontSize: 20 }} />
+						</div>
+						Question Bank
+					</Typography.Title>
+					<Typography.Text type="secondary" className="page-header-subtitle">
+						Manage exam questions, bulk upload, and organize by topic
+					</Typography.Text>
+				</div>
+				<Space>
+					<Button 
+						icon={<DownloadOutlined />} 
+						onClick={downloadTemplate}
+						style={{ borderRadius: 10 }}
+					>
+						Excel Template
+					</Button>
+					<Button 
+						icon={<UploadOutlined />} 
+						onClick={() => { setBulkOpen(true); setBulkResult(null); bulkForm.resetFields(); }}
+						style={{ borderRadius: 10 }}
+					>
+						Bulk Upload
+					</Button>
+					<Button 
+						type="primary" 
+						icon={<PlusOutlined />} 
+						onClick={() => {
+							setDrawerOpen(true);
+							form.resetFields();
+							form.setFieldsValue({ type: 'MCQ', difficulty: 'MEDIUM', marks: 1, options: [{ text: '', isCorrect: false }] });
+						}}
+						style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)', border: 'none', borderRadius: 10, height: 40, fontWeight: 500 }}
+					>
+						Add Question
+					</Button>
+				</Space>
+			</div>
+
 			{/* Filter Toggle Button */}
 			<div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
 				<Button 
 					icon={<FilterOutlined />} 
 					onClick={() => setFiltersVisible(!filtersVisible)}
 					type={hasActiveFilters ? 'primary' : 'default'}
+					style={{ borderRadius: 10 }}
 				>
 					{filtersVisible ? 'Hide Filters' : 'Show Filters'}
 					{hasActiveFilters && !filtersVisible && ' (Active)'}
@@ -334,6 +447,7 @@ export function AdminQuestions() {
 							form.setFieldsValue({ courseId: undefined });
 							setApplyFilters(true);
 						}}
+						style={{ borderRadius: 8 }}
 					>
 						Clear Filters
 					</Button>
@@ -342,18 +456,17 @@ export function AdminQuestions() {
 
 			{/* Collapsible Filters */}
 			{filtersVisible && (
-				<Card size="small">
+				<Card size="small" className="modern-card">
 					<Space wrap size={12}>
 						<Form.Item label="Course" style={{ margin: 0 }}>
 							<Select
-								style={{ minWidth: 200 }}
+								style={{ minWidth: 200, borderRadius: 10 }}
 								allowClear
 								placeholder="All courses"
 								value={courseId || undefined}
 								onChange={(v) => {
 									setCourseId(v || '');
-									setTopicId(''); // Reset topic when course changes
-									// Don't auto-apply, wait for filter button
+									setTopicId('');
 								}}
 								options={filteredCoursesOptions}
 								showSearch
@@ -363,13 +476,12 @@ export function AdminQuestions() {
 						<Form.Item label="Topic" style={{ margin: 0 }}>
 							<Select
 								mode="multiple"
-								style={{ minWidth: 200 }}
+								style={{ minWidth: 200, borderRadius: 10 }}
 								allowClear
 								placeholder="All topics"
 								value={Array.isArray(topicId) ? topicId : (topicId ? [topicId] : [])}
 								onChange={(v) => {
 									setTopicId(Array.isArray(v) ? (v.length > 0 ? v : '') : (v || ''));
-									// Don't auto-apply, wait for filter button
 								}}
 								options={filteredTopicOptions}
 								showSearch
@@ -379,13 +491,12 @@ export function AdminQuestions() {
 						<Form.Item name="difficulty" label="Difficulty" style={{ margin: 0 }}>
 							<Select
 								mode="multiple"
-								style={{ minWidth: 200 }}
+								style={{ minWidth: 200, borderRadius: 10 }}
 								allowClear
 								placeholder="All"
 								value={Array.isArray(difficulty) ? difficulty : (difficulty ? [difficulty] : [])}
 								onChange={(v) => {
 									setDifficulty(Array.isArray(v) ? (v.length > 0 ? v : '') : (v || ''));
-									// Don't auto-apply, wait for filter button
 								}}
 								options={[
 									{ value: 'EASY', label: 'Easy' },
@@ -396,58 +507,57 @@ export function AdminQuestions() {
 						</Form.Item>
 						<Form.Item label="Search" style={{ margin: 0 }}>
 							<Input
-								style={{ minWidth: 200 }}
+								style={{ minWidth: 200, borderRadius: 10 }}
 								placeholder="Search in question text..."
+								prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
 								value={wording}
 								onChange={(e) => setWording(e.target.value)}
 							/>
 						</Form.Item>
-						<Button type="primary" onClick={() => setApplyFilters(true)}>Apply Filters</Button>
-						<Button onClick={() => {
-							setCourseId('');
-							setTopicId('');
-							setDifficulty('');
-							setWording('');
-							form.setFieldsValue({ courseId: undefined });
-							setApplyFilters(true);
-						}}>Clear Filters</Button>
+						<Button 
+							type="primary" 
+							onClick={() => setApplyFilters(true)}
+							style={{ borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', border: 'none' }}
+						>
+							Apply Filters
+						</Button>
+						<Button 
+							onClick={() => {
+								setCourseId('');
+								setTopicId('');
+								setDifficulty('');
+								setWording('');
+								form.setFieldsValue({ courseId: undefined });
+								setApplyFilters(true);
+							}}
+							style={{ borderRadius: 10 }}
+						>
+							Clear Filters
+						</Button>
 					</Space>
 				</Card>
 			)}
 
 			{/* Questions Table */}
-			<Card
-				title="Question Bank"
-				extra={
-					<Space>
-						<Button icon={<DownloadOutlined />} onClick={downloadTemplate}>Excel Template</Button>
-						<Button icon={<UploadOutlined />} type="primary" onClick={() => { setBulkOpen(true); setBulkResult(null); bulkForm.resetFields(); }}>Bulk Upload</Button>
-					</Space>
-				}
-			>
-				<Space direction="vertical" size={8} style={{ marginBottom: 12, width: '100%' }}>
-					<Button 
-						type="primary" 
-						icon={<PlusOutlined />} 
-						onClick={() => {
-							setDrawerOpen(true);
-							form.resetFields();
-							form.setFieldsValue({ type: 'MCQ', difficulty: 'MEDIUM', marks: 1, options: [{ text: '', isCorrect: false }] });
-						}}
-					>
-						Add Question
-					</Button>
+			<Card className="modern-card">
+				<div style={{ marginBottom: 16 }}>
 					<Typography.Text type="secondary">
-						Showing {questions.length} questions • Filters work together
+						Showing <strong>{questions.length}</strong> questions
 					</Typography.Text>
-				</Space>
+				</div>
 				<Table
 					rowKey="id"
 					loading={loading}
 					dataSource={questions}
 					columns={columns}
+					className="modern-table"
 					scroll={{ x: 1200 }}
-					pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'] }}
+					pagination={{ 
+						pageSize: 10, 
+						showSizeChanger: true, 
+						pageSizeOptions: ['10', '20', '50'],
+						showTotal: (total) => `${total} questions`
+					}}
 				/>
 			</Card>
 
@@ -468,8 +578,9 @@ export function AdminQuestions() {
 					}
 				}}
 				okText={bulkUploading ? 'Uploading...' : 'Upload'}
-				okButtonProps={{ loading: bulkUploading }}
-				cancelButtonProps={{ disabled: bulkUploading }}
+				okButtonProps={{ loading: bulkUploading, style: { background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)', border: 'none', borderRadius: 8 } }}
+				cancelButtonProps={{ disabled: bulkUploading, style: { borderRadius: 8 } }}
+				className="modern-modal"
 			>
 				<Spin spinning={bulkUploading} tip="Uploading questions...">
 					<Form form={bulkForm} layout="vertical">
@@ -530,7 +641,6 @@ export function AdminQuestions() {
 				onClose={() => {
 					setDrawerOpen(false);
 					form.resetFields();
-					// Clean up URL parameters if drawer param exists
 					if (searchParams.get('drawer')) {
 						const params = new URLSearchParams(searchParams);
 						params.delete('drawer');
@@ -538,6 +648,7 @@ export function AdminQuestions() {
 					}
 				}}
 				width={720}
+				className="modern-drawer"
 			>
 				<Form layout="vertical" form={form} onFinish={submit} initialValues={{ type: 'MCQ', difficulty: 'MEDIUM', marks: 1, options: [{ text: '', isCorrect: false }] }}>
 					<Form.Item name="courseId" label="Course" rules={[{ required: false }]}>
@@ -737,14 +848,26 @@ export function AdminQuestions() {
 						)}
 					</Form.List>
 					<Space style={{ marginTop: 12, width: '100%', justifyContent: 'flex-end' }}>
-						<Button onClick={() => {
-							setDrawerOpen(false);
-							form.resetFields();
-							const params = new URLSearchParams(searchParams);
-							params.delete('drawer');
-							setSearchParams(params, { replace: true });
-						}}>Cancel</Button>
-						<Button type="primary" loading={submitting} htmlType="submit">Create Question</Button>
+						<Button 
+							onClick={() => {
+								setDrawerOpen(false);
+								form.resetFields();
+								const params = new URLSearchParams(searchParams);
+								params.delete('drawer');
+								setSearchParams(params, { replace: true });
+							}}
+							style={{ borderRadius: 8 }}
+						>
+							Cancel
+						</Button>
+						<Button 
+							type="primary" 
+							loading={submitting} 
+							htmlType="submit"
+							style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)', border: 'none', borderRadius: 8 }}
+						>
+							Create Question
+						</Button>
 					</Space>
 				</Form>
 			</Drawer>
@@ -758,6 +881,7 @@ export function AdminQuestions() {
 					setPreviewQuestion(null);
 				}}
 				width={720}
+				className="modern-drawer"
 			>
 				{previewLoading ? (
 					<Typography.Text>Loading...</Typography.Text>

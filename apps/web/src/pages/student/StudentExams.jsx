@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, List, Space, Button, Typography, Tag, Empty, message, Modal, Form, InputNumber, Select, Input, DatePicker, Popconfirm, Divider } from 'antd';
-import { FileTextOutlined, DeleteOutlined } from '@ant-design/icons';
+import { FileTextOutlined, DeleteOutlined, PlusOutlined, ClockCircleOutlined, CheckCircleOutlined, PlayCircleOutlined, TrophyOutlined, CalendarOutlined, BookOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -241,44 +241,76 @@ export function StudentExams() {
   };
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>My Exams</Typography.Title>
+    <Space direction="vertical" size={24} style={{ width: '100%' }}>
+      {/* Page Header */}
+      <div className="page-header">
+        <div>
+          <Typography.Title level={2} className="page-header-title">
+            My Exams
+          </Typography.Title>
+          <div className="page-header-subtitle">
+            Take exams and track your progress
+          </div>
+        </div>
         {!hasOpenCustomExam ? (
           <Button
             type="primary"
-            icon={<FileTextOutlined />}
-            style={{ backgroundColor: 'rgb(14, 38, 59)', borderColor: 'rgb(14, 38, 59)' }}
+            size="large"
+            icon={<PlusOutlined />}
             onClick={() => {
               setCustomExamOpen(true);
               customExamForm.resetFields();
-                customExamForm.setFieldsValue({ 
-                  name: '', 
-                  courseId: undefined, 
-                  topicIds: undefined,
-                  difficulty: undefined, 
-                  difficulties: [],
-                  questionCount: 20, 
-                  timeLimitMinutes: 60,
-                  startAt: dayjs().add(1, 'hour'),
-                  endAt: dayjs().add(2, 'hours')
-                });
+              customExamForm.setFieldsValue({ 
+                name: '', 
+                courseId: undefined, 
+                topicIds: undefined,
+                difficulty: undefined, 
+                difficulties: [],
+                questionCount: 20, 
+                timeLimitMinutes: 60,
+                startAt: dayjs().add(1, 'hour'),
+                endAt: dayjs().add(2, 'hours')
+              });
               setTopics([]);
+            }}
+            style={{ 
+              background: 'linear-gradient(135deg, #f97316, #ea580c)',
+              border: 'none',
+              borderRadius: 12,
+              height: 44,
+              paddingInline: 24,
+              fontWeight: 600
             }}
           >
             Generate Practice Exam
           </Button>
         ) : (
-          <Typography.Text type="warning" style={{ fontSize: 12 }}>
-            You have an open or pending custom exam. Complete or delete it to create a new one.
-          </Typography.Text>
+          <Tag color="warning" style={{ padding: '8px 16px', fontSize: 13 }}>
+            Complete or delete your pending exam to create a new one
+          </Tag>
         )}
-      </Space>
+      </div>
       <Space direction="vertical" size={16} style={{ width: '100%' }}>
         {/* Admin Exams Section */}
-        <Card title="Admin Exams" loading={loading}>
+        <Card 
+          className="modern-card"
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div className="icon-badge-sm icon-badge-blue">
+                <FileTextOutlined />
+              </div>
+              <span style={{ fontWeight: 600 }}>Official Exams</span>
+            </div>
+          }
+          loading={loading}
+        >
           {adminExamItems.length === 0 ? (
-            <Empty description="No admin exams available" />
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <FileTextOutlined />
+              </div>
+              <Typography.Text type="secondary">No official exams available</Typography.Text>
+            </div>
           ) : (
             <List
               dataSource={adminExamItems}
@@ -353,9 +385,25 @@ export function StudentExams() {
         </Card>
 
         {/* My Custom Exams Section */}
-        <Card title="My Custom Exams" loading={loading}>
+        <Card 
+          className="modern-card"
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div className="icon-badge-sm icon-badge-orange">
+                <TrophyOutlined />
+              </div>
+              <span style={{ fontWeight: 600 }}>My Practice Exams</span>
+            </div>
+          }
+          loading={loading}
+        >
           {customExamItems.length === 0 ? (
-            <Empty description="No custom exams created yet" />
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <TrophyOutlined />
+              </div>
+              <Typography.Text type="secondary">No practice exams created yet</Typography.Text>
+            </div>
           ) : (
             <List
               dataSource={customExamItems}
@@ -465,13 +513,25 @@ export function StudentExams() {
       </Space>
 
       <Modal
-        title="Generate Practice Exam"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge-sm icon-badge-blue">
+              <FileTextOutlined />
+            </div>
+            <span>Generate Practice Exam</span>
+          </div>
+        }
         open={practiceOpen}
         onCancel={() => setPracticeOpen(false)}
         onOk={generatePractice}
-        okText="Start"
+        okText="Start Exam"
         confirmLoading={practiceSubmitting}
         destroyOnClose
+        className="modern-modal"
+        okButtonProps={{ 
+          style: { borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none' }
+        }}
+        cancelButtonProps={{ style: { borderRadius: 10 } }}
       >
         <Form
           layout="vertical"
@@ -511,7 +571,14 @@ export function StudentExams() {
       </Modal>
 
       <Modal
-        title="Generate Practice Exam from Question Pool"
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge-sm icon-badge-orange">
+              <PlusOutlined />
+            </div>
+            <span>Create Practice Exam</span>
+          </div>
+        }
         open={customExamOpen}
         onCancel={() => {
           setCustomExamOpen(false);
@@ -523,6 +590,11 @@ export function StudentExams() {
         confirmLoading={customExamSubmitting}
         destroyOnClose
         width={600}
+        className="modern-modal"
+        okButtonProps={{ 
+          style: { borderRadius: 10, background: 'linear-gradient(135deg, #f97316, #ea580c)', border: 'none' }
+        }}
+        cancelButtonProps={{ style: { borderRadius: 10 } }}
       >
         <Form
           layout="vertical"

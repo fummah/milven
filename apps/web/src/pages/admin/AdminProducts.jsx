@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Input, Space, Button, Form, Select, InputNumber, Switch, message, Drawer, Descriptions, Tag, Grid } from 'antd';
-import { PlusOutlined, EditOutlined, EyeOutlined, DeleteOutlined, DollarOutlined, BookOutlined } from '@ant-design/icons';
+import { Table, Typography, Input, Space, Button, Form, Select, InputNumber, Switch, message, Drawer, Descriptions, Tag, Grid, Card, Tooltip } from 'antd';
+import { PlusOutlined, EditOutlined, EyeOutlined, DeleteOutlined, DollarOutlined, BookOutlined, SearchOutlined, FilterOutlined, ShoppingOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 export function AdminProducts() {
@@ -40,25 +40,107 @@ export function AdminProducts() {
   useEffect(() => { fetchCourses(); /* eslint-disable-next-line */ }, []);
 
   const columns = [
-    { title: 'Name', dataIndex: 'name' },
-    { title: 'Price', dataIndex: 'priceCents', render: (v, r) => `$${((v || 0)/100).toFixed(2)} ${r.interval === 'MONTHLY' ? '/mo' : r.interval === 'YEARLY' ? '/yr' : ''}` },
-    { title: 'Interval', dataIndex: 'interval' },
-    { title: 'Active', dataIndex: 'active', render: v => v ? 'Yes' : 'No' },
-    { title: 'Courses', dataIndex: 'courses', render: (arr) => (arr || []).map(c => c.name).join(', ') || '—' },
+    { 
+      title: 'Product', 
+      dataIndex: 'name',
+      render: (name, record) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="icon-badge-sm icon-badge-green">
+            <ShoppingOutlined style={{ fontSize: 14 }} />
+          </div>
+          <div>
+            <Typography.Text strong style={{ display: 'block', color: '#1e293b' }}>
+              {name}
+            </Typography.Text>
+            {record.description && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {record.description?.substring(0, 40)}{record.description?.length > 40 ? '...' : ''}
+              </Typography.Text>
+            )}
+          </div>
+        </div>
+      )
+    },
+    { 
+      title: 'Price', 
+      dataIndex: 'priceCents', 
+      render: (v, r) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <DollarOutlined style={{ color: '#22c55e' }} />
+          <Typography.Text strong style={{ color: '#22c55e' }}>
+            ${((v || 0)/100).toFixed(2)}{r.interval === 'MONTHLY' ? '/mo' : r.interval === 'YEARLY' ? '/yr' : ''}
+          </Typography.Text>
+        </div>
+      )
+    },
+    { 
+      title: 'Interval', 
+      dataIndex: 'interval',
+      render: (v) => {
+        const colorMap = { ONE_TIME: 'blue', MONTHLY: 'green', YEARLY: 'purple' };
+        const labelMap = { ONE_TIME: 'One-time', MONTHLY: 'Monthly', YEARLY: 'Yearly' };
+        return <Tag color={colorMap[v] || 'default'}>{labelMap[v] || v}</Tag>;
+      }
+    },
+    { 
+      title: 'Status', 
+      dataIndex: 'active', 
+      render: v => v ? (
+        <Tag icon={<CheckCircleOutlined />} color="success">Active</Tag>
+      ) : (
+        <Tag icon={<CloseCircleOutlined />} color="default">Inactive</Tag>
+      )
+    },
+    { 
+      title: 'Courses', 
+      dataIndex: 'courses', 
+      render: (arr) => (
+        (arr || []).length > 0 ? (
+          <Space wrap size={4}>
+            {(arr || []).slice(0, 2).map(c => (
+              <Tag key={c.id} icon={<BookOutlined />} color="blue">{c.name}</Tag>
+            ))}
+            {(arr || []).length > 2 && (
+              <Tag>+{arr.length - 2} more</Tag>
+            )}
+          </Space>
+        ) : <Tag>No courses</Tag>
+      )
+    },
     {
       title: 'Actions',
+      width: 140,
       render: (_, record) => (
-        <Space>
-          <Button icon={<EyeOutlined />} size="small" onClick={() => setViewing(record)}>View</Button>
-          <Button icon={<EditOutlined />} size="small" onClick={() => { setEditing(record); form.setFieldsValue({
-            name: record.name,
-            description: record.description,
-            price: (record.priceCents || 0)/100,
-            interval: record.interval,
-            active: record.active,
-            courseIds: (record.courses || []).map(c => c.id)
-          }); setOpen(true); }}>Edit</Button>
-          <Button icon={<DeleteOutlined />} size="small" danger onClick={() => removeProduct(record)}>Delete</Button>
+        <Space size={8}>
+          <Tooltip title="View Details">
+            <button className="action-btn action-btn-view" onClick={() => setViewing(record)}>
+              <EyeOutlined />
+            </button>
+          </Tooltip>
+          <Tooltip title="Edit">
+            <button 
+              className="action-btn action-btn-edit" 
+              onClick={() => { 
+                setEditing(record); 
+                form.setFieldsValue({
+                  name: record.name,
+                  description: record.description,
+                  price: (record.priceCents || 0)/100,
+                  interval: record.interval,
+                  active: record.active,
+                  courseIds: (record.courses || []).map(c => c.id)
+                }); 
+                setOpen(true); 
+              }}
+            >
+              <EditOutlined />
+            </button>
+          </Tooltip>
+          <Tooltip title="Delete">
+            <button className="action-btn action-btn-delete" onClick={() => removeProduct(record)}>
+              <DeleteOutlined />
+            </button>
+          </Tooltip>
         </Space>
       )
     }
@@ -76,29 +158,87 @@ export function AdminProducts() {
 
   return (
     <div>
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 gap-3">
-        <Typography.Title level={4} style={{ margin: 0 }}>Products</Typography.Title>
-        <Space wrap>
-          <Input.Search placeholder="Search name/description" allowClear onSearch={fetchProducts} value={q} onChange={e => setQ(e.target.value)} style={{ width: isMobile ? 260 : undefined }} />
-          <Select placeholder="Active" allowClear style={{ width: isMobile ? 160 : 140 }} value={onlyActive} onChange={setOnlyActive}
+      <div className="page-header">
+        <div>
+          <Typography.Title level={3} className="page-header-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge icon-badge-green">
+              <ShoppingOutlined style={{ fontSize: 20 }} />
+            </div>
+            Products
+          </Typography.Title>
+          <Typography.Text type="secondary" className="page-header-subtitle">
+            Manage subscription plans and one-time purchases
+          </Typography.Text>
+        </div>
+        <Button 
+          type="primary" 
+          icon={<PlusOutlined />} 
+          onClick={() => { setEditing(null); form.resetFields(); form.setFieldsValue({ interval: 'ONE_TIME', active: true }); setOpen(true); }}
+          style={{ background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)', border: 'none', borderRadius: 10, height: 40, fontWeight: 500 }}
+        >
+          New Product
+        </Button>
+      </div>
+
+      <Card className="modern-card" style={{ marginBottom: 20 }}>
+        <Space wrap size={12}>
+          <Input
+            placeholder="Search products..." 
+            prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+            allowClear 
+            value={q} 
+            onChange={e => setQ(e.target.value)} 
+            onPressEnter={fetchProducts}
+            style={{ width: isMobile ? '100%' : 280, borderRadius: 10 }} 
+          />
+          <Select 
+            placeholder="Filter by status" 
+            allowClear 
+            style={{ width: isMobile ? '100%' : 160, borderRadius: 10 }} 
+            value={onlyActive} 
+            onChange={setOnlyActive}
             options={[{ value: true, label: 'Active' }, { value: false, label: 'Inactive' }]}
           />
-          <Button onClick={fetchProducts}>Filter</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.resetFields(); form.setFieldsValue({ interval: 'ONE_TIME', active: true }); setOpen(true); }}>New Product</Button>
+          <Button 
+            icon={<FilterOutlined />} 
+            onClick={fetchProducts}
+            style={{ borderRadius: 10 }}
+          >
+            Filter
+          </Button>
         </Space>
-      </div>
-      <Table
-        rowKey="id"
-        loading={loading}
-        dataSource={data}
-        columns={columns}
-        size={isMobile ? 'small' : 'middle'}
-        scroll={isMobile ? { x: 'max-content' } : undefined}
-        pagination={{ total, pageSize: 20 }}
-      />
+      </Card>
 
-      <Drawer title={editing ? 'Edit Product' : 'New Product'} open={open} onClose={() => setOpen(false)} width={800}
-              extra={<Button type="primary" loading={submitting} onClick={() => form.submit()}>{editing ? 'Save' : 'Create'}</Button>}>
+      <Card className="modern-card">
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={data}
+          columns={columns}
+          className="modern-table"
+          size={isMobile ? 'small' : 'middle'}
+          scroll={isMobile ? { x: 'max-content' } : undefined}
+          pagination={{ total, pageSize: 20, showSizeChanger: false, showTotal: (total) => `${total} products` }}
+        />
+      </Card>
+
+      <Drawer 
+        title={editing ? 'Edit Product' : 'New Product'} 
+        open={open} 
+        onClose={() => setOpen(false)} 
+        width={800}
+        className="modern-drawer"
+        extra={
+          <Button 
+            type="primary" 
+            loading={submitting} 
+            onClick={() => form.submit()}
+            style={{ background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)', border: 'none', borderRadius: 8 }}
+          >
+            {editing ? 'Save Changes' : 'Create Product'}
+          </Button>
+        }
+      >
         <Form
           form={form}
           layout="vertical"
@@ -162,15 +302,28 @@ export function AdminProducts() {
         open={!!viewing}
         onClose={() => setViewing(null)}
         width={520}
+        className="modern-drawer"
         extra={viewing && (
-          <Button type="primary" icon={<EditOutlined />} onClick={() => { setViewing(null); setEditing(viewing); form.setFieldsValue({
-            name: viewing.name,
-            description: viewing.description,
-            price: (viewing.priceCents || 0) / 100,
-            interval: viewing.interval,
-            active: viewing.active,
-            courseIds: (viewing.courses || []).map(c => c.id)
-          }); setOpen(true); }}>Edit</Button>
+          <Button 
+            type="primary" 
+            icon={<EditOutlined />} 
+            onClick={() => { 
+              setViewing(null); 
+              setEditing(viewing); 
+              form.setFieldsValue({
+                name: viewing.name,
+                description: viewing.description,
+                price: (viewing.priceCents || 0) / 100,
+                interval: viewing.interval,
+                active: viewing.active,
+                courseIds: (viewing.courses || []).map(c => c.id)
+              }); 
+              setOpen(true); 
+            }}
+            style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', border: 'none', borderRadius: 8 }}
+          >
+            Edit
+          </Button>
         )}
       >
         {viewing && (

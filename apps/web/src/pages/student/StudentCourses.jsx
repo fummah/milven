@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, List, Space, Typography, Tag, Empty, Button, Input, message } from 'antd';
-import { SearchOutlined, BookOutlined, TrophyOutlined, FilePdfOutlined, CheckCircleOutlined, CreditCardOutlined } from '@ant-design/icons';
+import { Card, List, Space, Typography, Tag, Empty, Button, Input, message, Progress } from 'antd';
+import { SearchOutlined, BookOutlined, TrophyOutlined, FilePdfOutlined, CheckCircleOutlined, CreditCardOutlined, ArrowRightOutlined, ShoppingCartOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { downloadCertificatePdf } from '../../lib/certificatePdf';
@@ -179,203 +179,181 @@ export function StudentCourses() {
   };
 
   return (
-    <Space direction="vertical" size={20} style={{ width: '100%' }}>
-      <div style={{ marginBottom: 8 }}>
-        <Typography.Title level={3} style={{ margin: 0, fontWeight: 600, color: '#1f2937' }}>
-          My Courses
-        </Typography.Title>
-        <Typography.Text type="secondary" style={{ fontSize: 14 }}>
-          Your enrolled and subscribed courses
-        </Typography.Text>
+    <Space direction="vertical" size={24} style={{ width: '100%' }}>
+      {/* Page Header */}
+      <div className="page-header">
+        <div>
+          <Typography.Title level={2} className="page-header-title">
+            My Courses
+          </Typography.Title>
+          <div className="page-header-subtitle">
+            Your enrolled and subscribed courses
+          </div>
+        </div>
       </div>
+
       <Card
+        className="modern-card"
         title={
-          <Space>
-            <BookOutlined style={{ color: '#6366f1' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge-sm icon-badge-purple">
+              <BookOutlined />
+            </div>
             <span style={{ fontWeight: 600, fontSize: 16 }}>Enrolled Courses</span>
-          </Space>
+          </div>
         }
         loading={loading}
         styles={{ body: { padding: 0 } }}
       >
         {!enrolled.length ? (
-          <div style={{ padding: 32 }}><Empty description="No enrollments yet" /></div>
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <BookOutlined />
+            </div>
+            <Typography.Text type="secondary">No enrollments yet</Typography.Text>
+          </div>
         ) : (
-          <List
-            dataSource={enrolled}
-            split
-            renderItem={(c) => {
+          <div style={{ padding: '8px 0' }}>
+            {enrolled.map((c) => {
               const inProgress = c.enrollmentStatus !== 'COMPLETED';
               return (
-              <List.Item
-                style={{
-                  padding: '16px 24px',
-                  ...(inProgress && {
-                    background: 'rgba(99, 102, 241, 0.06)',
-                    borderLeft: '4px solid #6366f1',
-                    marginLeft: 0,
-                  })
-                }}
-                actions={[
-                  ...(c.examResult?.passed
-                    ? [
+                <div 
+                  key={c.courseId}
+                  className="modern-list-item"
+                  style={{
+                    margin: '8px 16px',
+                    ...(inProgress && {
+                      background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05))',
+                      borderLeft: '4px solid #8b5cf6',
+                    })
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                      <div className={`icon-badge-sm ${c.enrollmentStatus === 'COMPLETED' ? 'icon-badge-green' : 'icon-badge-purple'}`}>
+                        {c.enrollmentStatus === 'COMPLETED' ? <CheckCircleOutlined style={{ fontSize: 16 }} /> : <BookOutlined style={{ fontSize: 16 }} />}
+                      </div>
+                      <div>
+                        <Typography.Text strong style={{ fontSize: 15, color: '#1e293b', display: 'block' }}>
+                          {c.name}
+                        </Typography.Text>
+                        <Space size={4} wrap style={{ marginTop: 6 }}>
+                          <Tag color="blue">{c.level}</Tag>
+                          {inProgress && <Tag color="purple">In progress</Tag>}
+                          {c.enrollmentStatus === 'COMPLETED' && <Tag color="success">Completed</Tag>}
+                          {c.examResult?.passed && <Tag color="success" icon={<TrophyOutlined />}>Passed</Tag>}
+                        </Space>
+                      </div>
+                    </div>
+                    <div style={{ minWidth: 120 }} className="progress-enhanced">
+                      <Progress 
+                        percent={c.progressPercent || 0} 
+                        size="small"
+                        status={c.enrollmentStatus === 'COMPLETED' ? 'success' : 'active'}
+                      />
+                    </div>
+                    <Space>
+                      {c.examResult?.passed && (
                         <Button
-                          key="cert"
-                          type="default"
                           icon={<FilePdfOutlined />}
                           loading={certLoadingId === c.courseId}
                           onClick={() => handleDownloadCertificate(c)}
+                          style={{ borderRadius: 10 }}
                         >
-                          Download Certificate
+                          Certificate
                         </Button>
-                      ]
-                    : []),
-                  <Button key="open" type="primary" ghost onClick={() => navigate(`/student/learn/${c.courseId}`)}>
-                    Open
-                  </Button>
-                ]}
-              >
-                <List.Item.Meta
-                  avatar={
-                    <div
-                      style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: '50%',
-                        background: '#102540',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0
-                      }}
-                    >
-                      <CheckCircleOutlined style={{ color: '#fff', fontSize: 18 }} />
-                    </div>
-                  }
-                  title={
-                    <Typography.Text strong style={{ fontSize: 14, color: '#111827' }}>
-                      {c.name}
-                    </Typography.Text>
-                  }
-                  description={
-                    <Space size="small" wrap style={{ marginTop: 4 }}>
-                      <Tag style={{ marginRight: 0 }}>Level: {c.level}</Tag>
-                      {inProgress && <Tag color="blue">In progress</Tag>}
-                      {c.enrollmentStatus === 'COMPLETED' && (
-                        <Tag color="green">Completed</Tag>
                       )}
-                      {c.examResult != null && (
-                        c.examResult.passed ? (
-                          <Tag color="success" icon={<TrophyOutlined />}>Passed</Tag>
-                        ) : (
-                          <Tag color="default">Exam attempted</Tag>
-                        )
-                      )}
+                      <Button 
+                        type="primary" 
+                        icon={<PlayCircleOutlined />}
+                        onClick={() => navigate(`/student/learn/${c.courseId}`)}
+                        style={{ 
+                          background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                          border: 'none',
+                          borderRadius: 10
+                        }}
+                      >
+                        Open
+                      </Button>
                     </Space>
-                  }
-                />
-                <div style={{ minWidth: 140, textAlign: 'right' }}>
-                  <Space size="small">
-                    {c.examResult != null && (
-                      <>
-                        <Tag color={c.examResult.passed ? 'green' : 'red'}>
-                          {c.progressPercent}%
-                        </Tag>
-                        <Tag color={c.examResult.passed ? 'green' : 'red'}>
-                          Exam: {Math.round(c.examResult.scorePercent ?? 0)}%
-                        </Tag>
-                      </>
-                    )}
-                    {c.examResult == null && (
-                      c.enrollmentStatus === 'COMPLETED' ? (
-                        <Tag color="green">{c.progressPercent}%</Tag>
-                      ) : (
-                        <Tag color="blue">{c.progressPercent}%</Tag>
-                      )
-                    )}
-                  </Space>
+                  </div>
                 </div>
-              </List.Item>
               );
-            }}
-          />
+            })}
+          </div>
         )}
       </Card>
       <Card
+        className="modern-card"
         title={
-          <Space>
-            <BookOutlined style={{ color: '#6366f1' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge-sm icon-badge-green">
+              <CreditCardOutlined />
+            </div>
             <span style={{ fontWeight: 600, fontSize: 16 }}>Subscribed Courses</span>
-          </Space>
+          </div>
         }
         loading={loading}
         styles={{ body: { padding: 0 } }}
       >
         {!subscribedCourses.length ? (
-          <div style={{ padding: 32 }}><Empty description="No subscribed courses" /></div>
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <CreditCardOutlined />
+            </div>
+            <Typography.Text type="secondary">No subscribed courses</Typography.Text>
+          </div>
         ) : (
-          <List
-            dataSource={subscribedCourses}
-            split
-            renderItem={(c) => (
-              <List.Item
-                style={{ padding: '16px 24px' }}
-                actions={[
-                  <Button type="primary" ghost key="open" onClick={() => navigate(`/student/learn/${c.id}`)}>
+          <div style={{ padding: '8px 0' }}>
+            {subscribedCourses.map((c) => (
+              <div key={c.id} className="modern-list-item" style={{ margin: '8px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                    <div className="icon-badge-sm icon-badge-green">
+                      <CreditCardOutlined style={{ fontSize: 16 }} />
+                    </div>
+                    <div>
+                      <Typography.Text strong style={{ fontSize: 15, color: '#1e293b', display: 'block' }}>
+                        {c.name}
+                      </Typography.Text>
+                      <Tag color="blue" style={{ marginTop: 4 }}>{c.level}</Tag>
+                    </div>
+                  </div>
+                  <Button 
+                    type="primary" 
+                    ghost
+                    icon={<ArrowRightOutlined />}
+                    onClick={() => navigate(`/student/learn/${c.id}`)}
+                    style={{ borderRadius: 10 }}
+                  >
                     Open
                   </Button>
-                ]}
-              >
-                <List.Item.Meta
-                  avatar={
-                    <div
-                      style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: '50%',
-                        background: '#102540',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0
-                      }}
-                    >
-                      <CreditCardOutlined style={{ color: '#fff', fontSize: 18 }} />
-                    </div>
-                  }
-                  title={
-                    <Typography.Text strong style={{ fontSize: 14, color: '#111827' }}>
-                      {c.name}
-                    </Typography.Text>
-                  }
-                  description={
-                    <Space size="small" wrap style={{ marginTop: 4 }}>
-                      <Tag style={{ marginRight: 0 }}>Level: {c.level}</Tag>
-                    </Space>
-                  }
-                />
-              </List.Item>
-            )}
-          />
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </Card>
       <Card
+        className="modern-card"
         title={
-          <Space>
-            <SearchOutlined style={{ color: '#6366f1' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="icon-badge-sm icon-badge-blue">
+              <SearchOutlined />
+            </div>
             <span style={{ fontWeight: 600, fontSize: 16 }}>Browse & Subscribe to Other Courses</span>
-          </Space>
+          </div>
         }
         extra={
-          <Input.Search
+          <Input
             placeholder="Search courses..."
+            prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
             allowClear
-            style={{ width: 260 }}
-            onSearch={(val) => {
-              setSearchQuery(val);
-              loadBrowseCourses(val);
+            style={{ width: 260, borderRadius: 10 }}
+            onPressEnter={(e) => {
+              setSearchQuery(e.target.value);
+              loadBrowseCourses(e.target.value);
             }}
-            enterButton={<SearchOutlined />}
           />
         }
         loading={browseLoading}
