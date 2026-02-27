@@ -1,7 +1,43 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Avatar, Button, Card, Col, Input, Row, Space, Tag, Typography, Badge, message, Progress, Statistic } from 'antd';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+
+// Animated word cycling component
+const AnimatedWord = () => {
+	const words = ['Pass', 'Prep'];
+	const [currentIndex, setCurrentIndex] = useState(0);
+
+	useEffect(() => {
+		const interval = setInterval(() => {
+			setCurrentIndex((prev) => (prev + 1) % words.length);
+		}, 2500);
+		return () => clearInterval(interval);
+	}, []);
+
+	return (
+		<span style={{ display: 'inline-block', position: 'relative', width: 'auto', minWidth: '90px' }}>
+			<AnimatePresence mode="wait">
+				<motion.span
+					key={words[currentIndex]}
+					initial={{ y: 30, opacity: 0, filter: 'blur(8px)' }}
+					animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
+					exit={{ y: -30, opacity: 0, filter: 'blur(8px)' }}
+					transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+					style={{
+						display: 'inline-block',
+						background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #06b6d4 100%)',
+						WebkitBackgroundClip: 'text',
+						WebkitTextFillColor: 'transparent',
+						backgroundClip: 'text'
+					}}
+				>
+					{words[currentIndex]}
+				</motion.span>
+			</AnimatePresence>
+		</span>
+	);
+};
 import { api } from '../lib/api';
 import {
 	GlobalOutlined,
@@ -208,8 +244,11 @@ export function Home() {
 								<h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-white" style={{ lineHeight: 1.3 }}>
 									Don't Just Study.
 									<br />
-									<span style={{ display: 'inline-block', marginTop: 8, background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #06b6d4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-										Pass the CFA® Exam.
+									<span style={{ display: 'inline-block', marginTop: 8 }}>
+										<AnimatedWord />{' '}
+										<span style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #06b6d4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+											the CFA® Exam.
+										</span>
 									</span>
 								</h1>
 								<p className="mt-5 text-lg text-gray-300 max-w-xl">
