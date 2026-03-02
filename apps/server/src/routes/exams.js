@@ -648,6 +648,373 @@ export function examsRouter(prisma) {
 		return res.json({ byTopic });
 	});
 
+	// ==========================================
+	// MISTAKE BANK ROUTES
+	// ==========================================
+
+	// Get all mistakes for current user
+	router.get('/mistakes/me', requireAuth(), async (req, res) => {
+		try {
+			const mistakes = await prisma.mistakeEntry.findMany({
+				where: { userId: req.user.id },
+				orderBy: { createdAt: 'desc' }
+			});
+
+			// Fetch question details for each mistake
+			const questionIds = mistakes.map(m => m.questionId);
+			const questions = await prisma.question.findMany({
+				where: { id: { in: questionIds } },
+				include: {
+					options: true,
+					topic: true,
+					vignette: true
+				}
+			});
+			const questionMap = new Map(questions.map(q => [q.id, q]));
+
+			const enrichedMistakes = mistakes.map(m => ({
+				...m,
+				question: questionMap.get(m.questionId) || null
+			}));
+
+			return res.json({ 
+				mistakes: enrichedMistakes,
+				total: mistakes.length,
+				unreviewedCount: mistakes.filter(m => !m.retested).length
+			});
+		} catch (err) {
+			console.error('Mistakes fetch error:', err);
+			return res.status(500).json({ error: 'Failed to fetch mistakes' });
+		}
+	});
+
+	// Add to mistake bank (called automatically when wrong answer submitted)
+	router.post('/mistakes', requireAuth(), async (req, res) => {
+		const schema = z.object({
+			questionId: z.string(),
+			attemptId: z.string().optional(),
+			answerId: z.string().optional(),
+			wrongOptionId: z.string().optional(),
+			correctOptionId: z.string().optional()
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		try {
+			const mistake = await prisma.mistakeEntry.upsert({
+				where: {
+					userId_questionId: { userId: req.user.id, questionId: parse.data.questionId }
+				},
+				update: {
+					attemptId: parse.data.attemptId,
+					answerId: parse.data.answerId,
+					wrongOptionId: parse.data.wrongOptionId,
+					correctOptionId: parse.data.correctOptionId,
+					retested: false,
+					retestedAt: null,
+					retestedCorrect: null
+				},
+				create: {
+					userId: req.user.id,
+					questionId: parse.data.questionId,
+					attemptId: parse.data.attemptId,
+					answerId: parse.data.answerId,
+					wrongOptionId: parse.data.wrongOptionId,
+					correctOptionId: parse.data.correctOptionId
+				}
+			});
+			return res.status(201).json({ mistake });
+		} catch (err) {
+			console.error('Add mistake error:', err);
+			return res.status(500).json({ error: 'Failed to add mistake' });
+		}
+	});
+
+	// Mark mistake as retested
+	router.put('/mistakes/:questionId/retest', requireAuth(), async (req, res) => {
+		const { questionId } = req.params;
+		const schema = z.object({ correct: z.boolean() });
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		try {
+			const mistake = await prisma.mistakeEntry.update({
+				where: {
+					userId_questionId: { userId: req.user.id, questionId }
+				},
+				data: {
+					retested: true,
+					retestedAt: new Date(),
+					retestedCorrect: parse.data.correct
+				}
+			});
+			return res.json({ mistake });
+		} catch (err) {
+			return res.status(404).json({ error: 'Mistake not found' });
+		}
+	});
+
+	// Remove from mistake bank
+	router.delete('/mistakes/:questionId', requireAuth(), async (req, res) => {
+		const { questionId } = req.params;
+		try {
+			await prisma.mistakeEntry.delete({
+				where: {
+					userId_questionId: { userId: req.user.id, questionId }
+				}
+			});
+			return res.json({ ok: true });
+		} catch {
+			return res.status(404).json({ error: 'Mistake not found' });
+		}
+	});
+
+	// Generate a retest exam from mistakes
+	router.post('/mistakes/retest', requireAuth(), async (req, res) => {
+		const schema = z.object({
+			questionCount: z.number().int().positive().optional(),
+			timeLimitMinutes: z.number().int().positive().optional()
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		try {
+			// Get unreviewedmistakes
+			const mistakes = await prisma.mistakeEntry.findMany({
+				where: { userId: req.user.id, retested: false },
+				select: { questionId: true }
+			});
+
+			if (mistakes.length === 0) {
+				return res.status(400).json({ error: 'No mistakes to retest' });
+			}
+
+			const questionCount = parse.data.questionCount || Math.min(mistakes.length, 20);
+			const selectedIds = shuffleInPlace(mistakes.map(m => m.questionId)).slice(0, questionCount);
+
+			// Create exam
+			const exam = await prisma.exam.create({
+				data: {
+					name: 'Mistake Retest',
+					level: req.user.level || 'LEVEL1',
+					timeLimitMinutes: parse.data.timeLimitMinutes || 30,
+					createdById: req.user.id,
+					type: 'RETEST',
+					active: true
+				}
+			});
+
+			// Link questions
+			await prisma.examQuestion.createMany({
+				data: selectedIds.map((qid, idx) => ({ examId: exam.id, questionId: qid, order: idx + 1 }))
+			});
+
+			return res.status(201).json({ examId: exam.id, questionCount: selectedIds.length });
+		} catch (err) {
+			console.error('Retest creation error:', err);
+			return res.status(500).json({ error: 'Failed to create retest exam' });
+		}
+	});
+
+	// ==========================================
+	// REVISION LIST ROUTES
+	// ==========================================
+
+	// Get revision list
+	router.get('/revision/me', requireAuth(), async (req, res) => {
+		try {
+			const entries = await prisma.revisionEntry.findMany({
+				where: { userId: req.user.id },
+				orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }]
+			});
+
+			// Fetch question details
+			const questionIds = entries.map(e => e.questionId);
+			const questions = await prisma.question.findMany({
+				where: { id: { in: questionIds } },
+				include: { options: true, topic: true, vignette: true }
+			});
+			const questionMap = new Map(questions.map(q => [q.id, q]));
+
+			const enrichedEntries = entries.map(e => ({
+				...e,
+				question: questionMap.get(e.questionId) || null
+			}));
+
+			return res.json({
+				entries: enrichedEntries,
+				total: entries.length,
+				unreviewedCount: entries.filter(e => !e.reviewed).length
+			});
+		} catch (err) {
+			console.error('Revision fetch error:', err);
+			return res.status(500).json({ error: 'Failed to fetch revision list' });
+		}
+	});
+
+	// Add to revision list
+	router.post('/revision', requireAuth(), async (req, res) => {
+		const schema = z.object({
+			questionId: z.string(),
+			note: z.string().optional(),
+			priority: z.number().int().min(1).max(3).optional()
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		try {
+			const entry = await prisma.revisionEntry.upsert({
+				where: {
+					userId_questionId: { userId: req.user.id, questionId: parse.data.questionId }
+				},
+				update: {
+					note: parse.data.note,
+					priority: parse.data.priority ?? 1,
+					reviewed: false,
+					reviewedAt: null
+				},
+				create: {
+					userId: req.user.id,
+					questionId: parse.data.questionId,
+					note: parse.data.note,
+					priority: parse.data.priority ?? 1
+				}
+			});
+			return res.status(201).json({ entry });
+		} catch (err) {
+			console.error('Add revision error:', err);
+			return res.status(500).json({ error: 'Failed to add to revision list' });
+		}
+	});
+
+	// Update revision entry
+	router.put('/revision/:questionId', requireAuth(), async (req, res) => {
+		const { questionId } = req.params;
+		const schema = z.object({
+			note: z.string().optional(),
+			priority: z.number().int().min(1).max(3).optional(),
+			reviewed: z.boolean().optional()
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		try {
+			const data = { ...parse.data };
+			if (parse.data.reviewed === true) data.reviewedAt = new Date();
+			
+			const entry = await prisma.revisionEntry.update({
+				where: {
+					userId_questionId: { userId: req.user.id, questionId }
+				},
+				data
+			});
+			return res.json({ entry });
+		} catch {
+			return res.status(404).json({ error: 'Entry not found' });
+		}
+	});
+
+	// Remove from revision list
+	router.delete('/revision/:questionId', requireAuth(), async (req, res) => {
+		const { questionId } = req.params;
+		try {
+			await prisma.revisionEntry.delete({
+				where: {
+					userId_questionId: { userId: req.user.id, questionId }
+				}
+			});
+			return res.json({ ok: true });
+		} catch {
+			return res.status(404).json({ error: 'Entry not found' });
+		}
+	});
+
+	// ==========================================
+	// WEAK TOPICS ROUTES
+	// ==========================================
+
+	// Get weak topics
+	router.get('/weak-topics/me', requireAuth(), async (req, res) => {
+		try {
+			const weakTopics = await prisma.weakTopic.findMany({
+				where: { userId: req.user.id },
+				orderBy: { percent: 'asc' }
+			});
+
+			// Fetch topic details
+			const topicIds = weakTopics.map(w => w.topicId);
+			const topics = await prisma.topic.findMany({
+				where: { id: { in: topicIds } },
+				include: { module: true }
+			});
+			const topicMap = new Map(topics.map(t => [t.id, t]));
+
+			const enrichedTopics = weakTopics.map(w => ({
+				...w,
+				topic: topicMap.get(w.topicId) || null
+			}));
+
+			return res.json({ weakTopics: enrichedTopics });
+		} catch (err) {
+			console.error('Weak topics fetch error:', err);
+			return res.status(500).json({ error: 'Failed to fetch weak topics' });
+		}
+	});
+
+	// Add to weak topics
+	router.post('/weak-topics', requireAuth(), async (req, res) => {
+		const schema = z.object({
+			topicId: z.string(),
+			wrongCount: z.number().int().optional(),
+			totalCount: z.number().int().optional()
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		try {
+			const wrongCount = parse.data.wrongCount || 1;
+			const totalCount = parse.data.totalCount || 1;
+			const percent = totalCount > 0 ? ((totalCount - wrongCount) / totalCount) * 100 : 0;
+
+			const entry = await prisma.weakTopic.upsert({
+				where: {
+					userId_topicId: { userId: req.user.id, topicId: parse.data.topicId }
+				},
+				update: {
+					wrongCount: { increment: wrongCount },
+					totalCount: { increment: totalCount },
+					percent
+				},
+				create: {
+					userId: req.user.id,
+					topicId: parse.data.topicId,
+					wrongCount,
+					totalCount,
+					percent
+				}
+			});
+			return res.status(201).json({ entry });
+		} catch (err) {
+			console.error('Add weak topic error:', err);
+			return res.status(500).json({ error: 'Failed to add weak topic' });
+		}
+	});
+
+	// Remove from weak topics
+	router.delete('/weak-topics/:topicId', requireAuth(), async (req, res) => {
+		const { topicId } = req.params;
+		try {
+			await prisma.weakTopic.delete({
+				where: {
+					userId_topicId: { userId: req.user.id, topicId }
+				}
+			});
+			return res.json({ ok: true });
+		} catch {
+			return res.status(404).json({ error: 'Entry not found' });
+		}
+	});
+
 	// Student Performance Analytics (aggregated across all attempts)
 	router.get('/analytics/me', requireAuth(), async (req, res) => {
 		try {

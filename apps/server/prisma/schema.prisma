@@ -514,3 +514,52 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 }
+
+// Mistake Bank - Auto-collected wrong answers for focused review
+model MistakeEntry {
+  id            String    @id @default(cuid())
+  userId        String
+  questionId    String
+  attemptId     String?   // Original attempt where mistake was made
+  answerId      String?   // Link to original answer
+  wrongOptionId String?   // The wrong option that was selected
+  correctOptionId String? // The correct option
+  retested      Boolean   @default(false)
+  retestedAt    DateTime?
+  retestedCorrect Boolean?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  @@unique([userId, questionId])
+  @@index([userId, retested])
+  @@index([userId, createdAt])
+}
+
+// Revision List - Questions manually added for later review
+model RevisionEntry {
+  id          String   @id @default(cuid())
+  userId      String
+  questionId  String
+  note        String?  // Optional user note
+  priority    Int      @default(1) // 1=Low, 2=Medium, 3=High
+  reviewed    Boolean  @default(false)
+  reviewedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@unique([userId, questionId])
+  @@index([userId, reviewed])
+  @@index([userId, priority])
+}
+
+// Weak Topics - Topics identified for focused study
+model WeakTopic {
+  id          String   @id @default(cuid())
+  userId      String
+  topicId     String
+  wrongCount  Int      @default(0)
+  totalCount  Int      @default(0)
+  percent     Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@unique([userId, topicId])
+  @@index([userId, percent])
+}

@@ -1,9 +1,305 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Card, Button, Typography, Space, message, Switch, InputNumber, Radio, Modal, Drawer, Tag, Divider, Progress, Tooltip } from 'antd';
-import { ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, TrophyOutlined, SendOutlined, CalculatorOutlined, BookOutlined, FireOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Card, Button, Typography, Space, message, Switch, InputNumber, Radio, Modal, Drawer, Tag, Divider, Progress, Tooltip, Alert, Collapse } from 'antd';
+import { ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, TrophyOutlined, SendOutlined, CalculatorOutlined, BookOutlined, FireOutlined, ThunderboltOutlined, BulbOutlined, FileTextOutlined, PlusOutlined, StarOutlined, ExclamationCircleOutlined, RocketOutlined, SafetyOutlined, EyeOutlined, EyeInvisibleOutlined, LockOutlined, ExperimentOutlined } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// Smart Review Panel Component - Shows after answering in Practice Mode
+function SmartReviewPanel({ answer, question, visible, onAddToRevision, onAddToWeakTopic, mode }) {
+	if (!visible || mode === 'exam' || !answer?.selectedOptionId) return null;
+
+	const isCorrect = answer.isCorrect;
+	const correctOption = question?.options?.find(o => o.isCorrect);
+	const selectedOption = question?.options?.find(o => o.id === answer.selectedOptionId);
+	const difficultyColors = { EASY: '#22c55e', MEDIUM: '#f59e0b', HARD: '#ef4444' };
+
+	return (
+		<motion.div
+			initial={{ opacity: 0, height: 0 }}
+			animate={{ opacity: 1, height: 'auto' }}
+			exit={{ opacity: 0, height: 0 }}
+			className="mt-4 overflow-hidden"
+		>
+			<div
+				className="rounded-2xl overflow-hidden"
+				style={{
+					background: isCorrect 
+						? 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)' 
+						: 'linear-gradient(135deg, #fef2f2 0%, #fecaca 100%)',
+					border: isCorrect ? '1px solid #86efac' : '1px solid #fca5a5'
+				}}
+			>
+				{/* Review Header */}
+				<div 
+					className="px-5 py-4 flex items-center justify-between"
+					style={{
+						background: isCorrect 
+							? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+							: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)'
+					}}
+				>
+					<div className="flex items-center gap-3">
+						{isCorrect ? (
+							<CheckCircleOutlined className="text-white text-xl" />
+						) : (
+							<CloseCircleOutlined className="text-white text-xl" />
+						)}
+						<Typography.Text className="text-white font-semibold text-lg">
+							{isCorrect ? 'Correct!' : 'Incorrect'}
+						</Typography.Text>
+					</div>
+					<div className="flex items-center gap-2">
+						{question?.difficulty && (
+							<Tag 
+								className="border-0 rounded-full"
+								style={{ 
+									background: 'rgba(255,255,255,0.2)', 
+									color: 'white'
+								}}
+							>
+								{question.difficulty}
+							</Tag>
+						)}
+					</div>
+				</div>
+
+				{/* Answer Comparison */}
+				<div className="p-5 space-y-4">
+					{!isCorrect && (
+						<>
+							<div className="p-4 rounded-xl bg-white border border-red-200">
+								<Typography.Text className="text-red-500 text-xs font-semibold uppercase tracking-wide block mb-2">
+									Your Answer
+								</Typography.Text>
+								<Typography.Text className="text-red-700">
+									{selectedOption?.text || 'No answer selected'}
+								</Typography.Text>
+							</div>
+							<div className="p-4 rounded-xl bg-white border border-emerald-200">
+								<Typography.Text className="text-emerald-600 text-xs font-semibold uppercase tracking-wide block mb-2">
+									Correct Answer
+								</Typography.Text>
+								<Typography.Text className="text-emerald-700 font-medium">
+									{correctOption?.text || 'N/A'}
+								</Typography.Text>
+							</div>
+						</>
+					)}
+
+					{/* Explanation */}
+					{question?.workedSolution && (
+						<Collapse
+							ghost
+							items={[{
+								key: 'explanation',
+								label: (
+									<span className="flex items-center gap-2 font-semibold text-slate-700">
+										<BulbOutlined className="text-amber-500" /> Explanation
+									</span>
+								),
+								children: (
+									<div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+										<Typography.Paragraph className="!mb-0 text-slate-700 whitespace-pre-wrap">
+											{question.workedSolution}
+										</Typography.Paragraph>
+									</div>
+								)
+							}]}
+						/>
+					)}
+
+					{/* LOS Reference & Concept */}
+					{(question?.los || question?.traceSection) && (
+						<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+							{question?.los && (
+								<div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+									<Typography.Text className="text-blue-600 text-xs font-semibold uppercase tracking-wide block mb-1">
+										<FileTextOutlined className="mr-1" /> LOS Reference
+									</Typography.Text>
+									<Typography.Text className="text-slate-700 text-sm">
+										{question.los}
+									</Typography.Text>
+								</div>
+							)}
+							{question?.traceSection && (
+								<div className="p-4 bg-purple-50 rounded-xl border border-purple-200">
+									<Typography.Text className="text-purple-600 text-xs font-semibold uppercase tracking-wide block mb-1">
+										<BookOutlined className="mr-1" /> Section
+									</Typography.Text>
+									<Typography.Text className="text-slate-700 text-sm">
+										{question.traceSection}
+										{question?.tracePage && ` (p. ${question.tracePage})`}
+									</Typography.Text>
+								</div>
+							)}
+						</div>
+					)}
+
+					{/* Key Formulas */}
+					{question?.keyFormulas && (
+						<div className="p-4 bg-indigo-50 rounded-xl border border-indigo-200">
+							<Typography.Text className="text-indigo-600 text-xs font-semibold uppercase tracking-wide block mb-2">
+								<ExperimentOutlined className="mr-1" /> Key Formulas
+							</Typography.Text>
+							<Typography.Text className="text-slate-700 font-mono text-sm whitespace-pre-wrap">
+								{question.keyFormulas}
+							</Typography.Text>
+						</div>
+					)}
+
+					{/* Topic Info */}
+					{question?.topic?.name && (
+						<div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+							<Typography.Text className="text-slate-500 text-xs font-semibold uppercase tracking-wide block mb-1">
+								Topic
+							</Typography.Text>
+							<Typography.Text className="text-slate-700">
+								{question.topic.name}
+							</Typography.Text>
+						</div>
+					)}
+
+					{/* Action Buttons */}
+					{!isCorrect && (
+						<div className="flex flex-wrap gap-2 pt-2">
+							<Button
+								icon={<PlusOutlined />}
+								onClick={() => onAddToRevision(question.id)}
+								className="rounded-xl"
+								style={{ background: '#f0f9ff', borderColor: '#bae6fd', color: '#0284c7' }}
+							>
+								Add to Revision List
+							</Button>
+							{question?.topic?.id && (
+								<Button
+									icon={<StarOutlined />}
+									onClick={() => onAddToWeakTopic(question.topic.id)}
+									className="rounded-xl"
+									style={{ background: '#fef3c7', borderColor: '#fcd34d', color: '#b45309' }}
+								>
+									Mark as Weak Topic
+								</Button>
+							)}
+						</div>
+					)}
+				</div>
+			</div>
+		</motion.div>
+	);
+}
+
+// Mode Selection Modal
+function ModeSelectionModal({ visible, onSelect, examName }) {
+	return (
+		<Modal
+			open={visible}
+			footer={null}
+			closable={false}
+			centered
+			width={520}
+			styles={{ body: { padding: 0 } }}
+		>
+			<div className="p-6">
+				<div className="text-center mb-6">
+					<div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+						<RocketOutlined className="text-white text-3xl" />
+					</div>
+					<Typography.Title level={3} className="!mb-2">Choose Your Mode</Typography.Title>
+					<Typography.Text className="text-slate-500">
+						{examName || 'Exam'}
+					</Typography.Text>
+				</div>
+
+				<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+					{/* Practice Mode */}
+					<motion.div
+						whileHover={{ scale: 1.02 }}
+						whileTap={{ scale: 0.98 }}
+						onClick={() => onSelect('practice')}
+						className="cursor-pointer"
+					>
+						<Card
+							className="border-2 border-emerald-200 hover:border-emerald-400 transition-all h-full"
+							style={{ borderRadius: 16 }}
+							styles={{ body: { padding: 20 } }}
+						>
+							<div className="text-center">
+								<div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
+									<EyeOutlined className="text-white text-xl" />
+								</div>
+								<Typography.Title level={5} className="!mb-2">Practice Mode</Typography.Title>
+								<Typography.Text className="text-slate-500 text-sm block mb-4">
+									Learn as you go
+								</Typography.Text>
+								<div className="space-y-2 text-left">
+									<div className="flex items-center gap-2 text-sm text-slate-600">
+										<CheckCircleOutlined className="text-emerald-500" />
+										<span>Instant explanations</span>
+									</div>
+									<div className="flex items-center gap-2 text-sm text-slate-600">
+										<CheckCircleOutlined className="text-emerald-500" />
+										<span>See correct answers</span>
+									</div>
+									<div className="flex items-center gap-2 text-sm text-slate-600">
+										<CheckCircleOutlined className="text-emerald-500" />
+										<span>LOS references</span>
+									</div>
+									<div className="flex items-center gap-2 text-sm text-slate-600">
+										<CheckCircleOutlined className="text-emerald-500" />
+										<span>Flexible navigation</span>
+									</div>
+								</div>
+							</div>
+						</Card>
+					</motion.div>
+
+					{/* Exam Mode */}
+					<motion.div
+						whileHover={{ scale: 1.02 }}
+						whileTap={{ scale: 0.98 }}
+						onClick={() => onSelect('exam')}
+						className="cursor-pointer"
+					>
+						<Card
+							className="border-2 border-blue-200 hover:border-blue-400 transition-all h-full"
+							style={{ borderRadius: 16 }}
+							styles={{ body: { padding: 20 } }}
+						>
+							<div className="text-center">
+								<div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+									<SafetyOutlined className="text-white text-xl" />
+								</div>
+								<Typography.Title level={5} className="!mb-2">Exam Mode</Typography.Title>
+								<Typography.Text className="text-slate-500 text-sm block mb-4">
+									Real CFA® experience
+								</Typography.Text>
+								<div className="space-y-2 text-left">
+									<div className="flex items-center gap-2 text-sm text-slate-600">
+										<LockOutlined className="text-blue-500" />
+										<span>No explanations</span>
+									</div>
+									<div className="flex items-center gap-2 text-sm text-slate-600">
+										<ClockCircleOutlined className="text-blue-500" />
+										<span>Strict timer</span>
+									</div>
+									<div className="flex items-center gap-2 text-sm text-slate-600">
+										<EyeInvisibleOutlined className="text-blue-500" />
+										<span>Answers hidden</span>
+									</div>
+									<div className="flex items-center gap-2 text-sm text-slate-600">
+										<SafetyOutlined className="text-blue-500" />
+										<span>Exam conditions</span>
+									</div>
+								</div>
+							</div>
+						</Card>
+					</motion.div>
+				</div>
+			</div>
+		</Modal>
+	);
+}
 
 const QUESTIONS_PER_PAGE = 10;
 
@@ -111,6 +407,7 @@ function formatRemaining(seconds) {
 export function ExamTake() {
 	const { attemptId } = useParams();
 	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
 	const [attempt, setAttempt] = useState(null);
 	const [currentPage, setCurrentPage] = useState(0);
 	const [showCalc, setShowCalc] = useState(false);
@@ -120,13 +417,26 @@ export function ExamTake() {
 	const [resultAttempt, setResultAttempt] = useState(null);
 	const [answersDrawerOpen, setAnswersDrawerOpen] = useState(false);
 	const [answersDrawerAttempt, setAnswersDrawerAttempt] = useState(null);
+	
+	// Mode & Smart Review state
+	const [mode, setMode] = useState(searchParams.get('mode') || null); // 'practice' | 'exam' | null
+	const [showModeSelection, setShowModeSelection] = useState(false);
+	const [reviewedQuestions, setReviewedQuestions] = useState(new Set()); // Track which questions have been reviewed
+	const [revisionList, setRevisionList] = useState(new Set()); // Questions added to revision
+	const [weakTopics, setWeakTopics] = useState(new Set()); // Topics marked as weak
 
 	useEffect(() => {
 		let mounted = true;
 		(async () => {
 			try {
 				const res = await api.get(`/api/exams/attempts/${attemptId}`);
-				if (mounted) setAttempt(res.data.attempt);
+				if (mounted) {
+					setAttempt(res.data.attempt);
+					// Show mode selection if not already set and exam is in progress
+					if (!mode && res.data.attempt.status === 'IN_PROGRESS') {
+						setShowModeSelection(true);
+					}
+				}
 			} catch {
 				message.error('Unable to load attempt');
 			}
@@ -135,6 +445,57 @@ export function ExamTake() {
 			mounted = false;
 		};
 	}, [attemptId]);
+
+	// Handle mode selection
+	const handleModeSelect = (selectedMode) => {
+		setMode(selectedMode);
+		setShowModeSelection(false);
+		message.success(`${selectedMode === 'practice' ? 'Practice' : 'Exam'} mode activated`);
+	};
+
+	// Add to revision list
+	const handleAddToRevision = async (questionId) => {
+		if (revisionList.has(questionId)) {
+			message.info('Already in revision list');
+			return;
+		}
+		try {
+			await api.post('/api/exams/revision', { questionId, priority: 2 });
+			setRevisionList(prev => new Set([...prev, questionId]));
+			message.success('Added to revision list');
+		} catch {
+			message.error('Failed to add to revision list');
+		}
+	};
+
+	// Add to weak topics
+	const handleAddToWeakTopic = async (topicId) => {
+		if (weakTopics.has(topicId)) {
+			message.info('Already marked as weak topic');
+			return;
+		}
+		try {
+			await api.post('/api/exams/weak-topics', { topicId });
+			setWeakTopics(prev => new Set([...prev, topicId]));
+			message.success('Marked as weak topic');
+		} catch {
+			message.error('Failed to mark as weak topic');
+		}
+	};
+
+	// Auto-add wrong answers to mistake bank
+	const addToMistakeBank = async (questionId, wrongOptionId, correctOptionId) => {
+		try {
+			await api.post('/api/exams/mistakes', {
+				questionId,
+				attemptId,
+				wrongOptionId,
+				correctOptionId
+			});
+		} catch {
+			// Silent fail - don't interrupt user flow
+		}
+	};
 
 	useEffect(() => {
 		if (!attempt || attempt.status !== 'IN_PROGRESS' || !attempt.exam?.timeLimitMinutes) return;
@@ -205,6 +566,20 @@ export function ExamTake() {
 			});
 			const res = await api.get(`/api/exams/attempts/${attemptId}`);
 			setAttempt(res.data.attempt);
+
+			// In practice mode, mark as reviewed and check if wrong
+			if (mode === 'practice') {
+				setReviewedQuestions(prev => new Set([...prev, questionId]));
+				
+				// Find the answer to check if it's correct
+				const answer = res.data.attempt.answers?.find(a => a.questionId === questionId);
+				if (answer && answer.isCorrect === false) {
+					// Auto-add to mistake bank
+					const question = answer.question;
+					const correctOption = question?.options?.find(o => o.isCorrect);
+					addToMistakeBank(questionId, optionId, correctOption?.id);
+				}
+			}
 		} catch {
 			message.error('Failed to save answer');
 		}
@@ -280,9 +655,23 @@ export function ExamTake() {
 									<BookOutlined className="text-white text-lg" />
 								</div>
 								<div>
-									<Typography.Text className="text-white/60 text-xs uppercase tracking-wider">
-										Exam in Progress
-									</Typography.Text>
+									<div className="flex items-center gap-2">
+										<Typography.Text className="text-white/60 text-xs uppercase tracking-wider">
+											{mode === 'practice' ? 'Practice Mode' : mode === 'exam' ? 'Exam Mode' : 'Exam in Progress'}
+										</Typography.Text>
+										{mode && (
+											<Tag 
+												className="border-0 text-xs rounded-full"
+												style={{ 
+													background: mode === 'practice' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(59, 130, 246, 0.3)',
+													color: 'white'
+												}}
+											>
+												{mode === 'practice' ? <EyeOutlined className="mr-1" /> : <LockOutlined className="mr-1" />}
+												{mode === 'practice' ? 'Learn' : 'Test'}
+											</Tag>
+										)}
+									</div>
 									<Typography.Title level={5} className="!text-white !m-0 !text-base sm:!text-lg">
 										{courseName}
 									</Typography.Title>
@@ -590,41 +979,63 @@ export function ExamTake() {
 													value={ans?.selectedOptionId ?? undefined}
 													onChange={(e) => onSelectOption(q.id, e.target.value)}
 													className="w-full"
+													disabled={mode === 'practice' && reviewedQuestions.has(q?.id)}
 												>
 													<Space direction="vertical" size={12} className="w-full">
 														{q.options.map((opt, optIdx) => {
 															const isSelected = ans?.selectedOptionId === opt.id;
 															const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+															const showFeedback = mode === 'practice' && isAnswered && reviewedQuestions.has(q?.id);
+															const isCorrectOption = opt.isCorrect;
+															const isWrongSelection = showFeedback && isSelected && !isCorrectOption;
+															const showAsCorrect = showFeedback && isCorrectOption;
+															
 															return (
 																<motion.div
 																	key={opt.id}
-																	whileHover={{ scale: 1.01 }}
-																	whileTap={{ scale: 0.99 }}
+																	whileHover={!showFeedback ? { scale: 1.01 } : {}}
+																	whileTap={!showFeedback ? { scale: 0.99 } : {}}
 																>
 																	<Radio
 																		value={opt.id}
 																		className={`
 																			w-full p-4 rounded-xl border-2 transition-all
-																			${isSelected
+																			${showAsCorrect
 																				? 'border-emerald-400 bg-emerald-50'
-																				: 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+																				: isWrongSelection
+																					? 'border-red-400 bg-red-50'
+																					: isSelected
+																						? 'border-emerald-400 bg-emerald-50'
+																						: 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
 																			}
 																		`}
 																		style={{ display: 'flex', alignItems: 'flex-start' }}
 																	>
-																		<div className="flex items-start gap-3">
+																		<div className="flex items-start gap-3 w-full">
 																			<span
 																				className={`
 																					w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0
-																					${isSelected
+																					${showAsCorrect
 																						? 'bg-emerald-500 text-white'
-																						: 'bg-slate-100 text-slate-600'
+																						: isWrongSelection
+																							? 'bg-red-500 text-white'
+																							: isSelected
+																								? 'bg-emerald-500 text-white'
+																								: 'bg-slate-100 text-slate-600'
 																					}
 																				`}
 																			>
-																				{letters[optIdx] || optIdx + 1}
+																				{showAsCorrect ? <CheckCircleOutlined /> : isWrongSelection ? <CloseCircleOutlined /> : (letters[optIdx] || optIdx + 1)}
 																			</span>
-																			<span className="text-slate-700 pt-1">{opt.text}</span>
+																			<span className={`pt-1 flex-1 ${isWrongSelection ? 'text-red-700' : showAsCorrect ? 'text-emerald-700 font-medium' : 'text-slate-700'}`}>
+																				{opt.text}
+																			</span>
+																			{showAsCorrect && (
+																				<Tag className="border-0 bg-emerald-100 text-emerald-700 rounded-full ml-2">Correct</Tag>
+																			)}
+																			{isWrongSelection && (
+																				<Tag className="border-0 bg-red-100 text-red-700 rounded-full ml-2">Your answer</Tag>
+																			)}
 																		</div>
 																	</Radio>
 																</motion.div>
@@ -635,6 +1046,18 @@ export function ExamTake() {
 											) : (
 												<Typography.Paragraph type="secondary">No options available.</Typography.Paragraph>
 											)}
+
+											{/* Smart Review Panel - Practice Mode Only */}
+											<AnimatePresence>
+												<SmartReviewPanel
+													answer={ans}
+													question={q}
+													visible={mode === 'practice' && isAnswered && reviewedQuestions.has(q?.id)}
+													onAddToRevision={handleAddToRevision}
+													onAddToWeakTopic={handleAddToWeakTopic}
+													mode={mode}
+												/>
+											</AnimatePresence>
 										</div>
 									</Card>
 								</motion.div>
@@ -887,6 +1310,13 @@ export function ExamTake() {
 					</Space>
 				)}
 			</Drawer>
+
+			{/* Mode Selection Modal */}
+			<ModeSelectionModal
+				visible={showModeSelection}
+				onSelect={handleModeSelect}
+				examName={courseName}
+			/>
 		</div>
 	);
 }

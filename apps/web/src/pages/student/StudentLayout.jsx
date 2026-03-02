@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Layout, Menu, Typography, Avatar, Grid, Drawer, Button } from 'antd';
-import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
+import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const { Sider, Content } = Layout;
@@ -30,6 +30,8 @@ const menuItems = [
   { key: 'student-home', icon: modernBadge(<HomeOutlined />, 'linear-gradient(135deg, #3b82f6, #1d4ed8)'), label: <Link to="/student">Dashboard</Link> },
   { key: 'student-courses', icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'), label: <Link to="/student/courses">My Courses</Link> },
   { key: 'student-exams', icon: modernBadge(<ReadOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'), label: <Link to="/student/exams">Exams</Link> },
+  { key: 'student-mistakes', icon: modernBadge(<ExclamationCircleOutlined />, 'linear-gradient(135deg, #ef4444, #dc2626)'), label: <Link to="/student/mistakes">My Mistakes</Link> },
+  { key: 'student-revision', icon: modernBadge(<StarOutlined />, 'linear-gradient(135deg, #eab308, #ca8a04)'), label: <Link to="/student/revision">Revision List</Link> },
   { key: 'student-billing', icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'), label: <Link to="/student/billing">Billing</Link> },
   { key: 'student-invoices', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/student/invoices">Invoices</Link> },
   { key: 'student-account', icon: modernBadge(<UserOutlined />, 'linear-gradient(135deg, #64748b, #475569)'), label: <Link to="/student/account">Account</Link> }
