@@ -168,8 +168,8 @@ export function AdminLoginPage() {
 
             <div className="space-y-5 mt-10">
               {[
-                { icon: <TeamOutlined />, title: 'User Management', desc: 'Manage students and admin accounts', color: 'from-blue-400 to-cyan-500' },
-                { icon: <SettingOutlined />, title: 'Course Builder', desc: 'Create and organize learning content', color: 'from-purple-400 to-pink-500' },
+                { icon: <TeamOutlined />, title: 'User Management', desc: 'Manage students and admin accounts', color: 'from-[#1e3a5f] to-[#2d4a6f]' },
+                { icon: <SettingOutlined />, title: 'Course Builder', desc: 'Create and organize learning content', color: 'from-[#102540] to-[#1e3a5f]' },
                 { icon: <BarChartOutlined />, title: 'Analytics Dashboard', desc: 'Track performance and engagement', color: 'from-emerald-400 to-teal-500' },
                 { icon: <SafetyOutlined />, title: 'Exam Management', desc: 'Build and schedule assessments', color: 'from-amber-400 to-orange-500' }
               ].map((item, idx) => (

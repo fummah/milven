@@ -78,22 +78,22 @@ export function LoginPage() {
             }}
           >
             <div className="mb-8">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center mb-6 shadow-lg shadow-blue-500/30">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1e3a5f] to-[#102540] flex items-center justify-center mb-6 shadow-lg shadow-[#102540]/30">
                 <BookOutlined className="text-white text-2xl" />
               </div>
               <Typography.Title level={2} className="!text-white !mb-3">
                 Welcome Back
               </Typography.Title>
-              <Typography.Text className="text-blue-200 text-lg">
+              <Typography.Text className="text-slate-300 text-lg">
                 Continue your CFA journey with personalized learning
               </Typography.Text>
             </div>
 
             <div className="space-y-5 mt-10">
               {[
-                { icon: <TrophyOutlined />, title: '10,000+ Questions', desc: 'Practice with real exam-style questions', color: 'from-amber-400 to-orange-500' },
-                { icon: <RocketOutlined />, title: 'AI Analytics', desc: 'Track your progress with smart insights', color: 'from-purple-400 to-pink-500' },
-                { icon: <SafetyOutlined />, title: 'Pass Guarantee', desc: 'Proven methods for exam success', color: 'from-emerald-400 to-teal-500' }
+                { icon: <TrophyOutlined />, title: '10,000+ Questions', desc: 'Practice with real exam-style questions', color: 'from-amber-400 to-amber-600' },
+                { icon: <RocketOutlined />, title: 'AI Analytics', desc: 'Track your progress with smart insights', color: 'from-[#1e3a5f] to-[#2d4a6f]' },
+                { icon: <SafetyOutlined />, title: 'Pass Guarantee', desc: 'Proven methods for exam success', color: 'from-emerald-500 to-emerald-700' }
               ].map((item, idx) => (
                 <motion.div 
                   key={idx}
@@ -107,14 +107,14 @@ export function LoginPage() {
                   </div>
                   <div>
                     <Typography.Text className="text-white font-semibold block">{item.title}</Typography.Text>
-                    <Typography.Text className="text-blue-200 text-sm">{item.desc}</Typography.Text>
+                    <Typography.Text className="text-slate-400 text-sm">{item.desc}</Typography.Text>
                   </div>
                 </motion.div>
               ))}
             </div>
 
             <div className="mt-10 pt-6 border-t border-white/10">
-              <Typography.Text className="text-blue-300 text-sm">
+              <Typography.Text className="text-slate-400 text-sm">
                 Join thousands of successful CFA candidates
               </Typography.Text>
             </div>
@@ -135,7 +135,7 @@ export function LoginPage() {
           >
             {/* Header */}
             <div className="text-center mb-8">
-              <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
+              <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-[#102540] to-[#1e3a5f] flex items-center justify-center shadow-lg shadow-[#102540]/30">
                 <BookOutlined className="text-white text-2xl" />
               </div>
               <Typography.Title level={2} className="!mb-2 !text-slate-800">
@@ -175,7 +175,7 @@ export function LoginPage() {
               </Form.Item>
 
               <div className="flex justify-end mb-5">
-                <Link to="/forgot-password" className="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                <Link to="/forgot-password" className="text-[#102540] hover:text-[#1e3a5f] text-sm font-medium">
                   Forgot password?
                 </Link>
               </div>
@@ -190,9 +190,9 @@ export function LoginPage() {
                     loading={submitting}
                     className="!h-12 !rounded-xl !font-semibold !text-base"
                     style={{ 
-                      background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', 
+                      background: 'linear-gradient(135deg, #102540 0%, #1e3a5f 100%)', 
                       border: 'none',
-                      boxShadow: '0 8px 20px rgba(59, 130, 246, 0.35)'
+                      boxShadow: '0 8px 20px rgba(16, 37, 64, 0.4)'
                     }}
                   >
                     Sign In
@@ -228,7 +228,7 @@ export function LoginPage() {
               <div className="text-center space-y-4">
                 <div>
                   <Typography.Text className="text-slate-500">Don't have an account? </Typography.Text>
-                  <Link to="/register" className="text-blue-600 hover:text-blue-700 font-semibold">
+                  <Link to="/register" className="text-[#102540] hover:text-[#1e3a5f] font-semibold">
                     Create Account
                   </Link>
                 </div>
