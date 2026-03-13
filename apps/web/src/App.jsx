@@ -44,6 +44,7 @@ import { StudentCourses } from './pages/student/StudentCourses.jsx';
 import { StudentBilling } from './pages/student/StudentBilling.jsx';
 import StudentMistakes from './pages/student/StudentMistakes.jsx';
 import StudentRevision from './pages/student/StudentRevision.jsx';
+import StudentComparison from './pages/student/StudentComparison.jsx';
 import { Placeholder } from './pages/admin/Placeholder.jsx';
 import { AdminRoles } from './pages/admin/AdminRoles.jsx';
 import { AdminLevels } from './pages/admin/AdminLevels.jsx';
@@ -812,6 +813,7 @@ export default function App() {
 						<Route path="exams/result/:attemptId" element={<ExamResult />} />
 						<Route path="mistakes" element={<StudentMistakes />} />
 						<Route path="revision" element={<StudentRevision />} />
+						<Route path="comparison" element={<StudentComparison />} />
 						<Route path="billing" element={<StudentBilling />} />
 						<Route path="invoices" element={<StudentInvoices />} />
 						<Route path="account" element={<Account />} />

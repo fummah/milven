@@ -481,7 +481,7 @@ export function AdminTopics() {
                   style={{ minWidth: 220 }}
                   options={[
                     { label: 'All courses', value: '' },
-                    ...courses.map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))
+                    ...(courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))
                   ]}
                   showSearch
                   optionFilterProp="label"
@@ -599,7 +599,7 @@ export function AdminTopics() {
                   onChange={(v) => setFilterCourseId(v ?? '')}
                   options={[
                     { label: 'All courses', value: '' },
-                    ...courses.map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))
+                    ...(courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))
                   ]}
                   style={{ minWidth: 220 }}
                   allowClear
@@ -702,7 +702,7 @@ export function AdminTopics() {
           <Form.Item name="courseId" label="Course" rules={[{ required: true, message: 'Select a course' }]}>
             <Select
               placeholder="Select a course"
-              options={courses.map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))}
+              options={(courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))}
               showSearch
               optionFilterProp="label"
 														onChange={async (v) => {
@@ -758,7 +758,7 @@ export function AdminTopics() {
                 <Form.Item name="courseId" label="Course" rules={[{ required: true, message: 'Select a course' }]}>
                   <Select
                     placeholder="Select a course (topic level = course level)"
-                    options={courses.map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))}
+                    options={(courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))}
                     showSearch
                     optionFilterProp="label"
                   />

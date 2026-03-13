@@ -54,7 +54,7 @@ export function AdminVolumes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterCourseId]);
 
-  const courseOptions = useMemo(() => (courses || []).map(c => ({ value: c.id, label: `${c.name} (${c.level})` })), [courses]);
+  const courseOptions = useMemo(() => (courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ value: c.id, label: `${c.name} (${c.level})` })), [courses]);
 
   const openCreate = () => {
     setEditing(null);

@@ -23,6 +23,7 @@ const { Sider, Content } = Layout;
 
 const modernBadge = (iconNode, gradient) => (
   <span
+    className="menu-icon-badge"
     style={{
       display: 'inline-flex',
       alignItems: 'center',
@@ -36,7 +37,7 @@ const modernBadge = (iconNode, gradient) => (
       boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
     }}
   >
-    {iconNode}
+    {React.isValidElement(iconNode) ? React.cloneElement(iconNode, { style: { ...iconNode.props?.style, color: '#fff' } }) : iconNode}
   </span>
 );
 

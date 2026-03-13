@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Table, Space, Button, Typography, Tag, Popconfirm, message, Tooltip, Select, Modal, Form, Input, InputNumber, Tabs, Drawer, Descriptions, Divider, List } from 'antd';
-import { EditOutlined, DeleteOutlined, EyeOutlined, CheckCircleOutlined, StopOutlined, ScheduleOutlined, PlusOutlined, FilterOutlined, FileTextOutlined, UserOutlined, TeamOutlined, ClockCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { Card, Table, Space, Button, Typography, Tag, Popconfirm, message, Tooltip, Select, Modal, Form, Input, InputNumber, Tabs, Drawer, Descriptions, Divider, List, Row, Col } from 'antd';
+import { EditOutlined, DeleteOutlined, EyeOutlined, CheckCircleOutlined, StopOutlined, ScheduleOutlined, PlusOutlined, FilterOutlined, FileTextOutlined, UserOutlined, TeamOutlined, ClockCircleOutlined, QuestionCircleOutlined, FormOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 import { api } from '../../lib/api';
+import { GradeAttemptDrawer } from '../../components/GradeAttemptDrawer.jsx';
 
 const { Option } = Select;
 
@@ -23,7 +25,63 @@ export function AdminExams() {
   const [previewExam, setPreviewExam] = useState(null);
   const [previewQuestions, setPreviewQuestions] = useState([]);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [pendingAttempts, setPendingAttempts] = useState([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [completedAttempts, setCompletedAttempts] = useState([]);
+  const [completedLoading, setCompletedLoading] = useState(false);
+  const [completedFilterExamName, setCompletedFilterExamName] = useState('');
+  const [attemptsModalOpen, setAttemptsModalOpen] = useState(false);
+  const [attemptsModalExam, setAttemptsModalExam] = useState(null);
+  const [attemptsModalLoading, setAttemptsModalLoading] = useState(false);
+  const [attemptsModalList, setAttemptsModalList] = useState([]);
+  const [gradeDrawerOpen, setGradeDrawerOpen] = useState(false);
+  const [gradeDrawerAttemptId, setGradeDrawerAttemptId] = useState(null);
   const navigate = useNavigate();
+
+  const loadPendingAttempts = async () => {
+    setPendingLoading(true);
+    try {
+      const { data } = await api.get('/api/exams/attempts/pending-marking');
+      setPendingAttempts(data.attempts || []);
+    } catch {
+      setPendingAttempts([]);
+    } finally {
+      setPendingLoading(false);
+    }
+  };
+
+  const loadCompletedAttempts = async () => {
+    setCompletedLoading(true);
+    try {
+      const { data } = await api.get('/api/exams/attempts/completed-marking');
+      setCompletedAttempts(data.attempts || []);
+    } catch {
+      setCompletedAttempts([]);
+    } finally {
+      setCompletedLoading(false);
+    }
+  };
+
+  const openAttemptsModal = async (exam) => {
+    setAttemptsModalExam(exam);
+    setAttemptsModalOpen(true);
+    setAttemptsModalLoading(true);
+    try {
+      const { data } = await api.get(`/api/exams/${exam.id}/attempts`);
+      setAttemptsModalList(data.attempts || []);
+    } catch {
+      setAttemptsModalList([]);
+      message.error('Failed to load attempts');
+    } finally {
+      setAttemptsModalLoading(false);
+    }
+  };
+
+  const closeAttemptsModal = () => {
+    setAttemptsModalOpen(false);
+    setAttemptsModalExam(null);
+    setAttemptsModalList([]);
+  };
 
   const load = async () => {
     setLoading(true);
@@ -42,6 +100,10 @@ export function AdminExams() {
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [filterCourseId, filterTopicId, filterType]);
+  useEffect(() => {
+    if (activeTab === 'pending') loadPendingAttempts();
+    if (activeTab === 'completed') loadCompletedAttempts();
+  }, [activeTab]);
 
   useEffect(() => {
     (async () => {
@@ -122,13 +184,17 @@ export function AdminExams() {
 
   const filteredExams = useMemo(() => {
     if (activeTab === 'admin') {
-      // Admin exams: createdBy is null or undefined (admin-created exams don't have a createdBy user)
       return exams.filter(e => e.createdBy === null || e.createdBy === undefined);
     } else {
-      // Student exams: createdBy exists and is not null/undefined
       return exams.filter(e => e.createdBy !== null && e.createdBy !== undefined);
     }
   }, [exams, activeTab]);
+
+  const filteredCompletedAttempts = useMemo(() => {
+    if (!completedFilterExamName?.trim()) return completedAttempts;
+    const q = completedFilterExamName.trim().toLowerCase();
+    return completedAttempts.filter((a) => (a.examName || '').toLowerCase().includes(q));
+  }, [completedAttempts, completedFilterExamName]);
 
   const getExamTimeRange = (exam) => {
     if (exam.startAt && exam.endAt) {
@@ -230,11 +296,24 @@ export function AdminExams() {
       title: 'Attempts',
       width: 90,
       dataIndex: 'attemptCount',
-      render: (count) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      render: (count, exam) => (
+        <button
+          type="button"
+          onClick={() => openAttemptsModal(exam)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            color: '#0c4a6e'
+          }}
+        >
           <TeamOutlined style={{ color: '#64748b' }} />
           <span>{count || 0}</span>
-        </div>
+        </button>
       )
     },
     { title: 'Active', dataIndex: 'active', width: 80, render: v => (
@@ -307,6 +386,54 @@ export function AdminExams() {
     }
   ];
 
+  const attemptColumns = [
+    {
+      title: 'Student',
+      dataIndex: ['user', 'name'],
+      key: 'student',
+      width: 220,
+      render: (_, attempt) => attempt.user ? (attempt.user.name || attempt.user.email || 'Unknown') : '—'
+    },
+    {
+      title: 'Submitted',
+      dataIndex: 'submittedAt',
+      key: 'submittedAt',
+      width: 160,
+      render: (v) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—'
+    },
+    {
+      title: 'Score',
+      dataIndex: 'scorePercent',
+      key: 'scorePercent',
+      width: 120,
+      render: (v) => (v != null ? `${Math.round(v)}%` : '—')
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 120,
+      render: (v) => v ? <Tag color={v === 'SUBMITTED' ? 'blue' : 'default'}>{v}</Tag> : '—'
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 120,
+      render: (_, attempt) => (
+        <Button
+          type="primary"
+          size="small"
+          onClick={() => {
+            setGradeDrawerAttemptId(attempt.id);
+            setGradeDrawerOpen(true);
+          }}
+        >
+          View
+        </Button>
+      )
+    }
+  ];
+
   return (
     <Space direction="vertical" size={24} style={{ width: '100%' }}>
       {/* Page Header */}
@@ -371,7 +498,7 @@ export function AdminExams() {
             style={{ width: 220 }}
             value={filterCourseId}
             onChange={(v) => { setFilterCourseId(v); setFilterTopicId(undefined); }}
-            options={(courses || []).map(c => ({ label: `${c.name}`, value: c.id }))}
+            options={(courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ label: `${c.name}`, value: c.id }))}
             optionFilterProp="label"
           />
           <Select
@@ -442,6 +569,95 @@ export function AdminExams() {
                   />
                 </div>
               )
+            },
+            {
+              key: 'pending',
+              label: (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <FormOutlined />
+                  Pending marking
+                  {pendingAttempts.length > 0 && (
+                    <Tag color="orange">{pendingAttempts.length}</Tag>
+                  )}
+                </span>
+              ),
+              children: (
+                <div className="modern-table">
+                  <Table
+                    rowKey="id"
+                    loading={pendingLoading}
+                    dataSource={pendingAttempts}
+                    scroll={{ x: 'max-content' }}
+                    pagination={{ pageSize: 15, style: { padding: '16px 0' } }}
+                    columns={[
+                      { title: 'Exam', dataIndex: 'examName', key: 'examName', width: 200, render: (v) => v || '—' },
+                      { title: 'Student', dataIndex: ['user', 'name'], key: 'user', width: 200, render: (_, r) => r?.user?.name || r?.user?.email || '—' },
+                      { title: 'Submitted', dataIndex: 'submittedAt', key: 'submittedAt', width: 160, render: (v) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—' },
+                      { title: 'To mark', dataIndex: 'pendingCount', key: 'pendingCount', width: 100, render: (c) => <Tag color="orange">{c ?? 0} question(s)</Tag> },
+                      {
+                        title: 'Actions',
+                        key: 'actions',
+                        width: 120,
+                        render: (_, row) => (
+                          <Button type="primary" size="small" icon={<FormOutlined />} onClick={() => { setGradeDrawerAttemptId(row.id); setGradeDrawerOpen(true); }}>
+                            Mark
+                          </Button>
+                        )
+                      }
+                    ]}
+                    locale={{ emptyText: 'No submitted exams waiting for marking. When students submit exams with constructed response questions, they will appear here.' }}
+                  />
+                </div>
+              )
+            },
+            {
+              key: 'completed',
+              label: (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <CheckCircleOutlined />
+                  Completed marking
+                </span>
+              ),
+              children: (
+                <div className="modern-table">
+                  <Space direction="vertical" size={12} style={{ width: '100%', marginBottom: 16 }}>
+                    <Space wrap>
+                      <Typography.Text>Filter by exam name:</Typography.Text>
+                      <Input
+                        placeholder="Search exam name..."
+                        value={completedFilterExamName}
+                        onChange={(e) => setCompletedFilterExamName(e.target.value)}
+                        allowClear
+                        style={{ width: 220 }}
+                      />
+                    </Space>
+                  </Space>
+                  <Table
+                    rowKey="id"
+                    loading={completedLoading}
+                    dataSource={filteredCompletedAttempts}
+                    scroll={{ x: 'max-content' }}
+                    pagination={{ pageSize: 15, style: { padding: '16px 0' } }}
+                    columns={[
+                      { title: 'Exam', dataIndex: 'examName', key: 'examName', width: 200, render: (v) => v || '—' },
+                      { title: 'Student', dataIndex: ['user', 'name'], key: 'user', width: 200, render: (_, r) => r?.user?.name || r?.user?.email || '—' },
+                      { title: 'Submitted', dataIndex: 'submittedAt', key: 'submittedAt', width: 160, render: (v) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—' },
+                      { title: 'Score', dataIndex: 'scorePercent', key: 'scorePercent', width: 100, render: (v) => (v != null ? `${Math.round(v)}%` : '—') },
+                      {
+                        title: 'Actions',
+                        key: 'actions',
+                        width: 120,
+                        render: (_, row) => (
+                          <Button size="small" icon={<EyeOutlined />} onClick={() => { setGradeDrawerAttemptId(row.id); setGradeDrawerOpen(true); }}>
+                            View
+                          </Button>
+                        )
+                      }
+                    ]}
+                    locale={{ emptyText: 'No completed marking yet. Completed attempts will appear here after all constructed response questions are marked.' }}
+                  />
+                </div>
+              )
             }
           ]}
         />
@@ -476,6 +692,7 @@ export function AdminExams() {
 				<Form
 					layout="vertical"
 					form={poolForm}
+					initialValues={{ questionType: 'ANY' }}
 					onFinish={async (values) => {
 						if (poolLoading) return; // Prevent double submission
 						setPoolLoading(true);
@@ -497,7 +714,8 @@ export function AdminExams() {
 								difficulties: values.difficulties || [],
 								courseId: values.courseId,
 								topicIds: topicIds,
-								replaceExisting: true
+								replaceExisting: true,
+								questionType: values.questionType || 'ANY'
 							});
 							message.success('Exam created from pool');
 							setPoolOpen(false);
@@ -511,33 +729,91 @@ export function AdminExams() {
 						}
 					}}
 				>
-					<Form.Item name="name" label="Name" rules={[{ required: true, min: 3 }]}>
-						<Input placeholder="Example: Course Exam 1" />
-					</Form.Item>
-					<Form.Item name="examType" label="Type" rules={[{ required: true }]}>
-						<Select
-							options={[
-								{ label: 'Course Exam', value: 'COURSE' },
-								{ label: 'Topic Quiz', value: 'QUIZ' }
-							]}
-						/>
-					</Form.Item>
-					<Form.Item name="courseId" label="Course" rules={[{ required: true }]}>
-						<Select
-							showSearch
-							placeholder="Select course"
-							options={(courses || []).map(c => ({ label: c.name, value: c.id }))}
-							optionFilterProp="label"
-							onChange={(v) => {
-								poolForm.setFieldsValue({ topicId: undefined });
-							}}
-						/>
-					</Form.Item>
+					<Row gutter={16}>
+						<Col xs={24} sm={12}>
+							<Form.Item name="name" label="Name" rules={[{ required: true, min: 3 }]}>
+								<Input placeholder="Example: Course Exam 1" />
+							</Form.Item>
+						</Col>
+						<Col xs={24} sm={12}>
+							<Form.Item name="examType" label="Type" rules={[{ required: true }]}>
+								<Select
+									options={[
+										{ label: 'Course Exam', value: 'COURSE' },
+										{ label: 'Topic Quiz', value: 'QUIZ' }
+									]}
+								/>
+							</Form.Item>
+						</Col>
+					</Row>
+					<Row gutter={16}>
+						<Col xs={24} sm={12}>
+							<Form.Item name="courseId" label="Course" rules={[{ required: true }]}>
+								<Select
+									showSearch
+									placeholder="Select course"
+									options={(courses || [])
+										.slice()
+										.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+										.map(c => ({ label: c.name, value: c.id }))}
+									optionFilterProp="label"
+									onChange={(v) => {
+										poolForm.setFieldsValue({ topicId: undefined });
+										const course = (courses || []).find(c => c.id === v);
+										const level = course?.level;
+										// Level-based question type defaults and restrictions
+										let defaultType = 'ANY';
+										if (level === 'LEVEL1') defaultType = 'MCQ';
+										else if (level === 'LEVEL2') defaultType = 'VIGNETTE_MCQ';
+										else if (level === 'LEVEL3') defaultType = 'CONSTRUCTED_RESPONSE';
+										poolForm.setFieldsValue({ questionType: defaultType });
+									}}
+								/>
+							</Form.Item>
+						</Col>
+						<Col xs={24} sm={12}>
+							<Form.Item name="questionType" label="Question Type" rules={[{ required: true }]}>
+								<Select
+									placeholder="Question type"
+									options={(function () {
+										const courseId = poolForm.getFieldValue('courseId');
+										if (!courseId) {
+											return [
+												{ label: 'Any', value: 'ANY' },
+												{ label: 'MCQ', value: 'MCQ' },
+												{ label: 'Vignette MCQ', value: 'VIGNETTE_MCQ' },
+												{ label: 'Constructed Response', value: 'CONSTRUCTED_RESPONSE' }
+											];
+										}
+										const course = (courses || []).find(c => c.id === courseId);
+										const level = course?.level;
+										if (level === 'LEVEL1') {
+											return [{ label: 'MCQ', value: 'MCQ' }];
+										}
+										if (level === 'LEVEL2') {
+											return [{ label: 'Vignette MCQ', value: 'VIGNETTE_MCQ' }];
+										}
+										if (level === 'LEVEL3') {
+											return [
+												{ label: 'Vignette MCQ', value: 'VIGNETTE_MCQ' },
+												{ label: 'Constructed Response', value: 'CONSTRUCTED_RESPONSE' }
+											];
+										}
+										return [
+											{ label: 'Any', value: 'ANY' },
+											{ label: 'MCQ', value: 'MCQ' },
+											{ label: 'Vignette MCQ', value: 'VIGNETTE_MCQ' },
+											{ label: 'Constructed Response', value: 'CONSTRUCTED_RESPONSE' }
+										];
+									})()}
+								/>
+							</Form.Item>
+						</Col>
+					</Row>
 					<Form.Item noStyle shouldUpdate>
 						{({ getFieldValue }) => {
 							const examType = getFieldValue('examType');
 							const cid = getFieldValue('courseId');
-							// Filter topics by selected course
 							const opts = cid 
 								? topics.filter(t => t.courseId === cid || t.course?.id === cid).map(t => ({ label: t.name, value: t.id }))
 								: topics.map(t => ({ label: t.name, value: t.id }));
@@ -559,27 +835,32 @@ export function AdminExams() {
 							);
 						}}
 					</Form.Item>
-					<Space wrap size="large">
-						<Form.Item name="difficulties" label="Difficulty">
-							<Select
-								mode="multiple"
-								allowClear
-								style={{ width: 180 }}
-								placeholder="Select difficulties"
-								options={[
-									{ label: 'Easy', value: 'EASY' },
-									{ label: 'Medium', value: 'MEDIUM' },
-									{ label: 'Hard', value: 'HARD' }
-								]}
-							/>
-						</Form.Item>
-						<Form.Item name="questionCount" label="Question Count" rules={[{ required: true }]}>
-							<InputNumber min={1} max={200} />
-						</Form.Item>
-						<Form.Item name="timeLimitMinutes" label="Time Limit (minutes)" rules={[{ required: true }]}>
-							<InputNumber min={10} max={360} />
-						</Form.Item>
-					</Space>
+					<Row gutter={16}>
+						<Col xs={24} sm={8}>
+							<Form.Item name="difficulties" label="Difficulty">
+								<Select
+									mode="multiple"
+									allowClear
+									placeholder="Select difficulties"
+									options={[
+										{ label: 'Easy', value: 'EASY' },
+										{ label: 'Medium', value: 'MEDIUM' },
+										{ label: 'Hard', value: 'HARD' }
+									]}
+								/>
+							</Form.Item>
+						</Col>
+						<Col xs={24} sm={8}>
+							<Form.Item name="questionCount" label="Question Count" rules={[{ required: true }]}>
+								<InputNumber min={1} max={200} style={{ width: '100%' }} />
+							</Form.Item>
+						</Col>
+						<Col xs={24} sm={8}>
+							<Form.Item name="timeLimitMinutes" label="Time Limit (min)" rules={[{ required: true }]}>
+								<InputNumber min={10} max={360} style={{ width: '100%' }} />
+							</Form.Item>
+						</Col>
+					</Row>
 				</Form>
 			</Modal>
 
@@ -678,6 +959,31 @@ export function AdminExams() {
           <Typography.Text>No exam selected</Typography.Text>
         )}
       </Drawer>
+
+      <Modal
+        title={attemptsModalExam ? `Attempts: ${attemptsModalExam.name}` : 'Exam Attempts'}
+        open={attemptsModalOpen}
+        onCancel={closeAttemptsModal}
+        footer={null}
+        width={900}
+        destroyOnClose
+      >
+        <Table
+          rowKey="id"
+          loading={attemptsModalLoading}
+          dataSource={attemptsModalList}
+          columns={attemptColumns}
+          pagination={{ pageSize: 10, style: { margin: 0 } }}
+          locale={{ emptyText: 'No attempts yet.' }}
+        />
+      </Modal>
+
+      <GradeAttemptDrawer
+        attemptId={gradeDrawerAttemptId}
+        open={gradeDrawerOpen}
+        onClose={() => { setGradeDrawerOpen(false); setGradeDrawerAttemptId(null); }}
+        onSaved={() => loadPendingAttempts()}
+      />
     </Space>
   );
 }

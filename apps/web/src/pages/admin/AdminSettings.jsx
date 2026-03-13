@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Tabs, Form, Input, InputNumber, Switch, Button, Upload, Space, Typography, message, List } from 'antd';
-import { UploadOutlined, SaveOutlined, BgColorsOutlined, DollarOutlined, SafetyCertificateOutlined, ReadOutlined, ScheduleOutlined, SettingOutlined, QuestionCircleOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { UploadOutlined, SaveOutlined, BgColorsOutlined, DollarOutlined, SafetyCertificateOutlined, ReadOutlined, ScheduleOutlined, SettingOutlined, QuestionCircleOutlined, PlusOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 export function AdminSettings() {
@@ -13,6 +13,7 @@ export function AdminSettings() {
   const [learningForm] = Form.useForm();
   const [examForm] = Form.useForm();
   const [systemForm] = Form.useForm();
+  const [aiForm] = Form.useForm();
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoPct, setLogoPct] = useState(0);
   const [faqList, setFaqList] = useState([]);
@@ -320,6 +321,30 @@ export function AdminSettings() {
               Save FAQ
             </Button>
           </Space>
+        </Card>
+      )
+    },
+    {
+      key: 'ai',
+      label: <Space size={6}>{badge(<RobotOutlined />, '#722ed1', '#f9f0ff')}<span>AI (OpenAI)</span></Space>,
+      children: (
+        <Card loading={loading}>
+          <Typography.Paragraph type="secondary">
+            API key is used for AI question generation (Admin → Questions) and for AI hints on failed questions (student result page). Stored securely; leave blank when saving to keep existing key.
+          </Typography.Paragraph>
+          <Form form={aiForm} layout="vertical" onFinish={(v) => {
+            if (v.openaiApiKey != null && String(v.openaiApiKey).trim() !== '') {
+              onSave({ openai_api_key: String(v.openaiApiKey).trim() });
+              aiForm.setFieldsValue({ openaiApiKey: '' });
+            } else {
+              message.info('Enter a key to save, or leave blank to keep current.');
+            }
+          }}>
+            <Form.Item name="openaiApiKey" label="OpenAI API key">
+              <Input.Password placeholder="sk-... (leave blank to keep existing)" autoComplete="off" />
+            </Form.Item>
+            <Button type="primary" icon={<SaveOutlined />} htmlType="submit" loading={saving}>Save API key</Button>
+          </Form>
         </Card>
       )
     },

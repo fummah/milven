@@ -224,10 +224,10 @@ export function AdminDashboard() {
         </Col>
         <Col xs={24} md={8}>
           <QuickActionCard 
-            to="/admin/materials"
+            to="/admin/questions"
             icon={<FileTextOutlined />}
-            title="Learning Materials"
-            subtitle="Upload and organize content"
+            title="Questions link"
+            subtitle="Create and manage question bank"
             gradient="linear-gradient(135deg, #0891b2 0%, #0e7490 100%)"
           />
         </Col>

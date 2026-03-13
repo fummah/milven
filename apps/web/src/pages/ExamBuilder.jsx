@@ -123,7 +123,7 @@ export function ExamBuilder() {
               <Select
                 showSearch
                 placeholder="Select course"
-                options={courses.map(c => ({ label: `${c.name} — ${c.level}`, value: c.id }))}
+                options={(courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ label: `${c.name} — ${c.level}`, value: c.id }))}
                 onChange={onCourseChange}
               />
             </Form.Item>

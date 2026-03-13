@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, List, Progress, Space, Button, Typography, Empty, Row, Col, Statistic, Tag, message, Spin, Divider } from 'antd';
-import { ReadOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, CreditCardOutlined, BookOutlined, ShoppingCartOutlined, RiseOutlined, TrophyOutlined, FileTextOutlined, CalendarOutlined, PlayCircleOutlined, ArrowRightOutlined, LineChartOutlined, DashboardOutlined } from '@ant-design/icons';
+import { ReadOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, CreditCardOutlined, BookOutlined, ShoppingCartOutlined, RiseOutlined, TrophyOutlined, FileTextOutlined, CalendarOutlined, PlayCircleOutlined, ArrowRightOutlined, LineChartOutlined, DashboardOutlined, TeamOutlined, BarChartOutlined, AimOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Line } from 'react-chartjs-2';
@@ -40,6 +40,11 @@ function formatExamDuration(minutes) {
     return m ? `${h}h ${m} min` : `${h}h`;
   }
   return `${minutes} min`;
+}
+
+function metricDelta(value, benchmark) {
+  if (value == null || benchmark == null) return null;
+  return Math.round((value - benchmark) * 10) / 10;
 }
 
 export function StudentDashboard() {
@@ -212,16 +217,24 @@ export function StudentDashboard() {
   // Available exams: admin exams grouped by course + custom exams as individual items
   const examItems = useMemo(() => {
     const items = [];
+    const currentTime = new Date(now);
     // Add admin exams grouped by course
     (courses || []).forEach(c => {
       if (!c.courseId) return;
       const courseExams = examsByCourse[c.courseId] || [];
       if (courseExams.length > 0) {
         courseExams.forEach(exam => {
+          const startDate = exam.startAt ? new Date(exam.startAt) : null;
+          const endDate = exam.endAt ? new Date(exam.endAt) : null;
+          const submitted = !!c?.examResult?.attemptId;
+          const isPending = startDate && currentTime < startDate;
+          const isReady = !submitted && (!startDate || currentTime >= startDate) && (!endDate || currentTime <= endDate);
+          if (!isPending && !isReady) return;
           items.push({ 
             type: 'admin', 
             course: c, 
             exam,
+            examStatus: isPending ? 'pending' : 'ready',
             courseId: c.courseId 
           });
         });
@@ -230,14 +243,22 @@ export function StudentDashboard() {
     // Add custom exams as individual items
     const customExams = examsByCourse['_my_custom'] || [];
     customExams.forEach(exam => {
+      const startDate = exam.startAt ? new Date(exam.startAt) : null;
+      const endDate = exam.endAt ? new Date(exam.endAt) : null;
+      const submitted = exam.latestAttempt?.status === 'SUBMITTED';
+      const hasInProgressAttempt = exam.latestAttempt && exam.latestAttempt.status !== 'SUBMITTED';
+      const isPending = startDate && currentTime < startDate;
+      const isReady = !submitted && !hasInProgressAttempt && (!startDate || currentTime >= startDate) && (!endDate || currentTime <= endDate);
+      if (!isPending && !isReady) return;
       items.push({ 
         type: 'custom', 
         exam,
+        examStatus: isPending ? 'pending' : 'ready',
         courseId: '_my_custom' 
       });
     });
     return items;
-  }, [courses, examsByCourse]);
+  }, [courses, examsByCourse, now]);
 
   const examCounts = examItems.length;
 
@@ -617,7 +638,7 @@ export function StudentDashboard() {
               ) : (
                 <div style={{ maxHeight: 400, overflowY: 'auto', paddingRight: 8 }}>
                   {examItems.slice(0, 8).map((item, index) => {
-                    const { type, exam, course } = item;
+                    const { type, exam, course, examStatus } = item;
                     const isCustom = type === 'custom';
                     const now = new Date();
                     const startDate = exam.startAt ? new Date(exam.startAt) : null;
@@ -625,41 +646,11 @@ export function StudentDashboard() {
                     
                     // Check if exam has been submitted
                     const submitted = isCustom ? exam.latestAttempt?.status === 'SUBMITTED' : course?.examResult?.attemptId;
-                    const hasAttempts = isCustom ? exam.hasAttempts : submitted;
                     
-                    // Determine exam status
-                    let status = null;
-                    let statusColor = 'default';
-                    let statusText = '';
-                    if (startDate && now < startDate) {
-                      status = 'pending';
-                      statusColor = 'orange';
-                      statusText = 'Pending';
-                    } else if (endDate && now > endDate) {
-                      if (hasAttempts) {
-                        status = 'completed';
-                        statusColor = 'green';
-                        statusText = 'Completed';
-                      } else {
-                        status = 'missed';
-                        statusColor = 'red';
-                        statusText = 'Missed';
-                      }
-                    } else if (startDate && now >= startDate && endDate && now <= endDate) {
-                      status = 'open';
-                      statusColor = 'blue';
-                      statusText = 'Open';
-                    } else if (!startDate && !endDate) {
-                      status = 'open';
-                      statusColor = 'blue';
-                      statusText = 'Available';
-                    } else if (startDate && now >= startDate && !endDate) {
-                      status = 'open';
-                      statusColor = 'blue';
-                      statusText = 'Open';
-                    }
-                    
-                    const canTake = status === 'open' && !submitted;
+                    const status = examStatus;
+                    const statusColor = status === 'ready' ? 'blue' : 'orange';
+                    const statusText = status === 'ready' ? 'Ready' : 'Pending';
+                    const canTake = status === 'ready' && !submitted;
                     
                     const duration = exam.timeLimitMinutes != null ? formatExamDuration(exam.timeLimitMinutes) : null;
                     const countdown = startDate && now < startDate 
@@ -678,7 +669,7 @@ export function StudentDashboard() {
                                   <>
                                     <Space wrap size={6}>
                                       <Tag color="blue" icon={<FileTextOutlined />}>{exam.name}</Tag>
-                                      {status && <Tag color={statusColor} icon={status === 'open' ? <PlayCircleOutlined /> : status === 'completed' ? <CheckCircleOutlined /> : status === 'missed' ? <CloseCircleOutlined /> : <ClockCircleOutlined />}>{statusText}</Tag>}
+                                      <Tag color={statusColor} icon={status === 'ready' ? <PlayCircleOutlined /> : <ClockCircleOutlined />}>{statusText}</Tag>
                                       {duration && <Tag icon={<ClockCircleOutlined />}>{duration}</Tag>}
                                       {countdown && <Tag color={countdown.type}>{countdown.text}</Tag>}
                                     </Space>
@@ -702,7 +693,7 @@ export function StudentDashboard() {
                                       <Tag color="blue" icon={<FileTextOutlined />}>{exam.name}</Tag>
                                       {duration && <Tag icon={<ClockCircleOutlined />}>{duration}</Tag>}
                                       {countdown && <Tag color={countdown.type}>{countdown.text}</Tag>}
-                                      {status && <Tag color={statusColor} icon={status === 'open' ? <PlayCircleOutlined /> : status === 'completed' ? <CheckCircleOutlined /> : status === 'missed' ? <CloseCircleOutlined /> : <ClockCircleOutlined />}>{statusText}</Tag>}
+                                      <Tag color={statusColor} icon={status === 'ready' ? <PlayCircleOutlined /> : <ClockCircleOutlined />}>{statusText}</Tag>
                                     </Space>
                                   </>
                                 )}
@@ -730,7 +721,7 @@ export function StudentDashboard() {
                                     size="small"
                                     disabled
                                   >
-                                    {statusText}
+                                    Pending
                                   </Button>
                                 )}
                               </Space>
@@ -973,6 +964,8 @@ export function StudentDashboard() {
           </Card>
         </Col>
       </Row>
+
+
 
       <Card 
         className="modern-card"

@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { Card, Typography, Space, Form, Input, Select, Button, InputNumber, Table, message, DatePicker, Drawer, Tag } from 'antd';
-import { ArrowLeftOutlined, CalendarOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, CalendarOutlined, FileTextOutlined, EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../../lib/api';
-
+import { GradeAttemptDrawer } from '../../components/GradeAttemptDrawer.jsx';
 
 export function AdminExamEditor() {
   const { id } = useParams(); // exam id
@@ -27,6 +27,10 @@ export function AdminExamEditor() {
   const [settingsForm] = Form.useForm();
   const [randomForm] = Form.useForm();
   const [savingSettings, setSavingSettings] = useState(false);
+  const [attempts, setAttempts] = useState([]);
+  const [attemptsLoading, setAttemptsLoading] = useState(false);
+  const [gradeDrawerOpen, setGradeDrawerOpen] = useState(false);
+  const [gradeDrawerAttemptId, setGradeDrawerAttemptId] = useState(null);
 
   const existingQuestionIds = useMemo(() => new Set((questions || []).map(q => q.id)), [questions]);
 
@@ -60,10 +64,29 @@ export function AdminExamEditor() {
     }
   };
 
+  const loadAttempts = async () => {
+    if (!id) return;
+    setAttemptsLoading(true);
+    try {
+      const { data } = await api.get(`/api/exams/${id}/attempts`);
+      setAttempts(data.attempts || []);
+    } catch {
+      setAttempts([]);
+    } finally {
+      setAttemptsLoading(false);
+    }
+  };
+
+  const openGradeDrawer = (attemptId) => {
+    setGradeDrawerAttemptId(attemptId);
+    setGradeDrawerOpen(true);
+  };
+
   useEffect(() => { loadExam(); /* eslint-disable-next-line */ }, [id]);
   useEffect(() => {
     if (exam) {
       loadQuestions();
+      loadAttempts();
       if (!topicId && exam.level) {
         loadTopicsForLevel(exam.level);
       }
@@ -292,6 +315,48 @@ export function AdminExamEditor() {
         <Table rowKey="id" dataSource={questions} columns={columns} pagination={false} />
       </Card>
 
+      <Card
+        title={
+          <Space>
+            <FileTextOutlined />
+            <span>Submitted attempts (grade constructed response)</span>
+          </Space>
+        }
+        loading={attemptsLoading}
+      >
+        <Table
+          rowKey="id"
+          dataSource={attempts}
+          pagination={{ pageSize: 10 }}
+          size="small"
+          columns={[
+            { title: 'Student', dataIndex: ['user', 'name'], render: (name, r) => r?.user?.name || r?.user?.email || '—' },
+            { title: 'Submitted', dataIndex: 'submittedAt', render: (v) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—' },
+            { title: 'Score', dataIndex: 'scorePercent', render: (v) => (v != null ? `${Math.round(v)}%` : '—') },
+            {
+              title: 'Areas to improve',
+              dataIndex: 'areasToImprove',
+              render: (topics) => (Array.isArray(topics) && topics.length > 0 ? (
+                <Space size={4} wrap>
+                  {topics.slice(0, 5).map((t) => (
+                    <Tag key={t} color="orange">{t}</Tag>
+                  ))}
+                  {topics.length > 5 && <Tag>+{topics.length - 5}</Tag>}
+                </Space>
+              ) : <Typography.Text type="secondary">—</Typography.Text>)
+            },
+            {
+              title: 'Actions',
+              render: (_, row) => (
+                <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openGradeDrawer(row.id)}>
+                  Grade
+                </Button>
+              )
+            }
+          ]}
+        />
+      </Card>
+
 			<Drawer
 				title="Question Pool"
 				open={poolOpen}
@@ -354,6 +419,13 @@ export function AdminExamEditor() {
 					/>
 				</Space>
 			</Drawer>
+
+			<GradeAttemptDrawer
+				attemptId={gradeDrawerAttemptId}
+				open={gradeDrawerOpen}
+				onClose={() => { setGradeDrawerOpen(false); setGradeDrawerAttemptId(null); }}
+				onSaved={() => loadAttempts()}
+			/>
     </Space>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, Typography, Button, Space, Tag, Empty, Spin, Modal, Input, Select, message, Tooltip, Collapse, Tabs } from 'antd';
+import { Card, Typography, Button, Space, Tag, Empty, Spin, Modal, Input, Select, message, Tooltip, Collapse, Tabs, Pagination } from 'antd';
 import { 
 	BookOutlined, 
 	ReloadOutlined, 
@@ -14,12 +14,26 @@ import {
 } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
+import { AIHelpPanel } from '../../components/AIHelpPanel.jsx';
+
+const REVISION_PAGE_SIZE = 8;
+
+function safeHtml(html) {
+	if (html == null || typeof html !== 'string') return '';
+	return html
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&amp;/g, '&')
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'");
+}
 
 export default function StudentRevision() {
 	const [loading, setLoading] = useState(true);
 	const [entries, setEntries] = useState([]);
 	const [stats, setStats] = useState({ total: 0, unreviewedCount: 0 });
 	const [activeTab, setActiveTab] = useState('all');
+	const [currentPage, setCurrentPage] = useState(1);
 	const [editingNote, setEditingNote] = useState(null);
 	const [noteText, setNoteText] = useState('');
 
@@ -93,6 +107,18 @@ export default function StudentRevision() {
 			: activeTab === 'high'
 				? entries.filter(e => e.priority === 3)
 				: entries.filter(e => e.reviewed);
+
+	useEffect(() => {
+		const totalPages = Math.max(1, Math.ceil(filteredEntries.length / REVISION_PAGE_SIZE));
+		if (currentPage > totalPages) {
+			setCurrentPage(totalPages);
+		}
+	}, [filteredEntries.length, currentPage]);
+
+	const paginatedEntries = filteredEntries.slice(
+		(currentPage - 1) * REVISION_PAGE_SIZE,
+		currentPage * REVISION_PAGE_SIZE
+	);
 
 	const priorityConfig = {
 		1: { label: 'Low', color: '#64748b', bg: '#f1f5f9' },
@@ -181,7 +207,10 @@ export default function StudentRevision() {
 			{/* Tabs */}
 			<Tabs
 				activeKey={activeTab}
-				onChange={setActiveTab}
+				onChange={(key) => {
+					setActiveTab(key);
+					setCurrentPage(1);
+				}}
 				items={[
 					{ key: 'all', label: `All (${entries.length})` },
 					{ key: 'pending', label: `Pending (${stats.unreviewedCount})` },
@@ -212,7 +241,7 @@ export default function StudentRevision() {
 			) : (
 				<div className="space-y-4">
 					<AnimatePresence>
-						{filteredEntries.map((entry, idx) => {
+						{paginatedEntries.map((entry, idx) => {
 							const q = entry.question;
 							const diffStyle = difficultyColors[q?.difficulty] || difficultyColors.MEDIUM;
 							const prioConfig = priorityConfig[entry.priority] || priorityConfig[1];
@@ -294,9 +323,10 @@ export default function StudentRevision() {
 
 										{/* Body */}
 										<div className="p-5">
-											<Typography.Paragraph className="text-slate-800 font-medium !mb-4 text-base">
-												{q?.stem}
-											</Typography.Paragraph>
+											<div
+												className="text-slate-800 font-medium mb-4 text-base prose max-w-none question-preview-content"
+												dangerouslySetInnerHTML={{ __html: safeHtml(q?.stem || '') }}
+											/>
 
 											{/* Collapsible Content */}
 											<Collapse
@@ -307,7 +337,6 @@ export default function StudentRevision() {
 														label: <span className="text-slate-600 font-medium">View Details & Answer</span>,
 														children: (
 															<div className="space-y-4 pt-2">
-																{/* Options */}
 																{q?.options?.map((opt, optIdx) => {
 																	const letters = ['A', 'B', 'C', 'D', 'E'];
 																	return (
@@ -319,28 +348,28 @@ export default function StudentRevision() {
 																				<span className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${opt.isCorrect ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
 																					{opt.isCorrect ? <CheckCircleOutlined /> : letters[optIdx]}
 																				</span>
-																				<span className={opt.isCorrect ? 'text-emerald-700 font-medium' : 'text-slate-600'}>
-																					{opt.text}
-																				</span>
+																				<div
+																					className={`prose max-w-none question-preview-content ${opt.isCorrect ? 'text-emerald-700 font-medium' : 'text-slate-600'}`}
+																					dangerouslySetInnerHTML={{ __html: safeHtml(opt.text || '') }}
+																				/>
 																			</div>
 																		</div>
 																	);
 																})}
 
-																{/* Explanation */}
 																{q?.workedSolution && (
 																	<div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
 																		<div className="flex items-center gap-2 mb-2">
 																			<BulbOutlined className="text-amber-500" />
 																			<Typography.Text className="text-amber-700 font-semibold text-sm">Explanation</Typography.Text>
 																		</div>
-																		<Typography.Paragraph className="!mb-0 text-slate-700 whitespace-pre-wrap">
-																			{q.workedSolution}
-																		</Typography.Paragraph>
+																		<div
+																			className="text-slate-700 prose max-w-none question-preview-content"
+																			dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution || '') }}
+																		/>
 																	</div>
 																)}
 
-																{/* LOS & Section */}
 																{(q?.los || q?.traceSection) && (
 																	<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
 																		{q?.los && (
@@ -365,7 +394,6 @@ export default function StudentRevision() {
 																	</div>
 																)}
 
-																{/* Key Formulas */}
 																{q?.keyFormulas && (
 																	<div className="p-3 bg-indigo-50 rounded-xl border border-indigo-200">
 																		<Typography.Text className="text-indigo-600 text-xs font-semibold block mb-1">
@@ -376,13 +404,14 @@ export default function StudentRevision() {
 																		</Typography.Text>
 																	</div>
 																)}
+
+																<AIHelpPanel questionId={q?.id} mode="revision_review" />
 															</div>
 														)
 													}
 												]}
 											/>
 
-											{/* Note */}
 											{editingNote === entry.questionId ? (
 												<div className="mt-4 flex gap-2">
 													<Input.TextArea
@@ -458,6 +487,15 @@ export default function StudentRevision() {
 							);
 						})}
 					</AnimatePresence>
+					<Pagination
+						current={currentPage}
+						pageSize={REVISION_PAGE_SIZE}
+						total={filteredEntries.length}
+						onChange={setCurrentPage}
+						showSizeChanger={false}
+						hideOnSinglePage
+						className="flex justify-end"
+					/>
 				</div>
 			)}
 		</div>

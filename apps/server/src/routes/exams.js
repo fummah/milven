@@ -1,10 +1,36 @@
 import { Router } from 'express';
+import OpenAI from 'openai';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireActiveSubscription } from '../middleware/requireActiveSubscription.js';
+import { requireRole } from '../middleware/requireRole.js';
+import { getOpenAIApiKey } from '../lib/openai.js';
 
 export function examsRouter(prisma) {
 	const router = Router();
+
+	// Compute score from marks: totalPossible = sum(question.marks), earned = MCQ/Vignette (marks if correct) + Constructed (marksAwarded ?? 0)
+	async function computeAttemptScorePercent(attemptId) {
+		const attempt = await prisma.examAttempt.findUnique({
+			where: { id: attemptId },
+			include: { answers: { include: { question: { select: { marks: true, type: true } } } } }
+		});
+		if (!attempt || !attempt.answers?.length) return 0;
+		let totalPossible = 0;
+		let earned = 0;
+		for (const a of attempt.answers) {
+			const q = a.question;
+			const marks = q?.marks ?? 1;
+			totalPossible += marks;
+			if (q?.type === 'CONSTRUCTED_RESPONSE') {
+				earned += a.marksAwarded ?? 0;
+			} else {
+				earned += (a.isCorrect === true) ? marks : 0;
+			}
+		}
+		if (totalPossible <= 0) return 0;
+		return Math.min(100, Math.round((earned / totalPossible) * 1000) / 10);
+	}
 
 	function shuffleInPlace(arr) {
 		for (let i = arr.length - 1; i > 0; i--) {
@@ -14,6 +40,70 @@ export function examsRouter(prisma) {
 			arr[j] = tmp;
 		}
 		return arr;
+	}
+
+	function stripHtml(input, maxLen = 1200) {
+		const raw = typeof input === 'string' ? input : '';
+		return raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLen);
+	}
+
+	function buildAiHelpPrompt({
+		question,
+		selectedOptionText,
+		correctOptionText,
+		textAnswer,
+		mode,
+		courseName,
+		volumeName,
+		topicName,
+		moduleName,
+		caseStudyText
+	}) {
+		const qType = question?.type === 'CONSTRUCTED_RESPONSE' ? 'constructed response' : 'multiple choice';
+		const stem = stripHtml(question?.stem, 1600);
+		const worked = stripHtml(question?.workedSolution, 700);
+		const keyFormulas = stripHtml(question?.keyFormulas, 400);
+		const los = stripHtml(question?.los, 250);
+		const traceSection = stripHtml(question?.traceSection, 250);
+		const cleanCaseStudy = stripHtml(caseStudyText, 1800);
+		const optionsText = (question?.options || [])
+			.map((opt, idx) => `${String.fromCharCode(65 + idx)}. ${stripHtml(opt?.text, 220)}${opt?.isCorrect ? ' (correct)' : ''}`)
+			.join('\n');
+
+		return [
+			'You are a concise CFA study coach helping a student understand a question they got wrong or want help with.',
+			'Give practical teaching help, not just the final answer.',
+			'Adapt to the question type and use the vignette case study when present.',
+			'If the student answer is wrong, explain why it is wrong in a respectful way.',
+			'Keep the response structured and brief but useful.',
+			'',
+			`Request mode: ${mode || 'study_help'}`,
+			`Question type: ${qType}`,
+			courseName ? `Course: ${courseName}` : null,
+			volumeName ? `Volume: ${volumeName}` : null,
+			moduleName ? `Module: ${moduleName}` : null,
+			topicName ? `Topic: ${topicName}` : null,
+			question?.difficulty ? `Difficulty: ${question.difficulty}` : null,
+			los ? `LOS: ${los}` : null,
+			traceSection ? `Reference section: ${traceSection}` : null,
+			cleanCaseStudy ? `Case study: ${cleanCaseStudy}` : null,
+			`Question: ${stem}`,
+			optionsText ? `Options:\n${optionsText}` : null,
+			selectedOptionText ? `Student selected: ${stripHtml(selectedOptionText, 250)}` : null,
+			correctOptionText ? `Correct answer: ${stripHtml(correctOptionText, 250)}` : null,
+			textAnswer ? `Student written answer: ${stripHtml(textAnswer, 600)}` : null,
+			keyFormulas ? `Key formulas: ${keyFormulas}` : null,
+			worked ? `Worked solution excerpt: ${worked}` : null,
+			'',
+			'Respond in markdown with exactly these sections:',
+			'1. **Core idea** - 1 short paragraph',
+			'2. **Why this question works this way** - 2 to 4 bullets',
+			'3. **How to solve or think about it** - 2 to 4 bullets',
+			'4. **Common mistake to avoid** - 1 bullet',
+			'5. **What to revise next** - 1 to 3 bullets tied to the course/topic/volume when possible',
+			'',
+			'Do not mention that you are an AI. Do not include a disclaimer. Keep it focused on learning.'
+		].filter(Boolean).join('\n');
 	}
 
 	async function requireEnrollmentForCourseExam(userId, courseId) {
@@ -41,9 +131,14 @@ export function examsRouter(prisma) {
 			// topicIds not required for course exams
 			topicIds: z.array(z.string()).optional(),
 			questionCount: z.number().int().positive(),
+      difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
+      difficulties: z.array(z.enum(['EASY', 'MEDIUM', 'HARD'])).optional(),
       examType: z.enum(['COURSE','QUIZ']).optional(),
       topicId: z.string().optional(),
       courseId: z.string().optional(),
+      volumeId: z.string().optional(),
+      moduleId: z.string().optional(),
+      questionType: z.enum(['ANY', 'MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']).optional(),
       startAt: isStudent ? z.coerce.date() : z.coerce.date().optional().nullable(),
       endAt: isStudent ? z.coerce.date() : z.coerce.date().optional().nullable()
 		});
@@ -106,24 +201,76 @@ export function examsRouter(prisma) {
         level = c?.level ?? 'LEVEL1';
       }
     } catch {}
-    // Create exam record
-    // For admins creating exams via /admin/exams, set createdById to null (admin-created)
-    // For students creating exams, set createdById to their user ID (student-created)
-    const createdById = isStudent ? req.user.id : null;
-		const exam = await prisma.exam.create({
-			data: {
-        name: payload.name,
-        level: level ?? 'LEVEL1',
-        timeLimitMinutes: payload.timeLimitMinutes,
-        createdById: createdById,
-        type: isQuiz ? 'QUIZ' : 'COURSE',
-        topicId: isQuiz ? (payload.topicIds?.[0] ?? payload.topicId ?? null) : null,
-        courseId: payload.courseId ?? null,
-        active: isStudent ? true : false, // Students' exams are active by default (only visible to them)
-        startAt: payload.startAt ?? null,
-        endAt: payload.endAt ?? null
+    let selectedQuestionIds = [];
+    if (isStudent) {
+      const topicIdList = payload.topicIds || (payload.topicId ? [payload.topicId] : []);
+      const difficulties = payload.difficulties || (payload.difficulty ? [payload.difficulty] : []);
+      const questionType = payload.questionType === 'ANY' || !payload.questionType ? null : payload.questionType;
+      
+      // Build type filter: MCQ should include VIGNETTE_MCQ parents, CONSTRUCTED_RESPONSE should include bundles
+      let typeFilter = {};
+      if (questionType === 'MCQ') {
+        typeFilter = { type: { in: ['MCQ', 'VIGNETTE_MCQ'] } };
+      } else if (questionType === 'CONSTRUCTED_RESPONSE') {
+        typeFilter = { type: 'CONSTRUCTED_RESPONSE' };
+      } else if (questionType === 'VIGNETTE_MCQ') {
+        typeFilter = { type: 'VIGNETTE_MCQ' };
       }
-		});
+      
+      const where = {
+        AND: [
+          payload.courseId ? { courseId: payload.courseId } : {},
+          payload.volumeId ? { volumeId: payload.volumeId } : {},
+          payload.moduleId ? { moduleId: payload.moduleId } : {},
+          topicIdList.length > 0 ? { topicId: { in: topicIdList } } : {},
+          difficulties.length > 0 ? { difficulty: { in: difficulties } } : {},
+          level ? { level } : {},
+          typeFilter
+        ]
+      };
+      const pool = await prisma.question.findMany({
+        where: { ...where, parentId: null },
+        include: { children: { select: { id: true }, orderBy: [{ orderIndex: 'asc' }] } }
+      });
+      const logicalItems = pool.map((q) => {
+        const childIds = (q.children || []).map((c) => c.id);
+        if (childIds.length > 0) return { ids: childIds };
+        return { ids: [q.id] };
+      });
+      const maxLogical = logicalItems.length;
+      if (maxLogical < payload.questionCount) {
+        return res.status(400).json({ error: `Not enough questions in pool. Requested ${payload.questionCount}, found ${maxLogical} (counting each vignette as one question).` });
+      }
+      shuffleInPlace(logicalItems);
+      selectedQuestionIds = logicalItems.slice(0, payload.questionCount).flatMap((item) => item.ids);
+    }
+    const createdById = isStudent ? req.user.id : null;
+		const exam = await prisma.$transaction(async (tx) => {
+      const createdExam = await tx.exam.create({
+        data: {
+          name: payload.name,
+          level: level ?? 'LEVEL1',
+          timeLimitMinutes: payload.timeLimitMinutes,
+          createdById: createdById,
+          type: isQuiz ? 'QUIZ' : 'COURSE',
+          topicId: isQuiz ? (payload.topicIds?.[0] ?? payload.topicId ?? null) : null,
+          courseId: payload.courseId ?? null,
+          active: isStudent ? true : false,
+          startAt: payload.startAt ?? null,
+          endAt: payload.endAt ?? null
+        }
+      });
+      if (isStudent && selectedQuestionIds.length > 0) {
+        await tx.examQuestion.createMany({
+          data: selectedQuestionIds.map((questionId, idx) => ({
+            examId: createdExam.id,
+            questionId,
+            order: idx + 1
+          }))
+        });
+      }
+      return createdExam;
+    });
 		return res.status(201).json({ exam });
 	});
 
@@ -190,7 +337,8 @@ export function examsRouter(prisma) {
 			moduleId: z.string().optional(),
 			topicId: z.string().optional(),
 			topicIds: z.array(z.string()).optional(),
-			replaceExisting: z.boolean().optional()
+			replaceExisting: z.boolean().optional(),
+			questionType: z.enum(['ANY', 'MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']).optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -201,6 +349,18 @@ export function examsRouter(prisma) {
 		const effectiveCourseId = payload.courseId ?? exam.courseId ?? undefined;
 		const topicIdList = payload.topicIds || (payload.topicId ? [payload.topicId] : (exam.topicId ? [exam.topicId] : []));
 		const difficulties = payload.difficulties || (payload.difficulty ? [payload.difficulty] : []);
+		const questionType = payload.questionType === 'ANY' || !payload.questionType ? null : payload.questionType;
+		
+		// Build type filter: MCQ should include VIGNETTE_MCQ parents, CONSTRUCTED_RESPONSE should include bundles
+		let typeFilter = {};
+		if (questionType === 'MCQ') {
+			typeFilter = { type: { in: ['MCQ', 'VIGNETTE_MCQ'] } };
+		} else if (questionType === 'CONSTRUCTED_RESPONSE') {
+			typeFilter = { type: 'CONSTRUCTED_RESPONSE' };
+		} else if (questionType === 'VIGNETTE_MCQ') {
+			typeFilter = { type: 'VIGNETTE_MCQ' };
+		}
+		
 		const where = {
 			AND: [
 				effectiveCourseId ? { courseId: effectiveCourseId } : {},
@@ -208,15 +368,31 @@ export function examsRouter(prisma) {
 				payload.moduleId ? { moduleId: payload.moduleId } : {},
 				topicIdList.length > 0 ? { topicId: { in: topicIdList } } : {},
 				difficulties.length > 0 ? { difficulty: { in: difficulties } } : {},
-				exam.level ? { level: exam.level } : {}
+				exam.level ? { level: exam.level } : {},
+				typeFilter
 			]
 		};
 
-		const pool = await prisma.question.findMany({ where, select: { id: true } });
-		if (pool.length < payload.questionCount) {
-			return res.status(400).json({ error: `Not enough questions in pool. Requested ${payload.questionCount}, found ${pool.length}.` });
+		// Only pool top-level questions (parentId IS NULL)
+		const pool = await prisma.question.findMany({
+			where: { ...where, parentId: null },
+			
+			include: { children: { select: { id: true }, orderBy: [{ orderIndex: 'asc' }] } }
+		});
+		const logicalItems = pool.map(q => {
+			const childIds = (q.children || []).map(c => c.id);
+			if (childIds.length > 0) {
+				return { kind: 'vignette', ids: childIds };
+			}
+			return { kind: 'single', ids: [q.id] };
+		});
+		const maxLogical = logicalItems.length;
+		if (maxLogical < payload.questionCount) {
+			return res.status(400).json({ error: `Not enough questions in pool. Requested ${payload.questionCount}, found ${maxLogical} (counting each vignette as one question).` });
 		}
-		const ids = shuffleInPlace(pool.map(p => p.id)).slice(0, payload.questionCount);
+		shuffleInPlace(logicalItems);
+		const selectedLogical = logicalItems.slice(0, payload.questionCount);
+		const ids = selectedLogical.flatMap(item => item.ids);
 
 		await prisma.$transaction(async (tx) => {
 			if (payload.replaceExisting !== false) {
@@ -240,7 +416,8 @@ export function examsRouter(prisma) {
 			courseId: z.string().optional(),
 			volumeId: z.string().optional(),
 			moduleId: z.string().optional(),
-			topicId: z.string().optional()
+			topicId: z.string().optional(),
+			questionType: z.enum(['ANY', 'MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']).optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -260,6 +437,18 @@ export function examsRouter(prisma) {
 			level = t?.level ?? level;
 		}
 
+		const questionType = payload.questionType === 'ANY' || !payload.questionType ? null : payload.questionType;
+		
+		// Build type filter: MCQ should include VIGNETTE_MCQ parents, CONSTRUCTED_RESPONSE should include bundles
+		let typeFilter = {};
+		if (questionType === 'MCQ') {
+			typeFilter = { type: { in: ['MCQ', 'VIGNETTE_MCQ'] } };
+		} else if (questionType === 'CONSTRUCTED_RESPONSE') {
+			typeFilter = { type: 'CONSTRUCTED_RESPONSE' };
+		} else if (questionType === 'VIGNETTE_MCQ') {
+			typeFilter = { type: 'VIGNETTE_MCQ' };
+		}
+		
 		const where = {
 			AND: [
 				payload.courseId ? { courseId: payload.courseId } : {},
@@ -267,15 +456,31 @@ export function examsRouter(prisma) {
 				payload.moduleId ? { moduleId: payload.moduleId } : {},
 				payload.topicId ? { topicId: payload.topicId } : {},
 				payload.difficulty ? { difficulty: payload.difficulty } : {},
-				level ? { level } : {}
+				level ? { level } : {},
+				typeFilter
 			]
 		};
 
-		const pool = await prisma.question.findMany({ where, select: { id: true } });
-		if (pool.length < payload.questionCount) {
-			return res.status(400).json({ error: `Not enough questions in pool. Requested ${payload.questionCount}, found ${pool.length}.` });
+		// Only pool top-level questions (parentId IS NULL)
+		const pool = await prisma.question.findMany({
+			where: { ...where, parentId: null },
+			
+			include: { children: { select: { id: true }, orderBy: [{ orderIndex: 'asc' }] } }
+		});
+		const logicalItems = pool.map(q => {
+			const childIds = (q.children || []).map(c => c.id);
+			if (childIds.length > 0) {
+				return { kind: 'vignette', ids: childIds };
+			}
+			return { kind: 'single', ids: [q.id] };
+		});
+		const maxLogical = logicalItems.length;
+		if (maxLogical < payload.questionCount) {
+			return res.status(400).json({ error: `Not enough questions in pool. Requested ${payload.questionCount}, found ${maxLogical} (counting each vignette as one question).` });
 		}
-		const ids = shuffleInPlace(pool.map(p => p.id)).slice(0, payload.questionCount);
+		shuffleInPlace(logicalItems);
+		const selectedLogical = logicalItems.slice(0, payload.questionCount);
+		const ids = selectedLogical.flatMap(item => item.ids);
 
 		const exam = await prisma.exam.create({
 			data: {
@@ -322,10 +527,59 @@ export function examsRouter(prisma) {
     const links = await prisma.examQuestion.findMany({
       where: { examId },
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-      include: { question: { include: { options: true, vignette: true } } }
+      include: { question: { include: { options: true, parent: { select: { id: true, vignetteText: true, type: true } } } } }
     });
     const questions = links.map(l => ({ ...l.question, order: l.order }));
     return res.json({ questions });
+  });
+
+  // List attempts for an exam (admin only) – for grading constructed responses
+  router.get('/:examId/attempts', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const { examId } = req.params;
+    const exam = await prisma.exam.findUnique({
+      where: { id: examId },
+      select: { id: true, name: true }
+    });
+    if (!exam) return res.status(404).json({ error: 'Exam not found' });
+    const attempts = await prisma.examAttempt.findMany({
+      where: { examId },
+      orderBy: { submittedAt: 'desc' },
+      include: {
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+        answers: {
+          include: { question: { select: { topicId: true, topic: { select: { name: true } }, type: true, marks: true } } }
+        }
+      }
+    });
+    const list = attempts.map(a => {
+      const byTopic = new Map();
+      for (const ans of a.answers || []) {
+        const topicName = ans.question?.topic?.name ?? 'Other';
+        if (!byTopic.has(topicName)) byTopic.set(topicName, { correct: 0, total: 0 });
+        const agg = byTopic.get(topicName);
+        agg.total += 1;
+        if (ans.question?.type === 'CONSTRUCTED_RESPONSE') {
+          const maxM = ans.question?.marks ?? 1;
+          if (ans.marksAwarded != null && ans.marksAwarded >= maxM) agg.correct += 1;
+        } else if (ans.isCorrect === true) agg.correct += 1;
+      }
+      const areasToImprove = Array.from(byTopic.entries())
+        .map(([topic, v]) => ({ topic, correct: v.correct, total: v.total, percent: v.total ? Math.round((v.correct / v.total) * 100) : 0 }))
+        .filter(({ percent }) => percent < 70)
+        .sort((x, y) => x.percent - y.percent)
+        .map(({ topic }) => topic);
+      return {
+        id: a.id,
+        userId: a.userId,
+        user: a.user ? { id: a.user.id, email: a.user.email, name: [a.user.firstName, a.user.lastName].filter(Boolean).join(' ') || a.user.email } : null,
+        startedAt: a.startedAt,
+        submittedAt: a.submittedAt,
+        status: a.status,
+        scorePercent: a.scorePercent,
+        areasToImprove
+      };
+    });
+    return res.json({ attempts: list });
   });
 
   // Link an existing question to exam
@@ -407,9 +661,8 @@ export function examsRouter(prisma) {
     return res.json({ exams: examsWithStats });
   });
 
-  // Update exam (admin)
+  // Update exam (admin or owner of student-created practice exam)
   router.put('/:examId', requireAuth(), async (req, res) => {
-    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
     const { examId } = req.params;
     const schema = z.object({
       name: z.string().min(1).optional(),
@@ -420,6 +673,25 @@ export function examsRouter(prisma) {
     });
     const parse = schema.safeParse(req.body);
     if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+    const existing = await prisma.exam.findUnique({
+      where: { id: examId },
+      select: {
+        id: true,
+        createdById: true,
+        type: true,
+        timeLimitMinutes: true
+      }
+    });
+    if (!existing) return res.status(404).json({ error: 'Exam not found' });
+    const isAdmin = req.user.role === 'ADMIN';
+    const isOwnedPracticeExam = existing.createdById === req.user.id;
+    if (!isAdmin && !isOwnedPracticeExam) return res.status(403).json({ error: 'Forbidden' });
+    if (!isAdmin) {
+      const nonScheduleFields = Object.keys(parse.data).filter((key) => !['startAt', 'endAt'].includes(key));
+      if (nonScheduleFields.length > 0) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
     const data = { ...parse.data };
     if (Object.prototype.hasOwnProperty.call(parse.data, 'startAt')) data.startAt = parse.data.startAt ?? null;
     if (Object.prototype.hasOwnProperty.call(parse.data, 'endAt')) data.endAt = parse.data.endAt ?? null;
@@ -469,7 +741,7 @@ export function examsRouter(prisma) {
 	// Start an attempt (timed); for COURSE exams enforce startAt/endAt window; create answer placeholders for each exam question
 	router.post('/:examId/attempts', requireAuth(), maybeRequireSubscription(prisma), async (req, res) => {
 		const { examId } = req.params;
-		const exam = await prisma.exam.findUnique({ where: { id: examId }, select: { id: true, active: true, timeLimitMinutes: true, startAt: true, endAt: true, type: true, courseId: true } });
+		const exam = await prisma.exam.findUnique({ where: { id: examId }, select: { id: true, active: true, timeLimitMinutes: true, startAt: true, endAt: true, type: true, courseId: true, createdById: true } });
 		if (!exam) return res.status(404).json({ error: 'Exam not found' });
 		if (!exam.active) return res.status(403).json({ error: 'Exam is not active' });
 		if (exam.type === 'COURSE' && exam.courseId && req.user.role !== 'ADMIN') {
@@ -477,6 +749,13 @@ export function examsRouter(prisma) {
 			if (!ok) return res.status(403).json({ error: 'Not enrolled in course' });
 		}
 		const now = new Date();
+		// Auto-reschedule student-created practice exams so "Start now" works immediately
+		if (exam.startAt && now < exam.startAt && exam.createdById === req.user.id) {
+			const newEndAt = new Date(now.getTime() + (exam.timeLimitMinutes || 60) * 60 * 1000);
+			await prisma.exam.update({ where: { id: examId }, data: { startAt: now, endAt: newEndAt } });
+			exam.startAt = now;
+			exam.endAt = newEndAt;
+		}
 		if (exam.startAt && now < exam.startAt) return res.status(403).json({ error: 'Exam has not started yet' });
 		if (exam.endAt && now > exam.endAt) return res.status(403).json({ error: 'Exam has ended' });
 		const attempt = await prisma.examAttempt.create({
@@ -551,17 +830,77 @@ export function examsRouter(prisma) {
 		return res.json({ answer });
 	});
 
-	// Submit attempt (compute score); if COURSE exam, mark enrollment as COMPLETED
+	// Admin: set marks awarded for a constructed-response answer and recalc attempt score
+	router.put('/attempts/:attemptId/answers/:answerId', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const { attemptId, answerId } = req.params;
+		const schema = z.object({
+			marksAwarded: z.number().int().min(0)
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+		const answer = await prisma.examAnswer.findFirst({
+			where: { id: answerId, attemptId },
+			include: { question: { select: { type: true, marks: true } } }
+		});
+		if (!answer) return res.status(404).json({ error: 'Answer not found' });
+		if (answer.question?.type !== 'CONSTRUCTED_RESPONSE') {
+			return res.status(400).json({ error: 'Only constructed response answers can be awarded marks' });
+		}
+		const maxMarks = answer.question?.marks ?? 1;
+		const marksAwarded = Math.min(parse.data.marksAwarded, maxMarks);
+		await prisma.examAnswer.update({
+			where: { id: answerId },
+			data: { marksAwarded }
+		});
+		const scorePercent = await computeAttemptScorePercent(attemptId);
+		await prisma.examAttempt.update({
+			where: { id: attemptId },
+			data: { scorePercent }
+		});
+		const updated = await prisma.examAttempt.findUnique({
+			where: { id: attemptId },
+			include: {
+				exam: true,
+				user: { select: { id: true, email: true, firstName: true, lastName: true } },
+				answers: { include: { question: { include: { options: true, topic: true, parent: { select: { id: true, vignetteText: true, type: true } } } }, selectedOption: true } }
+			}
+		});
+		let courseName = null;
+		if (updated?.exam?.courseId) {
+			const course = await prisma.course.findUnique({
+				where: { id: updated.exam.courseId },
+				select: { name: true }
+			});
+			courseName = course?.name ?? null;
+		}
+		const links = await prisma.examQuestion.findMany({
+			where: { examId: updated?.examId },
+			orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+			select: { questionId: true }
+		});
+		const orderMap = new Map(links.map((l, i) => [l.questionId, i]));
+		const sortedAnswers = [...(updated?.answers || [])].sort(
+			(x, y) => (orderMap.get(x.questionId) ?? 999) - (orderMap.get(y.questionId) ?? 999)
+		);
+		const userWithName = updated?.user ? {
+			...updated.user,
+			name: [updated.user.firstName, updated.user.lastName].filter(Boolean).join(' ').trim() || updated.user.email || updated.user.id
+		} : null;
+		return res.json({
+			answer: { id: answerId, marksAwarded },
+			attempt: updated ? { ...updated, user: userWithName, answers: sortedAnswers, courseName } : null
+		});
+	});
+
+	// Submit attempt (compute score from marks; constructed use marksAwarded when set); if COURSE exam, mark enrollment as COMPLETED
 	router.post('/attempts/:attemptId/submit', requireAuth(), maybeRequireSubscription(prisma), async (req, res) => {
 		const { attemptId } = req.params;
 		const attempt = await prisma.examAttempt.findUnique({
 			where: { id: attemptId },
-			include: { answers: true, exam: { select: { type: true, courseId: true } } }
+			include: { answers: { include: { question: { select: { marks: true, type: true } } } }, exam: { select: { type: true, courseId: true } } }
 		});
 		if (!attempt || attempt.userId !== req.user.id) return res.status(404).json({ error: 'Attempt not found' });
-		const total = attempt.answers.length || 1;
-		const correct = attempt.answers.filter(a => a.isCorrect === true).length;
-		const scorePercent = (correct / total) * 100;
+		const scorePercent = await computeAttemptScorePercent(attemptId);
 		const updated = await prisma.examAttempt.update({
 			where: { id: attemptId },
 			data: { status: 'SUBMITTED', submittedAt: new Date(), scorePercent }
@@ -573,6 +912,77 @@ export function examsRouter(prisma) {
 			});
 		}
 		return res.json({ attempt: updated });
+	});
+
+	// List attempts pending marking (admin): submitted attempts with ≥1 constructed answer where marksAwarded is null
+	router.get('/attempts/pending-marking', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const attempts = await prisma.examAttempt.findMany({
+			where: {
+				status: 'SUBMITTED',
+				answers: {
+					some: {
+						question: { type: 'CONSTRUCTED_RESPONSE' },
+						marksAwarded: null
+					}
+				}
+			},
+			orderBy: { submittedAt: 'desc' },
+			include: {
+				exam: { select: { id: true, name: true } },
+				user: { select: { id: true, email: true, firstName: true, lastName: true } },
+				answers: {
+					where: { question: { type: 'CONSTRUCTED_RESPONSE' } },
+					select: { id: true, marksAwarded: true }
+				}
+			}
+		});
+		const list = attempts.map((a) => {
+			const pendingCount = (a.answers || []).filter((ans) => ans.marksAwarded == null).length;
+			return {
+				id: a.id,
+				examId: a.examId,
+				examName: a.exam?.name,
+				userId: a.userId,
+				user: a.user ? { id: a.user.id, email: a.user.email, name: [a.user.firstName, a.user.lastName].filter(Boolean).join(' ') || a.user.email } : null,
+				submittedAt: a.submittedAt,
+				pendingCount
+			};
+		});
+		return res.json({ attempts: list });
+	});
+
+	// List attempts with completed marking (admin): submitted, have constructed responses, all constructed have marksAwarded set
+	router.get('/attempts/completed-marking', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const attempts = await prisma.examAttempt.findMany({
+			where: {
+				status: 'SUBMITTED',
+				answers: {
+					some: { question: { type: 'CONSTRUCTED_RESPONSE' } }
+				}
+			},
+			orderBy: { submittedAt: 'desc' },
+			include: {
+				exam: { select: { id: true, name: true } },
+				user: { select: { id: true, email: true, firstName: true, lastName: true } },
+				answers: {
+					where: { question: { type: 'CONSTRUCTED_RESPONSE' } },
+					select: { id: true, marksAwarded: true }
+				}
+			}
+		});
+		const list = attempts.filter((a) => {
+			const constructed = a.answers || [];
+			return constructed.length > 0 && constructed.every((ans) => ans.marksAwarded != null);
+		}).map((a) => ({
+			id: a.id,
+			examId: a.examId,
+			examName: a.exam?.name,
+			userId: a.userId,
+			user: a.user ? { id: a.user.id, email: a.user.email, name: [a.user.firstName, a.user.lastName].filter(Boolean).join(' ') || a.user.email } : null,
+			submittedAt: a.submittedAt,
+			scorePercent: a.scorePercent
+		}));
+		return res.json({ attempts: list });
 	});
 
 	// List my attempts
@@ -592,15 +1002,20 @@ export function examsRouter(prisma) {
 			where: { id: attemptId },
 			include: {
 				exam: true,
+				user: { select: { id: true, email: true, firstName: true, lastName: true } },
 				answers: {
 					include: {
-						question: { include: { options: true, topic: true, vignette: true } },
+						question: {
+							include: { options: true, topic: true, parent: { select: { id: true, vignetteText: true, type: true } } }
+						},
 						selectedOption: true
 					}
 				}
 			}
 		});
-		if (!attempt || attempt.userId !== req.user.id) return res.status(404).json({ error: 'Attempt not found' });
+		const isOwner = attempt.userId === req.user.id;
+		const isAdmin = req.user.role === 'ADMIN';
+		if (!attempt || (!isOwner && !isAdmin)) return res.status(404).json({ error: 'Attempt not found' });
 		let courseName = null;
 		if (attempt.exam?.courseId) {
 			const course = await prisma.course.findUnique({
@@ -619,7 +1034,11 @@ export function examsRouter(prisma) {
 		const sortedAnswers = [...(attempt.answers || [])].sort(
 			(x, y) => (orderMap.get(x.questionId) ?? 999) - (orderMap.get(y.questionId) ?? 999)
 		);
-		return res.json({ attempt: { ...attempt, answers: sortedAnswers, courseName } });
+		const userWithName = attempt.user ? {
+			...attempt.user,
+			name: [attempt.user.firstName, attempt.user.lastName].filter(Boolean).join(' ').trim() || attempt.user.email || attempt.user.id
+		} : null;
+		return res.json({ attempt: { ...attempt, user: userWithName, answers: sortedAnswers, courseName } });
 	});
 
 	// Attempt analytics (topic-level breakdown)
@@ -648,6 +1067,145 @@ export function examsRouter(prisma) {
 		return res.json({ byTopic });
 	});
 
+	// AI-generated hints for failed questions in an attempt (student or admin)
+	router.post('/attempts/:attemptId/hints', requireAuth(), async (req, res) => {
+		const { attemptId } = req.params;
+		const attempt = await prisma.examAttempt.findUnique({
+			where: { id: attemptId },
+			include: {
+				answers: {
+					include: {
+						question: { include: { options: true } },
+						selectedOption: true
+					}
+				}
+			}
+		});
+		const isOwner = attempt?.userId === req.user.id;
+		const isAdmin = req.user.role === 'ADMIN';
+		if (!attempt || (!isOwner && !isAdmin)) return res.status(404).json({ error: 'Attempt not found' });
+
+		const apiKey = await getOpenAIApiKey(prisma);
+		if (!apiKey) return res.status(400).json({ error: 'AI hints are not configured. Admin must set OpenAI API key.' });
+
+		// Failed: wrong MCQ/vignette, or constructed with partial/zero marks
+		const failed = attempt.answers.filter((a) => {
+			if (a.question?.type === 'CONSTRUCTED_RESPONSE') {
+				const maxM = a.question?.marks ?? 1;
+				return a.marksAwarded != null && a.marksAwarded < maxM;
+			}
+			return a.isCorrect === false;
+		});
+		if (failed.length === 0) return res.json({ hints: [] });
+
+		const hints = [];
+		const openai = new OpenAI({ apiKey });
+		for (const ans of failed) {
+			const q = ans.question;
+			const stem = (q?.stem || '').replace(/<[^>]+>/g, ' ').trim().slice(0, 800);
+			const correctOpt = q?.options?.find(o => o.isCorrect);
+			const correctText = correctOpt?.text?.replace(/<[^>]+>/g, ' ').trim().slice(0, 200) || '';
+			const keyFormulas = (q?.keyFormulas || '').slice(0, 300);
+			const worked = (q?.workedSolution || '').slice(0, 400);
+			const prompt = `Exam question (student got it wrong). Give one short, brief study hint (1-2 sentences) to help them understand. Be concise.\n\nQuestion: ${stem}\n${correctText ? `Correct answer: ${correctText}\n` : ''}${keyFormulas ? `Key formula(s): ${keyFormulas}\n` : ''}${worked ? `Worked solution (excerpt): ${worked}\n` : ''}\nReply with only the hint, no preamble.`;
+			try {
+				const comp = await openai.chat.completions.create({
+					model: 'gpt-4o-mini',
+					messages: [{ role: 'user', content: prompt }],
+					temperature: 0.5,
+					max_tokens: 150
+				});
+				const hint = comp.choices?.[0]?.message?.content?.trim() || '';
+				if (!hint) {
+					hints.push({ answerId: ans.id, questionId: q?.id, hint: '', error: 'AI returned empty hint' });
+				} else {
+					hints.push({ answerId: ans.id, questionId: q?.id, hint });
+				}
+			} catch (err) {
+				hints.push({ answerId: ans.id, questionId: q?.id, hint: '', error: err?.message || 'Failed to generate hint' });
+			}
+		}
+		return res.json({ hints });
+	});
+
+	// Rich AI help for a single question, including vignette/case-study context and syllabus metadata
+	router.post('/questions/:questionId/ai-help', requireAuth(), async (req, res) => {
+		const { questionId } = req.params;
+		const schema = z.object({
+			selectedOptionId: z.string().optional().nullable(),
+			selectedOptionText: z.string().optional().nullable(),
+			textAnswer: z.string().optional().nullable(),
+			mode: z.enum(['practice_failed', 'result_review', 'mistake_review', 'revision_review', 'study_help']).optional()
+		});
+		const parse = schema.safeParse(req.body || {});
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		const apiKey = await getOpenAIApiKey(prisma);
+		if (!apiKey) return res.status(400).json({ error: 'AI help is not configured. Admin must set OpenAI API key.' });
+
+		const question = await prisma.question.findUnique({
+			where: { id: questionId },
+			include: {
+				options: true,
+				parent: {
+					select: {
+						id: true,
+						vignetteText: true,
+						stem: true
+					}
+				},
+				topic: {
+					include: {
+						course: { select: { id: true, name: true } },
+						module: {
+							select: {
+								id: true,
+								name: true,
+								volume: { select: { id: true, name: true } }
+							}
+						}
+					}
+				}
+			}
+		});
+		if (!question) return res.status(404).json({ error: 'Question not found' });
+
+		const correctOption = question.options?.find((opt) => opt.isCorrect);
+		const selectedOption = parse.data.selectedOptionId
+			? question.options?.find((opt) => opt.id === parse.data.selectedOptionId)
+			: null;
+		const selectedOptionText = parse.data.selectedOptionText || selectedOption?.text || '';
+		const caseStudyText = question.parent?.vignetteText || question.vignetteText || '';
+		const prompt = buildAiHelpPrompt({
+			question,
+			selectedOptionText,
+			correctOptionText: correctOption?.text || '',
+			textAnswer: parse.data.textAnswer || '',
+			mode: parse.data.mode || 'study_help',
+			courseName: question.topic?.course?.name || '',
+			volumeName: question.topic?.module?.volume?.name || '',
+			moduleName: question.topic?.module?.name || '',
+			topicName: question.topic?.name || '',
+			caseStudyText
+		});
+
+		try {
+			const openai = new OpenAI({ apiKey });
+			const comp = await openai.chat.completions.create({
+				model: 'gpt-4o-mini',
+				messages: [{ role: 'user', content: prompt }],
+				temperature: 0.4,
+				max_tokens: 500
+			});
+			const help = comp.choices?.[0]?.message?.content?.trim() || '';
+			if (!help) return res.status(502).json({ error: 'AI returned empty help' });
+			return res.json({ help });
+		} catch (err) {
+			const msg = err?.error?.message || err?.response?.data?.error?.message || err?.message || 'Failed to generate AI help';
+			return res.status(500).json({ error: msg });
+		}
+	});
+
 	// ==========================================
 	// MISTAKE BANK ROUTES
 	// ==========================================
@@ -667,7 +1225,7 @@ export function examsRouter(prisma) {
 				include: {
 					options: true,
 					topic: true,
-					vignette: true
+					parent: { select: { id: true, vignetteText: true, type: true } }
 				}
 			});
 			const questionMap = new Map(questions.map(q => [q.id, q]));
@@ -832,7 +1390,7 @@ export function examsRouter(prisma) {
 			const questionIds = entries.map(e => e.questionId);
 			const questions = await prisma.question.findMany({
 				where: { id: { in: questionIds } },
-				include: { options: true, topic: true, vignette: true }
+				include: { options: true, topic: true, parent: { select: { id: true, vignetteText: true, type: true } } }
 			});
 			const questionMap = new Map(questions.map(q => [q.id, q]));
 
@@ -1019,6 +1577,12 @@ export function examsRouter(prisma) {
 	router.get('/analytics/me', requireAuth(), async (req, res) => {
 		try {
 			const userId = req.user.id;
+			const userLevel = req.user.level;
+			const enrollments = await prisma.enrollment.findMany({
+				where: { userId },
+				select: { courseId: true, course: { select: { id: true, name: true, level: true } } }
+			});
+			const enrolledCourseIds = enrollments.map((e) => e.courseId).filter(Boolean);
 			
 			// Get all submitted attempts for this user with answers and topic info
 			const attempts = await prisma.examAttempt.findMany({
@@ -1047,7 +1611,8 @@ export function examsRouter(prisma) {
 					scoreTrend: [],
 					topicPerformance: [],
 					weeklyProgress: [],
-					improvement: 0
+					improvement: 0,
+					peerComparison: null
 				});
 			}
 
@@ -1144,6 +1709,171 @@ export function examsRouter(prisma) {
 			if (readinessScore >= 70) passEstimate = Math.min(95, passEstimate + 5);
 			passEstimate = Math.max(5, Math.min(95, passEstimate));
 
+			const peerAttempts = await prisma.examAttempt.findMany({
+				where: {
+					status: 'SUBMITTED',
+					scorePercent: { not: null },
+					userId: { not: userId },
+					user: { role: 'STUDENT', level: userLevel }
+				},
+				include: {
+					user: { select: { id: true, level: true } },
+					exam: { select: { id: true, courseId: true, level: true, name: true } },
+					answers: {
+						include: {
+							question: { include: { topic: true } }
+						}
+					}
+				}
+			});
+
+			const computeCohortSummary = (cohortAttempts) => {
+				if (!cohortAttempts.length) {
+					return {
+						participants: 0,
+						avgScore: null,
+						avgAttempts: null,
+						avgQuestions: null,
+						avgTopicsCovered: null
+					};
+				}
+				const byUser = new Map();
+				cohortAttempts.forEach((attempt) => {
+					const key = attempt.userId;
+					if (!byUser.has(key)) {
+						byUser.set(key, { attempts: [], topicSet: new Set(), questionCount: 0 });
+					}
+					const bucket = byUser.get(key);
+					bucket.attempts.push(attempt);
+					(attempt.answers || []).forEach((answer) => {
+						bucket.questionCount += 1;
+						const topicName = answer.question?.topic?.name;
+						if (topicName) bucket.topicSet.add(topicName);
+					});
+				});
+				const users = Array.from(byUser.values());
+				const participants = users.length;
+				const avgScore = Math.round(users.reduce((sum, user) => {
+					const userAvg = user.attempts.reduce((s, a) => s + (a.scorePercent || 0), 0) / user.attempts.length;
+					return sum + userAvg;
+				}, 0) / participants);
+				const avgAttempts = Math.round((users.reduce((sum, user) => sum + user.attempts.length, 0) / participants) * 10) / 10;
+				const avgQuestions = Math.round(users.reduce((sum, user) => sum + user.questionCount, 0) / participants);
+				const avgTopicsCovered = Math.round((users.reduce((sum, user) => sum + user.topicSet.size, 0) / participants) * 10) / 10;
+				return { participants, avgScore, avgAttempts, avgQuestions, avgTopicsCovered };
+			};
+
+			const sameCoursePeerAttempts = peerAttempts.filter((attempt) => attempt.exam?.courseId && enrolledCourseIds.includes(attempt.exam.courseId));
+			const userTopicSet = new Set(topicPerformance.map((item) => item.topic).filter(Boolean));
+			const userCourseAttemptCount = attempts.filter((attempt) => attempt.exam?.courseId && enrolledCourseIds.includes(attempt.exam.courseId)).length;
+			const userLevelAttemptCount = attempts.length;
+			const userCourseQuestions = attempts
+				.filter((attempt) => attempt.exam?.courseId && enrolledCourseIds.includes(attempt.exam.courseId))
+				.reduce((sum, attempt) => sum + (attempt.answers?.length || 0), 0);
+
+			const sameLevelSummary = computeCohortSummary(peerAttempts);
+			const sameCourseSummary = computeCohortSummary(sameCoursePeerAttempts);
+			const rankedScores = [
+				...peerAttempts.reduce((acc, attempt) => {
+					const idx = acc.findIndex((item) => item.userId === attempt.userId);
+					if (idx === -1) {
+						acc.push({ userId: attempt.userId, scores: [attempt.scorePercent || 0] });
+					} else {
+						acc[idx].scores.push(attempt.scorePercent || 0);
+					}
+					return acc;
+				}, []),
+				{ userId, scores: attempts.map((attempt) => attempt.scorePercent || 0) }
+			].map((item) => ({ userId: item.userId, avg: item.scores.length ? item.scores.reduce((a, b) => a + b, 0) / item.scores.length : 0 }))
+			.sort((a, b) => a.avg - b.avg);
+			const userRankIndex = rankedScores.findIndex((item) => item.userId === userId);
+			const percentile = rankedScores.length > 0 ? Math.round(((userRankIndex + 1) / rankedScores.length) * 100) : null;
+
+			const commonPeerTopics = new Map();
+			const peerTopicScores = new Map();
+			peerAttempts.forEach((attempt) => {
+				(attempt.answers || []).forEach((answer) => {
+					const topicName = answer.question?.topic?.name;
+					if (!topicName) return;
+					if (!commonPeerTopics.has(topicName)) commonPeerTopics.set(topicName, new Set());
+					commonPeerTopics.get(topicName).add(attempt.userId);
+					if (!peerTopicScores.has(topicName)) peerTopicScores.set(topicName, { correct: 0, total: 0 });
+					const bucket = peerTopicScores.get(topicName);
+					bucket.total += 1;
+					if (answer.isCorrect) bucket.correct += 1;
+				});
+			});
+			const topicCoverageComparison = topicPerformance.slice(0, 6).map((item) => {
+				const peerBucket = peerTopicScores.get(item.topic);
+				const peerAvgScore = peerBucket && peerBucket.total > 0 ? Math.round((peerBucket.correct / peerBucket.total) * 100) : null;
+				return {
+					topic: item.topic,
+					yourScore: item.percent,
+					peerAvgScore,
+					peerParticipation: commonPeerTopics.get(item.topic)?.size || 0
+				};
+			});
+
+			// Score distribution buckets for level cohort
+			const scoreDistribution = { below40: 0, range40to59: 0, range60to79: 0, above80: 0 };
+			rankedScores.forEach((item) => {
+				const avg = Math.round(item.avg);
+				if (avg < 40) scoreDistribution.below40++;
+				else if (avg < 60) scoreDistribution.range40to59++;
+				else if (avg < 80) scoreDistribution.range60to79++;
+				else scoreDistribution.above80++;
+			});
+
+			// Best streak of consecutive exams scoring >= 50%
+			let bestStreak = 0;
+			let currentStreak = 0;
+			attempts.forEach((a) => {
+				if ((a.scorePercent || 0) >= 50) { currentStreak++; bestStreak = Math.max(bestStreak, currentStreak); }
+				else { currentStreak = 0; }
+			});
+
+			// Course-level score comparison
+			const userCourseAttempts = attempts.filter((a) => a.exam?.courseId && enrolledCourseIds.includes(a.exam.courseId));
+			const yourCourseAvgScore = userCourseAttempts.length > 0
+				? Math.round(userCourseAttempts.reduce((s, a) => s + (a.scorePercent || 0), 0) / userCourseAttempts.length)
+				: null;
+
+			const strongestTopic = topicPerformance.length ? [...topicPerformance].sort((a, b) => b.percent - a.percent)[0] : null;
+			const weakestTopic = topicPerformance.length ? [...topicPerformance].sort((a, b) => a.percent - b.percent)[0] : null;
+			const peerComparison = {
+				level: {
+					label: userLevel,
+					participants: sameLevelSummary.participants,
+					avgScore: sameLevelSummary.avgScore,
+					avgAttempts: sameLevelSummary.avgAttempts,
+					avgQuestions: sameLevelSummary.avgQuestions,
+					avgTopicsCovered: sameLevelSummary.avgTopicsCovered,
+					yourAttempts: userLevelAttemptCount,
+					yourQuestions: totalQuestions,
+					yourTopicsCovered: userTopicSet.size,
+					percentile,
+					scoreDistribution
+				},
+				course: {
+					participants: sameCourseSummary.participants,
+					avgScore: sameCourseSummary.avgScore,
+					avgAttempts: sameCourseSummary.avgAttempts,
+					avgQuestions: sameCourseSummary.avgQuestions,
+					avgTopicsCovered: sameCourseSummary.avgTopicsCovered,
+					yourAttempts: userCourseAttemptCount,
+					yourQuestions: userCourseQuestions,
+					yourCourseAvgScore,
+					courseNames: enrollments.map((item) => item.course?.name).filter(Boolean).slice(0, 3)
+				},
+				topics: {
+					yourTopicsCovered: userTopicSet.size,
+					coverageComparison: topicCoverageComparison,
+					strongestTopic,
+					weakestTopic
+				},
+				bestStreak
+			};
+
 			return res.json({
 				hasData: true,
 				readinessScore,
@@ -1155,7 +1885,8 @@ export function examsRouter(prisma) {
 				topicPerformance,
 				weeklyProgress,
 				improvement,
-				lastAttemptDate: attempts[attempts.length - 1]?.submittedAt
+				lastAttemptDate: attempts[attempts.length - 1]?.submittedAt,
+				peerComparison
 			});
 		} catch (err) {
 			console.error('Analytics error:', err);

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Layout, Menu, Typography, Avatar, Grid, Drawer, Button } from 'antd';
-import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined } from '@ant-design/icons';
+import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined, TeamOutlined } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const { Sider, Content } = Layout;
@@ -9,6 +9,7 @@ const isLearningPreviewPath = (pathname) => pathname.startsWith('/student/learn/
 
 const modernBadge = (iconNode, gradient) => (
   <span
+    className="menu-icon-badge"
     style={{
       display: 'inline-flex',
       alignItems: 'center',
@@ -22,7 +23,7 @@ const modernBadge = (iconNode, gradient) => (
       boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
     }}
   >
-    {iconNode}
+    {React.isValidElement(iconNode) ? React.cloneElement(iconNode, { style: { ...iconNode.props?.style, color: '#fff' } }) : iconNode}
   </span>
 );
 
@@ -32,6 +33,7 @@ const menuItems = [
   { key: 'student-exams', icon: modernBadge(<ReadOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'), label: <Link to="/student/exams">Exams</Link> },
   { key: 'student-mistakes', icon: modernBadge(<ExclamationCircleOutlined />, 'linear-gradient(135deg, #ef4444, #dc2626)'), label: <Link to="/student/mistakes">My Mistakes</Link> },
   { key: 'student-revision', icon: modernBadge(<StarOutlined />, 'linear-gradient(135deg, #eab308, #ca8a04)'), label: <Link to="/student/revision">Revision List</Link> },
+  { key: 'student-comparison', icon: modernBadge(<TeamOutlined />, 'linear-gradient(135deg, #0ea5e9, #2563eb)'), label: <Link to="/student/comparison">Compare With Peers</Link> },
   { key: 'student-billing', icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'), label: <Link to="/student/billing">Billing</Link> },
   { key: 'student-invoices', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/student/invoices">Invoices</Link> },
   { key: 'student-account', icon: modernBadge(<UserOutlined />, 'linear-gradient(135deg, #64748b, #475569)'), label: <Link to="/student/account">Account</Link> }

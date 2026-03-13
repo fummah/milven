@@ -71,7 +71,7 @@ export function AdminMaterials() {
             style={{ width: 260 }}
             value={courseId}
             onChange={(v) => { setCourseId(v); setTopicId(undefined); setMaterials([]); }}
-            options={(courses || []).map(c => ({ label: c.name, value: c.id }))}
+            options={(courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ label: c.name, value: c.id }))}
             optionFilterProp="label"
           />
           <Select

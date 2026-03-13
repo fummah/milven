@@ -49,7 +49,8 @@ export function settingsRouter(prisma) {
       'exams.requireSubscription',
       'system.supportEmail',
       'system.uploadMaxSizeMb',
-      'faq.items'
+      'faq.items',
+      'openai_api_key'
     ];
     const entries = Object.entries(payload).filter(([k]) => allowedKeys.includes(k));
     const ops = entries.map(([key, value]) =>

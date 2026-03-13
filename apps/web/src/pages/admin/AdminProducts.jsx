@@ -32,7 +32,7 @@ export function AdminProducts() {
   const fetchCourses = async () => {
     try {
       const res = await api.get('/api/cms/courses', { params: { active: true } });
-      setCourses((res.data.courses || []).map(c => ({ value: c.id, label: `${c.name} (${c.level})` })));
+      setCourses((res.data.courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ value: c.id, label: `${c.name} (${c.level})` })));
     } catch {}
   };
 

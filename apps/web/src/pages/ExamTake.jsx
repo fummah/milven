@@ -1,7 +1,9 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Card, Button, Typography, Space, message, Switch, InputNumber, Radio, Modal, Drawer, Tag, Divider, Progress, Tooltip, Alert, Collapse } from 'antd';
+import { RichTextEditor } from '../components/RichTextEditor.jsx';
+import { AIHelpPanel } from '../components/AIHelpPanel.jsx';
 import { ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, TrophyOutlined, SendOutlined, CalculatorOutlined, BookOutlined, FireOutlined, ThunderboltOutlined, BulbOutlined, FileTextOutlined, PlusOutlined, StarOutlined, ExclamationCircleOutlined, RocketOutlined, SafetyOutlined, EyeOutlined, EyeInvisibleOutlined, LockOutlined, ExperimentOutlined } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -181,6 +183,14 @@ function SmartReviewPanel({ answer, question, visible, onAddToRevision, onAddToW
 									Mark as Weak Topic
 								</Button>
 							)}
+							<div className="w-full">
+								<AIHelpPanel
+									questionId={question?.id}
+									selectedOptionId={answer?.selectedOptionId}
+									selectedOptionText={selectedOption?.text}
+									mode="practice_failed"
+								/>
+							</div>
 						</div>
 					)}
 				</div>
@@ -424,6 +434,7 @@ export function ExamTake() {
 	const [reviewedQuestions, setReviewedQuestions] = useState(new Set()); // Track which questions have been reviewed
 	const [revisionList, setRevisionList] = useState(new Set()); // Questions added to revision
 	const [weakTopics, setWeakTopics] = useState(new Set()); // Topics marked as weak
+	const [constructedDrafts, setConstructedDrafts] = useState({}); // questionId -> text for constructed response while typing
 
 	useEffect(() => {
 		let mounted = true;
@@ -532,6 +543,126 @@ export function ExamTake() {
 	const courseName = attempt?.courseName || attempt?.exam?.name || 'Exam';
 	const timeUp = remainingSec !== null && remainingSec <= 0;
 	const isSubmitted = attempt?.status === 'SUBMITTED';
+	const hasConstructedPending = (attempt?.answers || []).some(
+		(a) => a?.question?.type === 'CONSTRUCTED_RESPONSE' && a.marksAwarded == null
+	);
+
+	// Keep all hooks before any early return (answers may be empty when attempt is null)
+	const answers = attempt?.answers ?? [];
+	const questions = useMemo(() => answers.map(a => a.question).filter(Boolean), [answers]);
+	const hasQuestions = questions.length > 0;
+	const totalQuestions = questions.length;
+
+	const buildGroups = useCallback((ans) => {
+		const out = [];
+		let i = 0;
+		let vignetteGroupNumber = 0;
+		while (i < ans.length) {
+			const a = ans[i];
+			const pid = a?.question?.parentId;
+			if (pid && a?.question?.parent) {
+				vignetteGroupNumber += 1;
+				const group = {
+					type: 'vignette',
+					vignetteText: a.question.parent.vignetteText || '',
+					answers: [],
+					vignetteGroupNumber
+				};
+				while (i < ans.length && ans[i]?.question?.parentId === pid) {
+					group.answers.push(ans[i]);
+					i++;
+				}
+				out.push(group);
+			} else {
+				out.push({ type: 'single', vignetteText: null, answers: [ans[i]] });
+				i++;
+			}
+		}
+		return out;
+	}, []);
+
+	const groups = useMemo(() => buildGroups(answers), [buildGroups, answers]);
+
+	// Paginate by groups (never split a vignette group)
+	// IMPORTANT: Each vignette/case-study bundle must occupy its OWN page.
+	// This matches CFA-style layout and prevents mixing vignette bundles with unrelated questions.
+	const { pageGroups, totalPages, pageStart: pageStartAnswerIndex } = useMemo(() => {
+		let count = 0;
+		const pages = [];
+		let current = [];
+		const flush = () => {
+			if (current.length > 0) pages.push(current);
+			current = [];
+			count = 0;
+		};
+
+		for (const g of groups) {
+			const n = g.answers.length;
+			if (g.type === 'vignette') {
+				// Vignette bundles always on their own page
+				flush();
+				pages.push([g]);
+				continue;
+			}
+			// Singles packed by QUESTIONS_PER_PAGE
+			if (count + n > QUESTIONS_PER_PAGE && current.length > 0) {
+				flush();
+			}
+			current.push(g);
+			count += n;
+		}
+		flush();
+
+		const total = Math.max(1, pages.length);
+		let start = 0;
+		for (let p = 0; p < currentPage && p < pages.length; p++) {
+			start += pages[p].reduce((s, gr) => s + gr.answers.length, 0);
+		}
+		return {
+			pageGroups: pages[currentPage] || [],
+			totalPages: total,
+			pageStart: start
+		};
+	}, [groups, currentPage]);
+
+	const toRoman = (n) => {
+		const romans = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x'];
+		return romans[n - 1] || String(n);
+	};
+
+	const flatPageItems = useMemo(() => {
+		const items = [];
+		let idx = pageStartAnswerIndex;
+		for (const group of pageGroups) {
+			const isVignetteGroup = group.type === 'vignette';
+			for (let subIdx = 0; subIdx < group.answers.length; subIdx++) {
+				const ans = group.answers[subIdx];
+				items.push({
+					ans,
+					q: ans?.question,
+					globalIdx: idx,
+					subIdx,
+					groupType: group.type,
+					vignetteGroupNumber: isVignetteGroup ? group.vignetteGroupNumber : null,
+					showVignette: isVignetteGroup && subIdx === 0,
+					vignetteText: group.vignetteText
+				});
+				idx++;
+			}
+		}
+		return items;
+	}, [pageGroups, pageStartAnswerIndex]);
+
+	const pageStart = pageStartAnswerIndex;
+	const pageEnd = pageStartAnswerIndex + flatPageItems.length;
+
+	const scorePct = Math.round(attempt?.scorePercent ?? 0);
+	const passed = scorePct >= 70;
+	const answeredCount = useMemo(() => answers.filter(a => {
+		const q = questions.find(qq => qq?.id === a.questionId);
+		if (q?.type === 'CONSTRUCTED_RESPONSE') return a.textAnswer != null && String(a.textAnswer).trim() !== '';
+		return !!a.selectedOptionId;
+	}).length, [answers, questions]);
 
 	if (!attempt) {
 		return (
@@ -544,19 +675,6 @@ export function ExamTake() {
 			</div>
 		);
 	}
-
-	const answers = attempt.answers || [];
-	const questions = answers.map(a => a.question).filter(Boolean);
-	const hasQuestions = questions.length > 0;
-	const totalQuestions = questions.length;
-	const totalPages = Math.max(1, Math.ceil(totalQuestions / QUESTIONS_PER_PAGE));
-	const pageStart = currentPage * QUESTIONS_PER_PAGE;
-	const pageEnd = Math.min(pageStart + QUESTIONS_PER_PAGE, totalQuestions);
-	const pageAnswers = answers.slice(pageStart, pageEnd);
-	const pageQuestions = questions.slice(pageStart, pageEnd);
-	const scorePct = Math.round(attempt.scorePercent ?? 0);
-	const passed = scorePct >= 70;
-	const answeredCount = answers.filter(a => a.selectedOptionId).length;
 
 	const onSelectOption = async (questionId, optionId) => {
 		try {
@@ -585,6 +703,19 @@ export function ExamTake() {
 		}
 	};
 
+	const onSaveTextAnswer = async (questionId, text) => {
+		try {
+			await api.post(`/api/exams/attempts/${attemptId}/answers`, {
+				questionId,
+				textAnswer: text ?? ''
+			});
+			const res = await api.get(`/api/exams/attempts/${attemptId}`);
+			setAttempt(res.data.attempt);
+		} catch {
+			message.error('Failed to save answer');
+		}
+	};
+
 	const scrollToQuestion = (globalIdx) => {
 		const targetPage = Math.floor(globalIdx / QUESTIONS_PER_PAGE);
 		if (targetPage !== currentPage) {
@@ -599,15 +730,38 @@ export function ExamTake() {
 		}
 	};
 
+	// Ensure any in-progress constructed responses are saved before final submit
+	const saveAllConstructedDrafts = async () => {
+		const toSave = [];
+		for (const a of answers) {
+			const q = a?.question;
+			if (q?.type !== 'CONSTRUCTED_RESPONSE') continue;
+			const draft = constructedDrafts[q.id];
+			if (typeof draft === 'string') {
+				const current = a?.textAnswer ?? '';
+				if (draft !== current) {
+					toSave.push(onSaveTextAnswer(q.id, draft));
+				}
+			}
+		}
+		if (toSave.length > 0) {
+			await Promise.all(toSave);
+		}
+	};
+
 	const submit = async () => {
 		if (submitRef.current) return;
 		submitRef.current = true;
 		try {
+			// Make sure any unsaved constructed answers are persisted first
+			await saveAllConstructedDrafts();
+
 			await api.post(`/api/exams/attempts/${attemptId}/submit`);
 			const res = await api.get(`/api/exams/attempts/${attemptId}`);
 			setAttempt(res.data.attempt);
-			setResultAttempt(res.data.attempt);
-			setResultModalOpen(true);
+			// Modal removed per user request - results already shown in main view
+			// setResultAttempt(res.data.attempt);
+			// setResultModalOpen(true);
 		} catch {
 			submitRef.current = false;
 		}
@@ -719,7 +873,12 @@ export function ExamTake() {
 								<div className="flex items-center gap-2 min-w-max">
 									<Typography.Text className="text-white/60 text-xs mr-2 hidden sm:inline">Questions:</Typography.Text>
 									{Array.from({ length: totalQuestions }, (_, i) => {
-										const isAnswered = answers[i]?.selectedOptionId;
+										const a = answers[i];
+										const q = questions[i];
+										const isConstructedQ = q?.type === 'CONSTRUCTED_RESPONSE';
+										const isAnswered = isConstructedQ
+											? (a?.textAnswer != null && String(a.textAnswer).trim() !== '')
+											: !!a?.selectedOptionId;
 										const isCurrent = i >= pageStart && i < pageEnd;
 										return (
 											<Tooltip key={i} title={`Question ${i + 1}${isAnswered ? ' (Answered)' : ' (Not answered)'}`}>
@@ -806,89 +965,130 @@ export function ExamTake() {
 			)}
 
 			{/* Main Content */}
-			<div className="max-w-4xl mx-auto px-4 py-6">
+			<div className="max-w-6xl mx-auto px-4 py-6">
 				{isSubmitted ? (
-					<motion.div
-						initial={{ opacity: 0, y: 20 }}
-						animate={{ opacity: 1, y: 0 }}
-						className="max-w-lg mx-auto"
-					>
-						<Card
-							className="overflow-hidden border-0 shadow-2xl"
-							style={{ borderRadius: 24 }}
-							styles={{ body: { padding: 0 } }}
+					hasConstructedPending ? (
+						<motion.div
+							initial={{ opacity: 0, y: 20 }}
+							animate={{ opacity: 1, y: 0 }}
+							className="max-w-lg mx-auto"
 						>
-							<div
-								className="p-8 text-center"
-								style={{
-									background: passed
-										? 'linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%)'
-										: 'linear-gradient(135deg, #dc2626 0%, #ef4444 50%, #f87171 100%)'
-								}}
+							<Card
+								className="overflow-hidden border-0 shadow-2xl"
+								style={{ borderRadius: 24 }}
+								styles={{ body: { padding: 0 } }}
 							>
-								<motion.div
-									initial={{ scale: 0 }}
-									animate={{ scale: 1 }}
-									transition={{ type: 'spring', delay: 0.2 }}
+								<div
+									className="p-8 text-center"
+									style={{ background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%)' }}
 								>
-									<TrophyOutlined className="text-6xl text-white/90 mb-4" />
-								</motion.div>
-								<Typography.Title level={2} className="!text-white !mb-2">
-									Exam Complete!
-								</Typography.Title>
-								<Typography.Text className="text-white/80 text-lg">
-									Your final score
-								</Typography.Text>
-								<motion.div
-									initial={{ scale: 0.5, opacity: 0 }}
-									animate={{ scale: 1, opacity: 1 }}
-									transition={{ delay: 0.3, type: 'spring' }}
-								>
-									<Typography.Title level={1} className="!text-white !text-7xl !my-4 font-bold">
-										{scorePct}%
+									<motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', delay: 0.2 }}>
+										<TrophyOutlined className="text-6xl text-white/90 mb-4" />
+									</motion.div>
+									<Typography.Title level={2} className="!text-white !mb-2">
+										Responses submitted
 									</Typography.Title>
-								</motion.div>
-								<Tag
-									className="text-lg px-4 py-1 border-0"
+									<Typography.Paragraph className="!text-white/90 !mb-0 text-base" style={{ maxWidth: 360, margin: '0 auto' }}>
+										Your responses have been submitted for marking. You will be notified when the admin is done marking.
+									</Typography.Paragraph>
+								</div>
+								<div className="p-6 bg-white">
+									<Space direction="vertical" size={12} className="w-full">
+										<Button
+											size="large"
+											block
+											onClick={() => navigate(window.location.pathname.startsWith('/student/') ? '/student' : -1)}
+											className="h-12 rounded-xl font-semibold"
+										>
+											Back to Dashboard
+										</Button>
+									</Space>
+								</div>
+							</Card>
+						</motion.div>
+					) : (
+						<motion.div
+							initial={{ opacity: 0, y: 20 }}
+							animate={{ opacity: 1, y: 0 }}
+							className="max-w-lg mx-auto"
+						>
+							<Card
+								className="overflow-hidden border-0 shadow-2xl"
+								style={{ borderRadius: 24 }}
+								styles={{ body: { padding: 0 } }}
+							>
+								<div
+									className="p-8 text-center"
 									style={{
-										background: 'rgba(255,255,255,0.2)',
-										color: 'white',
-										borderRadius: 20
+										background: passed
+											? 'linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%)'
+											: 'linear-gradient(135deg, #dc2626 0%, #ef4444 50%, #f87171 100%)'
 									}}
 								>
-									{passed ? '🎉 Congratulations! You Passed!' : '📚 Keep Practicing!'}
-								</Tag>
-							</div>
-							<div className="p-6 bg-white">
-								<Space direction="vertical" size={12} className="w-full">
-									<Button
-										type="primary"
-										size="large"
-										block
-										onClick={() => { setAnswersDrawerAttempt(attempt); setAnswersDrawerOpen(true); }}
-										className="h-12 rounded-xl font-semibold"
-										style={{ background: '#102540' }}
+									<motion.div
+										initial={{ scale: 0 }}
+										animate={{ scale: 1 }}
+										transition={{ type: 'spring', delay: 0.2 }}
 									>
-										View Correct Answers
-									</Button>
-									<Button
-										size="large"
-										block
-										onClick={() => navigate(window.location.pathname.startsWith('/student/') ? '/student' : -1)}
-										className="h-12 rounded-xl font-semibold"
+										<TrophyOutlined className="text-6xl text-white/90 mb-4" />
+									</motion.div>
+									<Typography.Title level={2} className="!text-white !mb-2">
+										Exam Complete!
+									</Typography.Title>
+									<Typography.Text className="text-white/80 text-lg">
+										Your final score
+									</Typography.Text>
+									<motion.div
+										initial={{ scale: 0.5, opacity: 0 }}
+										animate={{ scale: 1, opacity: 1 }}
+										transition={{ delay: 0.3, type: 'spring' }}
 									>
-										Back to Dashboard
-									</Button>
-								</Space>
-							</div>
-						</Card>
-					</motion.div>
+										<Typography.Title level={1} className="!text-white !text-7xl !my-4 font-bold">
+											{scorePct}%
+										</Typography.Title>
+									</motion.div>
+									<Tag
+										className="text-lg px-4 py-1 border-0"
+										style={{
+											background: 'rgba(255,255,255,0.2)',
+											color: 'white',
+											borderRadius: 20
+										}}
+									>
+										{passed ? '🎉 Congratulations! You Passed!' : '📚 Keep Practicing!'}
+									</Tag>
+								</div>
+								<div className="p-6 bg-white">
+									<Space direction="vertical" size={12} className="w-full">
+										<Button
+											type="primary"
+											size="large"
+											block
+											onClick={() => { setAnswersDrawerAttempt(attempt); setAnswersDrawerOpen(true); }}
+											className="h-12 rounded-xl font-semibold"
+											style={{ background: '#102540' }}
+										>
+											View Correct Answers
+										</Button>
+										<Button
+											size="large"
+											block
+											onClick={() => navigate(window.location.pathname.startsWith('/student/') ? '/student' : -1)}
+											className="h-12 rounded-xl font-semibold"
+										>
+											Back to Dashboard
+										</Button>
+									</Space>
+								</div>
+							</Card>
+						</motion.div>
+					)
 				) : hasQuestions ? (
 					<Space direction="vertical" size={20} className="w-full">
 						{/* Page indicator */}
 						<div className="flex items-center justify-between">
 							<Typography.Text className="text-slate-500">
-								Showing questions {pageStart + 1} - {pageEnd} of {totalQuestions}
+								Showing questions {pageStartAnswerIndex + 1} - {pageStartAnswerIndex + flatPageItems.length} of {totalQuestions}
 							</Typography.Text>
 							<Space>
 								<Button
@@ -908,161 +1108,278 @@ export function ExamTake() {
 							</Space>
 						</div>
 
-						{/* Questions */}
-						{pageQuestions.map((q, idx) => {
-							const globalIdx = pageStart + idx;
-							const ans = pageAnswers[idx];
-							const isAnswered = !!ans?.selectedOptionId;
+						{(() => {
+							const renderedItems = [];
+							for (let idx = 0; idx < flatPageItems.length; idx += 1) {
+								const item = flatPageItems[idx];
+								const { ans, q, globalIdx, showVignette, vignetteText, subIdx, groupType } = item;
 
-							return (
-								<motion.div
-									key={q?.id || globalIdx}
-									ref={(el) => { questionRefs.current[globalIdx] = el; }}
-									initial={{ opacity: 0, y: 20 }}
-									animate={{ opacity: 1, y: 0 }}
-									transition={{ delay: idx * 0.05 }}
-								>
-									<Card
-										className={`
-											border-0 shadow-lg hover:shadow-xl transition-all overflow-hidden
-											${isAnswered ? 'ring-2 ring-emerald-400/50' : ''}
-										`}
-										style={{ borderRadius: 20 }}
-										styles={{ body: { padding: 0 } }}
-									>
-										{/* Question Header */}
-										<div
-											className="px-6 py-4 flex items-center justify-between"
-											style={{
-												background: isAnswered
-													? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
-													: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)'
-											}}
+								if (groupType === 'vignette' && showVignette) {
+									const vignetteItems = [item];
+									let nextIdx = idx + 1;
+									while (
+										nextIdx < flatPageItems.length &&
+										flatPageItems[nextIdx]?.groupType === 'vignette' &&
+										!flatPageItems[nextIdx]?.showVignette
+									) {
+										vignetteItems.push(flatPageItems[nextIdx]);
+										nextIdx += 1;
+									}
+
+									const caseStudyAnswered = vignetteItems.some(({ ans: subAns, q: subQ }) => {
+										const subConstructed = subQ?.type === 'CONSTRUCTED_RESPONSE';
+										return subConstructed
+											? (subAns?.textAnswer != null && String(subAns.textAnswer).trim() !== '')
+											: !!subAns?.selectedOptionId;
+									});
+
+									renderedItems.push(
+										<motion.div
+											key={`vignette-${q?.parent?.id || q?.id || globalIdx}`}
+											initial={{ opacity: 0, y: 20 }}
+											animate={{ opacity: 1, y: 0 }}
+											transition={{ delay: idx * 0.05 }}
+											className="mb-6"
 										>
-											<div className="flex items-center gap-3">
-												<div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-													<span className="text-white font-bold">{globalIdx + 1}</span>
-												</div>
-												<Typography.Text className="text-white/80 text-sm">
-													Question {globalIdx + 1} of {totalQuestions}
-												</Typography.Text>
-											</div>
-											{isAnswered && (
-												<Tag className="bg-white/20 text-white border-0 rounded-full">
-													<CheckCircleOutlined className="mr-1" /> Answered
-												</Tag>
-											)}
-										</div>
-
-										{/* Question Body */}
-										<div className="p-6">
-											{q?.vignette?.text && (
-												<div className="mb-4 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200">
-													<div className="flex items-center gap-2 mb-2">
-														<FireOutlined className="text-amber-500" />
-														<Typography.Text className="text-amber-700 font-semibold text-sm uppercase tracking-wide">
+											<Card
+												className={`border-0 shadow-lg hover:shadow-xl transition-all overflow-hidden ${caseStudyAnswered ? 'ring-2 ring-emerald-400/50' : ''}`}
+												style={{ borderRadius: 20 }}
+												styles={{ body: { padding: 0 } }}
+											>
+												<div
+													ref={(el) => { questionRefs.current[globalIdx] = el; }}
+													className="px-6 py-4 flex items-center justify-between"
+													style={{
+														background: caseStudyAnswered
+															? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+															: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)'
+													}}
+												>
+													<div className="flex items-center gap-3">
+														<div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+															<span className="text-white font-bold">{globalIdx + 1}</span>
+														</div>
+														<Typography.Text className="text-white/90 font-semibold">
 															Case Study
 														</Typography.Text>
+														{caseStudyAnswered && (
+															<Tag className="bg-white/20 text-white border-0 rounded-full">
+																<CheckCircleOutlined className="mr-1" /> Answered
+															</Tag>
+														)}
 													</div>
-													<Typography.Paragraph className="text-slate-700 !mb-0">
-														{q.vignette.text}
-													</Typography.Paragraph>
 												</div>
-											)}
 
-											<Typography.Paragraph className="text-lg text-slate-800 font-medium !mb-6">
-												{q?.stem ?? ''}
-											</Typography.Paragraph>
+												<div className="p-6">
+													<div
+														className="text-slate-800 text-base md:text-lg prose max-w-none"
+														dangerouslySetInnerHTML={{ __html: vignetteText || q?.parent?.vignetteText || '' }}
+													/>
 
-											{q?.options?.length ? (
-												<Radio.Group
-													value={ans?.selectedOptionId ?? undefined}
-													onChange={(e) => onSelectOption(q.id, e.target.value)}
-													className="w-full"
-													disabled={mode === 'practice' && reviewedQuestions.has(q?.id)}
-												>
-													<Space direction="vertical" size={12} className="w-full">
-														{q.options.map((opt, optIdx) => {
-															const isSelected = ans?.selectedOptionId === opt.id;
-															const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
-															const showFeedback = mode === 'practice' && isAnswered && reviewedQuestions.has(q?.id);
-															const isCorrectOption = opt.isCorrect;
-															const isWrongSelection = showFeedback && isSelected && !isCorrectOption;
-															const showAsCorrect = showFeedback && isCorrectOption;
-															
+													<div className="mt-6 border-t border-slate-200" />
+
+													<div className="divide-y divide-slate-200">
+														{vignetteItems.map(({ ans: subAns, q: subQ, globalIdx: subGlobalIdx, subIdx: subQuestionIdx }, subRenderIdx) => {
+															const subConstructed = subQ?.type === 'CONSTRUCTED_RESPONSE';
+															const subAnswered = subConstructed
+																? (subAns?.textAnswer != null && String(subAns.textAnswer).trim() !== '')
+																: !!subAns?.selectedOptionId;
+
 															return (
-																<motion.div
-																	key={opt.id}
-																	whileHover={!showFeedback ? { scale: 1.01 } : {}}
-																	whileTap={!showFeedback ? { scale: 0.99 } : {}}
+																<div
+																	key={subQ?.id || subGlobalIdx}
+																	ref={(el) => { questionRefs.current[subGlobalIdx] = el; }}
+																	className={subRenderIdx === 0 ? 'pt-6' : 'py-6'}
 																>
-																	<Radio
-																		value={opt.id}
-																		className={`
-																			w-full p-4 rounded-xl border-2 transition-all
-																			${showAsCorrect
-																				? 'border-emerald-400 bg-emerald-50'
-																				: isWrongSelection
-																					? 'border-red-400 bg-red-50'
-																					: isSelected
-																						? 'border-emerald-400 bg-emerald-50'
-																						: 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-																			}
-																		`}
-																		style={{ display: 'flex', alignItems: 'flex-start' }}
-																	>
-																		<div className="flex items-start gap-3 w-full">
-																			<span
-																				className={`
-																					w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0
-																					${showAsCorrect
-																						? 'bg-emerald-500 text-white'
-																						: isWrongSelection
-																							? 'bg-red-500 text-white'
-																							: isSelected
-																								? 'bg-emerald-500 text-white'
-																								: 'bg-slate-100 text-slate-600'
-																					}
-																				`}
-																			>
-																				{showAsCorrect ? <CheckCircleOutlined /> : isWrongSelection ? <CloseCircleOutlined /> : (letters[optIdx] || optIdx + 1)}
-																			</span>
-																			<span className={`pt-1 flex-1 ${isWrongSelection ? 'text-red-700' : showAsCorrect ? 'text-emerald-700 font-medium' : 'text-slate-700'}`}>
-																				{opt.text}
-																			</span>
-																			{showAsCorrect && (
-																				<Tag className="border-0 bg-emerald-100 text-emerald-700 rounded-full ml-2">Correct</Tag>
-																			)}
-																			{isWrongSelection && (
-																				<Tag className="border-0 bg-red-100 text-red-700 rounded-full ml-2">Your answer</Tag>
-																			)}
+																	<div className="flex items-center justify-between gap-3 mb-4">
+																	
+																		{subAnswered && (
+																			<Tag color="green" className="rounded-full mr-0">Answered</Tag>
+																		)}
+																	</div>
+
+																<div
+  className="text-sm md:text-base text-slate-500 font-medium mb-6 prose max-w-none"
+  style={{ display: "flex" }}
+  dangerouslySetInnerHTML={{ __html: `<p>${toRoman(subQuestionIdx + 1)}) ${subQ?.stem || ''}</p>` }}
+/>
+
+																	{subConstructed ? (
+																		<div className="flex flex-col">
+																			<RichTextEditor
+																				value={constructedDrafts[subQ?.id] !== undefined ? constructedDrafts[subQ?.id] : (subAns?.textAnswer ?? '')}
+																				onChange={(value) => setConstructedDrafts(prev => ({ ...prev, [subQ?.id]: value }))}
+																				onBlur={() => {
+																					const val = constructedDrafts[subQ?.id] ?? subAns?.textAnswer ?? '';
+																					onSaveTextAnswer(subQ.id, val);
+																					setConstructedDrafts(prev => ({ ...prev, [subQ?.id]: undefined }));
+																				}}
+																				placeholder="Type your answer here..."
+																				minHeight={200}
+																			/>
 																		</div>
-																	</Radio>
-																</motion.div>
+																	) : (
+																		<Radio.Group
+																			value={subAns?.selectedOptionId ?? undefined}
+																			onChange={(e) => onSelectOption(subQ.id, e.target.value)}
+																			className="w-full"
+																		>
+																			<Space direction="vertical" size={12} className="w-full">
+																				{subQ?.options?.map((opt, optIdx) => {
+																					const letters = ['A','B','C','D','E','F'];
+																					return (
+																						<Radio
+																							key={opt.id}
+																							value={opt.id}
+																							className="w-full p-4 rounded-xl border border-slate-200 hover:bg-slate-50"
+																							style={{ display: 'flex', alignItems: 'flex-start' }}
+																						>
+																							<div className="flex items-start gap-3">
+																								<span className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm bg-slate-100 text-slate-600">
+																									{letters[optIdx] || optIdx + 1}
+																								</span>
+																								<span className="pt-1 text-slate-700">{opt.text}</span>
+																							</div>
+																						</Radio>
+																					);
+																				})}
+																			</Space>
+																		</Radio.Group>
+																	)}
+
+																	<AnimatePresence>
+																		<SmartReviewPanel
+																			answer={subAns}
+																			question={subQ}
+																			visible={mode === 'practice' && subAnswered && reviewedQuestions.has(subQ?.id)}
+																			onAddToRevision={handleAddToRevision}
+																			onAddToWeakTopic={handleAddToWeakTopic}
+																			mode={mode}
+																		/>
+																	</AnimatePresence>
+																</div>
 															);
 														})}
-													</Space>
-												</Radio.Group>
-											) : (
-												<Typography.Paragraph type="secondary">No options available.</Typography.Paragraph>
-											)}
+													</div>
+												</div>
+											</Card>
+										</motion.div>
+									);
 
-											{/* Smart Review Panel - Practice Mode Only */}
-											<AnimatePresence>
-												<SmartReviewPanel
-													answer={ans}
-													question={q}
-													visible={mode === 'practice' && isAnswered && reviewedQuestions.has(q?.id)}
-													onAddToRevision={handleAddToRevision}
-													onAddToWeakTopic={handleAddToWeakTopic}
-													mode={mode}
+									idx = nextIdx - 1;
+									continue;
+								}
+
+								const isConstructed = q?.type === 'CONSTRUCTED_RESPONSE';
+								const isAnswered = isConstructed
+									? (ans?.textAnswer != null && String(ans.textAnswer).trim() !== '')
+									: !!ans?.selectedOptionId;
+								const displayNumber = String(globalIdx + 1);
+
+								renderedItems.push(
+									<motion.div
+										key={q?.id || globalIdx}
+										ref={(el) => { questionRefs.current[globalIdx] = el; }}
+										initial={{ opacity: 0, y: 20 }}
+										animate={{ opacity: 1, y: 0 }}
+										transition={{ delay: idx * 0.05 }}
+										className="mb-6"
+									>
+										<Card
+											className={`border-0 shadow-lg hover:shadow-xl transition-all overflow-hidden ${isAnswered ? 'ring-2 ring-emerald-400/50' : ''}`}
+											style={{ borderRadius: 20 }}
+											styles={{ body: { padding: 0 } }}
+										>
+											<div
+												className="px-6 py-4 flex items-center justify-between"
+												style={{
+													background: isAnswered
+														? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+														: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)'
+												}}
+											>
+												<div className="flex items-center gap-3">
+													<div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+														<span className="text-white font-bold">{displayNumber}</span>
+													</div>
+													<Typography.Text className="text-white/80 text-sm">
+														Question {globalIdx + 1} of {totalQuestions}
+													</Typography.Text>
+													{isAnswered && (
+														<Tag className="bg-white/20 text-white border-0 rounded-full">
+															<CheckCircleOutlined className="mr-1" /> Answered
+														</Tag>
+													)}
+												</div>
+											</div>
+
+											<div className="p-6">
+												<div
+													className="text-lg text-slate-800 font-medium mb-6 prose max-w-none"
+													dangerouslySetInnerHTML={{ __html: q?.stem || '' }}
 												/>
-											</AnimatePresence>
-										</div>
-									</Card>
-								</motion.div>
-							);
-						})}
+
+												{isConstructed ? (
+													<div className="flex flex-col">
+														<RichTextEditor
+															value={constructedDrafts[q?.id] !== undefined ? constructedDrafts[q?.id] : (ans?.textAnswer ?? '')}
+															onChange={(value) => setConstructedDrafts(prev => ({ ...prev, [q?.id]: value }))}
+															onBlur={() => {
+																const val = constructedDrafts[q?.id] ?? ans?.textAnswer ?? '';
+																onSaveTextAnswer(q.id, val);
+																setConstructedDrafts(prev => ({ ...prev, [q?.id]: undefined }));
+															}}
+															placeholder="Type your answer here..."
+															minHeight={200}
+														/>
+													</div>
+												) : (
+													<Radio.Group
+														value={ans?.selectedOptionId ?? undefined}
+														onChange={(e) => onSelectOption(q.id, e.target.value)}
+														className="w-full"
+													>
+														<Space direction="vertical" size={12} className="w-full">
+															{q?.options?.map((opt, optIdx) => {
+																const letters = ['A','B','C','D','E','F'];
+																return (
+																	<Radio
+																		key={opt.id}
+																		value={opt.id}
+																		className="w-full p-4 rounded-xl border border-slate-200 hover:bg-slate-50"
+																		style={{ display: 'flex', alignItems: 'flex-start' }}
+																	>
+																		<div className="flex items-start gap-3">
+																			<span className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm bg-slate-100 text-slate-600">
+																				{letters[optIdx] || optIdx + 1}
+																			</span>
+																			<span className="pt-1 text-slate-700">{opt.text}</span>
+																		</div>
+																	</Radio>
+																);
+															})}
+														</Space>
+													</Radio.Group>
+												)}
+
+												<AnimatePresence>
+													<SmartReviewPanel
+														answer={ans}
+														question={q}
+														visible={mode === 'practice' && isAnswered && reviewedQuestions.has(q?.id)}
+														onAddToRevision={handleAddToRevision}
+														onAddToWeakTopic={handleAddToWeakTopic}
+														mode={mode}
+													/>
+												</AnimatePresence>
+											</div>
+										</Card>
+									</motion.div>
+								);
+							}
+
+							return renderedItems;
+						})()}
 
 						{/* Bottom Pagination */}
 						<div className="flex items-center justify-center gap-4 pt-4">
@@ -1070,9 +1387,9 @@ export function ExamTake() {
 								size="large"
 								disabled={currentPage <= 0}
 								onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-								className="rounded-xl px-6"
+								className="rounded-lg"
 							>
-								← Previous Page
+								← Previous
 							</Button>
 							<div className="px-4 py-2 rounded-xl bg-slate-100">
 								<Typography.Text className="font-semibold">
@@ -1083,9 +1400,9 @@ export function ExamTake() {
 								size="large"
 								disabled={currentPage >= totalPages - 1}
 								onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
-								className="rounded-xl px-6"
+								className="rounded-lg"
 							>
-								Next Page →
+								Next →
 							</Button>
 						</div>
 					</Space>
@@ -1124,66 +1441,82 @@ export function ExamTake() {
 				styles={{ body: { padding: 0 } }}
 				className="result-modal"
 			>
-				<div
-					className="p-8 text-center"
-					style={{
-						background: (resultAttempt?.scorePercent ?? 0) >= 70
-							? 'linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%)'
-							: 'linear-gradient(135deg, #dc2626 0%, #ef4444 50%, #f87171 100%)'
-					}}
-				>
-					<motion.div
-						initial={{ scale: 0, rotate: -180 }}
-						animate={{ scale: 1, rotate: 0 }}
-						transition={{ type: 'spring', duration: 0.6 }}
-					>
-						<TrophyOutlined className="text-6xl text-white/90 mb-4" />
-					</motion.div>
-					<Typography.Title level={3} className="!text-white !mb-2">
-						Exam Complete!
-					</Typography.Title>
-					<Typography.Text className="text-white/80">Your final score</Typography.Text>
-					<motion.div
-						initial={{ scale: 0.5, opacity: 0 }}
-						animate={{ scale: 1, opacity: 1 }}
-						transition={{ delay: 0.2, type: 'spring' }}
-					>
-						<Typography.Title level={1} className="!text-white !text-6xl !my-4 font-bold">
-							{resultAttempt != null ? `${Math.round(resultAttempt.scorePercent ?? 0)}%` : '—'}
-						</Typography.Title>
-					</motion.div>
-					{(resultAttempt?.scorePercent ?? 0) >= 70 ? (
-						<Tag className="bg-white/20 text-white border-0 text-base px-4 py-1 rounded-full">
-							🎉 Congratulations! You Passed!
-						</Tag>
-					) : (resultAttempt?.scorePercent ?? 0) > 0 ? (
-						<Tag className="bg-white/20 text-white border-0 text-base px-4 py-1 rounded-full">
-							📚 Keep Practicing!
-						</Tag>
-					) : null}
-				</div>
-				<div className="p-6 bg-white">
-					<Space direction="vertical" size={12} className="w-full">
-						<Button
-							type="primary"
-							size="large"
-							block
-							onClick={openAnswersDrawer}
-							className="h-12 rounded-xl font-semibold"
-							style={{ background: '#102540' }}
-						>
-							View Correct Answers
-						</Button>
-						<Button
-							size="large"
-							block
-							onClick={() => { closeResultModal(); navigate(window.location.pathname.startsWith('/student/') ? '/student' : -1); }}
-							className="h-12 rounded-xl font-semibold"
-						>
-							Back to Dashboard
-						</Button>
-					</Space>
-				</div>
+				{(() => {
+					const hasConstructedPending = (resultAttempt?.answers || []).some(
+						(a) => a?.question?.type === 'CONSTRUCTED_RESPONSE' && a.marksAwarded == null
+					);
+					if (hasConstructedPending) {
+						return (
+							<>
+								<div
+									className="p-8 text-center"
+									style={{ background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%)' }}
+								>
+									<motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', duration: 0.5 }}>
+										<TrophyOutlined className="text-6xl text-white/90 mb-4" />
+									</motion.div>
+									<Typography.Title level={3} className="!text-white !mb-2">
+										Responses submitted
+									</Typography.Title>
+									<Typography.Paragraph className="!text-white/90 !mb-0 text-base" style={{ maxWidth: 320, margin: '0 auto' }}>
+										Your responses have been submitted for marking. You will be notified when the admin is done marking.
+									</Typography.Paragraph>
+								</div>
+								<div className="p-6 bg-white">
+									<Space direction="vertical" size={12} className="w-full">
+										<Button
+											size="large"
+											block
+											onClick={() => { closeResultModal(); navigate(window.location.pathname.startsWith('/student/') ? '/student' : -1); }}
+											className="h-12 rounded-xl font-semibold"
+										>
+											Back to Dashboard
+										</Button>
+									</Space>
+								</div>
+							</>
+						);
+					}
+					const scorePct = Math.round(resultAttempt?.scorePercent ?? 0);
+					const passed = scorePct >= 70;
+					return (
+						<>
+							<div
+								className="p-8 text-center"
+								style={{
+									background: passed
+										? 'linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%)'
+										: 'linear-gradient(135deg, #dc2626 0%, #ef4444 50%, #f87171 100%)'
+								}}
+							>
+								<motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring', duration: 0.6 }}>
+									<TrophyOutlined className="text-6xl text-white/90 mb-4" />
+								</motion.div>
+								<Typography.Title level={3} className="!text-white !mb-2">
+									Exam Complete!
+								</Typography.Title>
+								<Typography.Text className="text-white/80">Your final score</Typography.Text>
+								<motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.2, type: 'spring' }}>
+									<Typography.Title level={1} className="!text-white !text-6xl !my-4 font-bold">
+										{scorePct}%
+									</Typography.Title>
+								</motion.div>
+								{passed ? (
+									<Tag className="bg-white/20 text-white border-0 text-base px-4 py-1 rounded-full">🎉 Congratulations! You Passed!</Tag>
+								) : scorePct > 0 ? (
+									<Tag className="bg-white/20 text-white border-0 text-base px-4 py-1 rounded-full">📚 Keep Practicing!</Tag>
+								) : null}
+							</div>
+							<div className="p-6 bg-white">
+								<Space direction="vertical" size={12} className="w-full">
+									<Button size="large" block onClick={() => { closeResultModal(); navigate(window.location.pathname.startsWith('/student/') ? '/student' : -1); }} className="h-12 rounded-xl font-semibold">
+										Back to Dashboard
+									</Button>
+								</Space>
+							</div>
+						</>
+					);
+				})()}
 			</Modal>
 
 			{/* Answers Drawer */}
@@ -1213,8 +1546,11 @@ export function ExamTake() {
 						{(() => {
 							const ansList = answersDrawerAttempt.answers || [];
 							const total = ansList.length || 1;
-							const correctCount = ansList.filter(x => x.isCorrect === true).length;
-							const pct = Math.round(answersDrawerAttempt.scorePercent ?? (correctCount / total) * 100);
+							const correctCount = ansList.filter(x => {
+								if (x?.question?.type === 'CONSTRUCTED_RESPONSE') return x.marksAwarded != null;
+								return x.isCorrect === true;
+							}).length;
+							const pct = Math.round(answersDrawerAttempt.scorePercent ?? (total ? (correctCount / total) * 100 : 0));
 							const isPassed = pct >= 70;
 							return (
 								<div
@@ -1251,10 +1587,13 @@ export function ExamTake() {
 							<Typography.Text type="secondary" className="text-center block">No answers to review.</Typography.Text>
 						) : (
 							(answersDrawerAttempt.answers || []).map((a, idx) => {
-								const correct = a.isCorrect === true;
+								const isConstructed = a?.question?.type === 'CONSTRUCTED_RESPONSE';
+								const correct = isConstructed ? (a.marksAwarded != null) : (a.isCorrect === true);
 								const correctOpt = (a?.question?.options || []).find(o => o.isCorrect);
 								const correctText = correctOpt?.text ?? '—';
-								const yourText = a?.selectedOption?.text ?? '—';
+								const yourText = isConstructed ? (a?.textAnswer || '—') : (a?.selectedOption?.text ?? '—');
+								const maxMarks = a?.question?.marks ?? 1;
+								const awarded = a?.marksAwarded ?? null;
 								return (
 									<Card
 										key={a.id || idx}
@@ -1263,11 +1602,13 @@ export function ExamTake() {
 										styles={{ body: { padding: 0 } }}
 									>
 										<div
-											className="px-4 py-3 flex items-center gap-3"
+											className="px-4 py-3 flex items-center gap-3 flex-wrap"
 											style={{
 												background: correct
 													? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
-													: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)'
+													: isConstructed && awarded == null
+														? 'linear-gradient(135deg, #64748b 0%, #475569 100%)'
+														: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)'
 											}}
 										>
 											{correct ? (
@@ -1278,28 +1619,55 @@ export function ExamTake() {
 											<Typography.Text className="text-white font-semibold">
 												Question {idx + 1}
 											</Typography.Text>
-											<Tag className="bg-white/20 text-white border-0 rounded-full ml-auto text-xs">
-												{correct ? 'Correct' : 'Incorrect'}
-											</Tag>
+											{isConstructed ? (
+												<>
+													{awarded != null ? (
+														<Tag className="bg-white/20 text-white border-0 rounded-full text-xs">
+															Mark: {awarded} / {maxMarks}
+														</Tag>
+													) : (
+														<Tag className="bg-white/20 text-white border-0 rounded-full text-xs">
+															Pending marking
+														</Tag>
+													)}
+												</>
+											) : (
+												<Tag className="bg-white/20 text-white border-0 rounded-full ml-auto text-xs">
+													{correct ? 'Correct' : 'Incorrect'}
+												</Tag>
+											)}
 										</div>
 										<div className="p-4">
-											<Typography.Paragraph className="text-slate-700 font-medium !mb-4">
-												{a?.question?.stem}
-											</Typography.Paragraph>
+											<div className="text-slate-700 font-medium mb-4 prose max-w-none text-sm rich-content-display" dangerouslySetInnerHTML={{ __html: a?.question?.stem || '' }} />
 											<div className="space-y-2">
-												<div className={`p-3 rounded-xl ${correct ? 'bg-emerald-50 border border-emerald-200' : 'bg-red-50 border border-red-200'}`}>
+												<div className={`p-3 rounded-xl ${correct ? 'bg-emerald-50 border border-emerald-200' : isConstructed && awarded == null ? 'bg-slate-50 border border-slate-200' : 'bg-red-50 border border-red-200'}`}>
 													<Typography.Text className="text-slate-500 text-xs block mb-1">Your Answer</Typography.Text>
-													<Typography.Text className={correct ? 'text-emerald-700' : 'text-red-700'}>
-														{yourText}
-													</Typography.Text>
+													{isConstructed ? (
+														<Typography.Paragraph className="!mb-0 text-slate-700 whitespace-pre-wrap">{yourText}</Typography.Paragraph>
+													) : (
+														<Typography.Text className={correct ? 'text-emerald-700' : 'text-red-700'}>{yourText}</Typography.Text>
+													)}
 												</div>
-												{!correct && (
+												{isConstructed && awarded != null && (
+													<div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
+														<Typography.Text className="text-blue-600 text-xs block mb-1">Marks awarded</Typography.Text>
+														<Typography.Text className="text-blue-800 font-semibold">{awarded} / {maxMarks}</Typography.Text>
+													</div>
+												)}
+												{!isConstructed && !correct && (
 													<div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
 														<Typography.Text className="text-slate-500 text-xs block mb-1">Correct Answer</Typography.Text>
-														<Typography.Text className="text-emerald-700 font-medium">
-															{correctText}
-														</Typography.Text>
+														<Typography.Text className="text-emerald-700 font-medium">{correctText}</Typography.Text>
 													</div>
+												)}
+												{!correct && !(isConstructed && awarded == null) && (
+													<AIHelpPanel
+														questionId={a?.question?.id}
+														selectedOptionId={a?.selectedOptionId}
+														selectedOptionText={a?.selectedOption?.text}
+														textAnswer={isConstructed ? a?.textAnswer : undefined}
+														mode="result_review"
+													/>
 												)}
 											</div>
 										</div>

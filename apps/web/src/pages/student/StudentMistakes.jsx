@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, Typography, Button, Space, Tag, Empty, Spin, Modal, Radio, Progress, message, Tooltip, Tabs } from 'antd';
+import { Card, Typography, Button, Space, Tag, Empty, Spin, Modal, Radio, Progress, message, Tooltip, Tabs, Pagination } from 'antd';
 import { 
 	ExclamationCircleOutlined, 
 	ReloadOutlined, 
@@ -15,7 +15,20 @@ import {
 } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
+import { AIHelpPanel } from '../../components/AIHelpPanel.jsx';
 import { useNavigate } from 'react-router-dom';
+
+const MISTAKES_PAGE_SIZE = 8;
+
+function safeHtml(html) {
+	if (html == null || typeof html !== 'string') return '';
+	return html
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&amp;/g, '&')
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'");
+}
 
 export default function StudentMistakes() {
 	const navigate = useNavigate();
@@ -23,6 +36,7 @@ export default function StudentMistakes() {
 	const [mistakes, setMistakes] = useState([]);
 	const [stats, setStats] = useState({ total: 0, unreviewedCount: 0 });
 	const [activeTab, setActiveTab] = useState('all');
+	const [currentPage, setCurrentPage] = useState(1);
 	const [retestModalOpen, setRetestModalOpen] = useState(false);
 	const [retestConfig, setRetestConfig] = useState({ questionCount: 10, timeLimitMinutes: 20 });
 	const [creatingRetest, setCreatingRetest] = useState(false);
@@ -100,6 +114,18 @@ export default function StudentMistakes() {
 		: activeTab === 'unreviewed' 
 			? mistakes.filter(m => !m.retested)
 			: mistakes.filter(m => m.retested);
+
+	useEffect(() => {
+		const totalPages = Math.max(1, Math.ceil(filteredMistakes.length / MISTAKES_PAGE_SIZE));
+		if (currentPage > totalPages) {
+			setCurrentPage(totalPages);
+		}
+	}, [filteredMistakes.length, currentPage]);
+
+	const paginatedMistakes = filteredMistakes.slice(
+		(currentPage - 1) * MISTAKES_PAGE_SIZE,
+		currentPage * MISTAKES_PAGE_SIZE
+	);
 
 	const difficultyColors = {
 		EASY: { bg: '#dcfce7', text: '#166534', border: '#86efac' },
@@ -183,7 +209,10 @@ export default function StudentMistakes() {
 			{/* Tabs */}
 			<Tabs
 				activeKey={activeTab}
-				onChange={setActiveTab}
+				onChange={(key) => {
+					setActiveTab(key);
+					setCurrentPage(1);
+				}}
 				items={[
 					{ key: 'all', label: `All (${mistakes.length})` },
 					{ key: 'unreviewed', label: `Pending (${stats.unreviewedCount})` },
@@ -217,7 +246,7 @@ export default function StudentMistakes() {
 			) : (
 				<div className="space-y-4">
 					<AnimatePresence>
-						{filteredMistakes.map((mistake, idx) => {
+						{paginatedMistakes.map((mistake, idx) => {
 							const q = mistake.question;
 							const diffStyle = difficultyColors[q?.difficulty] || difficultyColors.MEDIUM;
 							
@@ -284,9 +313,23 @@ export default function StudentMistakes() {
 
 										{/* Body */}
 										<div className="p-5">
-											<Typography.Paragraph className="text-slate-800 font-medium !mb-4 text-base">
-												{q?.stem}
-											</Typography.Paragraph>
+											{/* Show vignette / case study when this question is part of a vignette */}
+											{q?.parent?.vignetteText && (
+												<div className="mb-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
+													<Typography.Text className="text-slate-500 text-xs font-semibold uppercase tracking-wide block mb-2">
+														Case Study
+													</Typography.Text>
+													<div
+														className="text-slate-700 text-sm prose max-w-none question-preview-content"
+														dangerouslySetInnerHTML={{ __html: safeHtml(q.parent.vignetteText) }}
+													/>
+												</div>
+											)}
+
+											<div
+												className="text-slate-800 font-medium mb-4 text-base prose max-w-none question-preview-content"
+												dangerouslySetInnerHTML={{ __html: safeHtml(q?.stem || '') }}
+											/>
 
 											{/* Quick Practice Button */}
 											{!mistake.retested && (
@@ -300,12 +343,25 @@ export default function StudentMistakes() {
 													Quick Practice
 												</Button>
 											)}
+											<AIHelpPanel
+												questionId={q?.id}
+												mode="mistake_review"
+											/>
 										</div>
 									</Card>
 								</motion.div>
 							);
 						})}
 					</AnimatePresence>
+					<Pagination
+						current={currentPage}
+						pageSize={MISTAKES_PAGE_SIZE}
+						total={filteredMistakes.length}
+						onChange={setCurrentPage}
+						showSizeChanger={false}
+						hideOnSinglePage
+						className="flex justify-end"
+					/>
 				</div>
 			)}
 
@@ -404,9 +460,10 @@ export default function StudentMistakes() {
 						</div>
 
 						<div className="p-6">
-							<Typography.Paragraph className="text-slate-800 font-medium text-base !mb-6">
-								{practiceQuestion.stem}
-							</Typography.Paragraph>
+							<div
+								className="text-slate-800 font-medium text-base mb-6 prose max-w-none question-preview-content"
+								dangerouslySetInnerHTML={{ __html: safeHtml(practiceQuestion.stem || '') }}
+							/>
 
 							<Radio.Group 
 								value={practiceAnswer}
@@ -452,9 +509,10 @@ export default function StudentMistakes() {
 													`}>
 														{showAsCorrect ? <CheckCircleOutlined /> : showAsWrong ? <CloseCircleOutlined /> : letters[idx]}
 													</span>
-													<span className={showAsWrong ? 'text-red-700' : showAsCorrect ? 'text-emerald-700 font-medium' : 'text-slate-700'}>
-														{opt.text}
-													</span>
+													<div
+														className={`prose max-w-none question-preview-content ${showAsWrong ? 'text-red-700' : showAsCorrect ? 'text-emerald-700 font-medium' : 'text-slate-700'}`}
+														dangerouslySetInnerHTML={{ __html: safeHtml(opt.text || '') }}
+													/>
 												</div>
 											</Radio>
 										);
@@ -484,9 +542,18 @@ export default function StudentMistakes() {
 											)}
 										</div>
 										{practiceQuestion.workedSolution && (
-											<Typography.Paragraph className="text-slate-600 !mb-0 text-sm">
-												{practiceQuestion.workedSolution}
-											</Typography.Paragraph>
+											<div
+												className="text-slate-600 text-sm prose max-w-none question-preview-content"
+												dangerouslySetInnerHTML={{ __html: safeHtml(practiceQuestion.workedSolution || '') }}
+											/>
+										)}
+										{!practiceQuestion.options.find(o => o.id === practiceAnswer)?.isCorrect && (
+											<AIHelpPanel
+												questionId={practiceQuestion?.id}
+												selectedOptionId={practiceAnswer}
+												selectedOptionText={practiceQuestion?.options?.find(o => o.id === practiceAnswer)?.text}
+												mode="mistake_review"
+											/>
 										)}
 									</div>
 

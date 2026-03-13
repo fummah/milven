@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
+import OpenAI from 'openai';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -7,6 +8,7 @@ import { z } from 'zod';
 import * as XLSX from 'xlsx';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
+import { getOpenAIApiKey } from '../lib/openai.js';
 
 export function cmsRouter(prisma) {
 	const router = Router();
@@ -83,15 +85,21 @@ export function cmsRouter(prisma) {
   }
 
   async function deriveQuestionPathIdsFromTopic(topicId) {
-    if (!topicId) return { courseId: null, volumeId: null, moduleId: null };
+    if (!topicId) return { courseId: null, volumeId: null, moduleId: null, level: null };
     const topic = await prisma.topic.findUnique({
       where: { id: String(topicId) },
       select: {
         moduleId: true,
+        level: true,
         module: {
           select: {
             courseId: true,
-            volumeId: true
+            volumeId: true,
+            course: {
+              select: {
+                level: true
+              }
+            }
           }
         }
       }
@@ -99,7 +107,8 @@ export function cmsRouter(prisma) {
     const moduleId = topic?.moduleId ?? null;
     const volumeId = topic?.module?.volumeId ?? null;
     const courseId = topic?.module?.courseId ?? null;
-    return { courseId, volumeId, moduleId };
+    const level = topic?.level ?? topic?.module?.course?.level ?? null;
+    return { courseId, volumeId, moduleId, level };
   }
 
   async function assertVolumeLinkedToCourse({ courseId, volumeId }) {
@@ -222,7 +231,7 @@ export function cmsRouter(prisma) {
       prisma.course.count({ where }),
       prisma.course.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { name: 'asc' },
         include: { courseProducts: { include: { product: true } } }
       })
     ]);
@@ -1182,37 +1191,77 @@ export function cmsRouter(prisma) {
 		const moduleId = req.query.moduleId?.toString();
 		const difficulty = req.query.difficulty?.toString();
 		const difficulties = req.query.difficulties?.toString();
+		const type = req.query.type?.toString();
+		const types = req.query.types?.toString();
+		const aiGenerated = req.query.aiGenerated?.toString() === 'true';
+		const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+		const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
 		const topicIdList = topicIds ? topicIds.split(',').filter(Boolean) : (topicId ? [topicId] : []);
 		const difficultyList = difficulties ? difficulties.split(',').filter(Boolean) : (difficulty ? [difficulty] : []);
+		const typeList = types ? types.split(',').filter(Boolean) : (type ? [type] : []);
+
+		// Only show top-level questions (parentId IS NULL). Sub-questions are hidden.
 		const where = {
 			AND: [
-				q ? { stem: { contains: q, mode: 'insensitive' } } : {},
+				{ parentId: null },
+				q ? {
+					OR: [
+						{ stem: { contains: q, mode: 'insensitive' } },
+						{ vignetteText: { contains: q, mode: 'insensitive' } }
+					]
+				} : {},
 				topicIdList.length > 0 ? { topicId: { in: topicIdList } } : {},
 				level ? { level } : {},
 				courseId ? { courseId } : {},
 				volumeId ? { volumeId } : {},
 				moduleId ? { moduleId } : {},
-				difficultyList.length > 0 ? { difficulty: { in: difficultyList } } : {}
+				difficultyList.length > 0 ? { difficulty: { in: difficultyList } } : {},
+				typeList.length > 0 ? { type: { in: typeList } } : {},
+				aiGenerated ? { isAiGenerated: true } : {}
 			]
 		};
-		const questions = await prisma.question.findMany({
-			where,
-			orderBy: { createdAt: 'desc' },
-			select: { id: true, stem: true, type: true, level: true, difficulty: true, marks: true, topicId: true, courseId: true, volumeId: true, moduleId: true, createdAt: true }
-		});
-		return res.json({ questions });
-  });
+
+		const [total, questions] = await Promise.all([
+			prisma.question.count({ where }),
+			prisma.question.findMany({
+				where,
+				orderBy: { createdAt: 'desc' },
+				skip: (page - 1) * pageSize,
+				take: pageSize,
+				include: {
+					options: true,
+					_count: { select: { children: true } }
+				}
+			})
+		]);
+
+		// Attach _childCount for UI display
+		const mapped = questions.map(q => ({
+			...q,
+			_childCount: q._count?.children ?? 0
+		}));
+
+		return res.json({ questions: mapped, total, logicalTotal: total });
+	});
 	router.post('/questions', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const schema = z.object({
-			stem: z.string().min(5),
+			stem: z.string().min(1),
 			type: z.enum(['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']),
 			level: z.enum(['NONE','LEVEL1', 'LEVEL2', 'LEVEL3']),
 			difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']),
 			topicId: z.string(),
 			marks: z.number().int().positive().optional(),
+			orderIndex: z.number().int().nonnegative().optional(),
+			parentId: z.string().optional(),
 			vignetteText: z.string().optional(),
 			imageUrl: z.string().url().optional().nullable(),
 			options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional(),
+			// Sub-questions array (for creating parent + children in one call)
+			subQuestions: z.array(z.object({
+				stem: z.string().min(1),
+				marks: z.number().int().positive().optional(),
+				options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional()
+			})).optional(),
 			qid: z.string().optional().nullable(),
 			los: z.string().optional().nullable(),
 			traceSection: z.string().optional().nullable(),
@@ -1222,20 +1271,25 @@ export function cmsRouter(prisma) {
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const { vignetteText, options, qid, los, traceSection, tracePage, keyFormulas, workedSolution, ...q } = parse.data;
+		const { vignetteText, parentId, options, subQuestions, qid, los, traceSection, tracePage, keyFormulas, workedSolution, orderIndex, ...q } = parse.data;
 		const pathIds = await deriveQuestionPathIdsFromTopic(q.topicId);
 		if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) {
 			return res.status(400).json({ error: 'Topic path is incomplete. Ensure topic has module and module has volume.' });
 		}
-		let vignette = null;
-		if (q.type === 'VIGNETTE_MCQ' && vignetteText) {
-			vignette = await prisma.vignette.create({ data: { text: vignetteText } });
+
+		// If parentId is provided, validate it exists
+		if (parentId) {
+			const parent = await prisma.question.findUnique({ where: { id: parentId }, select: { id: true } });
+			if (!parent) return res.status(400).json({ error: 'Parent question not found' });
 		}
+
 		const question = await prisma.question.create({
 			data: {
 				...q,
 				...pathIds,
-				vignetteId: vignette?.id ?? null,
+				parentId: parentId || null,
+				vignetteText: vignetteText || null,
+				orderIndex: typeof orderIndex === 'number' ? orderIndex : 0,
 				imageUrl: parse.data.imageUrl || null,
 				qid: qid || null,
 				los: los || null,
@@ -1245,22 +1299,713 @@ export function cmsRouter(prisma) {
 				workedSolution: workedSolution || null
 			}
 		});
-		if (q.type !== 'CONSTRUCTED_RESPONSE' && options && options.length) {
+
+		// Create MCQ options for standalone MCQ or parent vignette question itself (if any)
+		if (q.type === 'MCQ' && options && options.length) {
 			await prisma.mcqOption.createMany({
 				data: options.map(o => ({ questionId: question.id, text: o.text, isCorrect: o.isCorrect }))
 			});
 		}
+
+		// Create sub-questions if provided (for vignette/constructed bundles created in one call)
+		if (Array.isArray(subQuestions) && subQuestions.length > 0 && !parentId) {
+			for (let i = 0; i < subQuestions.length; i++) {
+				const sq = subQuestions[i];
+				const child = await prisma.question.create({
+					data: {
+						stem: sq.stem,
+						type: q.type === 'VIGNETTE_MCQ' ? 'MCQ' : 'CONSTRUCTED_RESPONSE',
+						level: q.level,
+						difficulty: q.difficulty,
+						topicId: q.topicId,
+						...pathIds,
+						parentId: question.id,
+						orderIndex: i + 1,
+						marks: sq.marks || 1,
+						qid: qid || null,
+						los: los || null,
+						traceSection: traceSection || null,
+						tracePage: tracePage || null,
+						keyFormulas: keyFormulas || null,
+						workedSolution: workedSolution || null
+					}
+				});
+				// Create MCQ options for vignette sub-questions
+				if (q.type === 'VIGNETTE_MCQ' && sq.options && sq.options.length) {
+					await prisma.mcqOption.createMany({
+						data: sq.options.map(o => ({ questionId: child.id, text: o.text, isCorrect: o.isCorrect }))
+					});
+				}
+			}
+		}
+
 		const full = await prisma.question.findUnique({
 			where: { id: question.id },
-			include: { options: true, vignette: true }
+			include: {
+				options: true,
+				children: {
+					orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+					include: { options: true }
+				}
+			}
 		});
 		return res.status(201).json({ question: full });
 	});
+
+	// Generate questions using OpenAI (admin only)
+	router.post('/questions/generate-ai', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const schema = z.object({
+			courseId: z.string(),
+			volumeId: z.string().optional(),
+			topicId: z.string().optional(),
+			topicIds: z.array(z.string()).optional(),
+			questionType: z.enum(['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']),
+			difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
+			difficulties: z.array(z.enum(['EASY', 'MEDIUM', 'HARD'])).optional(),
+			count: z.coerce.number().int().min(1).max(10)
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+		const { courseId, volumeId, topicId, topicIds, questionType, difficulty, difficulties, count } = parse.data;
+		const diffList = Array.isArray(difficulties) && difficulties.length
+			? difficulties
+			: (difficulty ? [difficulty] : ['MEDIUM']);
+
+		const apiKey = await getOpenAIApiKey(prisma);
+		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured. Set OPENAI_API_KEY in .env or in Admin settings.' });
+
+		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true } });
+		if (!course) return res.status(400).json({ error: 'Course not found' });
+		const topicIdList = Array.isArray(topicIds) && topicIds.length
+			? topicIds
+			: (topicId ? [topicId] : []);
+		if (topicIdList.length === 0) return res.status(400).json({ error: 'topicIds required' });
+
+		// Load and validate topics
+		const selectedTopics = await prisma.topic.findMany({
+			where: { id: { in: topicIdList } },
+			select: { id: true, name: true, courseId: true, moduleId: true, module: { select: { volumeId: true } } }
+		});
+		if (selectedTopics.length !== topicIdList.length) return res.status(400).json({ error: 'One or more topics not found' });
+		for (const t of selectedTopics) {
+			if (t.courseId && t.courseId !== courseId) return res.status(400).json({ error: 'One or more topics do not belong to selected course' });
+			if (volumeId && t.module?.volumeId && t.module.volumeId !== volumeId) return res.status(400).json({ error: 'One or more topics do not belong to selected volume' });
+		}
+
+		// Resolve volume name for better prompt context
+		let volumeName = 'N/A';
+		if (volumeId) {
+			const vol = await prisma.volume.findUnique({ where: { id: volumeId }, select: { name: true } });
+			if (vol) volumeName = vol.name;
+		}
+		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
+		const typeLabel = questionType === 'MCQ'
+			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
+			: questionType === 'VIGNETTE_MCQ'
+				? 'Vignette / item-set: a realistic case study passage followed by multiple choice sub-questions, each with 3 options and exactly one correct answer'
+				: 'Constructed response (written answer requiring calculations or explanations)';
+		const topicLabel = selectedTopics.map(t => t.name).join(', ');
+		const difficultyLabel = diffList.join(', ');
+		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions in JSON format.
+
+Draw inspiration from past CFA exam questions and real-world financial scenarios. Questions must be precise, unambiguous, and test genuine understanding.
+ALL metadata fields below are REQUIRED - always populate every single one to help students during revision.
+
+Context:
+- Course: ${course.name}
+- Course level: ${levelLabel}
+- Volume: ${volumeName}
+- Topics: ${topicLabel}
+- Question type: ${typeLabel}
+- Difficulty: ${difficultyLabel}
+- Count: ${count}
+
+Return a JSON object with an "items" key. EVERY question/sub-question MUST include ALL of these fields (never null):
+- "stem": string (question text, may include simple HTML)
+- "options": for MCQ only: array of exactly 3 objects { "text": string, "isCorrect": boolean } with exactly one isCorrect true
+- "explanation": string (concise explanation of the correct answer and common mistakes)
+- "qid": string (short unique ID like "Q-TOPIC-001")
+- "los": string (specific learning outcome statement)
+- "traceSection": string (curriculum section reference, e.g. "Reading 33: Cost of Capital")
+- "tracePage": string (page reference, e.g. "p. 145-148")
+- "keyFormulas": string (key formula(s) with variable definitions)
+- "workedSolution": string (step-by-step worked solution - be thorough)
+
+For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of 2-4 MCQ sub-questions with same fields }.
+For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
+
+		try {
+			const openai = new OpenAI({ apiKey });
+			const completion = await openai.chat.completions.create({
+				model: 'gpt-4o-mini',
+				messages: [
+					{ role: 'system', content: 'You are an expert CFA curriculum and exam question writer. Always return valid JSON only.' },
+					{ role: 'user', content: prompt }
+				],
+				temperature: 0.75,
+				response_format: { type: 'json_object' }
+			});
+			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+			let items = [];
+			try {
+				const parsed = JSON.parse(raw);
+				items = Array.isArray(parsed.questions) ? parsed.questions : Array.isArray(parsed) ? parsed : (parsed.items ? parsed.items : [parsed]);
+			} catch {
+				// Try wrapping in array if single object
+				const single = JSON.parse(raw);
+				items = Array.isArray(single) ? single : [single];
+			}
+			if (!Array.isArray(items)) items = [];
+
+			const level = course.level || 'LEVEL1';
+			const created = [];
+			// For creation, spread questions across selected topics (round-robin)
+			let topicCursor = 0;
+			let diffCursor = 0;
+			const nextTopicId = () => {
+				const id = selectedTopics[topicCursor % selectedTopics.length].id;
+				topicCursor++;
+				return id;
+			};
+			const nextDifficulty = () => {
+				const d = diffList[diffCursor % diffList.length];
+				diffCursor++;
+				return d;
+			};
+
+			if (questionType === 'VIGNETTE_MCQ' && items.length > 0 && items[0].vignetteText) {
+				// Each item is a separate case study bundle
+				for (const item of items) {
+					if (!item.vignetteText) continue;
+					const useTopicId = nextTopicId();
+					const useDifficulty = nextDifficulty();
+					const parentPathIds = await deriveQuestionPathIdsFromTopic(useTopicId);
+					if (!parentPathIds.courseId || !parentPathIds.volumeId || !parentPathIds.moduleId) continue;
+					const parent = await prisma.question.create({
+						data: {
+							stem: '(Vignette parent)',
+							type: 'VIGNETTE_MCQ',
+							level,
+							difficulty: useDifficulty,
+							topicId: useTopicId,
+							...parentPathIds,
+							vignetteText: item.vignetteText,
+							marks: 1,
+							isAiGenerated: true
+						}
+					});
+					const subQ = Array.isArray(item.questions) ? item.questions : [];
+					for (let si = 0; si < subQ.length; si++) {
+						const sq = subQ[si];
+						const s = (sq.stem || sq.question || '').trim();
+						if (!s || s.length < 5) continue;
+						const opts = sq.options || [];
+						const child = await prisma.question.create({
+							data: {
+								stem: s,
+								type: 'MCQ',
+								level,
+								difficulty: useDifficulty,
+								topicId: useTopicId,
+								...parentPathIds,
+								parentId: parent.id,
+								orderIndex: si + 1,
+								marks: 1,
+								qid: sq.qid || null,
+								los: sq.los || null,
+								traceSection: sq.traceSection || null,
+								tracePage: sq.tracePage || null,
+								keyFormulas: sq.keyFormulas || null,
+								workedSolution: (() => { const ws = (sq.workedSolution || '').trim(); const ex = (sq.explanation || '').trim(); if (ws && ex) return `${ex}\n\n--- Worked Solution ---\n${ws}`; return ex || ws || null; })(),
+								isAiGenerated: true
+							}
+						});
+						if (Array.isArray(opts) && opts.length >= 2) {
+							await prisma.mcqOption.createMany({
+								data: opts.map(o => ({ questionId: child.id, text: String(o.text || '').trim() || 'Option', isCorrect: !!o.isCorrect }))
+							});
+						}
+					}
+					const full = await prisma.question.findUnique({
+						where: { id: parent.id },
+						include: { options: true, children: { orderBy: [{ orderIndex: 'asc' }], include: { options: true } } }
+					});
+					created.push(full);
+				}
+			} else {
+				for (let i = 0; i < Math.min(items.length, count); i++) {
+					const item = items[i];
+					const stem = (item.stem || item.question || '').trim();
+					if (!stem || stem.length < 5) continue;
+					const opts = item.options || [];
+					const useTopicId = nextTopicId();
+					const useDifficulty = nextDifficulty();
+					const pathIds = await deriveQuestionPathIdsFromTopic(useTopicId);
+					if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) continue;
+					const question = await prisma.question.create({
+						data: {
+							stem,
+							type: questionType,
+							level,
+							difficulty: useDifficulty,
+							topicId: useTopicId,
+							...pathIds,
+							marks: 1,
+							qid: item.qid || null,
+							los: item.los || null,
+							traceSection: item.traceSection || null,
+							tracePage: item.tracePage || null,
+							keyFormulas: item.keyFormulas || null,
+							workedSolution: (() => { const ws = (item.workedSolution || '').trim(); const ex = (item.explanation || '').trim(); if (ws && ex) return `${ex}\n\n--- Worked Solution ---\n${ws}`; return ex || ws || null; })(),
+							isAiGenerated: true
+						}
+					});
+					if (questionType !== 'CONSTRUCTED_RESPONSE' && Array.isArray(opts) && opts.length >= 2) {
+						await prisma.mcqOption.createMany({
+							data: opts.map(o => ({ questionId: question.id, text: String(o.text || '').trim() || 'Option', isCorrect: !!o.isCorrect }))
+						});
+					}
+					const full = await prisma.question.findUnique({ where: { id: question.id }, include: { options: true } });
+					created.push(full);
+				}
+			}
+			return res.status(201).json({ created: created.length, questions: created });
+		} catch (err) {
+			const status = err?.status || err?.response?.status;
+			const msg = err?.error?.message || err?.response?.data?.error?.message || err?.message || 'OpenAI request failed';
+			// eslint-disable-next-line no-console
+			console.error('AI generate failed:', {
+				status,
+				message: msg,
+				name: err?.name,
+				code: err?.code,
+				type: err?.type,
+				param: err?.param,
+				stack: err?.stack
+			});
+			return res.status(502).json({
+				error: msg,
+				upstreamStatus: status || null
+			});
+		}
+	});
+
+	// Generate questions using OpenAI (admin only) - preview only (no DB writes)
+	router.post('/questions/generate-ai/preview', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const schema = z.object({
+			courseId: z.string(),
+			volumeId: z.string().optional(),
+			topicIds: z.array(z.string()).min(1),
+			questionType: z.enum(['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']),
+			constructedMode: z.enum(['single', 'bundle']).optional(),
+			difficulties: z.array(z.enum(['EASY', 'MEDIUM', 'HARD'])).optional(),
+			difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
+			count: z.coerce.number().int().min(1).max(10)
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+		const { courseId, volumeId, topicIds, questionType, constructedMode, difficulty, difficulties, count } = parse.data;
+		const diffList = Array.isArray(difficulties) && difficulties.length
+			? difficulties
+			: (difficulty ? [difficulty] : ['MEDIUM']);
+
+		const apiKey = await getOpenAIApiKey(prisma);
+		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured. Set OPENAI_API_KEY in .env or in Admin settings.' });
+
+		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true } });
+		if (!course) return res.status(400).json({ error: 'Course not found' });
+
+		// Resolve volume name for better prompt context
+		let volumeName = 'N/A';
+		if (volumeId) {
+			const vol = await prisma.volume.findUnique({ where: { id: volumeId }, select: { name: true } });
+			if (vol) volumeName = vol.name;
+		}
+
+		const selectedTopics = await prisma.topic.findMany({
+			where: { id: { in: topicIds } },
+			select: { id: true, name: true, courseId: true, moduleId: true, module: { select: { volumeId: true } } }
+		});
+		if (selectedTopics.length !== topicIds.length) return res.status(400).json({ error: 'One or more topics not found' });
+		for (const t of selectedTopics) {
+			if (t.courseId && t.courseId !== courseId) return res.status(400).json({ error: 'One or more topics do not belong to selected course' });
+			if (volumeId && t.module?.volumeId && t.module.volumeId !== volumeId) return res.status(400).json({ error: 'One or more topics do not belong to selected volume' });
+		}
+
+		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
+		const isConstructedBundle = questionType === 'CONSTRUCTED_RESPONSE' && constructedMode === 'bundle';
+		const typeLabel = questionType === 'MCQ'
+			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
+			: questionType === 'VIGNETTE_MCQ'
+				? 'Vignette / item-set: a realistic case study passage followed by multiple choice sub-questions, each with 3 options (A, B, C) and exactly one correct answer'
+				: isConstructedBundle
+					? 'Constructed response case study: a detailed realistic scenario/case study passage followed by multiple constructed-response sub-questions requiring calculations, analysis, or written explanations'
+					: 'Constructed response (written answer requiring calculations or explanations)';
+		const topicLabel = selectedTopics.map(t => t.name).join(', ');
+		const difficultyLabel = diffList.join(', ');
+
+		const isBundleType = questionType === 'VIGNETTE_MCQ' || isConstructedBundle;
+		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions that could appear on actual CFA or finance certification exams.
+
+IMPORTANT GUIDELINES:
+- Draw inspiration from past CFA exam questions and real-world financial scenarios
+- Questions must be precise, unambiguous, and test genuine understanding (not just memorization)
+- Include realistic numerical examples, company names, and market scenarios where appropriate
+- For calculations, ALWAYS provide the key formulas and a detailed worked solution - this is critical for student revision
+- Each question should test a specific learning outcome related to the topic
+- Vary the difficulty across the specified difficulty levels: ${difficultyLabel}
+- EASY: straightforward recall/application; MEDIUM: multi-step analysis; HARD: complex scenario requiring synthesis of multiple concepts
+- ALL metadata fields below are REQUIRED (not optional) - always populate every single one to help students during revision
+
+Return a JSON object ONLY, matching this shape exactly:
+{ "items": [...] }
+
+Context:
+- Course: ${course.name}
+- Course level: ${levelLabel}
+- Volume: ${volumeName}
+- Topics: ${topicLabel}
+- Question type: ${typeLabel}
+- Difficulty levels: ${difficultyLabel}
+- Number of ${isBundleType ? 'case studies' : 'questions'}: ${count}
+
+EVERY question/sub-question MUST include ALL of these metadata fields (populate ALL of them, never leave null):
+- "qid": string (a short unique identifier, e.g. "Q-${selectedTopics[0]?.name?.substring(0,4)?.toUpperCase() || 'CFA'}-001", increment the number for each question)
+- "los": string (the specific learning outcome statement this question tests, e.g. "Calculate and interpret the weighted average cost of capital")
+- "traceSection": string (curriculum section reference, e.g. "Reading 33: Cost of Capital")
+- "tracePage": string (page reference, e.g. "p. 145-148")
+- "keyFormulas": string (key formula(s) used, written clearly with variable definitions, e.g. "WACC = w_d × r_d(1-t) + w_e × r_e")
+- "workedSolution": string (step-by-step worked solution showing all calculations and reasoning - be thorough so students can learn from it)
+- "explanation": string (concise explanation of why the answer is correct and common mistakes to avoid)
+
+For MCQ items (array of ${count} objects), each must include:
+- "stem": string (the question text, may use simple HTML like <p>, <strong>, <em>, <ul>, <li> for formatting)
+- "options": array of exactly 3 objects { "text": string, "isCorrect": boolean } with exactly ONE isCorrect: true
+- Plus ALL metadata fields listed above
+
+For CONSTRUCTED_RESPONSE items (when format is single), array of ${count} objects:
+- "stem": string (clearly describe what the candidate must calculate/explain and how many marks are available)
+- "marks": integer (marks for this question)
+- No "options" field
+- Plus ALL metadata fields listed above (keyFormulas and workedSolution are especially important for constructed response)
+
+For CONSTRUCTED_RESPONSE case study (when format is bundle): Return JSON as:
+{ "items": [ ${count > 1 ? `${count} objects, each containing` : '1 object containing'}:
+  { "vignetteText": string (a detailed, realistic case study/scenario passage of 200-400 words with specific company data, financial figures, dates, and context),
+    "questions": array of 2-4 constructed-response sub-question objects (you decide the appropriate number based on the scenario complexity) }
+] }
+Each sub-question must include: "stem" (what the candidate must calculate/explain, with marks indicated), "marks" (integer), plus ALL metadata fields above. No "options" field.
+
+For VIGNETTE_MCQ: Return JSON as:
+{ "items": [ ${count > 1 ? `${count} objects, each containing` : '1 object containing'}:
+  { "vignetteText": string (a detailed, realistic case study passage of 150-300 words),
+    "questions": array of 2-4 MCQ sub-questions (you decide the appropriate number) }
+] }
+Each sub-question must include: "stem", "options" (exactly 3 with one correct), plus ALL metadata fields above.`;
+
+		try {
+			const openai = new OpenAI({ apiKey });
+			const completion = await openai.chat.completions.create({
+				model: 'gpt-4o-mini',
+				messages: [
+					{ role: 'system', content: 'You are an expert CFA curriculum and exam question writer. You produce high-quality, exam-standard questions. Always return valid JSON only.' },
+					{ role: 'user', content: prompt }
+				],
+				temperature: 0.75,
+				response_format: { type: 'json_object' }
+			});
+			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+			let parsed;
+			try {
+				parsed = JSON.parse(raw);
+			} catch {
+				return res.status(500).json({ error: 'AI returned invalid JSON', raw });
+			}
+			let items = Array.isArray(parsed?.items) ? parsed.items : (Array.isArray(parsed?.questions) ? parsed.questions : []);
+
+			const level = course.level || 'LEVEL1';
+			let topicCursor = 0;
+			let diffCursor = 0;
+			const nextTopic = () => {
+				const t = selectedTopics[topicCursor % selectedTopics.length];
+				topicCursor++;
+				return t;
+			};
+			const nextDifficulty = () => {
+				const d = diffList[diffCursor % diffList.length];
+				diffCursor++;
+				return d;
+			};
+
+			if (questionType === 'VIGNETTE_MCQ' || isConstructedBundle) {
+				// Each item in the array is a separate case study bundle
+				const bundles = items.map((bundle) => {
+					const vignetteText = String(bundle.vignetteText || '').trim();
+					const sub = Array.isArray(bundle.questions) ? bundle.questions : [];
+					const subQuestions = sub.map((sq) => {
+						const t = nextTopic();
+						const useDifficulty = nextDifficulty();
+						return {
+							stem: sq.stem || sq.question || '',
+							options: isConstructedBundle ? [] : (Array.isArray(sq.options) ? sq.options : []),
+							explanation: sq.explanation || '',
+							topicId: t.id,
+							topicName: t.name,
+							difficulty: useDifficulty,
+							marks: sq.marks ? Number(sq.marks) : 1,
+							qid: sq.qid || '',
+							los: sq.los || '',
+							traceSection: sq.traceSection || '',
+							tracePage: sq.tracePage || '',
+							keyFormulas: sq.keyFormulas || '',
+							workedSolution: sq.workedSolution || ''
+						};
+					});
+					return { vignetteText, questions: subQuestions };
+				}).filter(b => b.vignetteText && b.questions.length > 0);
+				return res.json({
+					course: { id: course.id, name: course.name, level },
+					questionType,
+					generated: { bundles }
+				});
+			}
+
+			items = items.slice(0, count);
+			const normalized = items.map((it) => {
+				const t = nextTopic();
+				const useDifficulty = nextDifficulty();
+				return {
+					stem: it.stem || it.question || '',
+					options: Array.isArray(it.options) ? it.options : [],
+					explanation: it.explanation || '',
+					topicId: t.id,
+					topicName: t.name,
+					difficulty: useDifficulty,
+					marks: it.marks ? Number(it.marks) : 1,
+					qid: it.qid || '',
+					los: it.los || '',
+					traceSection: it.traceSection || '',
+					tracePage: it.tracePage || '',
+					keyFormulas: it.keyFormulas || '',
+					workedSolution: it.workedSolution || ''
+				};
+			});
+
+			return res.json({
+				course: { id: course.id, name: course.name, level },
+				questionType,
+				generated: { items: normalized }
+			});
+		} catch (err) {
+			const msg = err?.message || err?.error?.message || 'OpenAI request failed';
+			return res.status(500).json({ error: msg });
+		}
+	});
+
+	// Accept AI-generated preview and save to DB (supports selectedIndices for individual item selection)
+	router.post('/questions/generate-ai/accept', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const schema = z.object({
+			questionType: z.enum(['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']),
+			generated: z.any(),
+			selectedIndices: z.array(z.number().int().min(0)).optional()
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+		const { questionType, generated, selectedIndices } = parse.data;
+
+		// Helper: check for near-duplicate stems in existing questions
+		async function isDuplicateStem(stem) {
+			if (!stem || stem.length < 10) return false;
+			const plain = stem.replace(/<[^>]+>/g, '').trim().toLowerCase();
+			const words = plain.split(/\s+/).slice(0, 12).join(' ');
+			if (!words || words.length < 10) return false;
+			const existing = await prisma.question.findFirst({
+				where: { stem: { contains: words.substring(0, Math.min(words.length, 60)) } },
+				select: { id: true }
+			});
+			return !!existing;
+		}
+
+		// Merge explanation into workedSolution since 'explanation' doesn't exist in the DB schema
+		// This ensures students see full context during revision
+		function mergeWorkedSolution(item) {
+			const ws = (item?.workedSolution || '').trim();
+			const expl = (item?.explanation || '').trim();
+			if (ws && expl) return `${expl}\n\n--- Worked Solution ---\n${ws}`;
+			if (expl) return expl;
+			return ws || null;
+		}
+
+		try {
+			const created = [];
+			const skippedDuplicates = [];
+
+			// Handle bundle-based types (VIGNETTE_MCQ or CONSTRUCTED_RESPONSE case study)
+			// generated.bundles is an array of { vignetteText, questions }
+			const hasBundles = Array.isArray(generated?.bundles) && generated.bundles.length > 0;
+			if (hasBundles && (questionType === 'VIGNETTE_MCQ' || questionType === 'CONSTRUCTED_RESPONSE')) {
+				let bundles = generated.bundles;
+				// selectedIndices refers to which bundles to save
+				if (Array.isArray(selectedIndices) && selectedIndices.length > 0) {
+					bundles = bundles.filter((_, idx) => selectedIndices.includes(idx));
+				}
+				if (bundles.length === 0) return res.status(400).json({ error: 'No case studies selected' });
+
+				const isConstructed = questionType === 'CONSTRUCTED_RESPONSE';
+				for (const bundle of bundles) {
+					const vignetteText = String(bundle.vignetteText || '').trim();
+					if (!vignetteText) continue;
+					const questions = Array.isArray(bundle.questions) ? bundle.questions : [];
+					if (questions.length === 0) continue;
+
+					const firstTopicId = String(questions[0]?.topicId || '').trim();
+					if (!firstTopicId) continue;
+					const parentPathIds = await deriveQuestionPathIdsFromTopic(firstTopicId);
+					if (!parentPathIds.courseId || !parentPathIds.volumeId || !parentPathIds.moduleId) continue;
+
+					const parent = await prisma.question.create({
+						data: {
+							stem: isConstructed ? '(Case study parent)' : '(Vignette parent)',
+							type: questionType,
+							level: parentPathIds.level || 'LEVEL1',
+							difficulty: questions[0]?.difficulty || 'MEDIUM',
+							topicId: firstTopicId,
+							...parentPathIds,
+							vignetteText,
+							marks: 1,
+							isAiGenerated: true
+						}
+					});
+
+					for (let si = 0; si < questions.length; si++) {
+						const sq = questions[si];
+						const stem = String(sq?.stem || '').trim();
+						if (!stem || stem.length < 5) continue;
+						if (await isDuplicateStem(stem)) {
+							skippedDuplicates.push(stem.substring(0, 60));
+							continue;
+						}
+						const topicId = String(sq?.topicId || '').trim();
+						if (!topicId) continue;
+						const pathIds = await deriveQuestionPathIdsFromTopic(topicId);
+						if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) continue;
+
+						const childType = isConstructed ? 'CONSTRUCTED_RESPONSE' : 'MCQ';
+						const child = await prisma.question.create({
+							data: {
+								stem,
+								type: childType,
+								level: pathIds.level || 'LEVEL1',
+								difficulty: sq?.difficulty || 'MEDIUM',
+								marks: sq?.marks ? Number(sq.marks) : 1,
+								topicId,
+								...pathIds,
+								parentId: parent.id,
+								orderIndex: si + 1,
+								qid: sq?.qid || null,
+								los: sq?.los || null,
+								traceSection: sq?.traceSection || null,
+								tracePage: sq?.tracePage || null,
+								keyFormulas: sq?.keyFormulas || null,
+								workedSolution: mergeWorkedSolution(sq),
+								isAiGenerated: true
+							}
+						});
+
+						// Create MCQ options for vignette sub-questions
+						if (!isConstructed) {
+							const opts = Array.isArray(sq?.options) ? sq.options : [];
+							if (opts.length >= 2) {
+								await prisma.mcqOption.createMany({
+									data: opts.map(o => ({
+										questionId: child.id,
+										text: String(o.text || '').trim() || 'Option',
+										isCorrect: !!o.isCorrect
+									}))
+								});
+							}
+						}
+					}
+
+					const full = await prisma.question.findUnique({
+						where: { id: parent.id },
+						include: { options: true, children: { orderBy: [{ orderIndex: 'asc' }], include: { options: true } } }
+					});
+					created.push(full);
+				}
+				return res.status(201).json({ created: created.length, questions: created, skippedDuplicates });
+			}
+
+			let items = Array.isArray(generated?.items) ? generated.items : [];
+			if (items.length === 0) return res.status(400).json({ error: 'items required' });
+			// Filter by selectedIndices if provided
+			if (Array.isArray(selectedIndices) && selectedIndices.length > 0) {
+				items = items.filter((_, idx) => selectedIndices.includes(idx));
+			}
+			if (items.length === 0) return res.status(400).json({ error: 'No questions selected' });
+			for (const item of items) {
+				const stem = String(item?.stem || '').trim();
+				if (!stem || stem.length < 5) continue;
+				// Duplicate check
+				if (await isDuplicateStem(stem)) {
+					skippedDuplicates.push(stem.substring(0, 60));
+					continue;
+				}
+				const topicId = String(item?.topicId || '').trim();
+				if (!topicId) continue;
+				const pathIds = await deriveQuestionPathIdsFromTopic(topicId);
+				if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) continue;
+				const q = await prisma.question.create({
+					data: {
+						stem,
+						type: questionType,
+						level: pathIds.level || 'LEVEL1',
+						difficulty: item?.difficulty || 'MEDIUM',
+						marks: item?.marks ? Number(item.marks) : 1,
+						topicId,
+						...pathIds,
+						qid: item?.qid || null,
+						los: item?.los || null,
+						traceSection: item?.traceSection || null,
+						tracePage: item?.tracePage || null,
+						keyFormulas: item?.keyFormulas || null,
+						workedSolution: mergeWorkedSolution(item),
+						isAiGenerated: true
+					}
+				});
+				if (questionType !== 'CONSTRUCTED_RESPONSE') {
+					const opts = Array.isArray(item?.options) ? item.options : [];
+					if (opts.length >= 2) {
+						await prisma.mcqOption.createMany({
+							data: opts.map(o => ({
+								questionId: q.id,
+								text: String(o.text || '').trim() || 'Option',
+								isCorrect: !!o.isCorrect
+							}))
+						});
+					}
+				}
+				const full = await prisma.question.findUnique({ where: { id: q.id }, include: { options: true } });
+				created.push(full);
+			}
+			return res.status(201).json({ created: created.length, questions: created, skippedDuplicates });
+		} catch (err) {
+			const msg = err?.message || err?.error?.message || 'Failed to save generated questions';
+			return res.status(500).json({ error: msg });
+		}
+	});
+
   router.get('/questions/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const id = req.params.id;
     const q = await prisma.question.findUnique({
       where: { id },
-      include: { options: true, vignette: true }
+      include: {
+        options: true,
+        children: {
+          orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+          include: { options: true }
+        }
+      }
     });
     if (!q) return res.status(404).json({ error: 'Not found' });
     return res.json({ question: q });
@@ -1268,15 +2013,23 @@ export function cmsRouter(prisma) {
   router.put('/questions/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const id = req.params.id;
     const schema = z.object({
-      stem: z.string().min(5).optional(),
+      stem: z.string().min(1).optional(),
       type: z.enum(['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']).optional(),
       level: z.enum(['NONE','LEVEL1', 'LEVEL2', 'LEVEL3']).optional(),
       difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
       topicId: z.string().optional(),
       marks: z.number().int().positive().optional(),
-      vignetteText: z.string().optional(),
+      orderIndex: z.number().int().nonnegative().optional(),
+      vignetteText: z.string().optional().nullable(),
       imageUrl: z.string().url().optional().nullable(),
       options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional(),
+      // Sub-questions array for bulk update of children
+      subQuestions: z.array(z.object({
+        id: z.string().optional(),
+        stem: z.string().min(1),
+        marks: z.number().int().positive().optional(),
+        options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional()
+      })).optional(),
       qid: z.string().optional().nullable(),
       los: z.string().optional().nullable(),
       traceSection: z.string().optional().nullable(),
@@ -1290,30 +2043,16 @@ export function cmsRouter(prisma) {
     const existing = await prisma.question.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Not found' });
     const newType = payload.type ?? existing.type;
-    let vignetteId = existing.vignetteId ?? null;
-    // Handle vignette changes
-    if (newType === 'VIGNETTE_MCQ') {
-      if (payload.vignetteText) {
-        if (vignetteId) {
-          const v = await prisma.vignette.update({ where: { id: vignetteId }, data: { text: payload.vignetteText } });
-          vignetteId = v.id;
-        } else {
-          const v = await prisma.vignette.create({ data: { text: payload.vignetteText } });
-          vignetteId = v.id;
-        }
-      }
-    } else {
-      vignetteId = null;
-    }
+
     // Update core question fields
-		let pathIds = null;
-		if (typeof payload.topicId !== 'undefined') {
-			pathIds = await deriveQuestionPathIdsFromTopic(payload.topicId);
-			if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) {
-				return res.status(400).json({ error: 'Topic path is incomplete. Ensure topic has module and module has volume.' });
-			}
-		}
-    const updated = await prisma.question.update({
+    let pathIds = null;
+    if (typeof payload.topicId !== 'undefined') {
+      pathIds = await deriveQuestionPathIdsFromTopic(payload.topicId);
+      if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) {
+        return res.status(400).json({ error: 'Topic path is incomplete. Ensure topic has module and module has volume.' });
+      }
+    }
+    await prisma.question.update({
       where: { id },
       data: {
         ...(typeof payload.stem !== 'undefined' ? { stem: payload.stem } : {}),
@@ -1321,40 +2060,140 @@ export function cmsRouter(prisma) {
         ...(typeof payload.level !== 'undefined' ? { level: payload.level } : {}),
         ...(typeof payload.difficulty !== 'undefined' ? { difficulty: payload.difficulty } : {}),
         ...(typeof payload.topicId !== 'undefined' ? { topicId: payload.topicId } : {}),
+        ...(typeof payload.orderIndex !== 'undefined' ? { orderIndex: payload.orderIndex } : {}),
         ...(typeof payload.marks !== 'undefined' ? { marks: payload.marks } : {}),
-        ...(typeof payload.imageUrl !== 'undefined' ? { imageUrl: payload.imageUrl } : {}),
+        ...(typeof payload.vignetteText !== 'undefined' ? { vignetteText: payload.vignetteText || null } : {}),
+        ...(typeof payload.imageUrl !== 'undefined' ? { imageUrl: payload.imageUrl || null } : {}),
         ...(typeof payload.qid !== 'undefined' ? { qid: payload.qid || null } : {}),
         ...(typeof payload.los !== 'undefined' ? { los: payload.los || null } : {}),
         ...(typeof payload.traceSection !== 'undefined' ? { traceSection: payload.traceSection || null } : {}),
         ...(typeof payload.tracePage !== 'undefined' ? { tracePage: payload.tracePage || null } : {}),
         ...(typeof payload.keyFormulas !== 'undefined' ? { keyFormulas: payload.keyFormulas || null } : {}),
         ...(typeof payload.workedSolution !== 'undefined' ? { workedSolution: payload.workedSolution || null } : {}),
-        ...(pathIds ? pathIds : {}),
-        vignetteId
+        ...(pathIds ? pathIds : {})
       }
     });
-    // Options
-    if (newType !== 'CONSTRUCTED_RESPONSE' && payload.options) {
+
+    // Options for standalone MCQ
+    if (newType === 'MCQ' && payload.options) {
       await prisma.mcqOption.deleteMany({ where: { questionId: id } });
       if (payload.options.length) {
         await prisma.mcqOption.createMany({
           data: payload.options.map(o => ({ questionId: id, text: o.text, isCorrect: o.isCorrect }))
         });
       }
-    } else if (newType === 'CONSTRUCTED_RESPONSE') {
-      await prisma.mcqOption.deleteMany({ where: { questionId: id } });
     }
+
+    // Sync sub-questions for vignette/constructed parent
+    if (Array.isArray(payload.subQuestions) && (newType === 'VIGNETTE_MCQ' || newType === 'CONSTRUCTED_RESPONSE')) {
+      const topicId = payload.topicId || existing.topicId;
+      const effPathIds = pathIds || await deriveQuestionPathIdsFromTopic(topicId);
+
+      // Get existing children
+      const existingChildren = await prisma.question.findMany({
+        where: { parentId: id },
+        select: { id: true }
+      });
+      const existingChildIds = new Set(existingChildren.map(c => c.id));
+      const incomingChildIds = new Set(payload.subQuestions.filter(sq => sq.id).map(sq => sq.id));
+
+      // Delete children that are no longer in the list
+      const toDelete = [...existingChildIds].filter(cid => !incomingChildIds.has(cid));
+      if (toDelete.length) {
+        await prisma.mcqOption.deleteMany({ where: { questionId: { in: toDelete } } });
+        await prisma.question.deleteMany({ where: { id: { in: toDelete } } });
+      }
+
+      // Upsert each sub-question
+      for (let i = 0; i < payload.subQuestions.length; i++) {
+        const sq = payload.subQuestions[i];
+        const childType = newType === 'VIGNETTE_MCQ' ? 'MCQ' : 'CONSTRUCTED_RESPONSE';
+        if (sq.id && existingChildIds.has(sq.id)) {
+          // Update existing child
+          await prisma.question.update({
+            where: { id: sq.id },
+            data: {
+              stem: sq.stem,
+              orderIndex: i + 1,
+              marks: sq.marks || 1
+            }
+          });
+          // Replace options
+          if (newType === 'VIGNETTE_MCQ' && sq.options) {
+            await prisma.mcqOption.deleteMany({ where: { questionId: sq.id } });
+            if (sq.options.length) {
+              await prisma.mcqOption.createMany({
+                data: sq.options.map(o => ({ questionId: sq.id, text: o.text, isCorrect: o.isCorrect }))
+              });
+            }
+          }
+        } else {
+          // Create new child
+          const child = await prisma.question.create({
+            data: {
+              stem: sq.stem,
+              type: childType,
+              level: payload.level || existing.level,
+              difficulty: payload.difficulty || existing.difficulty,
+              topicId,
+              ...effPathIds,
+              parentId: id,
+              orderIndex: i + 1,
+              marks: sq.marks || 1
+            }
+          });
+          if (newType === 'VIGNETTE_MCQ' && sq.options && sq.options.length) {
+            await prisma.mcqOption.createMany({
+              data: sq.options.map(o => ({ questionId: child.id, text: o.text, isCorrect: o.isCorrect }))
+            });
+          }
+        }
+      }
+    }
+
     const full = await prisma.question.findUnique({
       where: { id },
-      include: { options: true, vignette: true }
+      include: {
+        options: true,
+        children: {
+          orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+          include: { options: true }
+        }
+      }
     });
     return res.json({ question: full });
   });
   router.delete('/questions/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const id = req.params.id;
-    await prisma.mcqOption.deleteMany({ where: { questionId: id } });
+    const existing = await prisma.question.findUnique({ where: { id }, select: { id: true, parentId: true } });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    // Collect all IDs to delete (self + all children recursively via Prisma onDelete: Cascade)
+    const children = await prisma.question.findMany({ where: { parentId: id }, select: { id: true } });
+    const allIds = [id, ...children.map(c => c.id)];
+
+    // Delete options, exam links, answers for all affected questions
+    await prisma.mcqOption.deleteMany({ where: { questionId: { in: allIds } } });
+    // Remove from exams
+    await prisma.examQuestion.deleteMany({ where: { questionId: { in: allIds } } }).catch(() => {});
+    await prisma.examAnswer.deleteMany({ where: { questionId: { in: allIds } } }).catch(() => {});
+    // Delete children first, then parent
+    if (children.length) {
+      await prisma.question.deleteMany({ where: { parentId: id } });
+    }
     await prisma.question.delete({ where: { id } });
-    return res.json({ ok: true });
+    return res.json({ ok: true, deletedCount: allIds.length });
+  });
+
+  // Fetch sub-questions (children) of a parent question
+  router.get('/questions/:id/children', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const parentId = req.params.id;
+    const questions = await prisma.question.findMany({
+      where: { parentId },
+      orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+      include: { options: true }
+    });
+    return res.json({ questions });
   });
 
 	// Revision summaries
