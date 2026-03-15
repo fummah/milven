@@ -759,9 +759,21 @@ export function ExamTake() {
 			await api.post(`/api/exams/attempts/${attemptId}/submit`);
 			const res = await api.get(`/api/exams/attempts/${attemptId}`);
 			setAttempt(res.data.attempt);
-			// Modal removed per user request - results already shown in main view
-			// setResultAttempt(res.data.attempt);
-			// setResultModalOpen(true);
+
+			// If this is a mock exam session, complete the session
+			const mockExamId = searchParams.get('mockExamId');
+			const mockSession = searchParams.get('session');
+			if (mockExamId && mockSession) {
+				try {
+					const score = res.data.attempt?.score ?? null;
+					await api.post(`/api/exams/mock/${mockExamId}/complete-session`, {
+						session: parseInt(mockSession, 10),
+						score
+					});
+				} catch {
+					// Silent fail - mock status will be stale but not blocking
+				}
+			}
 		} catch {
 			submitRef.current = false;
 		}

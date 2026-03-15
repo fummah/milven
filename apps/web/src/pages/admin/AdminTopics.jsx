@@ -495,7 +495,7 @@ export function AdminTopics() {
                   style={{ minWidth: 220 }}
                   options={[
                     { label: 'All volumes', value: '' },
-                    ...(volumes || []).map(v => ({ value: v.id, label: `${v.name}` }))
+                    ...(volumes || []).map(v => ({ value: v.id, label: v.description ? `${v.description} (${v.name})` : v.name }))
                   ]}
                   showSearch
                   optionFilterProp="label"
@@ -721,7 +721,7 @@ export function AdminTopics() {
           <Form.Item name="volumeId" label="Volume" rules={[{ required: true, message: 'Select a volume' }]}>
             <Select
               placeholder="Select a volume"
-              options={(volumes || []).map(v => ({ value: v.id, label: v.name }))}
+              options={(volumes || []).map(v => ({ value: v.id, label: v.description ? `${v.description} (${v.name})` : v.name }))}
               showSearch
               optionFilterProp="label"
             />

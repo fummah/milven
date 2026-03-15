@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Layout, Menu, Typography, Avatar, Grid, Drawer, Button } from 'antd';
-import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined, TeamOutlined } from '@ant-design/icons';
+import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined, TeamOutlined, ExperimentOutlined } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const { Sider, Content } = Layout;
@@ -34,6 +34,7 @@ const menuItems = [
   { key: 'student-mistakes', icon: modernBadge(<ExclamationCircleOutlined />, 'linear-gradient(135deg, #ef4444, #dc2626)'), label: <Link to="/student/mistakes">My Mistakes</Link> },
   { key: 'student-revision', icon: modernBadge(<StarOutlined />, 'linear-gradient(135deg, #eab308, #ca8a04)'), label: <Link to="/student/revision">Revision List</Link> },
   { key: 'student-comparison', icon: modernBadge(<TeamOutlined />, 'linear-gradient(135deg, #0ea5e9, #2563eb)'), label: <Link to="/student/comparison">Compare With Peers</Link> },
+  { key: 'student-mock-exams', icon: modernBadge(<ExperimentOutlined />, 'linear-gradient(135deg, #6366f1, #4338ca)'), label: <Link to="/student/mock-exams">Mock Exams</Link> },
   { key: 'student-billing', icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'), label: <Link to="/student/billing">Billing</Link> },
   { key: 'student-invoices', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/student/invoices">Invoices</Link> },
   { key: 'student-account', icon: modernBadge(<UserOutlined />, 'linear-gradient(135deg, #64748b, #475569)'), label: <Link to="/student/account">Account</Link> }
@@ -178,7 +179,7 @@ export default function StudentLayout() {
                 title={
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <Avatar style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }} icon={<UserOutlined />} />
-                    <span>Student Menu</span>
+                    <span>Candidate Menu</span>
                   </div>
                 }
                 placement="left"

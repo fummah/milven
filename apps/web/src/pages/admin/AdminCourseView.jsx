@@ -72,6 +72,58 @@ export function AdminCourseView() {
   const [questionForm] = Form.useForm();
   const [submittingQuestion, setSubmittingQuestion] = useState(false);
   const [currentVolumePage, setCurrentVolumePage] = useState(1);
+  const [mockWeights, setMockWeights] = useState([]);
+  const [mockWeightsLoading, setMockWeightsLoading] = useState(false);
+  const [mockWeightsSaving, setMockWeightsSaving] = useState(false);
+
+  const loadMockWeights = async () => {
+    if (!id) return;
+    setMockWeightsLoading(true);
+    try {
+      const { data } = await api.get(`/api/exams/mock/weights/${id}`);
+      setMockWeights(data.weights || []);
+    } catch { setMockWeights([]); }
+    setMockWeightsLoading(false);
+  };
+
+  const saveMockWeights = async () => {
+    setMockWeightsSaving(true);
+    try {
+      const payload = mockWeights.map(w => ({
+        volumeId: w.volumeId,
+        session: w.session,
+        weightMin: w.weightMin,
+        weightMax: w.weightMax
+      }));
+      const { data } = await api.put(`/api/exams/mock/weights/${id}`, { weights: payload });
+      setMockWeights(data.weights || []);
+      message.success('Mock exam weights saved');
+    } catch (err) {
+      message.error(err?.response?.data?.error || 'Failed to save weights');
+    }
+    setMockWeightsSaving(false);
+  };
+
+  const addMockWeightRow = () => {
+    const vols = detail?.volumes || [];
+    if (vols.length === 0) { message.warning('No volumes linked to this course'); return; }
+    setMockWeights(prev => [...prev, { id: `new-${Date.now()}`, volumeId: vols[0].id, session: 1, weightMin: 5, weightMax: 10, volume: vols[0] }]);
+  };
+
+  const removeMockWeightRow = (idx) => {
+    setMockWeights(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const updateMockWeight = (idx, field, value) => {
+    setMockWeights(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: value };
+      if (field === 'volumeId') {
+        next[idx].volume = (detail?.volumes || []).find(v => v.id === value) || null;
+      }
+      return next;
+    });
+  };
 
   const addQuiz = (topic) => {
     // Navigate to exam builder; could pass query params in the future
@@ -536,7 +588,7 @@ export function AdminCourseView() {
         {course && (
           <Tabs
             activeKey={activeTabKey}
-            onChange={setActiveTabKey}
+            onChange={(key) => { setActiveTabKey(key); if (key === 'mock') loadMockWeights(); }}
             items={[
               {
                 key: 'general',
@@ -557,7 +609,7 @@ export function AdminCourseView() {
                     <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#e6fffb', color: '#13c2c2', border: '1px solid rgba(0,0,0,0.08)', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.6)', fontSize: 14 }}>
                       <TeamOutlined />
                     </span>
-                    <span>Enrolled Students</span>
+                    <span>Enrolled Candidates</span>
                   </Space>
                 ),
                 children: (
@@ -950,6 +1002,126 @@ export function AdminCourseView() {
                       scroll={isMobile ? { x: 'max-content' } : undefined}
                       pagination={false}
                     />
+                  </Space>
+                )
+              },
+              {
+                key: 'mock',
+                label: (
+                  <Space size={6}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#f0f5ff', color: '#2f54eb', border: '1px solid rgba(0,0,0,0.08)', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.6)', fontSize: 14 }}>
+                      <ExperimentOutlined />
+                    </span>
+                    <span>Mock Exam Weights</span>
+                  </Space>
+                ),
+                children: (
+                  <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                    <div className="flex items-center justify-between flex-wrap gap-3">
+                      <div>
+                        <Typography.Title level={5} style={{ margin: 0 }}>Topic Weight Configuration</Typography.Title>
+                        <Typography.Text type="secondary" className="text-xs">
+                          Define how questions are distributed across volumes in mock exams. Weights are percentages (min–max range). Each row maps a volume to a session.
+                        </Typography.Text>
+                      </div>
+                      <Space>
+                        <Button icon={<PlusOutlined />} onClick={addMockWeightRow}>Add Row</Button>
+                        <Button type="primary" loading={mockWeightsSaving} onClick={saveMockWeights} style={{ background: '#2f54eb', borderColor: '#2f54eb' }}>Save Weights</Button>
+                      </Space>
+                    </div>
+                    {mockWeightsLoading ? (
+                      <div className="text-center py-8"><Typography.Text type="secondary">Loading...</Typography.Text></div>
+                    ) : mockWeights.length === 0 ? (
+                      <Card className="text-center py-8" style={{ borderRadius: 12, background: '#fafafa' }}>
+                        <Typography.Text type="secondary">No topic weights configured yet. Click "Add Row" to start.</Typography.Text>
+                      </Card>
+                    ) : (
+                      <Table
+                        rowKey={(_, idx) => idx}
+                        size="small"
+                        dataSource={mockWeights}
+                        pagination={false}
+                        columns={[
+                          {
+                            title: 'Volume',
+                            dataIndex: 'volumeId',
+                            render: (val, _, idx) => (
+                              <Select
+                                size="small"
+                                value={val}
+                                style={{ minWidth: 200 }}
+                                onChange={(v) => updateMockWeight(idx, 'volumeId', v)}
+                                options={(detail?.volumes || []).map(v => ({ value: v.id, label: v.description ? `${v.description} (${v.name})` : v.name }))}
+                              />
+                            )
+                          },
+                          {
+                            title: 'Session',
+                            dataIndex: 'session',
+                            width: 100,
+                            render: (val, _, idx) => (
+                              <Select
+                                size="small"
+                                value={val}
+                                style={{ width: 90 }}
+                                onChange={(v) => updateMockWeight(idx, 'session', v)}
+                                options={[{ value: 1, label: 'Session 1' }, { value: 2, label: 'Session 2' }]}
+                              />
+                            )
+                          },
+                          {
+                            title: 'Weight Min (%)',
+                            dataIndex: 'weightMin',
+                            width: 120,
+                            render: (val, _, idx) => (
+                              <Input
+                                size="small"
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={val}
+                                onChange={(e) => updateMockWeight(idx, 'weightMin', Number(e.target.value))}
+                                style={{ width: 80 }}
+                              />
+                            )
+                          },
+                          {
+                            title: 'Weight Max (%)',
+                            dataIndex: 'weightMax',
+                            width: 120,
+                            render: (val, _, idx) => (
+                              <Input
+                                size="small"
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={val}
+                                onChange={(e) => updateMockWeight(idx, 'weightMax', Number(e.target.value))}
+                                style={{ width: 80 }}
+                              />
+                            )
+                          },
+                          {
+                            title: '',
+                            width: 50,
+                            render: (_, __, idx) => (
+                              <Button
+                                type="text"
+                                danger
+                                size="small"
+                                icon={<DeleteOutlined />}
+                                onClick={() => removeMockWeightRow(idx)}
+                              />
+                            )
+                          }
+                        ]}
+                      />
+                    )}
+                    <Card size="small" style={{ borderRadius: 10, background: '#f0f5ff', borderColor: '#d6e4ff' }}>
+                      <Typography.Text className="text-xs text-slate-600">
+                        <strong>CFA Mock Exam Defaults:</strong> Level 1 — 2 sessions × 90 MCQ × 135 min. Level 2 — 2 sessions × 44 Vignette MCQ × 132 min. Level 3 — Session 1: Constructed Response (132 min), Session 2: Vignette MCQ (132 min). 30-minute break between sessions.
+                      </Typography.Text>
+                    </Card>
                   </Space>
                 )
               }

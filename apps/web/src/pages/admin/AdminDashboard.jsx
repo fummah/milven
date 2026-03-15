@@ -246,7 +246,7 @@ export function AdminDashboard() {
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <StatCard 
-            title="Students"
+            title="Candidates"
             value={counts.students}
             icon={<TeamOutlined style={{ fontSize: 22, color: '#8b5cf6' }} />}
             iconBg="linear-gradient(135deg, #ede9fe, #ddd6fe)"

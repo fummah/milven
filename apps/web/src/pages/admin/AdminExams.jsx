@@ -372,7 +372,7 @@ export function AdminExams() {
   const studentColumns = [
     ...columns.filter(c => c.title !== 'Creator'),
     {
-      title: 'Student',
+      title: 'Candidate',
       width: 180,
       render: (_, exam) => exam.createdBy ? (exam.createdBy.name || exam.createdBy.email || 'Unknown') : '—'
     },
@@ -388,7 +388,7 @@ export function AdminExams() {
 
   const attemptColumns = [
     {
-      title: 'Student',
+      title: 'Candidate',
       dataIndex: ['user', 'name'],
       key: 'student',
       width: 220,
@@ -591,7 +591,7 @@ export function AdminExams() {
                     pagination={{ pageSize: 15, style: { padding: '16px 0' } }}
                     columns={[
                       { title: 'Exam', dataIndex: 'examName', key: 'examName', width: 200, render: (v) => v || '—' },
-                      { title: 'Student', dataIndex: ['user', 'name'], key: 'user', width: 200, render: (_, r) => r?.user?.name || r?.user?.email || '—' },
+                      { title: 'Candidate', dataIndex: ['user', 'name'], key: 'user', width: 200, render: (_, r) => r?.user?.name || r?.user?.email || '—' },
                       { title: 'Submitted', dataIndex: 'submittedAt', key: 'submittedAt', width: 160, render: (v) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—' },
                       { title: 'To mark', dataIndex: 'pendingCount', key: 'pendingCount', width: 100, render: (c) => <Tag color="orange">{c ?? 0} question(s)</Tag> },
                       {
@@ -640,7 +640,7 @@ export function AdminExams() {
                     pagination={{ pageSize: 15, style: { padding: '16px 0' } }}
                     columns={[
                       { title: 'Exam', dataIndex: 'examName', key: 'examName', width: 200, render: (v) => v || '—' },
-                      { title: 'Student', dataIndex: ['user', 'name'], key: 'user', width: 200, render: (_, r) => r?.user?.name || r?.user?.email || '—' },
+                      { title: 'Candidate', dataIndex: ['user', 'name'], key: 'user', width: 200, render: (_, r) => r?.user?.name || r?.user?.email || '—' },
                       { title: 'Submitted', dataIndex: 'submittedAt', key: 'submittedAt', width: 160, render: (v) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—' },
                       { title: 'Score', dataIndex: 'scorePercent', key: 'scorePercent', width: 100, render: (v) => (v != null ? `${Math.round(v)}%` : '—') },
                       {
@@ -898,7 +898,7 @@ export function AdminExams() {
               <Descriptions.Item label="Active">{previewExam.active ? <Tag color="green">Yes</Tag> : <Tag>No</Tag>}</Descriptions.Item>
               <Descriptions.Item label="Created By" span={2}>
                 {previewExam.createdBy ? (
-                  <Tag color="orange">Student: {previewExam.createdBy.name || previewExam.createdBy.email || 'Unknown'}</Tag>
+                  <Tag color="orange">Candidate: {previewExam.createdBy.name || previewExam.createdBy.email || 'Unknown'}</Tag>
                 ) : (
                   <Tag color="blue">Admin</Tag>
                 )}

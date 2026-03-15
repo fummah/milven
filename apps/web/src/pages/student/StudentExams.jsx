@@ -778,7 +778,7 @@ export function StudentExams() {
                 <Select
                   allowClear
                   placeholder="Select volume"
-                  options={volumes.map((volume) => ({ value: volume.id, label: volume.name }))}
+                  options={volumes.map((volume) => ({ value: volume.id, label: volume.description ? `${volume.description} (${volume.name})` : volume.name }))}
                   disabled={volumes.length === 0}
                   onChange={() => {
                     customExamForm.setFieldsValue({ topicIds: undefined });

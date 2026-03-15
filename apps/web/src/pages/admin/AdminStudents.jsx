@@ -58,7 +58,7 @@ export function AdminStudents() {
         country: values.country || undefined,
         courseId: values.courseId
       });
-      message.success('Student created');
+      message.success('Candidate created');
       setOpen(false);
       form.resetFields();
       fetchUsers();
@@ -68,7 +68,7 @@ export function AdminStudents() {
         navigate(`/admin/students/${newId}`);
       }
     } catch {
-      message.error('Failed to create student');
+      message.error('Failed to create candidate');
     } finally {
       setCreating(false);
     }
@@ -105,7 +105,7 @@ export function AdminStudents() {
 
   const columns = [
     { 
-      title: 'Student', 
+      title: 'Candidate', 
       render: (_, record) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="icon-badge-sm icon-badge-purple">
@@ -172,7 +172,7 @@ export function AdminStudents() {
               <EditOutlined />
             </button>
           </Tooltip>
-          <Popconfirm title="Delete this student?" onConfirm={() => removeUser(record)}>
+          <Popconfirm title="Delete this candidate?" onConfirm={() => removeUser(record)}>
             <Tooltip title="Delete">
               <button className="action-btn action-btn-delete">
                 <DeleteOutlined />
@@ -187,7 +187,7 @@ export function AdminStudents() {
   const removeUser = async (row) => {
     try {
       await api.delete(`/api/users/${row.id}`);
-      message.success('Student deleted');
+      message.success('Candidate deleted');
       fetchUsers();
     } catch {
       message.error('Delete failed');
@@ -200,10 +200,10 @@ export function AdminStudents() {
       <div className="page-header">
         <div>
           <Typography.Title level={2} className="page-header-title">
-            Students
+            Candidates
           </Typography.Title>
           <div className="page-header-subtitle">
-            Manage student accounts, enrollments, and subscriptions
+            Manage candidate accounts, enrollments, and subscriptions
           </div>
         </div>
         <Button 
@@ -220,7 +220,7 @@ export function AdminStudents() {
             fontWeight: 600
           }}
         >
-          Add Student
+          Add Candidate
         </Button>
       </div>
 
@@ -288,7 +288,7 @@ export function AdminStudents() {
             <div className="icon-badge-sm icon-badge-orange">
               <EditOutlined />
             </div>
-            <span>Edit Student</span>
+            <span>Edit Candidate</span>
           </div>
         }
         open={editOpen}
@@ -318,7 +318,7 @@ export function AdminStudents() {
               courseId: values.courseId,
               password: values.password || undefined
             });
-            message.success('Student updated');
+            message.success('Candidate updated');
             setEditOpen(false);
             setEditing(null);
             fetchUsers();
@@ -381,13 +381,13 @@ export function AdminStudents() {
             <div className="icon-badge-sm icon-badge-green">
               <UserAddOutlined />
             </div>
-            <span>Create New Student</span>
+            <span>Create New Candidate</span>
           </div>
         }
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => form.submit()}
-        okText="Create Student"
+        okText="Create Candidate"
         width={720}
         confirmLoading={creating}
         className="modern-modal"
@@ -412,7 +412,7 @@ export function AdminStudents() {
           <Row gutter={12}>
             <Col xs={24} md={12}>
               <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email' }]}>
-                <Input placeholder="student@example.com" />
+                <Input placeholder="candidate@example.com" />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

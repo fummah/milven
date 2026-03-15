@@ -265,7 +265,7 @@ export function AdminQuestions() {
 		return volumeIds
 			.map((volumeId) => {
 				const volume = (volumes || []).find((v) => v.id === volumeId);
-				return volume ? { value: volume.id, label: volume.name } : null;
+				return volume ? { value: volume.id, label: volume.description ? `${volume.description} (${volume.name})` : volume.name } : null;
 			})
 			.filter(Boolean);
 	}, [topics, volumes, selectedDrawerCourseId]);
@@ -1118,7 +1118,7 @@ export function AdminQuestions() {
 									options={(aiGenerateCourseId
 										? (volumes || []).filter(v => (v.courseLinks || []).some(l => l.courseId === aiGenerateCourseId))
 										: (volumes || [])
-									).map(v => ({ value: v.id, label: v.name }))}
+									).map(v => ({ value: v.id, label: v.description ? `${v.description} (${v.name})` : v.name }))}
 									onChange={(v) => {
 										setAiGenerateVolumeId(v || '');
 										aiForm.setFieldsValue({ topicIds: undefined, topicId: undefined });

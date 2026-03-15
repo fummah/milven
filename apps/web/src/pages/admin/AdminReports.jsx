@@ -131,7 +131,7 @@ export function AdminReports() {
         <Col xs={12} md={6}>
           <StatCard 
             icon={<UserOutlined />} 
-            title="Students" 
+            title="Candidates" 
             value={kpi.students} 
             gradient="linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)" 
           />

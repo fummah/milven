@@ -1337,7 +1337,7 @@ export function examsRouter(prisma) {
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
 
 		try {
-			// Get unreviewedmistakes
+			// Get unreviewed mistakes
 			const mistakes = await prisma.mistakeEntry.findMany({
 				where: { userId: req.user.id, retested: false },
 				select: { questionId: true }
@@ -1347,8 +1347,38 @@ export function examsRouter(prisma) {
 				return res.status(400).json({ error: 'No mistakes to retest' });
 			}
 
-			const questionCount = parse.data.questionCount || Math.min(mistakes.length, 20);
-			const selectedIds = shuffleInPlace(mistakes.map(m => m.questionId)).slice(0, questionCount);
+			// Validate question IDs still exist and fetch parent info
+			const mistakeQIds = mistakes.map(m => m.questionId);
+			const existingQuestions = await prisma.question.findMany({
+				where: { id: { in: mistakeQIds } },
+				select: { id: true, parentId: true, type: true }
+			});
+			const validQIds = existingQuestions.map(q => q.id);
+			if (validQIds.length === 0) {
+				return res.status(400).json({ error: 'No valid questions found for retest' });
+			}
+
+			const questionCount = parse.data.questionCount || Math.min(validQIds.length, 20);
+			const selectedIds = shuffleInPlace([...validQIds]).slice(0, questionCount);
+
+			// For vignette/bundle children, also include sibling questions under the same parent
+			const parentIds = new Set();
+			const childIds = new Set(selectedIds);
+			for (const q of existingQuestions) {
+				if (selectedIds.includes(q.id) && q.parentId) {
+					parentIds.add(q.parentId);
+				}
+			}
+			// Include all children of selected parents for complete vignette rendering
+			if (parentIds.size > 0) {
+				const siblings = await prisma.question.findMany({
+					where: { parentId: { in: Array.from(parentIds) } },
+					select: { id: true },
+					orderBy: { orderIndex: 'asc' }
+				});
+				for (const s of siblings) childIds.add(s.id);
+			}
+			const finalIds = Array.from(childIds);
 
 			// Create exam
 			const exam = await prisma.exam.create({
@@ -1364,10 +1394,10 @@ export function examsRouter(prisma) {
 
 			// Link questions
 			await prisma.examQuestion.createMany({
-				data: selectedIds.map((qid, idx) => ({ examId: exam.id, questionId: qid, order: idx + 1 }))
+				data: finalIds.map((qid, idx) => ({ examId: exam.id, questionId: qid, order: idx + 1 }))
 			});
 
-			return res.status(201).json({ examId: exam.id, questionCount: selectedIds.length });
+			return res.status(201).json({ examId: exam.id, questionCount: finalIds.length });
 		} catch (err) {
 			console.error('Retest creation error:', err);
 			return res.status(500).json({ error: 'Failed to create retest exam' });
@@ -1891,6 +1921,439 @@ export function examsRouter(prisma) {
 		} catch (err) {
 			console.error('Analytics error:', err);
 			return res.status(500).json({ error: 'Failed to compute analytics' });
+		}
+	});
+
+	// ==========================================
+	// MOCK EXAM ROUTES
+	// ==========================================
+
+	// CFA default session configs per level
+	const MOCK_DEFAULTS = {
+		LEVEL1: { session1Minutes: 135, session2Minutes: 135, breakMinutes: 30, questionsPerSession: 90, questionType: 'MCQ' },
+		LEVEL2: { session1Minutes: 132, session2Minutes: 132, breakMinutes: 30, questionsPerSession: 44, questionType: 'VIGNETTE_MCQ' },
+		LEVEL3: { session1Minutes: 132, session2Minutes: 132, breakMinutes: 30, session1Type: 'CONSTRUCTED_RESPONSE', session2Type: 'VIGNETTE_MCQ', session1Questions: 22, session2Questions: 33 }
+	};
+
+	// Admin: Get topic weights for a course
+	router.get('/mock/weights/:courseId', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		try {
+			const weights = await prisma.mockExamTopicWeight.findMany({
+				where: { courseId: req.params.courseId },
+				include: { volume: true },
+				orderBy: [{ session: 'asc' }, { createdAt: 'asc' }]
+			});
+			return res.json({ weights });
+		} catch (err) {
+			return res.status(500).json({ error: 'Failed to fetch weights' });
+		}
+	});
+
+	// Admin: Save/replace topic weights for a course
+	router.put('/mock/weights/:courseId', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const weightSchema = z.object({
+			weights: z.array(z.object({
+				volumeId: z.string(),
+				session: z.number().int().min(1).max(2),
+				weightMin: z.number().min(0).max(100),
+				weightMax: z.number().min(0).max(100)
+			}))
+		});
+		const parse = weightSchema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		try {
+			const { courseId } = req.params;
+			// Delete existing and recreate
+			await prisma.mockExamTopicWeight.deleteMany({ where: { courseId } });
+			if (parse.data.weights.length > 0) {
+				await prisma.mockExamTopicWeight.createMany({
+					data: parse.data.weights.map(w => ({
+						courseId,
+						volumeId: w.volumeId,
+						session: w.session,
+						weightMin: w.weightMin,
+						weightMax: w.weightMax
+					}))
+				});
+			}
+			const weights = await prisma.mockExamTopicWeight.findMany({
+				where: { courseId },
+				include: { volume: true },
+				orderBy: [{ session: 'asc' }, { createdAt: 'asc' }]
+			});
+			return res.json({ weights });
+		} catch (err) {
+			console.error('Save weights error:', err);
+			return res.status(500).json({ error: 'Failed to save weights' });
+		}
+	});
+
+	// Student: Get mock exam eligible courses (enrolled courses that have topic weights configured)
+	router.get('/mock/eligible-courses', requireAuth(), async (req, res) => {
+		try {
+			const enrollments = await prisma.enrollment.findMany({
+				where: {
+					userId: req.user.id,
+					status: { not: 'CANCELLED' },
+					course: { active: true }
+				},
+				include: { course: true }
+			});
+			const courseIds = enrollments.map(e => e.courseId);
+			// Only include courses that have topic weights configured
+			const coursesWithWeights = await prisma.mockExamTopicWeight.findMany({
+				where: { courseId: { in: courseIds } },
+				select: { courseId: true },
+				distinct: ['courseId']
+			});
+			const eligibleIds = new Set(coursesWithWeights.map(c => c.courseId));
+			const courses = enrollments
+				.filter(e => eligibleIds.has(e.courseId))
+				.map(e => ({
+					...e.course,
+					enrollmentStatus: e.status
+				}));
+			return res.json({ courses });
+		} catch (err) {
+			return res.status(500).json({ error: 'Failed to fetch eligible courses' });
+		}
+	});
+
+	// Student: Create a mock exam
+	router.post('/mock/create', requireAuth(), async (req, res) => {
+		const schema = z.object({ courseId: z.string() });
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		try {
+			const { courseId } = parse.data;
+			const course = await prisma.course.findUnique({ where: { id: courseId } });
+			if (!course) return res.status(404).json({ error: 'Course not found' });
+
+			// Check enrollment
+			const enrolled = await prisma.enrollment.findUnique({
+				where: { userId_courseId: { userId: req.user.id, courseId } }
+			});
+			if (!enrolled || enrolled.status === 'CANCELLED') {
+				return res.status(403).json({ error: 'Not enrolled in this course' });
+			}
+
+			// Check no in-progress mock exists
+			const existing = await prisma.mockExam.findFirst({
+				where: { userId: req.user.id, courseId, status: { notIn: ['COMPLETED', 'CANCELLED'] } }
+			});
+			if (existing) return res.status(400).json({ error: 'You already have an active mock exam for this course', mockExamId: existing.id });
+
+			const level = course.level || 'LEVEL1';
+			const defaults = MOCK_DEFAULTS[level] || MOCK_DEFAULTS.LEVEL1;
+
+			// Get topic weights
+			const weights = await prisma.mockExamTopicWeight.findMany({
+				where: { courseId },
+				include: { volume: { include: { modules: { include: { topics: true } } } } }
+			});
+			if (weights.length === 0) return res.status(400).json({ error: 'Mock exam topic weights not configured for this course' });
+
+			// Build topic pool: map volumeId -> array of topic IDs
+			const volumeTopicMap = {};
+			for (const w of weights) {
+				const topicIds = (w.volume?.modules || []).flatMap(m => (m.topics || []).map(t => t.id));
+				volumeTopicMap[w.volumeId] = topicIds;
+			}
+
+			// Select questions per session based on weights
+			async function selectQuestionsForSession(sessionNum, totalQuestions, questionType) {
+				const sessionWeights = weights.filter(w => w.session === sessionNum);
+				if (sessionWeights.length === 0) return [];
+
+				const allQuestionIds = [];
+				for (const sw of sessionWeights) {
+					const midWeight = (sw.weightMin + sw.weightMax) / 2 / 100;
+					const targetCount = Math.max(1, Math.round(totalQuestions * midWeight));
+					const topicIds = volumeTopicMap[sw.volumeId] || [];
+					if (topicIds.length === 0) continue;
+
+					// Fetch questions from this volume's topics
+					let where = { topicId: { in: topicIds }, parentId: null };
+					if (questionType === 'MCQ') {
+						where.type = 'MCQ';
+					} else if (questionType === 'VIGNETTE_MCQ') {
+						where.type = 'VIGNETTE_MCQ';
+					} else if (questionType === 'CONSTRUCTED_RESPONSE') {
+						where.OR = [{ type: 'CONSTRUCTED_RESPONSE', parentId: null }];
+					}
+
+					const questions = await prisma.question.findMany({
+						where,
+						select: { id: true, type: true },
+						take: targetCount * 3 // fetch extra for shuffling
+					});
+
+					// For vignettes/bundles, each parent is one "logical" question
+					shuffleInPlace(questions);
+					const selected = questions.slice(0, targetCount);
+					for (const q of selected) {
+						allQuestionIds.push(q.id);
+						// For vignette/bundle parents, also add children
+						if (q.type === 'VIGNETTE_MCQ' || q.type === 'CONSTRUCTED_RESPONSE') {
+							const children = await prisma.question.findMany({
+								where: { parentId: q.id },
+								select: { id: true },
+								orderBy: { orderIndex: 'asc' }
+							});
+							for (const c of children) allQuestionIds.push(c.id);
+						}
+					}
+				}
+				return allQuestionIds;
+			}
+
+			let s1Ids, s2Ids, s1Minutes, s2Minutes;
+
+			if (level === 'LEVEL3') {
+				s1Ids = await selectQuestionsForSession(1, defaults.session1Questions, defaults.session1Type);
+				s2Ids = await selectQuestionsForSession(2, defaults.session2Questions, defaults.session2Type);
+				s1Minutes = defaults.session1Minutes;
+				s2Minutes = defaults.session2Minutes;
+			} else {
+				s1Ids = await selectQuestionsForSession(1, defaults.questionsPerSession, defaults.questionType);
+				s2Ids = await selectQuestionsForSession(2, defaults.questionsPerSession, defaults.questionType);
+				s1Minutes = defaults.session1Minutes;
+				s2Minutes = defaults.session2Minutes;
+			}
+
+			if (s1Ids.length === 0 && s2Ids.length === 0) {
+				return res.status(400).json({ error: 'Not enough questions in the question bank to create a mock exam' });
+			}
+
+			// Create session 1 exam
+			const exam1 = s1Ids.length > 0 ? await prisma.exam.create({
+				data: {
+					name: `${course.name} Mock - Session 1`,
+					level: course.level,
+					timeLimitMinutes: s1Minutes,
+					type: 'MOCK',
+					active: true,
+					createdById: req.user.id
+				}
+			}) : null;
+			if (exam1 && s1Ids.length > 0) {
+				await prisma.examQuestion.createMany({
+					data: s1Ids.map((qid, idx) => ({ examId: exam1.id, questionId: qid, order: idx + 1 }))
+				});
+			}
+
+			// Create session 2 exam
+			const exam2 = s2Ids.length > 0 ? await prisma.exam.create({
+				data: {
+					name: `${course.name} Mock - Session 2`,
+					level: course.level,
+					timeLimitMinutes: s2Minutes,
+					type: 'MOCK',
+					active: true,
+					createdById: req.user.id
+				}
+			}) : null;
+			if (exam2 && s2Ids.length > 0) {
+				await prisma.examQuestion.createMany({
+					data: s2Ids.map((qid, idx) => ({ examId: exam2.id, questionId: qid, order: idx + 1 }))
+				});
+			}
+
+			// Create MockExam parent record
+			const mockExam = await prisma.mockExam.create({
+				data: {
+					userId: req.user.id,
+					courseId,
+					session1ExamId: exam1?.id || null,
+					session2ExamId: exam2?.id || null,
+					breakMinutes: defaults.breakMinutes,
+					session1Minutes: s1Minutes,
+					session2Minutes: s2Minutes,
+					status: 'PENDING'
+				}
+			});
+
+			return res.status(201).json({
+				mockExam,
+				session1QuestionCount: s1Ids.length,
+				session2QuestionCount: s2Ids.length
+			});
+		} catch (err) {
+			console.error('Mock exam creation error:', err);
+			return res.status(500).json({ error: 'Failed to create mock exam' });
+		}
+	});
+
+	// Student: Get my mock exams
+	router.get('/mock/me', requireAuth(), async (req, res) => {
+		try {
+			const mockExams = await prisma.mockExam.findMany({
+				where: { userId: req.user.id },
+				include: {
+					course: { select: { id: true, name: true, level: true } },
+					session1Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true } } } },
+					session2Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true } } } }
+				},
+				orderBy: { createdAt: 'desc' }
+			});
+			return res.json({ mockExams });
+		} catch (err) {
+			return res.status(500).json({ error: 'Failed to fetch mock exams' });
+		}
+	});
+
+	// Student: Get single mock exam detail
+	router.get('/mock/:mockExamId', requireAuth(), async (req, res) => {
+		try {
+			const mockExam = await prisma.mockExam.findUnique({
+				where: { id: req.params.mockExamId },
+				include: {
+					course: { select: { id: true, name: true, level: true } },
+					session1Exam: {
+						select: {
+							id: true, name: true, timeLimitMinutes: true,
+							examQuestions: { select: { questionId: true } },
+							attempts: { where: { userId: req.user.id }, select: { id: true, status: true, score: true, submittedAt: true }, orderBy: { createdAt: 'desc' }, take: 1 }
+						}
+					},
+					session2Exam: {
+						select: {
+							id: true, name: true, timeLimitMinutes: true,
+							examQuestions: { select: { questionId: true } },
+							attempts: { where: { userId: req.user.id }, select: { id: true, status: true, score: true, submittedAt: true }, orderBy: { createdAt: 'desc' }, take: 1 }
+						}
+					}
+				}
+			});
+			if (!mockExam || mockExam.userId !== req.user.id) return res.status(404).json({ error: 'Mock exam not found' });
+			return res.json({ mockExam });
+		} catch (err) {
+			return res.status(500).json({ error: 'Failed to fetch mock exam' });
+		}
+	});
+
+	// Student: Start a mock exam session (advances status)
+	router.post('/mock/:mockExamId/start-session', requireAuth(), async (req, res) => {
+		const sessionSchema = z.object({ session: z.number().int().min(1).max(2) });
+		const parse = sessionSchema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		try {
+			const mockExam = await prisma.mockExam.findUnique({ where: { id: req.params.mockExamId } });
+			if (!mockExam || mockExam.userId !== req.user.id) return res.status(404).json({ error: 'Mock exam not found' });
+
+			const { session } = parse.data;
+			const examId = session === 1 ? mockExam.session1ExamId : mockExam.session2ExamId;
+			if (!examId) return res.status(400).json({ error: `Session ${session} not available` });
+
+			// Validate session order
+			if (session === 1 && mockExam.status !== 'PENDING' && mockExam.status !== 'SESSION1') {
+				return res.status(400).json({ error: 'Session 1 already completed' });
+			}
+			if (session === 2 && mockExam.status !== 'BREAK' && mockExam.status !== 'SESSION2') {
+				return res.status(400).json({ error: 'Complete Session 1 and break first' });
+			}
+
+			// Create attempt for this session
+			const attempt = await prisma.examAttempt.create({
+				data: {
+					examId,
+					userId: req.user.id,
+					status: 'IN_PROGRESS',
+					timeRemainingSec: (session === 1 ? mockExam.session1Minutes : mockExam.session2Minutes) * 60
+				}
+			});
+
+			// Create answer placeholders
+			const links = await prisma.examQuestion.findMany({
+				where: { examId },
+				orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+				select: { questionId: true }
+			});
+			for (const link of links) {
+				await prisma.examAnswer.create({
+					data: { attemptId: attempt.id, questionId: link.questionId, flagged: false, timeSpentSec: 0 }
+				});
+			}
+
+			// Update mock exam status
+			const newStatus = session === 1 ? 'SESSION1' : 'SESSION2';
+			await prisma.mockExam.update({
+				where: { id: mockExam.id },
+				data: {
+					status: newStatus,
+					...(session === 1 && !mockExam.startedAt ? { startedAt: new Date() } : {})
+				}
+			});
+
+			return res.json({ attempt, examId });
+		} catch (err) {
+			console.error('Start mock session error:', err);
+			return res.status(500).json({ error: 'Failed to start session' });
+		}
+	});
+
+	// Student: Complete a mock session (called after submitting the session exam)
+	router.post('/mock/:mockExamId/complete-session', requireAuth(), async (req, res) => {
+		const sessionSchema = z.object({
+			session: z.number().int().min(1).max(2),
+			score: z.number().optional()
+		});
+		const parse = sessionSchema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		try {
+			const mockExam = await prisma.mockExam.findUnique({ where: { id: req.params.mockExamId } });
+			if (!mockExam || mockExam.userId !== req.user.id) return res.status(404).json({ error: 'Mock exam not found' });
+
+			const { session, score } = parse.data;
+			let updateData = {};
+
+			if (session === 1) {
+				updateData.status = mockExam.session2ExamId ? 'BREAK' : 'COMPLETED';
+				updateData.session1Score = score ?? null;
+				if (!mockExam.session2ExamId) {
+					updateData.completedAt = new Date();
+					updateData.totalScore = score ?? null;
+				}
+			} else {
+				updateData.status = 'COMPLETED';
+				updateData.session2Score = score ?? null;
+				updateData.completedAt = new Date();
+				// Compute total score as average of both sessions
+				const s1 = mockExam.session1Score ?? 0;
+				const s2 = score ?? 0;
+				updateData.totalScore = Math.round(((s1 + s2) / 2) * 10) / 10;
+			}
+
+			const updated = await prisma.mockExam.update({
+				where: { id: mockExam.id },
+				data: updateData
+			});
+
+			return res.json({ mockExam: updated });
+		} catch (err) {
+			console.error('Complete mock session error:', err);
+			return res.status(500).json({ error: 'Failed to complete session' });
+		}
+	});
+
+	// Student: Cancel a mock exam
+	router.post('/mock/:mockExamId/cancel', requireAuth(), async (req, res) => {
+		try {
+			const mockExam = await prisma.mockExam.findUnique({ where: { id: req.params.mockExamId } });
+			if (!mockExam || mockExam.userId !== req.user.id) return res.status(404).json({ error: 'Mock exam not found' });
+			if (mockExam.status === 'COMPLETED') return res.status(400).json({ error: 'Cannot cancel completed mock exam' });
+
+			await prisma.mockExam.update({
+				where: { id: mockExam.id },
+				data: { status: 'CANCELLED', completedAt: new Date() }
+			});
+			return res.json({ ok: true });
+		} catch (err) {
+			return res.status(500).json({ error: 'Failed to cancel mock exam' });
 		}
 	});
 

@@ -626,7 +626,7 @@ export function Home() {
 								<span className="text-[#00b67a] text-xl">★★★★★</span>
 								<div className="text-left">
 									<span className="text-lg font-semibold text-white">4.9/5</span>
-									<span className="block text-xs text-gray-400">Student Rating</span>
+									<span className="block text-xs text-gray-400">Candidate Rating</span>
 								</div>
 							</div>
 						</div>

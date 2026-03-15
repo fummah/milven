@@ -46,7 +46,7 @@ export default function StudentComparison() {
       <div className="page-header">
         <div>
           <Typography.Title level={2} className="page-header-title">
-            Compare With Other Students
+            Compare With Other Candidates
           </Typography.Title>
           <div className="page-header-subtitle">
             See how your performance and participation compare with your peers.
@@ -239,7 +239,7 @@ export default function StudentComparison() {
             <div className="icon-badge-sm icon-badge-pink">
               <TeamOutlined />
             </div>
-            <span style={{ fontWeight: 600 }}>Compare With Other Students</span>
+            <span style={{ fontWeight: 600 }}>Compare With Other Candidates</span>
             {analytics?.peerComparison?.level?.percentile != null && (
               <Tag color="magenta" style={{ marginLeft: 8 }}>
                 Top {Math.max(1, 100 - analytics.peerComparison.level.percentile + 1)}%
@@ -251,7 +251,7 @@ export default function StudentComparison() {
       >
         {!analytics?.hasData || !analytics?.peerComparison ? (
           <div style={{ textAlign: 'center', padding: '32px 0' }}>
-            <Empty description="Complete exams to compare yourself with other students" />
+            <Empty description="Complete exams to compare yourself with other candidates" />
           </div>
         ) : (
           <Space direction="vertical" size={20} style={{ width: '100%' }}>
@@ -270,7 +270,7 @@ export default function StudentComparison() {
                       {analytics.peerComparison.level.percentile != null ? `${analytics.peerComparison.level.percentile}th percentile` : 'No ranking yet'}
                     </Typography.Title>
                     <Typography.Text type="secondary">
-                      Based on students in {analytics.peerComparison.level.label || 'your level'} with submitted exams.
+                      Based on candidates in {analytics.peerComparison.level.label || 'your level'} with submitted exams.
                     </Typography.Text>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
                       <div>
@@ -306,7 +306,7 @@ export default function StudentComparison() {
                       {analytics.peerComparison.course.participants || 0} peers
                     </Typography.Title>
                     <Typography.Text type="secondary">
-                      Comparing students active in {analytics.peerComparison.course.courseNames?.join(', ') || 'your enrolled courses'}.
+                      Comparing candidates active in {analytics.peerComparison.course.courseNames?.join(', ') || 'your enrolled courses'}.
                     </Typography.Text>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
                       <div>
@@ -403,7 +403,7 @@ export default function StudentComparison() {
                           </div>
                         ))}
                         <Typography.Text type="secondary" style={{ fontSize: 11, marginTop: 4 }}>
-                          Distribution of {total} students at your level by average score
+                          Distribution of {total} candidates at your level by average score
                         </Typography.Text>
                       </Space>
                     );
@@ -441,7 +441,7 @@ export default function StudentComparison() {
                         <span style={{ fontSize: 24 }}>🏆</span>
                         <div>
                           <Typography.Text strong style={{ display: 'block', fontSize: 14 }}>Top performer</Typography.Text>
-                          <Typography.Text type="secondary" style={{ fontSize: 11 }}>You are in the top {Math.max(1, 100 - analytics.peerComparison.level.percentile + 1)}% of students at your level</Typography.Text>
+                          <Typography.Text type="secondary" style={{ fontSize: 11 }}>You are in the top {Math.max(1, 100 - analytics.peerComparison.level.percentile + 1)}% of candidates at your level</Typography.Text>
                         </div>
                       </div>
                     )}

@@ -153,7 +153,7 @@ export function AdminStudentView() {
             onConfirm={async () => {
               try {
                 await api.delete(`/api/users/${id}/enrollments/${r.course?.id}`);
-                message.success('Student unenrolled from course');
+                message.success('Candidate unenrolled from course');
                 fetchUser();
               } catch (e) {
                 message.error(e?.response?.data?.error || 'Failed to unenroll');
@@ -205,7 +205,7 @@ export function AdminStudentView() {
         <Space>
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/admin/students')}>Back</Button>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            {user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : 'Student Details'}
+            {user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : 'Candidate Details'}
           </Typography.Title>
         </Space>
       </Space>

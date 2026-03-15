@@ -139,7 +139,7 @@ export function LoginPage() {
                 <BookOutlined className="text-white text-2xl" />
               </div>
               <Typography.Title level={2} className="!mb-2 !text-slate-800">
-                Student Login
+                Candidate Login
               </Typography.Title>
               <Typography.Text className="text-slate-500">
                 Sign in to access your learning dashboard

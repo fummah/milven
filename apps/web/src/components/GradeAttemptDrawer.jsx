@@ -172,15 +172,39 @@ export function GradeAttemptDrawer({ attemptId, open, onClose, onSaved }) {
                   </div>
                   
                   <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <Typography.Text strong className="text-slate-700 block mb-2">Student response</Typography.Text>
-                    <Typography.Paragraph className="!mb-0 whitespace-pre-wrap text-slate-800 text-sm">
-                      {a?.textAnswer || '(No response provided)'}
-                    </Typography.Paragraph>
+                    <Typography.Text strong className="text-slate-700 block mb-2">Candidate response</Typography.Text>
+                    {a?.textAnswer ? (
+                      <div className="text-slate-800 text-sm prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: a.textAnswer }} />
+                    ) : (
+                      <Typography.Text type="secondary">(No response provided)</Typography.Text>
+                    )}
                   </div>
+                  
+                  {(a?.question?.questionGuidelines || a?.question?.output) && (
+                    <div className="rounded-lg border border-indigo-200 bg-indigo-50/80 p-3">
+                      <Typography.Text strong className="text-indigo-800 text-xs block mb-2">
+                        <BulbOutlined className="mr-1" /> Marking Guidelines & Expected Output
+                      </Typography.Text>
+                      <div className="text-slate-700 text-xs space-y-2">
+                        {a?.question?.questionGuidelines && (
+                          <div>
+                            <Typography.Text strong className="text-xs text-indigo-700 block mb-1">Guidelines:</Typography.Text>
+                            <div className="question-preview-content" dangerouslySetInnerHTML={{ __html: a.question.questionGuidelines }} />
+                          </div>
+                        )}
+                        {a?.question?.output && (
+                          <div>
+                            <Typography.Text strong className="text-xs text-indigo-700 block mb-1">Expected Output:</Typography.Text>
+                            <div className="question-preview-content" dangerouslySetInnerHTML={{ __html: a.question.output }} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   
                   <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3">
                     <Typography.Text strong className="text-amber-800 text-xs block mb-2">
-                      <BulbOutlined className="mr-1" /> Hint (Key Formula(s) & Worked Solution)
+                      <BulbOutlined className="mr-1" /> Key Formula(s) & Worked Solution
                     </Typography.Text>
                     <div className="text-slate-700 text-xs space-y-2">
                       {a?.question?.keyFormulas && (

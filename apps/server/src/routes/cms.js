@@ -1645,6 +1645,62 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 		const difficultyLabel = diffList.join(', ');
 
 		const isBundleType = questionType === 'VIGNETTE_MCQ' || isConstructedBundle;
+
+		const metaFieldsBlock = `EVERY question MUST include ALL of these metadata fields (populate ALL of them, never leave null):
+- "qid": string (a short unique identifier, e.g. "Q-${selectedTopics[0]?.name?.substring(0,4)?.toUpperCase() || 'CFA'}-001", increment the number for each question)
+- "los": string (the specific learning outcome statement this question tests, e.g. "Calculate and interpret the weighted average cost of capital")
+- "traceSection": string (curriculum section reference, e.g. "Reading 33: Cost of Capital")
+- "tracePage": string (page reference, e.g. "p. 145-148")
+- "keyFormulas": string (key formula(s) used, written clearly with variable definitions, e.g. "WACC = w_d × r_d(1-t) + w_e × r_e")
+- "workedSolution": string (step-by-step worked solution showing all calculations and reasoning - be thorough so students can learn from it)
+- "explanation": string (concise explanation of why the answer is correct and common mistakes to avoid)`;
+
+		let formatBlock;
+		if (questionType === 'MCQ') {
+			formatBlock = `Return a JSON object with this EXACT shape:
+{ "items": [ ... ${count} MCQ question objects ... ] }
+
+Each object in the "items" array MUST have:
+- "stem": string (the question text, may use simple HTML like <p>, <strong>, <em>, <ul>, <li> for formatting)
+- "options": array of exactly 3 objects { "text": string, "isCorrect": boolean } with exactly ONE isCorrect: true
+- Plus ALL metadata fields listed below
+
+DO NOT wrap questions inside "vignetteText" or "questions" sub-arrays. Each item is a standalone MCQ question at the top level of the "items" array.
+
+${metaFieldsBlock}`;
+		} else if (questionType === 'VIGNETTE_MCQ') {
+			formatBlock = `Return a JSON object with this EXACT shape:
+{ "items": [ ${count > 1 ? `${count} objects, each containing` : '1 object containing'}:
+  { "vignetteText": string (a detailed, realistic case study passage of 150-300 words),
+    "questions": array of 2-4 MCQ sub-questions (you decide the appropriate number) }
+] }
+Each sub-question must include: "stem", "options" (exactly 3 objects { "text": string, "isCorrect": boolean } with one correct), plus ALL metadata fields below.
+
+${metaFieldsBlock}`;
+		} else if (isConstructedBundle) {
+			formatBlock = `Return a JSON object with this EXACT shape:
+{ "items": [ ${count > 1 ? `${count} objects, each containing` : '1 object containing'}:
+  { "vignetteText": string (a detailed, realistic case study/scenario passage of 200-400 words with specific company data, financial figures, dates, and context),
+    "questions": array of 2-4 constructed-response sub-question objects (you decide the appropriate number based on the scenario complexity) }
+] }
+Each sub-question must include: "stem" (what the candidate must calculate/explain, with marks indicated), "marks" (integer), "questionGuidelines" (string, specific marking criteria and what the examiner expects), "output" (string, the expected model answer/output that would receive full marks), plus ALL metadata fields below. No "options" field.
+
+${metaFieldsBlock}`;
+		} else {
+			formatBlock = `Return a JSON object with this EXACT shape:
+{ "items": [ ... ${count} constructed response question objects ... ] }
+
+Each object in the "items" array MUST have:
+- "stem": string (clearly describe what the candidate must calculate/explain and how many marks are available)
+- "marks": integer (marks for this question)
+- "questionGuidelines": string (specific marking criteria and what the examiner expects)
+- "output": string (the expected model answer/output that would receive full marks)
+- No "options" field
+- Plus ALL metadata fields listed below (keyFormulas and workedSolution are especially important for constructed response)
+
+${metaFieldsBlock}`;
+		}
+
 		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions that could appear on actual CFA or finance certification exams.
 
 IMPORTANT GUIDELINES:
@@ -1657,9 +1713,6 @@ IMPORTANT GUIDELINES:
 - EASY: straightforward recall/application; MEDIUM: multi-step analysis; HARD: complex scenario requiring synthesis of multiple concepts
 - ALL metadata fields below are REQUIRED (not optional) - always populate every single one to help students during revision
 
-Return a JSON object ONLY, matching this shape exactly:
-{ "items": [...] }
-
 Context:
 - Course: ${course.name}
 - Course level: ${levelLabel}
@@ -1669,39 +1722,7 @@ Context:
 - Difficulty levels: ${difficultyLabel}
 - Number of ${isBundleType ? 'case studies' : 'questions'}: ${count}
 
-EVERY question/sub-question MUST include ALL of these metadata fields (populate ALL of them, never leave null):
-- "qid": string (a short unique identifier, e.g. "Q-${selectedTopics[0]?.name?.substring(0,4)?.toUpperCase() || 'CFA'}-001", increment the number for each question)
-- "los": string (the specific learning outcome statement this question tests, e.g. "Calculate and interpret the weighted average cost of capital")
-- "traceSection": string (curriculum section reference, e.g. "Reading 33: Cost of Capital")
-- "tracePage": string (page reference, e.g. "p. 145-148")
-- "keyFormulas": string (key formula(s) used, written clearly with variable definitions, e.g. "WACC = w_d × r_d(1-t) + w_e × r_e")
-- "workedSolution": string (step-by-step worked solution showing all calculations and reasoning - be thorough so students can learn from it)
-- "explanation": string (concise explanation of why the answer is correct and common mistakes to avoid)
-
-For MCQ items (array of ${count} objects), each must include:
-- "stem": string (the question text, may use simple HTML like <p>, <strong>, <em>, <ul>, <li> for formatting)
-- "options": array of exactly 3 objects { "text": string, "isCorrect": boolean } with exactly ONE isCorrect: true
-- Plus ALL metadata fields listed above
-
-For CONSTRUCTED_RESPONSE items (when format is single), array of ${count} objects:
-- "stem": string (clearly describe what the candidate must calculate/explain and how many marks are available)
-- "marks": integer (marks for this question)
-- No "options" field
-- Plus ALL metadata fields listed above (keyFormulas and workedSolution are especially important for constructed response)
-
-For CONSTRUCTED_RESPONSE case study (when format is bundle): Return JSON as:
-{ "items": [ ${count > 1 ? `${count} objects, each containing` : '1 object containing'}:
-  { "vignetteText": string (a detailed, realistic case study/scenario passage of 200-400 words with specific company data, financial figures, dates, and context),
-    "questions": array of 2-4 constructed-response sub-question objects (you decide the appropriate number based on the scenario complexity) }
-] }
-Each sub-question must include: "stem" (what the candidate must calculate/explain, with marks indicated), "marks" (integer), plus ALL metadata fields above. No "options" field.
-
-For VIGNETTE_MCQ: Return JSON as:
-{ "items": [ ${count > 1 ? `${count} objects, each containing` : '1 object containing'}:
-  { "vignetteText": string (a detailed, realistic case study passage of 150-300 words),
-    "questions": array of 2-4 MCQ sub-questions (you decide the appropriate number) }
-] }
-Each sub-question must include: "stem", "options" (exactly 3 with one correct), plus ALL metadata fields above.`;
+${formatBlock}`;
 
 		try {
 			const openai = new OpenAI({ apiKey });
@@ -1722,6 +1743,31 @@ Each sub-question must include: "stem", "options" (exactly 3 with one correct), 
 				return res.status(500).json({ error: 'AI returned invalid JSON', raw });
 			}
 			let items = Array.isArray(parsed?.items) ? parsed.items : (Array.isArray(parsed?.questions) ? parsed.questions : []);
+
+			// Robust MCQ post-processing: if AI returned MCQ items in bundle format, flatten them
+			if (questionType === 'MCQ' && items.length > 0) {
+				const flattened = [];
+				for (const it of items) {
+					if (Array.isArray(it.questions) && it.questions.length > 0) {
+						// AI wrapped MCQ items inside a bundle - extract sub-questions
+						for (const sq of it.questions) {
+							flattened.push(sq);
+						}
+					} else if (it.stem || it.question) {
+						flattened.push(it);
+					}
+				}
+				if (flattened.length > 0) items = flattened;
+				// Normalize alternative field names for options
+				items = items.map(it => {
+					const opts = it.options || it.choices || it.answers || [];
+					const normalizedOpts = Array.isArray(opts) ? opts.map(o => ({
+						text: o.text || o.label || o.answer || o.content || '',
+						isCorrect: o.isCorrect === true || o.correct === true || o.is_correct === true
+					})) : [];
+					return { ...it, stem: it.stem || it.question || it.text || '', options: normalizedOpts };
+				});
+			}
 
 			const level = course.level || 'LEVEL1';
 			let topicCursor = 0;
@@ -1758,7 +1804,9 @@ Each sub-question must include: "stem", "options" (exactly 3 with one correct), 
 							traceSection: sq.traceSection || '',
 							tracePage: sq.tracePage || '',
 							keyFormulas: sq.keyFormulas || '',
-							workedSolution: sq.workedSolution || ''
+							workedSolution: sq.workedSolution || '',
+							questionGuidelines: sq.questionGuidelines || '',
+							output: sq.output || ''
 						};
 					});
 					return { vignetteText, questions: subQuestions };
@@ -1787,7 +1835,9 @@ Each sub-question must include: "stem", "options" (exactly 3 with one correct), 
 					traceSection: it.traceSection || '',
 					tracePage: it.tracePage || '',
 					keyFormulas: it.keyFormulas || '',
-					workedSolution: it.workedSolution || ''
+					workedSolution: it.workedSolution || '',
+					questionGuidelines: it.questionGuidelines || '',
+					output: it.output || ''
 				};
 			});
 
@@ -1908,6 +1958,8 @@ Each sub-question must include: "stem", "options" (exactly 3 with one correct), 
 								tracePage: sq?.tracePage || null,
 								keyFormulas: sq?.keyFormulas || null,
 								workedSolution: mergeWorkedSolution(sq),
+								questionGuidelines: sq?.questionGuidelines || null,
+								output: sq?.output || null,
 								isAiGenerated: true
 							}
 						});
@@ -1970,6 +2022,8 @@ Each sub-question must include: "stem", "options" (exactly 3 with one correct), 
 						tracePage: item?.tracePage || null,
 						keyFormulas: item?.keyFormulas || null,
 						workedSolution: mergeWorkedSolution(item),
+						questionGuidelines: item?.questionGuidelines || null,
+						output: item?.output || null,
 						isAiGenerated: true
 					}
 				});

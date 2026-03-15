@@ -23,7 +23,7 @@ export function AdminUsers() {
   const [form] = Form.useForm();
   const [roleOptions, setRoleOptions] = useState([
     { value: 'ADMIN', label: 'Admin' },
-    { value: 'STUDENT', label: 'Student' }
+    { value: 'STUDENT', label: 'Candidate' }
   ]);
 
   const fetchUsers = async (params = {}) => {
@@ -57,7 +57,7 @@ export function AdminUsers() {
         const custom = roles.filter(r => r.type === 'CUSTOM').map(r => ({ value: `custom:${r.id}`, label: r.name }));
         setRoleOptions([
           { value: 'ADMIN', label: 'Admin' },
-          { value: 'STUDENT', label: 'Student' },
+          { value: 'STUDENT', label: 'Candidate' },
           ...custom
         ]);
       } catch {}
@@ -198,7 +198,7 @@ export function AdminUsers() {
             style={{ width: 140 }} 
             value={role} 
             onChange={setRole}
-            options={[{ value: 'ADMIN', label: 'Admin' }, { value: 'STUDENT', label: 'Student' }]}
+            options={[{ value: 'ADMIN', label: 'Admin' }, { value: 'STUDENT', label: 'Candidate' }]}
           />
           <Select 
             placeholder="Filter by level" 
@@ -495,7 +495,7 @@ export function AdminUsers() {
             </Col>
           </Row>
           {editing && (
-            <Form.Item name="verified" label="Student verified" valuePropName="checked">
+            <Form.Item name="verified" label="Candidate verified" valuePropName="checked">
               <Switch checkedChildren="Verified" unCheckedChildren="Not verified" />
             </Form.Item>
           )}

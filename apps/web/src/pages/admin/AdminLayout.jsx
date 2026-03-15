@@ -49,7 +49,7 @@ const menuItems = [
     label: 'Users',
     children: [
       { key: 'users-list', icon: modernBadge(<TeamOutlined />, 'linear-gradient(135deg, #06b6d4, #0891b2)'), label: <Link to="/admin/users">Users</Link> },
-      { key: 'students', icon: modernBadge(<TeamOutlined />, 'linear-gradient(135deg, #14b8a6, #0d9488)'), label: <Link to="/admin/students">Students</Link> },
+      { key: 'students', icon: modernBadge(<TeamOutlined />, 'linear-gradient(135deg, #14b8a6, #0d9488)'), label: <Link to="/admin/students">Candidates</Link> },
       { key: 'roles', icon: modernBadge(<SolutionOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'), label: <Link to="/admin/roles">Roles</Link> }
     ]
   },
