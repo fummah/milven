@@ -106,8 +106,9 @@ export function AdminCourseView() {
 
   const addMockWeightRow = () => {
     const vols = detail?.volumes || [];
-    if (vols.length === 0) { message.warning('No volumes linked to this course'); return; }
-    setMockWeights(prev => [...prev, { id: `new-${Date.now()}`, volumeId: vols[0].id, session: 1, weightMin: 5, weightMax: 10, volume: vols[0] }]);
+    if (vols.length === 0) { message.warning('No topics linked to this course'); return; }
+    const defaultSession = (course?.level === 'LEVEL2' || course?.level === 'LEVEL3') ? 0 : 1;
+    setMockWeights(prev => [...prev, { id: `new-${Date.now()}`, volumeId: vols[0].id, session: defaultSession, weightMin: 5, weightMax: 10, volume: vols[0] }]);
   };
 
   const removeMockWeightRow = (idx) => {
@@ -440,11 +441,11 @@ export function AdminCourseView() {
   ];
 
   const topicsColumns = [
-    { title: 'Module', dataIndex: ['module', 'name'], width: 160, render: v => v ? <Tag color="default">{v}</Tag> : '—' },
-    { title: 'Topic ID', dataIndex: 'id', width: 220, render: v => <Typography.Text type="secondary" style={{ fontSize: 12 }}>{v}</Typography.Text> },
+    { title: 'Learning Module', dataIndex: ['module', 'name'], width: 160, render: v => v ? <Tag color="default">{v}</Tag> : '—' },
+    { title: 'Sub Topic ID', dataIndex: 'id', width: 220, render: v => <Typography.Text type="secondary" style={{ fontSize: 12 }}>{v}</Typography.Text> },
     { title: 'Name', dataIndex: 'name' },
     { title: 'Level', dataIndex: 'level' },
-    { title: 'Created', dataIndex: 'createdAt', render: v => v ? new Date(v).toLocaleString() : '-' },
+    { title: 'Sub Topic (Created)', dataIndex: 'createdAt', render: v => v ? new Date(v).toLocaleString() : '-' },
     {
       title: 'Actions',
       render: (_, r) => (
@@ -630,7 +631,7 @@ export function AdminCourseView() {
                     <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#f9f0ff', color: '#722ed1', border: '1px solid rgba(0,0,0,0.08)', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.6)', fontSize: 14 }}>
                       <ReadOutlined />
                     </span>
-                    <span>Modules and Topics</span>
+                    <span>Learning Modules & Sub Topics</span>
                   </Space>
                 ),
                 children: (
@@ -640,7 +641,7 @@ export function AdminCourseView() {
                         icon={<FolderOutlined />}
                         onClick={openModuleDrawer}
                       >
-                        Add Module
+                        Add Learning Module
                       </Button>
                       <Button
                         type="primary"
@@ -654,7 +655,7 @@ export function AdminCourseView() {
                           setTopicDrawerOpen(true);
                         }}
                       >
-                        New Topic
+                        New Sub Topic
                       </Button>
                       <Button
                         type="primary"
@@ -736,7 +737,7 @@ export function AdminCourseView() {
                       
                       // Get volume info for each volumeId
                       const getVolumeInfo = (volId) => {
-                        return volumesList.find(v => v.id === volId) || { name: 'Unknown Volume', description: '' };
+                        return volumesList.find(v => v.id === volId) || { name: 'Unknown Topic', description: '' };
                       };
                       
                       // Calculate module numbers per volume
@@ -777,7 +778,7 @@ export function AdminCourseView() {
                                     <Space>
                                       <FolderOutlined style={{ color: '#1890ff' }} />
                                       <Typography.Text strong style={{ color: '#1890ff', fontSize: 16 }}>
-                                        Volume {volume.name}
+                                        Topic {volume.name}
                                       </Typography.Text>
                                     </Space>
                                     {volume.description && (
@@ -1021,7 +1022,7 @@ export function AdminCourseView() {
                       <div>
                         <Typography.Title level={5} style={{ margin: 0 }}>Topic Weight Configuration</Typography.Title>
                         <Typography.Text type="secondary" className="text-xs">
-                          Define how questions are distributed across volumes in mock exams. Weights are percentages (min–max range). Each row maps a volume to a session.
+                          Define how questions are distributed across topics in mock exams. Weights are percentages (min–max range).{course?.level === 'LEVEL1' ? ' Each row maps a topic to a session.' : ''}
                         </Typography.Text>
                       </div>
                       <Space>
@@ -1043,7 +1044,7 @@ export function AdminCourseView() {
                         pagination={false}
                         columns={[
                           {
-                            title: 'Volume',
+                            title: 'Topic',
                             dataIndex: 'volumeId',
                             render: (val, _, idx) => (
                               <Select
@@ -1055,7 +1056,7 @@ export function AdminCourseView() {
                               />
                             )
                           },
-                          {
+                          ...(course?.level === 'LEVEL1' ? [{
                             title: 'Session',
                             dataIndex: 'session',
                             width: 100,
@@ -1068,7 +1069,7 @@ export function AdminCourseView() {
                                 options={[{ value: 1, label: 'Session 1' }, { value: 2, label: 'Session 2' }]}
                               />
                             )
-                          },
+                          }] : []),
                           {
                             title: 'Weight Min (%)',
                             dataIndex: 'weightMin',
@@ -1119,7 +1120,7 @@ export function AdminCourseView() {
                     )}
                     <Card size="small" style={{ borderRadius: 10, background: '#f0f5ff', borderColor: '#d6e4ff' }}>
                       <Typography.Text className="text-xs text-slate-600">
-                        <strong>CFA Mock Exam Defaults:</strong> Level 1 — 2 sessions × 90 MCQ × 135 min. Level 2 — 2 sessions × 44 Vignette MCQ × 132 min. Level 3 — Session 1: Constructed Response (132 min), Session 2: Vignette MCQ (132 min). 30-minute break between sessions.
+                        <strong>CFA Mock Exam Defaults:</strong> Level 1 — 2 sessions × 90 MCQ × 135 min (30-min break). Level 2 — 1 session, 88 Vignette MCQ, 264 min. Level 3 — 1 session, 55 mixed questions (Constructed + Vignette MCQ), 264 min.
                       </Typography.Text>
                     </Card>
                   </Space>
@@ -1213,7 +1214,7 @@ export function AdminCourseView() {
 
       {/* Topic Drawer: staged details + materials on one screen */}
       <Drawer
-        title={selectedTopic ? `Edit Topic · ${selectedTopic.name}` : 'New Topic'}
+        title={selectedTopic ? `Edit Sub Topic · ${selectedTopic.name}` : 'Add New Sub Topic'}
         open={topicDrawerOpen}
         onClose={() => setTopicDrawerOpen(false)}
         width={860}
@@ -1262,10 +1263,10 @@ export function AdminCourseView() {
           >
             {topicStep === 0 && (
               <>
-                <Form.Item name="moduleId" label="Module">
+                <Form.Item name="moduleId" label="Learning Module">
                   <Select
                     allowClear
-                    placeholder="Select a module (optional)"
+                    placeholder="Select a learning module (optional)"
                     showSearch
                     optionFilterProp="label"
                     options={(() => {
@@ -1288,12 +1289,12 @@ export function AdminCourseView() {
                         naturalCompare(grouped[a].volume?.name || '', grouped[b].volume?.name || '')
                       );
                       
-                      const opts = [{ value: '', label: '— No module —' }];
+                      const opts = [{ value: '', label: '— No learning module —' }];
                       sortedVolIds.forEach(volId => {
                         const { volume, modules: volMods } = grouped[volId];
                         const sortedMods = volMods.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                         opts.push({
-                          label: volume?.name || 'Unknown Volume',
+                          label: volume?.name || 'Unknown Topic',
                           options: sortedMods.map(m => ({ 
                             value: m.id, 
                             label: m.order != null ? `${m.order}. ${m.name}` : m.name 
@@ -1304,7 +1305,7 @@ export function AdminCourseView() {
                       if (noVol.length > 0) {
                         const sortedNoVol = noVol.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                         opts.push({
-                          label: 'No Volume',
+                          label: 'No Topic',
                           options: sortedNoVol.map(m => ({ 
                             value: m.id, 
                             label: m.order != null ? `${m.order}. ${m.name}` : m.name 
@@ -1316,8 +1317,8 @@ export function AdminCourseView() {
                     })()}
                   />
                 </Form.Item>
-                <Form.Item name="name" label="Topic Name" rules={[{ required: true }]}>
-                  <Input placeholder="Enter topic name" />
+                <Form.Item name="name" label="Sub Topic Name" rules={[{ required: true }]}>
+                  <Input placeholder="Enter sub topic name" />
                 </Form.Item>
                 <Space>
                   <Button onClick={() => setTopicDrawerOpen(false)}>Cancel</Button>
@@ -1417,18 +1418,18 @@ export function AdminCourseView() {
 
       {/* New Module drawer (for this course's level) */}
       <Drawer
-        title="Add Module"
+        title="Add Learning Module"
         open={moduleDrawerOpen}
         onClose={() => { setModuleDrawerOpen(false); moduleForm.resetFields(); }}
         width={400}
       >
         <Form layout="vertical" form={moduleForm} onFinish={saveNewModule}>
-          <Form.Item name="name" label="Module Name" rules={[{ required: true, min: 2 }]}>
+          <Form.Item name="name" label="Learning Module Name" rules={[{ required: true, min: 2 }]}>
             <Input placeholder="e.g. Module 1: Ethics" />
           </Form.Item>
-          <Form.Item name="volumeId" label="Volume" rules={[{ required: true, message: 'Select a volume' }]}>
+          <Form.Item name="volumeId" label="Topic" rules={[{ required: true, message: 'Select a topic' }]}>
             <Select
-              placeholder="Select a volume"
+              placeholder="Select a topic"
               options={sortByNaturalName(detail?.volumes || []).map(v => ({ 
                 value: v.id, 
                 label: v.description ? `${v.name} - ${v.description}` : v.name,
@@ -1436,7 +1437,7 @@ export function AdminCourseView() {
               }))}
               showSearch
               optionFilterProp="label"
-              notFoundContent={detail?.volumes?.length === 0 ? "No volumes linked to this course" : "Loading volumes..."}
+              notFoundContent={detail?.volumes?.length === 0 ? "No topics linked to this course" : "Loading topics..."}
             />
           </Form.Item>
           <Form.Item name="level" label="Level" hidden>
@@ -1446,11 +1447,11 @@ export function AdminCourseView() {
             <Input type="number" min={0} placeholder="Display order" />
           </Form.Item>
           <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-            Module will be created for this course&apos;s level: <Tag>{course?.level ?? '—'}</Tag>
+            Learning module will be created for this course&apos;s level: <Tag>{course?.level ?? '—'}</Tag>
           </Typography.Text>
           <Space>
             <Button onClick={() => { setModuleDrawerOpen(false); moduleForm.resetFields(); }}>Cancel</Button>
-            <Button type="primary" loading={savingModule} htmlType="submit">Create Module</Button>
+            <Button type="primary" loading={savingModule} htmlType="submit">Create Learning Module</Button>
           </Space>
         </Form>
       </Drawer>

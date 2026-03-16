@@ -771,7 +771,7 @@ export default function App() {
 					<Route path="/careers" element={<Careers />} />
 					<Route path="/about-cfa" element={<AboutCfa />} />
 					<Route path="/faq" element={<Faq />} />
-					<Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
+					<Route path="/account" element={<RequireAuth><Navigate to="/student/account" replace /></RequireAuth>} />
 					<Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
 						<Route index element={<AdminDashboard />} />
 						<Route path="users" element={<AdminUsers />} />

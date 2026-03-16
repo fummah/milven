@@ -142,6 +142,7 @@ export function AdminQuestionEdit() {
 
 	const selectedCourseId = Form.useWatch('courseId', form);
 	const selectedVolumeId = Form.useWatch('volumeId', form);
+	const selectedModuleId = Form.useWatch('learningModuleId', form);
 	const volumeOptions = useMemo(() => {
 		const filteredTopics = selectedCourseId
 			? topics.filter(t => t.courseId === selectedCourseId || t.course?.id === selectedCourseId)
@@ -154,6 +155,21 @@ export function AdminQuestionEdit() {
 			})
 			.filter(Boolean);
 	}, [topics, volumes, selectedCourseId]);
+	const moduleOptions = useMemo(() => {
+		let filtered = selectedCourseId
+			? topics.filter(t => t.courseId === selectedCourseId || t.course?.id === selectedCourseId)
+			: [];
+		if (selectedVolumeId) {
+			filtered = filtered.filter(t => t.module?.volumeId === selectedVolumeId);
+		}
+		const moduleMap = new Map();
+		filtered.forEach(t => {
+			if (t.module?.id && !moduleMap.has(t.module.id)) {
+				moduleMap.set(t.module.id, { value: t.module.id, label: t.module.name || t.module.id });
+			}
+		});
+		return Array.from(moduleMap.values());
+	}, [topics, selectedCourseId, selectedVolumeId]);
 	const topicOptions = useMemo(() => {
 		let filtered = selectedCourseId
 			? topics.filter(t => t.courseId === selectedCourseId || t.course?.id === selectedCourseId)
@@ -161,8 +177,11 @@ export function AdminQuestionEdit() {
 		if (selectedVolumeId) {
 			filtered = filtered.filter((t) => t.module?.volumeId === selectedVolumeId);
 		}
+		if (selectedModuleId) {
+			filtered = filtered.filter((t) => t.moduleId === selectedModuleId || t.module?.id === selectedModuleId);
+		}
 		return filtered.map(t => ({ value: t.id, label: t.name }));
-	}, [topics, selectedCourseId, selectedVolumeId]);
+	}, [topics, selectedCourseId, selectedVolumeId, selectedModuleId]);
 
 	const submit = async (values) => {
 		try {
@@ -278,32 +297,45 @@ export function AdminQuestionEdit() {
 				<Form layout="vertical" form={form} onFinish={submit}>
 					<Form.Item name="courseId" label="Course">
 						<Select
-							placeholder="Select course to filter topics"
+							placeholder="Select course"
 							options={filteredCoursesOptions}
 							showSearch
 							optionFilterProp="label"
 							allowClear
 							onChange={() => {
-								form.setFieldsValue({ topicId: undefined, volumeId: undefined });
+								form.setFieldsValue({ topicId: undefined, volumeId: undefined, learningModuleId: undefined });
 							}}
 						/>
 					</Form.Item>
-					<Form.Item name="volumeId" label="Volume">
+					<Form.Item name="volumeId" label="Topic">
 						<Select
-							placeholder="Select volume to filter topics"
+							placeholder="Select topic"
 							options={volumeOptions}
 							showSearch
 							optionFilterProp="label"
 							allowClear
 							disabled={!selectedCourseId || volumeOptions.length === 0}
 							onChange={() => {
+								form.setFieldsValue({ topicId: undefined, learningModuleId: undefined });
+							}}
+						/>
+					</Form.Item>
+					<Form.Item name="learningModuleId" label="Learning Module">
+						<Select
+							placeholder="Select learning module (optional)"
+							options={moduleOptions}
+							showSearch
+							optionFilterProp="label"
+							allowClear
+							disabled={moduleOptions.length === 0}
+							onChange={() => {
 								form.setFieldsValue({ topicId: undefined });
 							}}
 						/>
 					</Form.Item>
-					<Form.Item name="topicId" label="Topic" rules={[{ required: true }]}>
+					<Form.Item name="topicId" label="Sub Topic" rules={[{ required: true }]}>
 						<Select
-							placeholder="Select topic"
+							placeholder="Select sub topic"
 							options={topicOptions}
 							showSearch
 							optionFilterProp="label"

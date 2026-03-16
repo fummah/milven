@@ -224,7 +224,7 @@ export function AdminTopics() {
         return;
       }
       if (!volumeId) {
-        message.error('Please select a volume');
+        message.error('Please select a topic');
         return;
       }
 
@@ -356,7 +356,7 @@ export function AdminTopics() {
         <Button size="small" icon={<ArrowDownOutlined />} disabled={idx === data.length - 1} onClick={() => moveTopic(r, 'down')} />
       </Space>
     ) },
-    { title: 'Module', dataIndex: ['module', 'name'], width: 140, render: (v) => v ? <Tag color="default">{v}</Tag> : '—' },
+    { title: 'Learning Module', dataIndex: ['module', 'name'], width: 140, render: (v) => v ? <Tag color="default">{v}</Tag> : '—' },
     { title: 'Name', dataIndex: 'name' },
     { title: 'Level', dataIndex: 'level', render: (v) => <Tag color="blue">{v}</Tag> },
     {
@@ -409,7 +409,7 @@ export function AdminTopics() {
       // Sort modules by order within each volume
       const sortedModules = volModules.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
       options.push({
-        label: volume?.name || 'Unknown Volume',
+        label: volume?.name || 'Unknown Topic',
         options: sortedModules.map(m => ({ 
           value: m.id, 
           label: m.order != null ? `${m.order}. ${m.name}` : m.name 
@@ -421,7 +421,7 @@ export function AdminTopics() {
     if (noVolume.length > 0) {
       const sortedNoVolume = noVolume.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
       options.push({
-        label: 'No Volume',
+        label: 'No Topic',
         options: sortedNoVolume.map(m => ({ 
           value: m.id, 
           label: m.order != null ? `${m.order}. ${m.name} (${m.level})` : `${m.name} (${m.level})` 
@@ -440,10 +440,10 @@ export function AdminTopics() {
             <div className="icon-badge icon-badge-cyan">
               <BookOutlined style={{ fontSize: 20 }} />
             </div>
-            Modules & Topics
+            Learning Modules
           </Typography.Title>
           <Typography.Text type="secondary" className="page-header-subtitle">
-            Organize course content into modules and topics
+            Organize course content into learning modules and sub topics
           </Typography.Text>
         </div>
         <Space>
@@ -452,7 +452,7 @@ export function AdminTopics() {
             onClick={() => { setEditingModule(null); moduleForm.resetFields(); moduleForm.setFieldsValue({ courseId: filterModuleCourseId || '', level: 'LEVEL1' }); setModuleDrawerOpen(true); }}
             style={{ borderRadius: 10 }}
           >
-            New Module
+            New Learning Module
           </Button>
           <Button 
             type="primary" 
@@ -460,7 +460,7 @@ export function AdminTopics() {
             onClick={() => { setEditing(null); setTopicStep(0); form.resetFields(); form.setFieldsValue({ courseId: '', moduleId: '' }); setDrawerOpen(true); }}
             style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', border: 'none', borderRadius: 10, height: 40, fontWeight: 500 }}
           >
-            New Topic
+            New Sub Topic
           </Button>
         </Space>
       </div>
@@ -468,7 +468,7 @@ export function AdminTopics() {
       <Tabs activeKey={activeTab} onChange={setActiveTab} className="modern-tabs" items={[
         {
           key: 'modules',
-          label: 'Modules',
+          label: 'Learning Modules',
           children: (
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <Space wrap align="center">
@@ -486,15 +486,15 @@ export function AdminTopics() {
                   showSearch
                   optionFilterProp="label"
                 />
-                <span>Volume:</span>
+                <span>Topic:</span>
                 <Select
                   value={filterVolumeId || undefined}
                   onChange={(v) => setFilterVolumeId(v ?? '')}
-                  placeholder="All volumes"
+                  placeholder="All topics"
                   allowClear
                   style={{ minWidth: 220 }}
                   options={[
-                    { label: 'All volumes', value: '' },
+                    { label: 'All topics', value: '' },
                     ...(volumes || []).map(v => ({ value: v.id, label: v.description ? `${v.description} (${v.name})` : v.name }))
                   ]}
                   showSearch
@@ -589,7 +589,7 @@ export function AdminTopics() {
         },
         {
           key: 'topics',
-          label: 'Topics',
+          label: 'Sub Topics',
           children: (
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <Space wrap align="center">
@@ -607,7 +607,7 @@ export function AdminTopics() {
                   showSearch
                   optionFilterProp="label"
                 />
-                <span>Module:</span>
+                <span>Learning Module:</span>
                 <Select
                   value={filterModuleId || undefined}
                   onChange={(v) => setFilterModuleId(v ?? '')}
@@ -642,7 +642,7 @@ export function AdminTopics() {
                       const { volume, modules: volMods } = grouped[volId];
                       const sortedMods = volMods.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                       opts.push({
-                        label: volume?.name || 'Unknown Volume',
+                        label: volume?.name || 'Unknown Topic',
                         options: sortedMods.map(m => ({ 
                           value: m.id, 
                           label: m.order != null ? `${m.order}. ${m.name}` : m.name 
@@ -653,7 +653,7 @@ export function AdminTopics() {
                     if (noVol.length > 0) {
                       const sortedNoVol = noVol.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                       opts.push({
-                        label: 'No Volume',
+                        label: 'No Topic',
                         options: sortedNoVol.map(m => ({ 
                           value: m.id, 
                           label: m.order != null ? `${m.order}. ${m.name} (${m.level})` : `${m.name} (${m.level})` 
@@ -665,7 +665,7 @@ export function AdminTopics() {
                   })()}
                   style={{ minWidth: 200 }}
                   allowClear
-                  placeholder="All modules"
+                  placeholder="All learning modules"
                   showSearch
                   optionFilterProp="label"
                 />
@@ -688,7 +688,7 @@ export function AdminTopics() {
       ]} />
 
       <Drawer
-        title={editingModule ? 'Edit Module' : 'Create Module'}
+        title={editingModule ? 'Edit Learning Module' : 'Create Learning Module'}
         open={moduleDrawerOpen}
         onClose={() => setModuleDrawerOpen(false)}
         width={400}
@@ -696,7 +696,7 @@ export function AdminTopics() {
         className="modern-drawer"
       >
         <Form layout="vertical" form={moduleForm} onFinish={submitModule} initialValues={{ level: 'LEVEL1' }}>
-          <Form.Item name="name" label="Module Name" rules={[{ required: true }]}>
+          <Form.Item name="name" label="Learning Module Name/Description" rules={[{ required: true }]}>
             <Input placeholder="e.g. Module 1: Ethics" />
           </Form.Item>
           <Form.Item name="courseId" label="Course" rules={[{ required: true, message: 'Select a course' }]}>
@@ -718,9 +718,9 @@ export function AdminTopics() {
 														}}
             />
           </Form.Item>
-          <Form.Item name="volumeId" label="Volume" rules={[{ required: true, message: 'Select a volume' }]}>
+          <Form.Item name="volumeId" label="Topic" rules={[{ required: true, message: 'Select a topic' }]}>
             <Select
-              placeholder="Select a volume"
+              placeholder="Select a topic"
               options={(volumes || []).map(v => ({ value: v.id, label: v.description ? `${v.description} (${v.name})` : v.name }))}
               showSearch
               optionFilterProp="label"
@@ -740,7 +740,7 @@ export function AdminTopics() {
       </Drawer>
 
       <Drawer
-        title={editing ? `Edit Topic · ${editing.name}` : 'New Topic'}
+        title={editing ? `Edit Sub Topic · ${editing.name}` : 'New Sub Topic'}
         open={drawerOpen}
         onClose={() => { setDrawerOpen(false); setTopicStep(0); setEditing(null); }}
         width={860}
@@ -752,7 +752,7 @@ export function AdminTopics() {
           <Form layout="vertical" form={form} onFinish={submit} initialValues={{ courseId: '', moduleId: '' }}>
             {topicStep === 0 && (
               <>
-                <Form.Item name="name" label="Topic Name" rules={[{ required: true }]}>
+                <Form.Item name="name" label="Sub Topic Name" rules={[{ required: true }]}>
                   <Input placeholder="e.g. Ethics and Professional Standards" />
                 </Form.Item>
                 <Form.Item name="courseId" label="Course" rules={[{ required: true, message: 'Select a course' }]}>
@@ -797,7 +797,7 @@ export function AdminTopics() {
                       const { volume, modules: volModules } = grouped[volId];
                       const sortedModules = volModules.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                       moduleOpts.push({
-                        label: volume?.name || 'Unknown Volume',
+                        label: volume?.name || 'Unknown Topic',
                         options: sortedModules.map((m, idx) => ({ 
                           value: m.id, 
                           label: m.order != null ? `${m.order}. ${m.name}` : m.name 
@@ -808,7 +808,7 @@ export function AdminTopics() {
                     if (noVolume.length > 0) {
                       const sortedNoVolume = noVolume.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                       moduleOpts.push({
-                        label: 'No Volume',
+                        label: 'No Topic',
                         options: sortedNoVolume.map(m => ({ 
                           value: m.id, 
                           label: m.order != null ? `${m.order}. ${m.name} (${m.level})` : `${m.name} (${m.level})` 
@@ -817,9 +817,9 @@ export function AdminTopics() {
                     }
 
                     return (
-                      <Form.Item name="moduleId" label="Module" rules={[{ required: true, message: 'Select a module' }]}>
+                      <Form.Item name="moduleId" label="Learning Module" rules={[{ required: true, message: 'Select a learning module' }]}>
                         <Select
-                          placeholder="Select a module"
+                          placeholder="Select a learning module"
                           options={moduleOpts}
                           showSearch
                           optionFilterProp="label"

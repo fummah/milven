@@ -39,6 +39,7 @@ export function AdminQuestions() {
 	const [aiGenerateLoading, setAiGenerateLoading] = useState(false);
 	const [aiGenerateCourseId, setAiGenerateCourseId] = useState('');
 	const [aiGenerateVolumeId, setAiGenerateVolumeId] = useState('');
+	const [aiGenerateModuleId, setAiGenerateModuleId] = useState('');
 	const [aiPreviewOpen, setAiPreviewOpen] = useState(false);
 	const [aiPreview, setAiPreview] = useState(null);
 	const [aiAcceptLoading, setAiAcceptLoading] = useState(false);
@@ -257,6 +258,7 @@ export function AdminQuestions() {
 
 	const selectedDrawerCourseId = Form.useWatch('courseId', form);
 	const selectedDrawerVolumeId = Form.useWatch('volumeId', form);
+	const selectedDrawerModuleId = Form.useWatch('learningModuleId', form);
 	const drawerVolumeOptions = useMemo(() => {
 		const filteredTopics = selectedDrawerCourseId
 			? topics.filter(t => t.courseId === selectedDrawerCourseId || t.course?.id === selectedDrawerCourseId)
@@ -269,6 +271,21 @@ export function AdminQuestions() {
 			})
 			.filter(Boolean);
 	}, [topics, volumes, selectedDrawerCourseId]);
+	const drawerModuleOptions = useMemo(() => {
+		let filtered = selectedDrawerCourseId
+			? topics.filter(t => t.courseId === selectedDrawerCourseId || t.course?.id === selectedDrawerCourseId)
+			: [];
+		if (selectedDrawerVolumeId) {
+			filtered = filtered.filter(t => t.module?.volumeId === selectedDrawerVolumeId);
+		}
+		const moduleMap = new Map();
+		filtered.forEach(t => {
+			if (t.module?.id && !moduleMap.has(t.module.id)) {
+				moduleMap.set(t.module.id, { value: t.module.id, label: t.module.name || t.module.id });
+			}
+		});
+		return Array.from(moduleMap.values());
+	}, [topics, selectedDrawerCourseId, selectedDrawerVolumeId]);
 	const drawerTopicOptions = useMemo(() => {
 		let filtered = selectedDrawerCourseId
 			? topics.filter(t => t.courseId === selectedDrawerCourseId || t.course?.id === selectedDrawerCourseId)
@@ -276,8 +293,11 @@ export function AdminQuestions() {
 		if (selectedDrawerVolumeId) {
 			filtered = filtered.filter((t) => t.module?.volumeId === selectedDrawerVolumeId);
 		}
+		if (selectedDrawerModuleId) {
+			filtered = filtered.filter((t) => t.moduleId === selectedDrawerModuleId || t.module?.id === selectedDrawerModuleId);
+		}
 		return filtered.map(t => ({ value: t.id, label: t.name }));
-	}, [topics, selectedDrawerCourseId, selectedDrawerVolumeId]);
+	}, [topics, selectedDrawerCourseId, selectedDrawerVolumeId, selectedDrawerModuleId]);
 
 	// Restrict question types in the manual "Add Question" drawer based on selected course level
 	const drawerQuestionTypeOptions = useMemo(() => {
@@ -551,10 +571,26 @@ export function AdminQuestions() {
 			const diffs = Array.isArray(values.difficulties)
 				? values.difficulties.filter(Boolean)
 				: (values.difficulty ? [values.difficulty] : []);
+			// Resolve topicIds: if none selected, auto-populate from course/volume/module filters
+			let resolvedTopicIds = Array.isArray(values.topicIds) && values.topicIds.length > 0
+				? values.topicIds
+				: (values.topicId ? [values.topicId] : []);
+			if (resolvedTopicIds.length === 0 && values.courseId) {
+				let filtered = (topics || []).filter(t => t.courseId === values.courseId || t.course?.id === values.courseId);
+				if (values.volumeId) filtered = filtered.filter(t => t.module?.volumeId === values.volumeId);
+				const moduleFilter = values.aiModuleId || aiGenerateModuleId;
+				if (moduleFilter) filtered = filtered.filter(t => t.moduleId === moduleFilter || t.module?.id === moduleFilter);
+				resolvedTopicIds = filtered.map(t => t.id);
+			}
+			if (resolvedTopicIds.length === 0) {
+				message.warning('No sub topics found for the selected filters. Please select at least one sub topic.');
+				setAiGenerateLoading(false);
+				return;
+			}
 			const payload = {
 				courseId: values.courseId,
 				volumeId: values.volumeId || undefined,
-				topicIds: Array.isArray(values.topicIds) ? values.topicIds : (values.topicId ? [values.topicId] : []),
+				topicIds: resolvedTopicIds,
 				questionType: values.questionType,
 				constructedMode: values.questionType === 'CONSTRUCTED_RESPONSE' ? (values.constructedMode || 'single') : undefined,
 				difficulties: diffs.length ? diffs : undefined,
@@ -714,7 +750,7 @@ export function AdminQuestions() {
 			render: (v) => <Typography.Text strong style={{ color: '#3b82f6' }}>{v || 1}</Typography.Text>
 		},
 		{ 
-			title: 'Topic', 
+			title: 'Sub Topic', 
 			dataIndex: 'topicId', 
 			width: 180,
 			ellipsis: true,
@@ -807,8 +843,9 @@ export function AdminQuestions() {
 							setAiGenerateModalOpen(true);
 							setAiGenerateCourseId('');
 							setAiGenerateVolumeId('');
+							setAiGenerateModuleId('');
 							aiForm.resetFields();
-							aiForm.setFieldsValue({ questionType: 'MCQ', difficulties: ['MEDIUM'], count: 3, volumeId: undefined, topicIds: undefined });
+							aiForm.setFieldsValue({ questionType: 'MCQ', difficulties: ['MEDIUM'], count: 3, volumeId: undefined, aiModuleId: undefined, topicIds: undefined });
 						}}
 						style={{ borderRadius: 10, borderColor: '#8b5cf6', color: '#8b5cf6' }}
 					>
@@ -878,12 +915,12 @@ export function AdminQuestions() {
 								optionFilterProp="label"
 							/>
 						</Form.Item>
-						<Form.Item label="Topic" style={{ margin: 0 }}>
+						<Form.Item label="Sub Topic" style={{ margin: 0 }}>
 							<Select
 								mode="multiple"
 								style={{ minWidth: 200, borderRadius: 10 }}
 								allowClear
-								placeholder="All topics"
+								placeholder="All sub topics"
 								value={Array.isArray(topicId) ? topicId : (topicId ? [topicId] : [])}
 								onChange={(v) => {
 									setTopicId(Array.isArray(v) ? (v.length > 0 ? v : '') : (v || ''));
@@ -1103,16 +1140,17 @@ export function AdminQuestions() {
 									onChange={(v) => {
 										setAiGenerateCourseId(v || '');
 										setAiGenerateVolumeId('');
-										aiForm.setFieldsValue({ volumeId: undefined, topicIds: undefined, topicId: undefined });
+										setAiGenerateModuleId('');
+										aiForm.setFieldsValue({ volumeId: undefined, aiModuleId: undefined, topicIds: undefined, topicId: undefined });
 									}}
 								/>
 							</Form.Item>
 						</Col>
 						<Col span={12}>
-							<Form.Item name="volumeId" label="Volume">
+							<Form.Item name="volumeId" label="Topic">
 								<Select
 									allowClear
-									placeholder="Select volume"
+									placeholder="Select topic"
 									showSearch
 									optionFilterProp="label"
 									options={(aiGenerateCourseId
@@ -1121,16 +1159,46 @@ export function AdminQuestions() {
 									).map(v => ({ value: v.id, label: v.description ? `${v.description} (${v.name})` : v.name }))}
 									onChange={(v) => {
 										setAiGenerateVolumeId(v || '');
+										setAiGenerateModuleId('');
+										aiForm.setFieldsValue({ aiModuleId: undefined, topicIds: undefined, topicId: undefined });
+									}}
+								/>
+							</Form.Item>
+						</Col>
+						<Col span={12}>
+							<Form.Item name="aiModuleId" label="Learning Module">
+								<Select
+									allowClear
+									placeholder="Select learning module (optional)"
+									showSearch
+									optionFilterProp="label"
+									options={(() => {
+										let filtered = aiGenerateCourseId
+											? (topics || []).filter(t => (t.courseId === aiGenerateCourseId || t.course?.id === aiGenerateCourseId))
+											: (topics || []);
+										if (aiGenerateVolumeId) {
+											filtered = filtered.filter(t => t.module?.volumeId === aiGenerateVolumeId);
+										}
+										const moduleMap = new Map();
+										filtered.forEach(t => {
+											if (t.module?.id && !moduleMap.has(t.module.id)) {
+												moduleMap.set(t.module.id, { value: t.module.id, label: t.module.name || t.module.id });
+											}
+										});
+										return Array.from(moduleMap.values());
+									})()}
+									onChange={(v) => {
+										setAiGenerateModuleId(v || '');
 										aiForm.setFieldsValue({ topicIds: undefined, topicId: undefined });
 									}}
 								/>
 							</Form.Item>
 						</Col>
 						<Col span={24}>
-							<Form.Item name="topicIds" label="Topics" rules={[{ required: true, message: 'Select at least one topic' }]}>
+							<Form.Item name="topicIds" label="Sub Topics">
 								<Select
 									mode="multiple"
-									placeholder="Select topics"
+									placeholder="Select sub topics (optional — leave empty to use all matching)"
 									showSearch
 									optionFilterProp="label"
 									options={(
@@ -1139,6 +1207,7 @@ export function AdminQuestions() {
 											: (topics || [])
 									)
 										.filter(t => !aiGenerateVolumeId || t?.module?.volumeId === aiGenerateVolumeId)
+										.filter(t => !aiGenerateModuleId || t?.moduleId === aiGenerateModuleId || t?.module?.id === aiGenerateModuleId)
 										.map(t => ({ value: t.id, label: t.name }))}
 								/>
 							</Form.Item>
@@ -1433,13 +1502,13 @@ export function AdminQuestions() {
 				>
 					<Form.Item name="courseId" label="Course" rules={[{ required: false }]}>
 						<Select
-							placeholder="Select course to filter topics"
+							placeholder="Select course"
 							options={filteredCoursesOptions}
 							showSearch
 							optionFilterProp="label"
 							allowClear
 							onChange={(v) => {
-								form.setFieldsValue({ topicId: undefined, volumeId: undefined });
+								form.setFieldsValue({ topicId: undefined, volumeId: undefined, learningModuleId: undefined });
 								// When course changes, ensure question type still valid for that level
 								const course = (courses || []).find(c => c.id === v);
 								const level = course?.level;
@@ -1459,22 +1528,35 @@ export function AdminQuestions() {
 							}}
 						/>
 					</Form.Item>
-					<Form.Item name="volumeId" label="Volume">
+					<Form.Item name="volumeId" label="Topic" rules={[{ required: true, message: 'Select a topic' }]}>
 						<Select
-							placeholder="Select volume to filter topics"
+							placeholder="Select topic"
 							options={drawerVolumeOptions}
 							showSearch
 							optionFilterProp="label"
 							allowClear
 							disabled={!selectedDrawerCourseId || drawerVolumeOptions.length === 0}
 							onChange={() => {
+								form.setFieldsValue({ topicId: undefined, learningModuleId: undefined });
+							}}
+						/>
+					</Form.Item>
+					<Form.Item name="learningModuleId" label="Learning Module">
+						<Select
+							placeholder="Select learning module (optional)"
+							options={drawerModuleOptions}
+							showSearch
+							optionFilterProp="label"
+							allowClear
+							disabled={drawerModuleOptions.length === 0}
+							onChange={() => {
 								form.setFieldsValue({ topicId: undefined });
 							}}
 						/>
 					</Form.Item>
-					<Form.Item name="topicId" label="Topic" rules={[{ required: true }]}>
+					<Form.Item name="topicId" label="Sub Topic" rules={[{ required: true }]}>
 						<Select
-							placeholder="Select topic"
+							placeholder="Select sub topic"
 							options={drawerTopicOptions}
 							showSearch
 							optionFilterProp="label"

@@ -102,7 +102,13 @@ export default function StudentMockExams() {
     });
   };
 
-  const getSessionStep = (status) => {
+  const getSessionStep = (status, isSingleSession) => {
+    if (isSingleSession) {
+      if (status === 'PENDING') return 0;
+      if (status === 'SESSION1') return 0;
+      if (status === 'COMPLETED') return 1;
+      return 0;
+    }
     if (status === 'PENDING') return 0;
     if (status === 'SESSION1') return 0;
     if (status === 'BREAK') return 1;
@@ -171,7 +177,8 @@ export default function StudentMockExams() {
               const sc = STATUS_CONFIG[mock.status] || STATUS_CONFIG.PENDING;
               const s1Count = mock.session1Exam?.examQuestions?.length || 0;
               const s2Count = mock.session2Exam?.examQuestions?.length || 0;
-              const currentStep = getSessionStep(mock.status);
+              const isSingleSession = !mock.session2ExamId && (mock.breakMinutes === 0 || !mock.breakMinutes);
+              const currentStep = getSessionStep(mock.status, isSingleSession);
 
               return (
                 <motion.div
@@ -212,7 +219,10 @@ export default function StudentMockExams() {
                         current={currentStep}
                         status={mock.status === 'CANCELLED' ? 'error' : 'process'}
                         className="mb-6"
-                        items={[
+                        items={isSingleSession ? [
+                          { title: 'Exam', description: `${s1Count} Qs · ${mock.session1Minutes} min` },
+                          { title: 'Results' }
+                        ] : [
                           { title: 'Session 1', description: `${s1Count} Qs · ${mock.session1Minutes} min` },
                           { title: 'Break', description: `${mock.breakMinutes} min` },
                           { title: 'Session 2', description: `${s2Count} Qs · ${mock.session2Minutes} min` },
@@ -222,27 +232,45 @@ export default function StudentMockExams() {
 
                       {/* Scores (if completed) */}
                       {mock.status === 'COMPLETED' && (
-                        <div className="grid grid-cols-3 gap-4 mb-6">
-                          <Card size="small" className="text-center" style={{ borderRadius: 12, background: '#f0fdf4', borderColor: '#86efac' }}>
-                            <Typography.Text className="text-xs text-slate-500 block">Session 1</Typography.Text>
-                            <Typography.Title level={4} className="!m-0" style={{ color: '#16a34a' }}>
-                              {mock.session1Score != null ? `${mock.session1Score}%` : '—'}
-                            </Typography.Title>
-                          </Card>
-                          <Card size="small" className="text-center" style={{ borderRadius: 12, background: '#eff6ff', borderColor: '#93c5fd' }}>
-                            <Typography.Text className="text-xs text-slate-500 block">Session 2</Typography.Text>
-                            <Typography.Title level={4} className="!m-0" style={{ color: '#2563eb' }}>
-                              {mock.session2Score != null ? `${mock.session2Score}%` : '—'}
-                            </Typography.Title>
-                          </Card>
-                          <Card size="small" className="text-center" style={{ borderRadius: 12, background: '#fefce8', borderColor: '#fde047' }}>
-                            <Typography.Text className="text-xs text-slate-500 block">Overall</Typography.Text>
-                            <Typography.Title level={4} className="!m-0" style={{ color: '#ca8a04' }}>
-                              <TrophyOutlined className="mr-1" />
-                              {mock.totalScore != null ? `${mock.totalScore}%` : '—'}
-                            </Typography.Title>
-                          </Card>
-                        </div>
+                        isSingleSession ? (
+                          <div className="grid grid-cols-2 gap-4 mb-6">
+                            <Card size="small" className="text-center" style={{ borderRadius: 12, background: '#f0fdf4', borderColor: '#86efac' }}>
+                              <Typography.Text className="text-xs text-slate-500 block">Score</Typography.Text>
+                              <Typography.Title level={4} className="!m-0" style={{ color: '#16a34a' }}>
+                                {mock.session1Score != null ? `${mock.session1Score}%` : '—'}
+                              </Typography.Title>
+                            </Card>
+                            <Card size="small" className="text-center" style={{ borderRadius: 12, background: '#fefce8', borderColor: '#fde047' }}>
+                              <Typography.Text className="text-xs text-slate-500 block">Overall</Typography.Text>
+                              <Typography.Title level={4} className="!m-0" style={{ color: '#ca8a04' }}>
+                                <TrophyOutlined className="mr-1" />
+                                {mock.totalScore != null ? `${mock.totalScore}%` : '—'}
+                              </Typography.Title>
+                            </Card>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-3 gap-4 mb-6">
+                            <Card size="small" className="text-center" style={{ borderRadius: 12, background: '#f0fdf4', borderColor: '#86efac' }}>
+                              <Typography.Text className="text-xs text-slate-500 block">Session 1</Typography.Text>
+                              <Typography.Title level={4} className="!m-0" style={{ color: '#16a34a' }}>
+                                {mock.session1Score != null ? `${mock.session1Score}%` : '—'}
+                              </Typography.Title>
+                            </Card>
+                            <Card size="small" className="text-center" style={{ borderRadius: 12, background: '#eff6ff', borderColor: '#93c5fd' }}>
+                              <Typography.Text className="text-xs text-slate-500 block">Session 2</Typography.Text>
+                              <Typography.Title level={4} className="!m-0" style={{ color: '#2563eb' }}>
+                                {mock.session2Score != null ? `${mock.session2Score}%` : '—'}
+                              </Typography.Title>
+                            </Card>
+                            <Card size="small" className="text-center" style={{ borderRadius: 12, background: '#fefce8', borderColor: '#fde047' }}>
+                              <Typography.Text className="text-xs text-slate-500 block">Overall</Typography.Text>
+                              <Typography.Title level={4} className="!m-0" style={{ color: '#ca8a04' }}>
+                                <TrophyOutlined className="mr-1" />
+                                {mock.totalScore != null ? `${mock.totalScore}%` : '—'}
+                              </Typography.Title>
+                            </Card>
+                          </div>
+                        )
                       )}
 
                       {/* Action buttons */}
@@ -256,7 +284,7 @@ export default function StudentMockExams() {
                             className="rounded-xl"
                             style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}
                           >
-                            Start Session 1
+                            {isSingleSession ? 'Start Exam' : 'Start Session 1'}
                           </Button>
                         )}
                         {mock.status === 'BREAK' && (
@@ -277,10 +305,10 @@ export default function StudentMockExams() {
                             onClick={() => navigate(`/student/exams/result/${mock.session1Exam.attempts[0].id}`)}
                             className="rounded-xl"
                           >
-                            Session 1 Results
+                            {isSingleSession ? 'View Results' : 'Session 1 Results'}
                           </Button>
                         )}
-                        {mock.status === 'COMPLETED' && mock.session2Exam?.attempts?.[0]?.id && (
+                        {!isSingleSession && mock.status === 'COMPLETED' && mock.session2Exam?.attempts?.[0]?.id && (
                           <Button
                             icon={<RightOutlined />}
                             onClick={() => navigate(`/student/exams/result/${mock.session2Exam.attempts[0].id}`)}
@@ -331,7 +359,7 @@ export default function StudentMockExams() {
         <div className="space-y-6">
           <Card size="small" style={{ borderRadius: 12, background: '#f0f5ff', borderColor: '#d6e4ff' }}>
             <Typography.Text className="text-xs text-slate-600">
-              <strong>Exam Conditions:</strong> Two timed sessions with a mandatory break. Questions are weighted by topic as configured by your course administrator. Simulates real CFA exam conditions.
+              <strong>Exam Conditions:</strong> Level 1: Two timed sessions with a mandatory break. Level 2 &amp; 3: Single timed session with random topic placement. Questions are weighted by topic as configured by your course administrator. Simulates real CFA exam conditions.
             </Typography.Text>
           </Card>
 

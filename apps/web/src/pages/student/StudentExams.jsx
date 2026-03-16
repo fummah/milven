@@ -46,14 +46,34 @@ export function StudentExams() {
   const navigate = useNavigate();
 
   const selectedVolumeId = Form.useWatch('volumeId', customExamForm);
+  const selectedModuleId = Form.useWatch('moduleId', customExamForm);
   const questionTypeOptions = useMemo(
     () => getQuestionTypeOptions(selectedCourseLevel),
     [selectedCourseLevel]
   );
-  const filteredTopics = useMemo(() => {
-    if (!selectedVolumeId) return topics;
-    return topics.filter((topic) => String(topic.volumeId || '') === String(selectedVolumeId));
+  const moduleOptions = useMemo(() => {
+    let filtered = topics;
+    if (selectedVolumeId) {
+      filtered = filtered.filter((t) => String(t.volumeId || '') === String(selectedVolumeId));
+    }
+    const moduleMap = new Map();
+    filtered.forEach(t => {
+      if (t.moduleId && !moduleMap.has(t.moduleId)) {
+        moduleMap.set(t.moduleId, { value: t.moduleId, label: t.moduleName || t.moduleId });
+      }
+    });
+    return Array.from(moduleMap.values());
   }, [topics, selectedVolumeId]);
+  const filteredTopics = useMemo(() => {
+    let filtered = topics;
+    if (selectedVolumeId) {
+      filtered = filtered.filter((topic) => String(topic.volumeId || '') === String(selectedVolumeId));
+    }
+    if (selectedModuleId) {
+      filtered = filtered.filter((topic) => String(topic.moduleId || '') === String(selectedModuleId));
+    }
+    return filtered;
+  }, [topics, selectedVolumeId, selectedModuleId]);
 
   useEffect(() => {
     (async () => {
@@ -310,6 +330,8 @@ export function StudentExams() {
                 name: '', 
                 courseId: undefined, 
                 topicIds: undefined,
+                volumeId: undefined,
+                moduleId: undefined,
                 difficulty: undefined, 
                 difficulties: [],
                 questionCount: 20, 
@@ -733,7 +755,7 @@ export function StudentExams() {
                   showSearch
                   optionFilterProp="label"
                   onChange={async (courseId) => {
-                    customExamForm.setFieldsValue({ topicIds: undefined, volumeId: undefined });
+                    customExamForm.setFieldsValue({ topicIds: undefined, volumeId: undefined, moduleId: undefined });
                     const course = (enrolled || []).find(c => c.courseId === courseId);
                     const level = course?.level;
                     const defaultType = getDefaultQuestionType(level);
@@ -751,7 +773,8 @@ export function StudentExams() {
                           (module.topics || []).map((topic) => ({
                             id: topic.id,
                             name: topic.name,
-                            moduleId: topic.moduleId,
+                            moduleId: module.id || topic.moduleId,
+                            moduleName: module.name || null,
                             moduleNumber: topic.moduleNumber,
                             volumeId: module.volumeId || null
                           }))
@@ -774,18 +797,35 @@ export function StudentExams() {
           </Row>
           <Row gutter={16}>
             <Col xs={24} sm={12}>
-              <Form.Item name="volumeId" label="Volume">
+              <Form.Item name="volumeId" label="Topic">
                 <Select
                   allowClear
-                  placeholder="Select volume"
+                  placeholder="Select topic"
                   options={volumes.map((volume) => ({ value: volume.id, label: volume.description ? `${volume.description} (${volume.name})` : volume.name }))}
                   disabled={volumes.length === 0}
+                  onChange={() => {
+                    customExamForm.setFieldsValue({ topicIds: undefined, moduleId: undefined });
+                  }}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item name="moduleId" label="Learning Module">
+                <Select
+                  allowClear
+                  placeholder="Select learning module (optional)"
+                  options={moduleOptions}
+                  showSearch
+                  optionFilterProp="label"
+                  disabled={moduleOptions.length === 0}
                   onChange={() => {
                     customExamForm.setFieldsValue({ topicIds: undefined });
                   }}
                 />
               </Form.Item>
             </Col>
+          </Row>
+          <Row gutter={16}>
             <Col xs={24} sm={12}>
               <Form.Item name="questionType" label="Question Type" rules={[{ required: true }]}>
                 <Select
@@ -795,14 +835,12 @@ export function StudentExams() {
                 />
               </Form.Item>
             </Col>
-          </Row>
-          <Row gutter={16}>
             <Col xs={24} sm={12}>
-              <Form.Item name="topicIds" label="Topics (optional filter)">
+              <Form.Item name="topicIds" label="Sub Topics (optional filter)">
                 <Select
                   mode="multiple"
                   allowClear
-                  placeholder="Select topics (optional)"
+                  placeholder="Select sub topics (optional)"
                   options={filteredTopics.map(t => ({ value: t.id, label: t.name }))}
                   showSearch
                   optionFilterProp="label"

@@ -229,7 +229,7 @@ export function AdminVolumes() {
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-        <Typography.Title level={4} style={{ margin: 0 }}>Volumes</Typography.Title>
+        <Typography.Title level={4} style={{ margin: 0 }}>Topics</Typography.Title>
         <Space wrap>
           <Select
             value={filterCourseId || undefined}
@@ -241,7 +241,7 @@ export function AdminVolumes() {
             placeholder="Filter by course (optional)"
             options={courseOptions}
           />
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>New Volume</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>New Topic</Button>
         </Space>
       </Space>
 
@@ -256,7 +256,7 @@ export function AdminVolumes() {
       </Card>
 
       <Drawer
-        title={editing ? 'Edit Volume' : 'New Volume'}
+        title={editing ? 'Edit Topic' : 'New Topic'}
         open={open}
         onClose={() => setOpen(false)}
         width={420}
@@ -264,15 +264,12 @@ export function AdminVolumes() {
         extra={<Button type="primary" loading={saving} onClick={() => form.submit()}>{editing ? 'Save' : 'Create'}</Button>}
       >
         <Form form={form} layout="vertical" onFinish={save}>
-          <Form.Item name="name" label="Volume Name" rules={[{ required: true, min: 2 }]}>
-            <Input placeholder="e.g. Volume 1" />
+          <Form.Item name="name" label="Topic Name/Description" rules={[{ required: true, min: 2 }]}>
+            <Input.TextArea rows={3} placeholder="Enter topic name and description..." />
           </Form.Item>
-          <Form.Item name="description" label="Description">
-            <Input.TextArea 
-              rows={3} 
-              placeholder="Optional description for this volume..."
-              maxLength={500}
-              showCount
+          <Form.Item name="description" label="Volume Number">
+            <Input 
+              placeholder="e.g. Volume 1"
             />
           </Form.Item>
           <Form.Item name="courseIds" label="Link to Courses" rules={[{ required: false }]}>

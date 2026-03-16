@@ -1930,9 +1930,9 @@ export function examsRouter(prisma) {
 
 	// CFA default session configs per level
 	const MOCK_DEFAULTS = {
-		LEVEL1: { session1Minutes: 135, session2Minutes: 135, breakMinutes: 30, questionsPerSession: 90, questionType: 'MCQ' },
-		LEVEL2: { session1Minutes: 132, session2Minutes: 132, breakMinutes: 30, questionsPerSession: 44, questionType: 'VIGNETTE_MCQ' },
-		LEVEL3: { session1Minutes: 132, session2Minutes: 132, breakMinutes: 30, session1Type: 'CONSTRUCTED_RESPONSE', session2Type: 'VIGNETTE_MCQ', session1Questions: 22, session2Questions: 33 }
+		LEVEL1: { sessions: 2, session1Minutes: 135, session2Minutes: 135, breakMinutes: 30, questionsPerSession: 90, questionType: 'MCQ' },
+		LEVEL2: { sessions: 1, totalMinutes: 264, totalQuestions: 88, questionType: 'VIGNETTE_MCQ' },
+		LEVEL3: { sessions: 1, totalMinutes: 264, totalQuestions: 55, questionType: null }
 	};
 
 	// Admin: Get topic weights for a course
@@ -1954,7 +1954,7 @@ export function examsRouter(prisma) {
 		const weightSchema = z.object({
 			weights: z.array(z.object({
 				volumeId: z.string(),
-				session: z.number().int().min(1).max(2),
+				session: z.number().int().min(0).max(2),
 				weightMin: z.number().min(0).max(100),
 				weightMax: z.number().min(0).max(100)
 			}))
@@ -2062,13 +2062,12 @@ export function examsRouter(prisma) {
 				volumeTopicMap[w.volumeId] = topicIds;
 			}
 
-			// Select questions per session based on weights
-			async function selectQuestionsForSession(sessionNum, totalQuestions, questionType) {
-				const sessionWeights = weights.filter(w => w.session === sessionNum);
-				if (sessionWeights.length === 0) return [];
+			// Select questions based on weights for a given set of weight rows
+			async function selectWeightedQuestions(weightRows, totalQuestions, questionType) {
+				if (weightRows.length === 0) return [];
 
 				const allQuestionIds = [];
-				for (const sw of sessionWeights) {
+				for (const sw of weightRows) {
 					const midWeight = (sw.weightMin + sw.weightMax) / 2 / 100;
 					const targetCount = Math.max(1, Math.round(totalQuestions * midWeight));
 					const topicIds = volumeTopicMap[sw.volumeId] || [];
@@ -2083,6 +2082,7 @@ export function examsRouter(prisma) {
 					} else if (questionType === 'CONSTRUCTED_RESPONSE') {
 						where.OR = [{ type: 'CONSTRUCTED_RESPONSE', parentId: null }];
 					}
+					// questionType === null means any type (for L3)
 
 					const questions = await prisma.question.findMany({
 						where,
@@ -2109,16 +2109,23 @@ export function examsRouter(prisma) {
 				return allQuestionIds;
 			}
 
-			let s1Ids, s2Ids, s1Minutes, s2Minutes;
+			let s1Ids = [], s2Ids = [], s1Minutes = 0, s2Minutes = 0;
 
-			if (level === 'LEVEL3') {
-				s1Ids = await selectQuestionsForSession(1, defaults.session1Questions, defaults.session1Type);
-				s2Ids = await selectQuestionsForSession(2, defaults.session2Questions, defaults.session2Type);
-				s1Minutes = defaults.session1Minutes;
-				s2Minutes = defaults.session2Minutes;
+			if (defaults.sessions === 1) {
+				// L2/L3: Single session — all weights combined, random topic placement
+				const allWeightRows = weights;
+				s1Ids = await selectWeightedQuestions(allWeightRows, defaults.totalQuestions, defaults.questionType);
+				// Shuffle for random topic placement across the entire exam
+				shuffleInPlace(s1Ids);
+				s1Minutes = defaults.totalMinutes;
+				s2Ids = [];
+				s2Minutes = 0;
 			} else {
-				s1Ids = await selectQuestionsForSession(1, defaults.questionsPerSession, defaults.questionType);
-				s2Ids = await selectQuestionsForSession(2, defaults.questionsPerSession, defaults.questionType);
+				// L1: Two sessions
+				const session1Weights = weights.filter(w => w.session === 1);
+				const session2Weights = weights.filter(w => w.session === 2);
+				s1Ids = await selectWeightedQuestions(session1Weights, defaults.questionsPerSession, defaults.questionType);
+				s2Ids = await selectWeightedQuestions(session2Weights, defaults.questionsPerSession, defaults.questionType);
 				s1Minutes = defaults.session1Minutes;
 				s2Minutes = defaults.session2Minutes;
 			}
@@ -2130,7 +2137,7 @@ export function examsRouter(prisma) {
 			// Create session 1 exam
 			const exam1 = s1Ids.length > 0 ? await prisma.exam.create({
 				data: {
-					name: `${course.name} Mock - Session 1`,
+					name: defaults.sessions === 1 ? `${course.name} Mock Exam` : `${course.name} Mock - Session 1`,
 					level: course.level,
 					timeLimitMinutes: s1Minutes,
 					type: 'MOCK',
@@ -2144,7 +2151,7 @@ export function examsRouter(prisma) {
 				});
 			}
 
-			// Create session 2 exam
+			// Create session 2 exam (only for L1)
 			const exam2 = s2Ids.length > 0 ? await prisma.exam.create({
 				data: {
 					name: `${course.name} Mock - Session 2`,
@@ -2168,9 +2175,9 @@ export function examsRouter(prisma) {
 					courseId,
 					session1ExamId: exam1?.id || null,
 					session2ExamId: exam2?.id || null,
-					breakMinutes: defaults.breakMinutes,
+					breakMinutes: defaults.sessions === 1 ? 0 : (defaults.breakMinutes || 30),
 					session1Minutes: s1Minutes,
-					session2Minutes: s2Minutes,
+					session2Minutes: s2Minutes || null,
 					status: 'PENDING'
 				}
 			});
