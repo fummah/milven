@@ -797,11 +797,11 @@ export function StudentExams() {
           </Row>
           <Row gutter={16}>
             <Col xs={24} sm={12}>
-              <Form.Item name="volumeId" label="Topic">
+              <Form.Item name="volumeId" label="Volume">
                 <Select
                   allowClear
-                  placeholder="Select topic"
-                  options={volumes.map((volume) => ({ value: volume.id, label: volume.description ? `${volume.description} (${volume.name})` : volume.name }))}
+                  placeholder="Select volume"
+                  options={volumes.map((volume) => ({ value: volume.id, label: volume.description ? `${volume.name} - ${volume.description}` : volume.name }))}
                   disabled={volumes.length === 0}
                   onChange={() => {
                     customExamForm.setFieldsValue({ topicIds: undefined, moduleId: undefined });
@@ -836,11 +836,11 @@ export function StudentExams() {
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
-              <Form.Item name="topicIds" label="Sub Topics (optional filter)">
+              <Form.Item name="topicIds" label="Topics (optional filter)">
                 <Select
                   mode="multiple"
                   allowClear
-                  placeholder="Select sub topics (optional)"
+                  placeholder="Select topics (optional)"
                   options={filteredTopics.map(t => ({ value: t.id, label: t.name }))}
                   showSearch
                   optionFilterProp="label"

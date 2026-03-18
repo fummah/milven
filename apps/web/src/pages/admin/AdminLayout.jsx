@@ -59,7 +59,7 @@ const menuItems = [
     label: 'Courses',
     children: [
       { key: 'courses-list', icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'), label: <Link to="/admin/courses">Courses</Link> },
-      { key: 'volumes', icon: modernBadge(<FolderOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/volumes">Topics</Link> },
+      { key: 'volumes', icon: modernBadge(<FolderOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/volumes">Volumes</Link> },
       { key: 'topics', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #a855f7, #9333ea)'), label: <Link to="/admin/topics">Learning Modules</Link> },
       { key: 'questions', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/questions">Questions</Link> },
       { key: 'materials', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #06b6d4, #0891b2)'), label: <Link to="/admin/materials">Learning Materials</Link> },

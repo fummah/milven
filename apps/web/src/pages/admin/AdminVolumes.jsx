@@ -211,16 +211,11 @@ export function AdminVolumes() {
     },
     {
       title: 'Actions',
-      width: 280,
+      width: 180,
       render: (_, row) => (
         <Space wrap>
           <Button size="small" onClick={() => openEdit(row)}>Edit</Button>
           <Button size="small" danger onClick={() => remove(row)}>Delete</Button>
-          {filterCourseId && (
-            (row.courseLinks || []).some(l => l.courseId === filterCourseId)
-              ? <Button size="small" icon={<LinkOutlined />} onClick={() => detach(row.id, filterCourseId)}>Detach</Button>
-              : <Button size="small" type="primary" icon={<LinkOutlined />} onClick={() => attach(row.id, filterCourseId)}>Attach</Button>
-          )}
         </Space>
       )
     }
@@ -229,7 +224,7 @@ export function AdminVolumes() {
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-        <Typography.Title level={4} style={{ margin: 0 }}>Topics</Typography.Title>
+        <Typography.Title level={4} style={{ margin: 0 }}>Volumes</Typography.Title>
         <Space wrap>
           <Select
             value={filterCourseId || undefined}
@@ -241,7 +236,7 @@ export function AdminVolumes() {
             placeholder="Filter by course (optional)"
             options={courseOptions}
           />
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>New Topic</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>New Volume</Button>
         </Space>
       </Space>
 
@@ -256,7 +251,7 @@ export function AdminVolumes() {
       </Card>
 
       <Drawer
-        title={editing ? 'Edit Topic' : 'New Topic'}
+        title={editing ? 'Edit Volume' : 'New Volume'}
         open={open}
         onClose={() => setOpen(false)}
         width={420}
@@ -264,8 +259,8 @@ export function AdminVolumes() {
         extra={<Button type="primary" loading={saving} onClick={() => form.submit()}>{editing ? 'Save' : 'Create'}</Button>}
       >
         <Form form={form} layout="vertical" onFinish={save}>
-          <Form.Item name="name" label="Topic Name/Description" rules={[{ required: true, min: 2 }]}>
-            <Input.TextArea rows={3} placeholder="Enter topic name and description..." />
+          <Form.Item name="name" label="Volume Name/Description" rules={[{ required: true, min: 2 }]}>
+            <Input.TextArea rows={3} placeholder="Enter volume name and description..." />
           </Form.Item>
           <Form.Item name="description" label="Volume Number">
             <Input 

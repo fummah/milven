@@ -282,7 +282,10 @@ export function cmsRouter(prisma) {
       prisma.topic.findMany({
         where: { courseId: id },
         orderBy: [{ moduleId: 'asc' }, { moduleNumber: 'asc' }, { order: 'asc' }, { createdAt: 'desc' }],
-        include: { module: true }
+        include: {
+          module: true,
+          concepts: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, order: true, topicId: true, createdAt: true } }
+        }
       })
     ]);
     const [revisionSummaries, exams] = await Promise.all([
@@ -416,6 +419,10 @@ export function cmsRouter(prisma) {
 								where: { courseId },
 								orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
 								select: { id: true }
+							},
+							courseLinks: {
+								orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+								include: { course: { select: { id: true, name: true, level: true } } }
 							}
 						}
 					}
@@ -556,7 +563,10 @@ export function cmsRouter(prisma) {
 				volume: { select: { id: true, name: true } },
 				topics: {
 					...(courseId ? { where: { courseId } } : {}),
-					orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
+					orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+					include: {
+						concepts: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, order: true, topicId: true, createdAt: true } }
+					}
 				}
 			}
 		});
@@ -650,7 +660,10 @@ export function cmsRouter(prisma) {
 			prisma.topic.findMany({
 				where,
 				orderBy: [{ moduleId: 'asc' }, { moduleNumber: 'asc' }, { order: 'asc' }, { createdAt: 'desc' }],
-				include: { module: true }
+				include: {
+					module: true,
+					concepts: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, order: true, topicId: true, createdAt: true } }
+				}
 			})
 		]);
 		return res.json({ topics, total });
@@ -660,7 +673,8 @@ export function cmsRouter(prisma) {
 			name: z.string().min(2),
 			courseId: z.string().min(1),
 			moduleId: z.string().min(1),
-			moduleNumber: z.number().int().optional()
+			moduleNumber: z.number().int().optional(),
+			order: z.number().int().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -673,13 +687,17 @@ export function cmsRouter(prisma) {
 		if (m.courseId && m.courseId !== courseId) return res.status(400).json({ error: 'Module does not belong to this course' });
 		if (!m.volumeId) return res.status(400).json({ error: 'Module is missing volumeId. Run backfill or fix module.' });
 		const data = { ...parse.data, courseId, level, moduleId: parse.data.moduleId };
-		const max = await prisma.topic.findFirst({
-			where: { moduleId: data.moduleId, courseId },
-			orderBy: { order: 'desc' },
-			select: { order: true }
-		});
-		const nextOrder = (max?.order ?? 0) + 1;
-		const topic = await prisma.topic.create({ data: { ...data, order: nextOrder }, include: { module: true } });
+		let finalOrder = parse.data.order;
+		if (finalOrder == null) {
+			const max = await prisma.topic.findFirst({
+				where: { moduleId: data.moduleId, courseId },
+				orderBy: { order: 'desc' },
+				select: { order: true }
+			});
+			finalOrder = (max?.order ?? 0) + 1;
+		}
+		delete data.order;
+		const topic = await prisma.topic.create({ data: { ...data, order: finalOrder }, include: { module: true } });
 		return res.status(201).json({ topic });
 	});
 	router.put('/topics/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
@@ -688,7 +706,8 @@ export function cmsRouter(prisma) {
 			name: z.string().min(2).optional(),
 			courseId: z.string().optional().nullable(),
 			moduleId: z.string().optional().nullable(),
-			moduleNumber: z.number().int().optional()
+			moduleNumber: z.number().int().optional(),
+			order: z.number().int().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -853,6 +872,97 @@ export function cmsRouter(prisma) {
     const id = req.params.id;
     await prisma.learningMaterial.delete({ where: { id } });
     return res.json({ ok: true });
+  });
+
+  // Concepts
+  router.get('/concepts', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const topicId = req.query.topicId;
+    const where = topicId ? { topicId } : {};
+    const concepts = await prisma.concept.findMany({
+      where,
+      include: { topic: { select: { id: true, name: true, moduleId: true } }, materials: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] } },
+      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
+    });
+    return res.json({ concepts });
+  });
+  router.post('/concepts', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const schema = z.object({
+      name: z.string().min(2),
+      topicId: z.string().min(1),
+      order: z.number().int().optional()
+    });
+    const parse = schema.safeParse(req.body);
+    if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+    const { name, topicId, order } = parse.data;
+    const topic = await prisma.topic.findUnique({ where: { id: topicId } });
+    if (!topic) return res.status(404).json({ error: 'Topic not found' });
+    let nextOrder = order;
+    if (nextOrder == null) {
+      const max = await prisma.concept.findFirst({ where: { topicId }, orderBy: { order: 'desc' }, select: { order: true } });
+      nextOrder = (max?.order ?? 0) + 1;
+    }
+    const concept = await prisma.concept.create({ data: { name, topicId, order: nextOrder }, include: { topic: true } });
+    return res.status(201).json({ concept });
+  });
+  router.put('/concepts/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const id = req.params.id;
+    const schema = z.object({
+      name: z.string().min(2).optional(),
+      order: z.number().int().optional()
+    });
+    const parse = schema.safeParse(req.body);
+    if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+    const concept = await prisma.concept.update({ where: { id }, data: parse.data, include: { topic: true } });
+    return res.json({ concept });
+  });
+  router.delete('/concepts/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const id = req.params.id;
+    await prisma.concept.delete({ where: { id } });
+    return res.json({ ok: true });
+  });
+  router.get('/concepts/:id/materials', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const conceptId = req.params.id;
+    const materials = await prisma.learningMaterial.findMany({
+      where: { conceptId },
+      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
+    });
+    const etaSeconds = (materials || []).reduce((acc, m) => acc + (m.estimatedSeconds || 0), 0);
+    return res.json({ materials, etaSeconds });
+  });
+  router.post('/concepts/:id/materials', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const conceptId = req.params.id;
+    const concept = await prisma.concept.findUnique({ where: { id: conceptId } });
+    if (!concept) return res.status(404).json({ error: 'Concept not found' });
+    const schema = z.object({
+      kind: z.enum(['LINK','PDF','VIDEO','IMAGE','HTML']),
+      title: z.string().min(2),
+      url: z.string().min(1).optional(),
+      contentHtml: z.string().optional(),
+      imageUrl: z.string().min(1).optional(),
+      estimatedSeconds: z.number().int().positive().optional(),
+      estimatedMinutes: z.number().int().positive().optional(),
+      durationSec: z.number().int().positive().optional()
+    });
+    const parse = schema.safeParse(req.body);
+    if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+    const max = await prisma.learningMaterial.findFirst({ where: { conceptId }, orderBy: { order: 'desc' }, select: { order: true } });
+    const nextOrder = (max?.order ?? 0) + 1;
+    const payload = parse.data;
+    const estimatedSeconds = computeEstimatedSeconds(payload.kind, payload);
+    const material = await prisma.learningMaterial.create({
+      data: {
+        topicId: concept.topicId,
+        conceptId,
+        order: nextOrder,
+        kind: payload.kind,
+        title: payload.title,
+        url: payload.url ?? null,
+        contentHtml: payload.contentHtml ?? null,
+        imageUrl: payload.imageUrl ?? null,
+        estimatedSeconds
+      }
+    });
+    return res.status(201).json({ material });
   });
 
 	// Questions (MCQ or Vignette-based, CR)

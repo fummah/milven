@@ -333,9 +333,9 @@ export function AdminQuestionEdit() {
 							}}
 						/>
 					</Form.Item>
-					<Form.Item name="topicId" label="Sub Topic" rules={[{ required: true }]}>
+					<Form.Item name="topicId" label="Topic" rules={[{ required: true }]}>
 						<Select
-							placeholder="Select sub topic"
+							placeholder="Select topic"
 							options={topicOptions}
 							showSearch
 							optionFilterProp="label"

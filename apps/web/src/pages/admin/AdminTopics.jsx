@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Form, Input, Button, Select, message, Table, Drawer, Space, Popconfirm, Tag, Tabs, Modal, Upload, Steps, Layout, List, Divider, Radio, Descriptions, Typography, Grid } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, UploadOutlined, FolderOutlined, SearchOutlined, EyeOutlined, BookOutlined, FileTextOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, UploadOutlined, FolderOutlined, SearchOutlined, EyeOutlined, BookOutlined, FileTextOutlined, CheckCircleOutlined, BulbOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 // Natural sort comparison - handles "Volume 1", "Volume 10" correctly
@@ -74,6 +74,18 @@ export function AdminTopics() {
   const [examViewLoading, setExamViewLoading] = useState(false);
   const [examViewExam, setExamViewExam] = useState(null);
   const [examViewQuestions, setExamViewQuestions] = useState([]);
+
+  // Concept state
+  const [conceptDrawerOpen, setConceptDrawerOpen] = useState(false);
+  const [conceptForm] = Form.useForm();
+  const [conceptMaterialForm] = Form.useForm();
+  const [selectedConcept, setSelectedConcept] = useState(null);
+  const [conceptStep, setConceptStep] = useState(0);
+  const [savingConcept, setSavingConcept] = useState(false);
+  const [savingConceptMaterial, setSavingConceptMaterial] = useState(false);
+  const [conceptMaterials, setConceptMaterials] = useState([]);
+  const [conceptMaterialsLoading, setConceptMaterialsLoading] = useState(false);
+  const [conceptParentTopic, setConceptParentTopic] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -168,6 +180,99 @@ export function AdminTopics() {
     navigate(`/admin/exams/builder?${params}`);
   };
 
+  // Concept functions
+  const openConceptDrawer = (topic) => {
+    setSelectedConcept(null);
+    setConceptParentTopic(topic);
+    conceptForm.resetFields();
+    conceptForm.setFieldsValue({ topicId: topic.id, topicName: topic.name });
+    setConceptStep(0);
+    setConceptMaterials([]);
+    setConceptDrawerOpen(true);
+  };
+
+  const openEditConceptDrawer = async (concept, topic) => {
+    setSelectedConcept(concept);
+    setConceptParentTopic(topic);
+    conceptForm.resetFields();
+    conceptForm.setFieldsValue({ name: concept.name, order: concept.order, topicId: concept.topicId, topicName: topic?.name || '' });
+    setConceptStep(0);
+    await loadConceptMaterials(concept.id);
+    setConceptDrawerOpen(true);
+  };
+
+  const loadConceptMaterials = async (conceptId) => {
+    if (!conceptId) return;
+    setConceptMaterialsLoading(true);
+    try {
+      const { data } = await api.get(`/api/cms/concepts/${conceptId}/materials`);
+      setConceptMaterials(data.materials || []);
+    } catch {
+      setConceptMaterials([]);
+    } finally {
+      setConceptMaterialsLoading(false);
+    }
+  };
+
+  const loadConceptsForTopic = async (topicId) => {
+    try {
+      const { data } = await api.get('/api/cms/concepts', { params: { topicId } });
+      return data.concepts || [];
+    } catch {
+      return [];
+    }
+  };
+
+  const saveConceptForm = async (values) => {
+    try {
+      setSavingConcept(true);
+      if (selectedConcept) {
+        await api.put(`/api/cms/concepts/${selectedConcept.id}`, { name: values.name, order: values.order ? Number(values.order) : undefined });
+        message.success('Concept updated');
+        await loadConceptMaterials(selectedConcept.id);
+        setConceptStep(1);
+      } else {
+        const { data } = await api.post('/api/cms/concepts', { name: values.name, topicId: values.topicId, order: values.order ? Number(values.order) : undefined });
+        const created = data?.concept;
+        if (created?.id) {
+          setSelectedConcept(created);
+          setConceptStep(1);
+          message.success('Concept created');
+        }
+      }
+      load();
+    } catch {
+      message.error('Failed to save concept');
+    } finally {
+      setSavingConcept(false);
+    }
+  };
+
+  const saveConceptMaterial = async (values) => {
+    if (!selectedConcept) return;
+    try {
+      setSavingConceptMaterial(true);
+      await api.post(`/api/cms/concepts/${selectedConcept.id}/materials`, values);
+      conceptMaterialForm.resetFields();
+      await loadConceptMaterials(selectedConcept.id);
+      message.success('Material added');
+    } catch {
+      message.error('Failed to add material');
+    } finally {
+      setSavingConceptMaterial(false);
+    }
+  };
+
+  const deleteConcept = async (concept) => {
+    try {
+      await api.delete(`/api/cms/concepts/${concept.id}`);
+      message.success('Concept deleted');
+      load();
+    } catch {
+      message.error('Delete failed');
+    }
+  };
+
   const submit = async (values) => {
     try {
       setSavingTopic(true);
@@ -185,7 +290,8 @@ export function AdminTopics() {
         name: values.name,
         courseId: values.courseId,
         moduleId: values.moduleId,
-        level
+        level,
+        order: values.order != null ? Number(values.order) : undefined
       };
       if (editing) {
         await api.put(`/api/cms/topics/${editing.id}`, payload);
@@ -367,11 +473,12 @@ export function AdminTopics() {
             setEditing(record);
             setTopicStep(0);
             const courseId = record.courseId ?? (courses.find(c => c.level === record.level)?.id ?? '');
-            form.setFieldsValue({ name: record.name, moduleId: record.moduleId || '', courseId });
+            form.setFieldsValue({ name: record.name, moduleId: record.moduleId || '', courseId, order: record.order ?? '' });
             setDrawerOpen(true);
           }}>
             Edit
           </Button>
+          <Button size="small" style={{ color: '#722ed1' }} icon={<BulbOutlined />} onClick={() => openConceptDrawer(record)}>Concept</Button>
           <Button size="small" onClick={() => openManage(record)}>Manage</Button>
           <Button size="small" onClick={() => openPreview(record)}>Preview</Button>
           <Popconfirm title="Delete topic?" onConfirm={() => remove(record)}>
@@ -409,7 +516,7 @@ export function AdminTopics() {
       // Sort modules by order within each volume
       const sortedModules = volModules.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
       options.push({
-        label: volume?.name || 'Unknown Topic',
+        label: volume?.name || 'Unknown Volume',
         options: sortedModules.map(m => ({ 
           value: m.id, 
           label: m.order != null ? `${m.order}. ${m.name}` : m.name 
@@ -421,7 +528,7 @@ export function AdminTopics() {
     if (noVolume.length > 0) {
       const sortedNoVolume = noVolume.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
       options.push({
-        label: 'No Topic',
+        label: 'No Volume',
         options: sortedNoVolume.map(m => ({ 
           value: m.id, 
           label: m.order != null ? `${m.order}. ${m.name} (${m.level})` : `${m.name} (${m.level})` 
@@ -443,7 +550,7 @@ export function AdminTopics() {
             Learning Modules
           </Typography.Title>
           <Typography.Text type="secondary" className="page-header-subtitle">
-            Organize course content into learning modules and sub topics
+            Organize course content into learning modules and topics
           </Typography.Text>
         </div>
         <Space>
@@ -460,7 +567,7 @@ export function AdminTopics() {
             onClick={() => { setEditing(null); setTopicStep(0); form.resetFields(); form.setFieldsValue({ courseId: '', moduleId: '' }); setDrawerOpen(true); }}
             style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', border: 'none', borderRadius: 10, height: 40, fontWeight: 500 }}
           >
-            New Sub Topic
+            New Topic
           </Button>
         </Space>
       </div>
@@ -521,21 +628,49 @@ export function AdminTopics() {
                         dataSource={topicList}
                         scroll={isMobile ? { x: 'max-content' } : undefined}
                         pagination={false}
+                        expandable={{
+                          expandedRowRender: (topicRow) => {
+                            const concepts = topicRow.concepts || [];
+                            if (concepts.length === 0) return <Typography.Text type="secondary" style={{ fontSize: 12, paddingLeft: 16 }}>No concepts yet</Typography.Text>;
+                            return (
+                              <div style={{ paddingLeft: 16 }}>
+                                <Typography.Text strong style={{ fontSize: 12, color: '#722ed1' }}><BulbOutlined /> Concepts ({concepts.length})</Typography.Text>
+                                {concepts.map(c => (
+                                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', marginTop: 4, background: '#faf5ff', borderLeft: '3px solid #722ed1', borderRadius: 4 }}>
+                                    <Space>
+                                      <BulbOutlined style={{ color: '#722ed1' }} />
+                                      <span>{c.order != null ? `${c.order}. ` : ''}{c.name}</span>
+                                    </Space>
+                                    <Space size={4}>
+                                      <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditConceptDrawer(c, topicRow)} />
+                                      <Popconfirm title="Delete concept?" onConfirm={() => deleteConcept(c)}>
+                                        <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                                      </Popconfirm>
+                                    </Space>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          },
+                          rowExpandable: (topicRow) => (topicRow.concepts || []).length > 0
+                        }}
                         columns={[
                           { title: 'Order', dataIndex: 'order', width: 70 },
                           { title: 'Name', dataIndex: 'name' },
+                          { title: 'Concepts', width: 90, render: (_, r) => (r.concepts || []).length > 0 ? <Tag color="purple">{(r.concepts || []).length}</Tag> : '—' },
                           { title: 'Level', dataIndex: 'level', render: (v) => v ? <Tag color="blue">{v}</Tag> : '—' },
                           {
                             title: 'Actions',
-                            width: 260,
+                            width: 300,
                             render: (_, topicRow) => (
                               <Space size={4}>
                                 <Button icon={<EditOutlined />} size="small" onClick={() => {
                                   setEditing(topicRow);
                                   const courseId = topicRow.courseId ?? (courses.find(c => c.level === topicRow.level)?.id ?? '');
-                                  form.setFieldsValue({ name: topicRow.name, moduleId: topicRow.moduleId || '', courseId });
+                                  form.setFieldsValue({ name: topicRow.name, moduleId: topicRow.moduleId || '', courseId, order: topicRow.order ?? '' });
                                   setDrawerOpen(true);
                                 }}>Edit</Button>
+                                <Button size="small" style={{ color: '#722ed1' }} icon={<BulbOutlined />} onClick={() => openConceptDrawer(topicRow)}>Concept</Button>
                                 <Button size="small" onClick={() => openManage(topicRow)}>Manage</Button>
                                 <Button size="small" onClick={() => openPreview(topicRow)}>Preview</Button>
                                 <Popconfirm title="Delete topic?" onConfirm={() => remove(topicRow)}>
@@ -589,7 +724,7 @@ export function AdminTopics() {
         },
         {
           key: 'topics',
-          label: 'Sub Topics',
+          label: 'Topics',
           children: (
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
               <Space wrap align="center">
@@ -642,7 +777,7 @@ export function AdminTopics() {
                       const { volume, modules: volMods } = grouped[volId];
                       const sortedMods = volMods.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                       opts.push({
-                        label: volume?.name || 'Unknown Topic',
+                        label: volume?.name || 'Unknown Volume',
                         options: sortedMods.map(m => ({ 
                           value: m.id, 
                           label: m.order != null ? `${m.order}. ${m.name}` : m.name 
@@ -653,7 +788,7 @@ export function AdminTopics() {
                     if (noVol.length > 0) {
                       const sortedNoVol = noVol.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                       opts.push({
-                        label: 'No Topic',
+                        label: 'No Volume',
                         options: sortedNoVol.map(m => ({ 
                           value: m.id, 
                           label: m.order != null ? `${m.order}. ${m.name} (${m.level})` : `${m.name} (${m.level})` 
@@ -740,7 +875,7 @@ export function AdminTopics() {
       </Drawer>
 
       <Drawer
-        title={editing ? `Edit Sub Topic · ${editing.name}` : 'New Sub Topic'}
+        title={editing ? `Edit Topic · ${editing.name}` : 'New Topic'}
         open={drawerOpen}
         onClose={() => { setDrawerOpen(false); setTopicStep(0); setEditing(null); }}
         width={860}
@@ -752,7 +887,7 @@ export function AdminTopics() {
           <Form layout="vertical" form={form} onFinish={submit} initialValues={{ courseId: '', moduleId: '' }}>
             {topicStep === 0 && (
               <>
-                <Form.Item name="name" label="Sub Topic Name" rules={[{ required: true }]}>
+                <Form.Item name="name" label="Topic Name" rules={[{ required: true }]}>
                   <Input placeholder="e.g. Ethics and Professional Standards" />
                 </Form.Item>
                 <Form.Item name="courseId" label="Course" rules={[{ required: true, message: 'Select a course' }]}>
@@ -797,7 +932,7 @@ export function AdminTopics() {
                       const { volume, modules: volModules } = grouped[volId];
                       const sortedModules = volModules.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                       moduleOpts.push({
-                        label: volume?.name || 'Unknown Topic',
+                        label: volume?.name || 'Unknown Volume',
                         options: sortedModules.map((m, idx) => ({ 
                           value: m.id, 
                           label: m.order != null ? `${m.order}. ${m.name}` : m.name 
@@ -808,7 +943,7 @@ export function AdminTopics() {
                     if (noVolume.length > 0) {
                       const sortedNoVolume = noVolume.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                       moduleOpts.push({
-                        label: 'No Topic',
+                        label: 'No Volume',
                         options: sortedNoVolume.map(m => ({ 
                           value: m.id, 
                           label: m.order != null ? `${m.order}. ${m.name} (${m.level})` : `${m.name} (${m.level})` 
@@ -827,6 +962,9 @@ export function AdminTopics() {
                       </Form.Item>
                     );
                   }}
+                </Form.Item>
+                <Form.Item name="order" label="Order" tooltip="Auto-populated based on existing topics in the same module">
+                  <Input type="number" min={1} placeholder="Display order" />
                 </Form.Item>
                 <Space>
                   <Button onClick={() => { setDrawerOpen(false); setTopicStep(0); setEditing(null); }}>Cancel</Button>
@@ -893,6 +1031,124 @@ export function AdminTopics() {
             }
           ]}
         />
+      </Drawer>
+
+      {/* Concept Drawer */}
+      <Drawer
+        title={selectedConcept ? `Edit Concept · ${selectedConcept.name}` : 'Add New Concept'}
+        open={conceptDrawerOpen}
+        onClose={() => setConceptDrawerOpen(false)}
+        width={860}
+        destroyOnClose={false}
+        className="modern-drawer"
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Steps size="small" current={conceptStep} items={[{ title: 'Concept Details' }, { title: 'Learning Materials' }]} />
+          {conceptStep === 0 && (
+            <Form layout="vertical" form={conceptForm} onFinish={saveConceptForm}>
+              <Form.Item name="topicId" hidden><Input /></Form.Item>
+              <Form.Item name="topicName" label="Related Topic">
+                <Input disabled />
+              </Form.Item>
+              <Form.Item name="name" label="Concept Name" rules={[{ required: true, min: 2 }]}>
+                <Input placeholder="Enter concept name" />
+              </Form.Item>
+              <Form.Item name="order" label="Order" tooltip="Order within this topic">
+                <Input type="number" min={1} placeholder="Display order" />
+              </Form.Item>
+              <Space>
+                <Button onClick={() => setConceptDrawerOpen(false)}>Cancel</Button>
+                <Button type="primary" loading={savingConcept} htmlType="submit">
+                  {selectedConcept ? 'Save & Continue' : 'Create & Continue'}
+                </Button>
+              </Space>
+            </Form>
+          )}
+          {conceptStep === 1 && selectedConcept && (
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Typography.Title level={5} style={{ margin: 0 }}>
+                <BulbOutlined style={{ color: '#722ed1', marginRight: 8 }} />
+                Learning Materials for: {selectedConcept.name}
+              </Typography.Title>
+              <Form layout="vertical" form={conceptMaterialForm} onFinish={saveConceptMaterial}>
+                <Form.Item name="kind" label="Type" rules={[{ required: true }]}>
+                  <Select options={[
+                    { value: 'LINK', label: 'Link' },
+                    { value: 'PDF', label: 'PDF' },
+                    { value: 'VIDEO', label: 'Video' },
+                    { value: 'IMAGE', label: 'Image' },
+                    { value: 'HTML', label: 'HTML Content' }
+                  ]} />
+                </Form.Item>
+                <Form.Item name="title" label="Title" rules={[{ required: true }]}>
+                  <Input />
+                </Form.Item>
+                <Form.Item noStyle shouldUpdate>
+                  {({ getFieldValue, setFieldsValue }) => {
+                    const kind = getFieldValue('kind');
+                    const doUpload = async ({ file, onSuccess, onError }) => {
+                      try {
+                        const fd = new FormData();
+                        fd.append('file', file);
+                        const { data: upData } = await api.post('/api/cms/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+                        setFieldsValue({ url: upData.url });
+                        onSuccess?.(upData, file);
+                      } catch (e) { onError?.(e); }
+                    };
+                    return (
+                      <>
+                        {(kind === 'LINK' || kind === 'PDF' || kind === 'VIDEO' || kind === 'IMAGE') && (
+                          <>
+                            <Form.Item name="url" label="URL" rules={[{ required: true }]}>
+                              <Input placeholder="https://..." />
+                            </Form.Item>
+                            <Upload customRequest={doUpload} showUploadList={false}>
+                              <Button icon={<UploadOutlined />}>Upload File</Button>
+                            </Upload>
+                          </>
+                        )}
+                        {kind === 'HTML' && (
+                          <Form.Item name="contentHtml" label="HTML Content" rules={[{ required: true }]}>
+                            <Input.TextArea rows={6} placeholder="Enter HTML content" />
+                          </Form.Item>
+                        )}
+                      </>
+                    );
+                  }}
+                </Form.Item>
+                <Space style={{ marginTop: 12 }}>
+                  <Button onClick={() => conceptMaterialForm.resetFields()}>Reset</Button>
+                  <Button type="primary" loading={savingConceptMaterial} htmlType="submit">Add Material</Button>
+                </Space>
+              </Form>
+              <Table
+                rowKey="id"
+                size="small"
+                loading={conceptMaterialsLoading || savingConceptMaterial}
+                dataSource={conceptMaterials}
+                columns={[
+                  { title: 'Title', dataIndex: 'title' },
+                  { title: 'Kind', dataIndex: 'kind' },
+                  { title: 'URL', dataIndex: 'url', render: (v) => v ? <a href={asUrl(v)} target="_blank" rel="noreferrer">{v}</a> : '-' },
+                  { title: 'Actions', render: (_, row) => (
+                    <Popconfirm title="Delete material?" onConfirm={async () => {
+                      await api.delete(`/api/cms/materials/${row.id}`);
+                      await loadConceptMaterials(selectedConcept.id);
+                      message.success('Material deleted');
+                    }}>
+                      <Button size="small" danger icon={<DeleteOutlined />}>Delete</Button>
+                    </Popconfirm>
+                  )}
+                ]}
+                pagination={false}
+              />
+              <Space>
+                <Button onClick={() => setConceptStep(0)}>Back</Button>
+                <Button type="primary" onClick={() => setConceptDrawerOpen(false)}>Done</Button>
+              </Space>
+            </Space>
+          )}
+        </Space>
       </Drawer>
 
       {/* Exam / Quiz View Drawer */}

@@ -267,7 +267,7 @@ export function AdminQuestions() {
 		return volumeIds
 			.map((volumeId) => {
 				const volume = (volumes || []).find((v) => v.id === volumeId);
-				return volume ? { value: volume.id, label: volume.description ? `${volume.description} (${volume.name})` : volume.name } : null;
+				return volume ? { value: volume.id, label: volume.description ? `${volume.name} - ${volume.description}` : volume.name } : null;
 			})
 			.filter(Boolean);
 	}, [topics, volumes, selectedDrawerCourseId]);
@@ -583,7 +583,7 @@ export function AdminQuestions() {
 				resolvedTopicIds = filtered.map(t => t.id);
 			}
 			if (resolvedTopicIds.length === 0) {
-				message.warning('No sub topics found for the selected filters. Please select at least one sub topic.');
+				message.warning('No topics found for the selected filters. Please select at least one topic.');
 				setAiGenerateLoading(false);
 				return;
 			}
@@ -750,7 +750,7 @@ export function AdminQuestions() {
 			render: (v) => <Typography.Text strong style={{ color: '#3b82f6' }}>{v || 1}</Typography.Text>
 		},
 		{ 
-			title: 'Sub Topic', 
+			title: 'Topic', 
 			dataIndex: 'topicId', 
 			width: 180,
 			ellipsis: true,
@@ -915,12 +915,12 @@ export function AdminQuestions() {
 								optionFilterProp="label"
 							/>
 						</Form.Item>
-						<Form.Item label="Sub Topic" style={{ margin: 0 }}>
+						<Form.Item label="Topic" style={{ margin: 0 }}>
 							<Select
 								mode="multiple"
 								style={{ minWidth: 200, borderRadius: 10 }}
 								allowClear
-								placeholder="All sub topics"
+								placeholder="All topics"
 								value={Array.isArray(topicId) ? topicId : (topicId ? [topicId] : [])}
 								onChange={(v) => {
 									setTopicId(Array.isArray(v) ? (v.length > 0 ? v : '') : (v || ''));
@@ -1147,16 +1147,16 @@ export function AdminQuestions() {
 							</Form.Item>
 						</Col>
 						<Col span={12}>
-							<Form.Item name="volumeId" label="Topic">
+							<Form.Item name="volumeId" label="Volume">
 								<Select
 									allowClear
-									placeholder="Select topic"
+									placeholder="Select volume"
 									showSearch
 									optionFilterProp="label"
 									options={(aiGenerateCourseId
 										? (volumes || []).filter(v => (v.courseLinks || []).some(l => l.courseId === aiGenerateCourseId))
 										: (volumes || [])
-									).map(v => ({ value: v.id, label: v.description ? `${v.description} (${v.name})` : v.name }))}
+									).map(v => ({ value: v.id, label: v.description ? `${v.name} - ${v.description}` : v.name }))}
 									onChange={(v) => {
 										setAiGenerateVolumeId(v || '');
 										setAiGenerateModuleId('');
@@ -1195,10 +1195,10 @@ export function AdminQuestions() {
 							</Form.Item>
 						</Col>
 						<Col span={24}>
-							<Form.Item name="topicIds" label="Sub Topics">
+							<Form.Item name="topicIds" label="Topics">
 								<Select
 									mode="multiple"
-									placeholder="Select sub topics (optional — leave empty to use all matching)"
+									placeholder="Select topics (optional — leave empty to use all matching)"
 									showSearch
 									optionFilterProp="label"
 									options={(
@@ -1528,9 +1528,9 @@ export function AdminQuestions() {
 							}}
 						/>
 					</Form.Item>
-					<Form.Item name="volumeId" label="Topic" rules={[{ required: true, message: 'Select a topic' }]}>
+					<Form.Item name="volumeId" label="Volume" rules={[{ required: true, message: 'Select a volume' }]}>
 						<Select
-							placeholder="Select topic"
+							placeholder="Select volume"
 							options={drawerVolumeOptions}
 							showSearch
 							optionFilterProp="label"
@@ -1554,9 +1554,9 @@ export function AdminQuestions() {
 							}}
 						/>
 					</Form.Item>
-					<Form.Item name="topicId" label="Sub Topic" rules={[{ required: true }]}>
+					<Form.Item name="topicId" label="Topic" rules={[{ required: true }]}>
 						<Select
-							placeholder="Select sub topic"
+							placeholder="Select topic"
 							options={drawerTopicOptions}
 							showSearch
 							optionFilterProp="label"

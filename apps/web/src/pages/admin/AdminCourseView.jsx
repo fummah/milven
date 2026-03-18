@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, Descriptions, Typography, Space, Button, Tabs, Table, Tag, Select, Form, Input, Modal, Upload, Drawer, message, Steps, Radio, Divider, List, Layout, Grid, Pagination } from 'antd';
-import { ArrowLeftOutlined, UploadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, CheckCircleOutlined, StopOutlined, InfoCircleOutlined, TeamOutlined, ReadOutlined, FileTextOutlined, ExperimentOutlined, DollarOutlined, FolderOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, UploadOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, CheckCircleOutlined, StopOutlined, InfoCircleOutlined, TeamOutlined, ReadOutlined, FileTextOutlined, ExperimentOutlined, DollarOutlined, FolderOutlined, BulbOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
@@ -75,6 +75,17 @@ export function AdminCourseView() {
   const [mockWeights, setMockWeights] = useState([]);
   const [mockWeightsLoading, setMockWeightsLoading] = useState(false);
   const [mockWeightsSaving, setMockWeightsSaving] = useState(false);
+  // Concept state
+  const [conceptDrawerOpen, setConceptDrawerOpen] = useState(false);
+  const [conceptForm] = Form.useForm();
+  const [conceptMaterialForm] = Form.useForm();
+  const [selectedConcept, setSelectedConcept] = useState(null);
+  const [conceptStep, setConceptStep] = useState(0);
+  const [savingConcept, setSavingConcept] = useState(false);
+  const [savingConceptMaterial, setSavingConceptMaterial] = useState(false);
+  const [conceptMaterials, setConceptMaterials] = useState([]);
+  const [conceptMaterialsLoading, setConceptMaterialsLoading] = useState(false);
+  const [conceptMaterialEditing, setConceptMaterialEditing] = useState(null);
 
   const loadMockWeights = async () => {
     if (!id) return;
@@ -106,7 +117,7 @@ export function AdminCourseView() {
 
   const addMockWeightRow = () => {
     const vols = detail?.volumes || [];
-    if (vols.length === 0) { message.warning('No topics linked to this course'); return; }
+    if (vols.length === 0) { message.warning('No volumes linked to this course'); return; }
     const defaultSession = (course?.level === 'LEVEL2' || course?.level === 'LEVEL3') ? 0 : 1;
     setMockWeights(prev => [...prev, { id: `new-${Date.now()}`, volumeId: vols[0].id, session: defaultSession, weightMin: 5, weightMax: 10, volume: vols[0] }]);
   };
@@ -314,7 +325,8 @@ export function AdminCourseView() {
     setSelectedTopic(topic);
     topicForm.setFieldsValue({
       name: topic.name,
-      moduleId: topic.moduleId ?? ''
+      moduleId: topic.moduleId ?? '',
+      order: topic.order ?? ''
     });
     await loadMaterialsFor(topic.id);
     setTopicStep(0);
@@ -329,7 +341,8 @@ export function AdminCourseView() {
         name: values.name,
         courseId: String(id),
         moduleId: values.moduleId || undefined,
-        level: course.level
+        level: course.level,
+        order: values.order != null ? Number(values.order) : undefined
       });
       const created = data?.topic;
       if (created?.id) {
@@ -378,6 +391,93 @@ export function AdminCourseView() {
         setMaterialsByTopic(prev => ({ ...prev, [tId]: data.materials || [] }));
       }
       message.success('Material deleted');
+    } catch {
+      message.error('Delete failed');
+    }
+  };
+
+  // Concept functions
+  const openConceptDrawer = (topic) => {
+    setSelectedConcept(null);
+    conceptForm.resetFields();
+    conceptForm.setFieldsValue({ topicId: topic.id, topicName: topic.name });
+    setConceptStep(0);
+    setConceptMaterials([]);
+    setConceptDrawerOpen(true);
+  };
+
+  const openEditConceptDrawer = async (concept) => {
+    setSelectedConcept(concept);
+    conceptForm.resetFields();
+    const topic = (detail?.topics || []).find(t => t.id === concept.topicId);
+    conceptForm.setFieldsValue({ name: concept.name, order: concept.order, topicId: concept.topicId, topicName: topic?.name || '' });
+    setConceptStep(0);
+    await loadConceptMaterials(concept.id);
+    setConceptDrawerOpen(true);
+  };
+
+  const loadConceptMaterials = async (conceptId) => {
+    if (!conceptId) return;
+    setConceptMaterialsLoading(true);
+    try {
+      const { data } = await api.get(`/api/cms/concepts/${conceptId}/materials`);
+      setConceptMaterials(data.materials || []);
+    } catch {
+      setConceptMaterials([]);
+    } finally {
+      setConceptMaterialsLoading(false);
+    }
+  };
+
+  const saveConceptForm = async (values) => {
+    try {
+      setSavingConcept(true);
+      if (selectedConcept) {
+        await api.put(`/api/cms/concepts/${selectedConcept.id}`, { name: values.name, order: values.order ? Number(values.order) : undefined });
+        message.success('Concept updated');
+        await fetchDetail();
+        await loadConceptMaterials(selectedConcept.id);
+        setConceptStep(1);
+      } else {
+        const { data } = await api.post('/api/cms/concepts', { name: values.name, topicId: values.topicId, order: values.order ? Number(values.order) : undefined });
+        const created = data?.concept;
+        if (created?.id) {
+          setSelectedConcept(created);
+          await fetchDetail();
+          setConceptStep(1);
+          message.success('Concept created');
+        }
+      }
+    } catch {
+      message.error('Failed to save concept');
+    } finally {
+      setSavingConcept(false);
+    }
+  };
+
+  const saveConceptMaterial = async (values) => {
+    if (!selectedConcept) return;
+    try {
+      setSavingConceptMaterial(true);
+      if (conceptMaterialEditing?.id) {
+        await api.put(`/api/cms/materials/${conceptMaterialEditing.id}`, values);
+      } else {
+        await api.post(`/api/cms/concepts/${selectedConcept.id}/materials`, values);
+      }
+      conceptMaterialForm.resetFields();
+      setConceptMaterialEditing(null);
+      await loadConceptMaterials(selectedConcept.id);
+      message.success(conceptMaterialEditing ? 'Material updated' : 'Material added');
+    } finally {
+      setSavingConceptMaterial(false);
+    }
+  };
+
+  const deleteConcept = async (concept) => {
+    try {
+      await api.delete(`/api/cms/concepts/${concept.id}`);
+      message.success('Concept deleted');
+      await fetchDetail();
     } catch {
       message.error('Delete failed');
     }
@@ -442,16 +542,18 @@ export function AdminCourseView() {
 
   const topicsColumns = [
     { title: 'Learning Module', dataIndex: ['module', 'name'], width: 160, render: v => v ? <Tag color="default">{v}</Tag> : '—' },
-    { title: 'Sub Topic ID', dataIndex: 'id', width: 220, render: v => <Typography.Text type="secondary" style={{ fontSize: 12 }}>{v}</Typography.Text> },
+    { title: 'Order', dataIndex: 'order', width: 70, render: v => v != null ? <Tag>{v}</Tag> : '—' },
     { title: 'Name', dataIndex: 'name' },
-    { title: 'Level', dataIndex: 'level' },
-    { title: 'Sub Topic (Created)', dataIndex: 'createdAt', render: v => v ? new Date(v).toLocaleString() : '-' },
+    { title: 'Concepts', dataIndex: 'concepts', width: 90, render: (concepts) => <Tag color="purple">{(concepts || []).length}</Tag> },
+    { title: 'Level', dataIndex: 'level', width: 80 },
     {
       title: 'Actions',
+      width: 200,
       render: (_, r) => (
         <Space size={4}>
           <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditTopicDrawer(r)} />
           <Button size="small" type="text" icon={<EyeOutlined />} onClick={() => openPreview(r.id)} />
+          <Button size="small" type="text" style={{ color: '#722ed1' }} icon={<PlusOutlined />} onClick={() => openConceptDrawer(r)}>Concept</Button>
           <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => deleteTopic(r)} />
         </Space>
       )
@@ -631,7 +733,7 @@ export function AdminCourseView() {
                     <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#f9f0ff', color: '#722ed1', border: '1px solid rgba(0,0,0,0.08)', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.6)', fontSize: 14 }}>
                       <ReadOutlined />
                     </span>
-                    <span>Learning Modules & Sub Topics</span>
+                    <span>Learning Modules & Topics</span>
                   </Space>
                 ),
                 children: (
@@ -649,13 +751,15 @@ export function AdminCourseView() {
                         onClick={() => {
                           setSelectedTopic(null);
                           topicForm.resetFields();
-                          topicForm.setFieldsValue({ moduleId: '' });
+                          const allTopics = detail?.topics || [];
+                          const maxOrder = allTopics.length ? Math.max(...allTopics.map(t => t.order ?? 0), 0) : 0;
+                          topicForm.setFieldsValue({ moduleId: '', order: maxOrder + 1 });
                           setTopicStep(0);
                           setActiveTabKey('topics');
                           setTopicDrawerOpen(true);
                         }}
                       >
-                        New Sub Topic
+                        New Topic
                       </Button>
                       <Button
                         type="primary"
@@ -698,16 +802,49 @@ export function AdminCourseView() {
                         topicsColumns[topicsColumns.length - 1]
                       ];
                       const expandable = {
-                        expandedRowRender: (record) => (
-                          <Table
-                            rowKey="id"
-                            size="small"
-                            loading={materialsLoading || savingMaterial}
-                            dataSource={materialsByTopic[record.id] || []}
-                            columns={materialsColumnsNoUrl}
-                            pagination={false}
-                          />
-                        ),
+                        expandedRowRender: (record) => {
+                          const concepts = record.concepts || [];
+                          const topicMats = (materialsByTopic[record.id] || []).filter(m => !m.conceptId);
+                          return (
+                            <Space direction="vertical" size={8} style={{ width: '100%', padding: '4px 0' }}>
+                              {concepts.length > 0 && (
+                                <div>
+                                  <Typography.Text strong style={{ fontSize: 12, color: '#722ed1' }}><BulbOutlined /> Concepts</Typography.Text>
+                                  {concepts.map(c => (
+                                    <Card key={c.id} size="small" style={{ marginTop: 6, marginLeft: 16, borderLeft: '3px solid #722ed1', background: '#faf5ff' }}
+                                      title={<Space><BulbOutlined style={{ color: '#722ed1' }} /><span>{c.order != null ? `${c.order}. ` : ''}{c.name}</span></Space>}
+                                      extra={
+                                        <Space size={4}>
+                                          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditConceptDrawer(c)} />
+                                          <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => deleteConcept(c)} />
+                                        </Space>
+                                      }
+                                    >
+                                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>Learning materials at concept level</Typography.Text>
+                                    </Card>
+                                  ))}
+                                </div>
+                              )}
+                              {topicMats.length > 0 && (
+                                <div>
+                                  <Typography.Text strong style={{ fontSize: 12, color: '#1890ff' }}><FileTextOutlined /> Topic-Level Materials</Typography.Text>
+                                  <Table
+                                    rowKey="id"
+                                    size="small"
+                                    style={{ marginTop: 4 }}
+                                    loading={materialsLoading || savingMaterial}
+                                    dataSource={topicMats}
+                                    columns={materialsColumnsNoUrl}
+                                    pagination={false}
+                                  />
+                                </div>
+                              )}
+                              {concepts.length === 0 && topicMats.length === 0 && (
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>No concepts or materials yet. Add a concept or learning materials to this topic.</Typography.Text>
+                              )}
+                            </Space>
+                          );
+                        },
                         onExpand: async (expanded, record) => {
                           if (expanded) await loadMaterialsFor(record.id);
                         }
@@ -737,7 +874,7 @@ export function AdminCourseView() {
                       
                       // Get volume info for each volumeId
                       const getVolumeInfo = (volId) => {
-                        return volumesList.find(v => v.id === volId) || { name: 'Unknown Topic', description: '' };
+                        return volumesList.find(v => v.id === volId) || { name: 'Unknown Volume', description: '' };
                       };
                       
                       // Calculate module numbers per volume
@@ -778,7 +915,7 @@ export function AdminCourseView() {
                                     <Space>
                                       <FolderOutlined style={{ color: '#1890ff' }} />
                                       <Typography.Text strong style={{ color: '#1890ff', fontSize: 16 }}>
-                                        Topic {volume.name}
+                                        Volume: {volume.name}
                                       </Typography.Text>
                                     </Space>
                                     {volume.description && (
@@ -1020,9 +1157,9 @@ export function AdminCourseView() {
                   <Space direction="vertical" size={16} style={{ width: '100%' }}>
                     <div className="flex items-center justify-between flex-wrap gap-3">
                       <div>
-                        <Typography.Title level={5} style={{ margin: 0 }}>Topic Weight Configuration</Typography.Title>
+                        <Typography.Title level={5} style={{ margin: 0 }}>Volume Weight Configuration</Typography.Title>
                         <Typography.Text type="secondary" className="text-xs">
-                          Define how questions are distributed across topics in mock exams. Weights are percentages (min–max range).{course?.level === 'LEVEL1' ? ' Each row maps a topic to a session.' : ''}
+                          Define how questions are distributed across volumes in mock exams. Weights are percentages (min–max range).{course?.level === 'LEVEL1' ? ' Each row maps a volume to a session.' : ''}
                         </Typography.Text>
                       </div>
                       <Space>
@@ -1034,7 +1171,7 @@ export function AdminCourseView() {
                       <div className="text-center py-8"><Typography.Text type="secondary">Loading...</Typography.Text></div>
                     ) : mockWeights.length === 0 ? (
                       <Card className="text-center py-8" style={{ borderRadius: 12, background: '#fafafa' }}>
-                        <Typography.Text type="secondary">No topic weights configured yet. Click "Add Row" to start.</Typography.Text>
+                        <Typography.Text type="secondary">No volume weights configured yet. Click "Add Row" to start.</Typography.Text>
                       </Card>
                     ) : (
                       <Table
@@ -1044,7 +1181,7 @@ export function AdminCourseView() {
                         pagination={false}
                         columns={[
                           {
-                            title: 'Topic',
+                            title: 'Volume',
                             dataIndex: 'volumeId',
                             render: (val, _, idx) => (
                               <Select
@@ -1214,7 +1351,7 @@ export function AdminCourseView() {
 
       {/* Topic Drawer: staged details + materials on one screen */}
       <Drawer
-        title={selectedTopic ? `Edit Sub Topic · ${selectedTopic.name}` : 'Add New Sub Topic'}
+        title={selectedTopic ? `Edit Topic · ${selectedTopic.name}` : 'Add New Topic'}
         open={topicDrawerOpen}
         onClose={() => setTopicDrawerOpen(false)}
         width={860}
@@ -1242,7 +1379,8 @@ export function AdminCourseView() {
                     name: values.name,
                     courseId: String(id),
                     moduleId: values.moduleId || undefined,
-                    level: course.level
+                    level: course.level,
+                    order: values.order != null ? Number(values.order) : undefined
                   });
                   message.success('Topic updated');
                   await fetchDetail();
@@ -1294,7 +1432,7 @@ export function AdminCourseView() {
                         const { volume, modules: volMods } = grouped[volId];
                         const sortedMods = volMods.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                         opts.push({
-                          label: volume?.name || 'Unknown Topic',
+                          label: volume?.name || 'Unknown Volume',
                           options: sortedMods.map(m => ({ 
                             value: m.id, 
                             label: m.order != null ? `${m.order}. ${m.name}` : m.name 
@@ -1305,7 +1443,7 @@ export function AdminCourseView() {
                       if (noVol.length > 0) {
                         const sortedNoVol = noVol.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                         opts.push({
-                          label: 'No Topic',
+                          label: 'No Volume',
                           options: sortedNoVol.map(m => ({ 
                             value: m.id, 
                             label: m.order != null ? `${m.order}. ${m.name}` : m.name 
@@ -1317,8 +1455,11 @@ export function AdminCourseView() {
                     })()}
                   />
                 </Form.Item>
-                <Form.Item name="name" label="Sub Topic Name" rules={[{ required: true }]}>
-                  <Input placeholder="Enter sub topic name" />
+                <Form.Item name="name" label="Topic Name" rules={[{ required: true }]}>
+                  <Input placeholder="Enter topic name" />
+                </Form.Item>
+                <Form.Item name="order" label="Order" tooltip="Auto-populated based on existing topics in the same module">
+                  <Input type="number" min={1} placeholder="Display order" />
                 </Form.Item>
                 <Space>
                   <Button onClick={() => setTopicDrawerOpen(false)}>Cancel</Button>
@@ -1416,6 +1557,133 @@ export function AdminCourseView() {
         </Space>
       </Drawer>
 
+      {/* Concept Drawer: staged details + materials */}
+      <Drawer
+        title={selectedConcept ? `Edit Concept · ${selectedConcept.name}` : 'Add New Concept'}
+        open={conceptDrawerOpen}
+        onClose={() => setConceptDrawerOpen(false)}
+        width={860}
+        extra={null}
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Steps
+            size="small"
+            current={conceptStep}
+            items={[{ title: 'Concept Details' }, { title: 'Learning Materials' }]}
+          />
+          {conceptStep === 0 && (
+            <Form layout="vertical" form={conceptForm} onFinish={saveConceptForm}>
+              <Form.Item name="topicId" hidden><Input /></Form.Item>
+              <Form.Item name="topicName" label="Related Topic">
+                <Input disabled />
+              </Form.Item>
+              <Form.Item name="name" label="Concept Name" rules={[{ required: true, min: 2 }]}>
+                <Input placeholder="Enter concept name" />
+              </Form.Item>
+              <Form.Item name="order" label="Order" tooltip="Order within this topic">
+                <Input type="number" min={1} placeholder="Display order" />
+              </Form.Item>
+              <Space>
+                <Button onClick={() => setConceptDrawerOpen(false)}>Cancel</Button>
+                <Button type="primary" loading={savingConcept} htmlType="submit">
+                  {selectedConcept ? 'Save & Continue' : 'Create & Continue'}
+                </Button>
+              </Space>
+            </Form>
+          )}
+          {conceptStep === 1 && selectedConcept && (
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Typography.Title level={5} style={{ margin: 0 }}>
+                <BulbOutlined style={{ color: '#722ed1', marginRight: 8 }} />
+                Learning Materials for: {selectedConcept.name}
+              </Typography.Title>
+              <Form layout="vertical" form={conceptMaterialForm} onFinish={saveConceptMaterial}>
+                <Form.Item name="kind" label="Type" rules={[{ required: true }]}>
+                  <Select options={[
+                    { value: 'LINK', label: 'Link' },
+                    { value: 'PDF', label: 'PDF' },
+                    { value: 'VIDEO', label: 'Video' },
+                    { value: 'IMAGE', label: 'Image' },
+                    { value: 'HTML', label: 'HTML Content' }
+                  ]} />
+                </Form.Item>
+                <Form.Item name="title" label="Title" rules={[{ required: true }]}>
+                  <Input />
+                </Form.Item>
+                <Form.Item noStyle shouldUpdate>
+                  {({ getFieldValue, setFieldsValue }) => {
+                    const kind = getFieldValue('kind');
+                    const doUpload = async ({ file, onSuccess, onError }) => {
+                      try {
+                        const fd = new FormData();
+                        fd.append('file', file);
+                        const { data } = await api.post('/api/cms/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+                        setFieldsValue({ url: data.url });
+                        onSuccess?.(data, file);
+                      } catch (e) { onError?.(e); }
+                    };
+                    return (
+                      <>
+                        {(kind === 'LINK' || kind === 'PDF' || kind === 'VIDEO' || kind === 'IMAGE') && (
+                          <>
+                            <Form.Item name="url" label="URL" rules={[{ required: true }]}>
+                              <Input placeholder="https://..." />
+                            </Form.Item>
+                            <Upload customRequest={doUpload} showUploadList={false}>
+                              <Button icon={<UploadOutlined />}>Upload File</Button>
+                            </Upload>
+                          </>
+                        )}
+                        {kind === 'HTML' && (
+                          <Form.Item name="contentHtml" label="TEXT Content" rules={[{ required: true }]}>
+                            <ReactQuill
+                              theme="snow"
+                              value={conceptMaterialForm.getFieldValue('contentHtml') || ''}
+                              onChange={(v) => conceptMaterialForm.setFieldsValue({ contentHtml: v })}
+                            />
+                          </Form.Item>
+                        )}
+                      </>
+                    );
+                  }}
+                </Form.Item>
+                <Space>
+                  <Button onClick={() => { setConceptMaterialEditing(null); conceptMaterialForm.resetFields(); }}>Reset</Button>
+                  <Button type="primary" loading={savingConceptMaterial} htmlType="submit">
+                    {conceptMaterialEditing ? 'Save Material' : 'Add Material'}
+                  </Button>
+                </Space>
+              </Form>
+              <Table
+                rowKey="id"
+                size="small"
+                loading={conceptMaterialsLoading || savingConceptMaterial}
+                dataSource={conceptMaterials}
+                columns={[
+                  { title: 'Title', dataIndex: 'title' },
+                  { title: 'Kind', dataIndex: 'kind' },
+                  { title: 'URL', dataIndex: 'url', render: (v) => v ? <a href={v} target="_blank" rel="noreferrer">{v}</a> : '-' },
+                  { title: 'Actions', render: (_, row) => (
+                    <Button size="small" type="text" danger icon={<DeleteOutlined />}
+                      onClick={async () => {
+                        await api.delete(`/api/cms/materials/${row.id}`);
+                        await loadConceptMaterials(selectedConcept.id);
+                        message.success('Material deleted');
+                      }}
+                    />
+                  )}
+                ]}
+                pagination={false}
+              />
+              <Space>
+                <Button onClick={() => setConceptStep(0)}>Back</Button>
+                <Button type="primary" onClick={() => setConceptDrawerOpen(false)}>Done</Button>
+              </Space>
+            </Space>
+          )}
+        </Space>
+      </Drawer>
+
       {/* New Module drawer (for this course's level) */}
       <Drawer
         title="Add Learning Module"
@@ -1427,9 +1695,9 @@ export function AdminCourseView() {
           <Form.Item name="name" label="Learning Module Name" rules={[{ required: true, min: 2 }]}>
             <Input placeholder="e.g. Module 1: Ethics" />
           </Form.Item>
-          <Form.Item name="volumeId" label="Topic" rules={[{ required: true, message: 'Select a topic' }]}>
+          <Form.Item name="volumeId" label="Volume" rules={[{ required: true, message: 'Select a volume' }]}>
             <Select
-              placeholder="Select a topic"
+              placeholder="Select a volume"
               options={sortByNaturalName(detail?.volumes || []).map(v => ({ 
                 value: v.id, 
                 label: v.description ? `${v.name} - ${v.description}` : v.name,
@@ -1437,7 +1705,7 @@ export function AdminCourseView() {
               }))}
               showSearch
               optionFilterProp="label"
-              notFoundContent={detail?.volumes?.length === 0 ? "No topics linked to this course" : "Loading topics..."}
+              notFoundContent={detail?.volumes?.length === 0 ? "No volumes linked to this course" : "Loading volumes..."}
             />
           </Form.Item>
           <Form.Item name="level" label="Level" hidden>

@@ -120,7 +120,20 @@ model Topic {
   videos    Video[]
   revisionSummaries RevisionSummary[]
   materials LearningMaterial[]
+  concepts  Concept[]
   @@index([moduleId, order])
+}
+
+model Concept {
+  id        String   @id @default(cuid())
+  name      String
+  topicId   String
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  order     Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  materials LearningMaterial[]
+  @@index([topicId, order])
 }
 
 model Vignette {
@@ -299,6 +312,8 @@ model LearningMaterial {
   id          String       @id @default(cuid())
   topicId     String
   topic       Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  conceptId   String?
+  concept     Concept?     @relation(fields: [conceptId], references: [id], onDelete: SetNull)
   kind        MaterialKind
   title       String
   url         String?
@@ -310,6 +325,7 @@ model LearningMaterial {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   @@index([topicId, order])
+  @@index([conceptId, order])
 }
 
 model Course {

@@ -259,7 +259,10 @@ export function learningRouter(prisma) {
                     topics: {
                       where: { courseId },
                       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-                      select: { id: true, name: true, moduleNumber: true, moduleId: true, order: true, level: true, courseId: true }
+                      select: {
+                        id: true, name: true, moduleNumber: true, moduleId: true, order: true, level: true, courseId: true,
+                        concepts: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, order: true } }
+                      }
                     }
                   }
                 }
