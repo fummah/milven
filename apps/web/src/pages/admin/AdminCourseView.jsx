@@ -323,8 +323,10 @@ export function AdminCourseView() {
 
   const openEditTopicDrawer = async (topic) => {
     setSelectedTopic(topic);
+    const mod = (detail?.modules ?? []).find(m => m.id === topic.moduleId);
     topicForm.setFieldsValue({
       name: topic.name,
+      volumeId: mod?.volumeId || undefined,
       moduleId: topic.moduleId ?? '',
       order: topic.order ?? ''
     });
@@ -753,7 +755,7 @@ export function AdminCourseView() {
                           topicForm.resetFields();
                           const allTopics = detail?.topics || [];
                           const maxOrder = allTopics.length ? Math.max(...allTopics.map(t => t.order ?? 0), 0) : 0;
-                          topicForm.setFieldsValue({ moduleId: '', order: maxOrder + 1 });
+                          topicForm.setFieldsValue({ volumeId: undefined, moduleId: '', order: maxOrder + 1 });
                           setTopicStep(0);
                           setActiveTabKey('topics');
                           setTopicDrawerOpen(true);
@@ -1401,59 +1403,61 @@ export function AdminCourseView() {
           >
             {topicStep === 0 && (
               <>
-                <Form.Item name="moduleId" label="Learning Module">
-                  <Select
-                    allowClear
-                    placeholder="Select a learning module (optional)"
-                    showSearch
-                    optionFilterProp="label"
-                    options={(() => {
-                      const filteredMods = (detail?.modules ?? []).filter(m => m.level === course?.level);
-                      
-                      // Group by volume
-                      const grouped = {};
-                      const noVol = [];
-                      filteredMods.forEach(m => {
-                        if (m.volumeId && m.volume) {
-                          if (!grouped[m.volumeId]) grouped[m.volumeId] = { volume: m.volume, modules: [] };
-                          grouped[m.volumeId].modules.push(m);
-                        } else {
-                          noVol.push(m);
-                        }
-                      });
-                      
-                      // Sort volumes naturally
-                      const sortedVolIds = Object.keys(grouped).sort((a, b) => 
-                        naturalCompare(grouped[a].volume?.name || '', grouped[b].volume?.name || '')
-                      );
-                      
-                      const opts = [{ value: '', label: '— No learning module —' }];
-                      sortedVolIds.forEach(volId => {
-                        const { volume, modules: volMods } = grouped[volId];
-                        const sortedMods = volMods.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-                        opts.push({
-                          label: volume?.name || 'Unknown Volume',
-                          options: sortedMods.map(m => ({ 
-                            value: m.id, 
-                            label: m.order != null ? `${m.order}. ${m.name}` : m.name 
-                          }))
-                        });
-                      });
-                      
-                      if (noVol.length > 0) {
-                        const sortedNoVol = noVol.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-                        opts.push({
-                          label: 'No Volume',
-                          options: sortedNoVol.map(m => ({ 
-                            value: m.id, 
-                            label: m.order != null ? `${m.order}. ${m.name}` : m.name 
-                          }))
-                        });
+                <Form.Item noStyle shouldUpdate={(prev, curr) => prev.volumeId !== curr.volumeId}>
+                  {() => {
+                    const filteredMods = (detail?.modules ?? []).filter(m => m.level === course?.level);
+                    const volumeMap = new Map();
+                    filteredMods.forEach(m => {
+                      if (m.volumeId && m.volume && !volumeMap.has(m.volumeId)) {
+                        volumeMap.set(m.volumeId, m.volume);
                       }
-                      
-                      return opts;
-                    })()}
-                  />
+                    });
+                    const volumeOpts = sortByNaturalName(Array.from(volumeMap.values())).map(v => ({
+                      value: v.id,
+                      label: v.description ? `${v.name} - ${v.description}` : v.name
+                    }));
+                    return (
+                      <Form.Item name="volumeId" label="Volume">
+                        <Select
+                          placeholder="Select a volume"
+                          options={volumeOpts}
+                          showSearch
+                          optionFilterProp="label"
+                          allowClear
+                          disabled={volumeOpts.length === 0}
+                          onChange={() => {
+                            topicForm.setFieldsValue({ moduleId: undefined });
+                          }}
+                        />
+                      </Form.Item>
+                    );
+                  }}
+                </Form.Item>
+                <Form.Item noStyle shouldUpdate={(prev, curr) => prev.volumeId !== curr.volumeId}>
+                  {({ getFieldValue }) => {
+                    const volumeId = getFieldValue('volumeId');
+                    let filteredMods = (detail?.modules ?? []).filter(m => m.level === course?.level);
+                    if (volumeId) {
+                      filteredMods = filteredMods.filter(m => m.volumeId === volumeId);
+                    }
+                    const sortedMods = filteredMods.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+                    const moduleOpts = sortedMods.map(m => ({
+                      value: m.id,
+                      label: m.order != null ? `${m.order}. ${m.name}` : m.name
+                    }));
+                    return (
+                      <Form.Item name="moduleId" label="Learning Module">
+                        <Select
+                          allowClear
+                          placeholder="Select a learning module (optional)"
+                          showSearch
+                          optionFilterProp="label"
+                          options={moduleOpts}
+                          disabled={moduleOpts.length === 0}
+                        />
+                      </Form.Item>
+                    );
+                  }}
                 </Form.Item>
                 <Form.Item name="name" label="Topic Name" rules={[{ required: true }]}>
                   <Input placeholder="Enter topic name" />

@@ -272,7 +272,7 @@ export function cmsRouter(prisma) {
         where: { courseId: id },
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
         include: {
-          volume: { select: { id: true, name: true } },
+          volume: { select: { id: true, name: true, description: true } },
           topics: {
             where: { courseId: id },
             orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
@@ -560,7 +560,7 @@ export function cmsRouter(prisma) {
 			where,
 			orderBy: [{ level: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
 			include: {
-				volume: { select: { id: true, name: true } },
+				volume: { select: { id: true, name: true, description: true } },
 				topics: {
 					...(courseId ? { where: { courseId } } : {}),
 					orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],

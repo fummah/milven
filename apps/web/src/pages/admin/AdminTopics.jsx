@@ -473,7 +473,8 @@ export function AdminTopics() {
             setEditing(record);
             setTopicStep(0);
             const courseId = record.courseId ?? (courses.find(c => c.level === record.level)?.id ?? '');
-            form.setFieldsValue({ name: record.name, moduleId: record.moduleId || '', courseId, order: record.order ?? '' });
+            const mod = modules.find(m => m.id === record.moduleId);
+            form.setFieldsValue({ name: record.name, moduleId: record.moduleId || '', courseId, volumeId: mod?.volumeId || undefined, order: record.order ?? '' });
             setDrawerOpen(true);
           }}>
             Edit
@@ -564,7 +565,7 @@ export function AdminTopics() {
           <Button 
             type="primary" 
             icon={<PlusOutlined />} 
-            onClick={() => { setEditing(null); setTopicStep(0); form.resetFields(); form.setFieldsValue({ courseId: '', moduleId: '' }); setDrawerOpen(true); }}
+            onClick={() => { setEditing(null); setTopicStep(0); form.resetFields(); form.setFieldsValue({ courseId: '', volumeId: undefined, moduleId: '' }); setDrawerOpen(true); }}
             style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', border: 'none', borderRadius: 10, height: 40, fontWeight: 500 }}
           >
             New Topic
@@ -667,7 +668,8 @@ export function AdminTopics() {
                                 <Button icon={<EditOutlined />} size="small" onClick={() => {
                                   setEditing(topicRow);
                                   const courseId = topicRow.courseId ?? (courses.find(c => c.level === topicRow.level)?.id ?? '');
-                                  form.setFieldsValue({ name: topicRow.name, moduleId: topicRow.moduleId || '', courseId, order: topicRow.order ?? '' });
+                                  const mod = modules.find(m => m.id === topicRow.moduleId);
+                                  form.setFieldsValue({ name: topicRow.name, moduleId: topicRow.moduleId || '', courseId, volumeId: mod?.volumeId || undefined, order: topicRow.order ?? '' });
                                   setDrawerOpen(true);
                                 }}>Edit</Button>
                                 <Button size="small" style={{ color: '#722ed1' }} icon={<BulbOutlined />} onClick={() => openConceptDrawer(topicRow)}>Concept</Button>
@@ -896,61 +898,62 @@ export function AdminTopics() {
                     options={(courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))}
                     showSearch
                     optionFilterProp="label"
+                    onChange={() => {
+                      form.setFieldsValue({ volumeId: undefined, moduleId: undefined });
+                    }}
                   />
                 </Form.Item>
                 <Form.Item noStyle shouldUpdate={(prev, curr) => prev.courseId !== curr.courseId}>
                   {({ getFieldValue }) => {
                     const courseId = getFieldValue('courseId');
                     const course = courses.find(c => c.id === courseId);
-                    
-                    // Filter modules by course and group by volume
                     const filteredModules = courseId
                       ? modules.filter(m => (m.courseId ? m.courseId === courseId : (course ? m.level === course.level : true)))
                       : modules;
-                    
-                    // Group by volume
-                    const grouped = {};
-                    const noVolume = [];
+                    // Derive unique volumes from filtered modules
+                    const volumeMap = new Map();
                     filteredModules.forEach(m => {
-                      if (m.volumeId && m.volume) {
-                        if (!grouped[m.volumeId]) {
-                          grouped[m.volumeId] = { volume: m.volume, modules: [] };
-                        }
-                        grouped[m.volumeId].modules.push(m);
-                      } else {
-                        noVolume.push(m);
+                      if (m.volumeId && m.volume && !volumeMap.has(m.volumeId)) {
+                        volumeMap.set(m.volumeId, m.volume);
                       }
                     });
-
-                    // Sort volumes naturally, then modules by order
-                    const sortedVolumeIds = Object.keys(grouped).sort((a, b) => 
-                      naturalCompare(grouped[a].volume?.name || '', grouped[b].volume?.name || '')
+                    const volumeOpts = sortByNaturalName(Array.from(volumeMap.values())).map(v => ({
+                      value: v.id,
+                      label: v.description ? `${v.name} - ${v.description}` : v.name
+                    }));
+                    return (
+                      <Form.Item name="volumeId" label="Volume">
+                        <Select
+                          placeholder="Select a volume"
+                          options={volumeOpts}
+                          showSearch
+                          optionFilterProp="label"
+                          allowClear
+                          disabled={!courseId || volumeOpts.length === 0}
+                          onChange={() => {
+                            form.setFieldsValue({ moduleId: undefined });
+                          }}
+                        />
+                      </Form.Item>
                     );
-
-                    const moduleOpts = [];
-                    sortedVolumeIds.forEach(volId => {
-                      const { volume, modules: volModules } = grouped[volId];
-                      const sortedModules = volModules.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-                      moduleOpts.push({
-                        label: volume?.name || 'Unknown Volume',
-                        options: sortedModules.map((m, idx) => ({ 
-                          value: m.id, 
-                          label: m.order != null ? `${m.order}. ${m.name}` : m.name 
-                        }))
-                      });
-                    });
-
-                    if (noVolume.length > 0) {
-                      const sortedNoVolume = noVolume.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-                      moduleOpts.push({
-                        label: 'No Volume',
-                        options: sortedNoVolume.map(m => ({ 
-                          value: m.id, 
-                          label: m.order != null ? `${m.order}. ${m.name} (${m.level})` : `${m.name} (${m.level})` 
-                        }))
-                      });
+                  }}
+                </Form.Item>
+                <Form.Item noStyle shouldUpdate={(prev, curr) => prev.courseId !== curr.courseId || prev.volumeId !== curr.volumeId}>
+                  {({ getFieldValue }) => {
+                    const courseId = getFieldValue('courseId');
+                    const volumeId = getFieldValue('volumeId');
+                    const course = courses.find(c => c.id === courseId);
+                    let filteredModules = courseId
+                      ? modules.filter(m => (m.courseId ? m.courseId === courseId : (course ? m.level === course.level : true)))
+                      : modules;
+                    if (volumeId) {
+                      filteredModules = filteredModules.filter(m => m.volumeId === volumeId);
                     }
-
+                    const sortedModules = filteredModules.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+                    const moduleOpts = sortedModules.map(m => ({
+                      value: m.id,
+                      label: m.order != null ? `${m.order}. ${m.name}` : m.name
+                    }));
                     return (
                       <Form.Item name="moduleId" label="Learning Module" rules={[{ required: true, message: 'Select a learning module' }]}>
                         <Select
@@ -958,6 +961,7 @@ export function AdminTopics() {
                           options={moduleOpts}
                           showSearch
                           optionFilterProp="label"
+                          disabled={moduleOpts.length === 0}
                         />
                       </Form.Item>
                     );
