@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Form, Input, Button, Select, message, Table, Drawer, Space, Popconfirm, Tag, Tabs, Modal, Upload, Steps, Layout, List, Divider, Radio, Descriptions, Typography, Grid } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, UploadOutlined, FolderOutlined, SearchOutlined, EyeOutlined, BookOutlined, FileTextOutlined, CheckCircleOutlined, BulbOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, Select, message, Table, Drawer, Space, Popconfirm, Tag, Tabs, Modal, Upload, Steps, Layout, List, Divider, Radio, Descriptions, Typography, Grid, Tooltip } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, UploadOutlined, FolderOutlined, SearchOutlined, EyeOutlined, BookOutlined, FileTextOutlined, CheckCircleOutlined, BulbOutlined, SettingOutlined, ExclamationCircleFilled } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 // Natural sort comparison - handles "Volume 1", "Volume 10" correctly
@@ -28,6 +28,45 @@ const LEVEL_OPTIONS = [
   { label: 'Level II', value: 'LEVEL2' },
   { label: 'Level III', value: 'LEVEL3' }
 ];
+
+// Cascade delete helper: attempts DELETE, catches 409 with related entities, shows confirm, retries with ?force=true
+async function cascadeDelete(url, { onSuccess, onError, entityName = 'item' } = {}) {
+  try {
+    await api.delete(url);
+    message.success(`${entityName} deleted`);
+    onSuccess?.();
+  } catch (err) {
+    if (err?.response?.status === 409 && err?.response?.data?.related) {
+      const { related, message: msg } = err.response.data;
+      Modal.confirm({
+        title: `Delete ${entityName}?`,
+        icon: <ExclamationCircleFilled />,
+        content: (
+          <div>
+            <p>{msg || `This ${entityName} has associated entities:`}</p>
+            <ul style={{ margin: '8px 0', paddingLeft: 20 }}>{related.map((r, i) => <li key={i}>{r}</li>)}</ul>
+            <p><strong>All associated data will be permanently deleted.</strong></p>
+          </div>
+        ),
+        okText: 'Delete All',
+        okType: 'danger',
+        async onOk() {
+          try {
+            await api.delete(`${url}${url.includes('?') ? '&' : '?'}force=true`);
+            message.success(`${entityName} and all associated data deleted`);
+            onSuccess?.();
+          } catch {
+            message.error(`Failed to delete ${entityName}`);
+            onError?.();
+          }
+        }
+      });
+    } else {
+      message.error(err?.response?.data?.error || `Failed to delete ${entityName}`);
+      onError?.();
+    }
+  }
+}
 
 export function AdminTopics() {
   const navigate = useNavigate();
@@ -87,6 +126,14 @@ export function AdminTopics() {
   const [conceptMaterialsLoading, setConceptMaterialsLoading] = useState(false);
   const [conceptParentTopic, setConceptParentTopic] = useState(null);
 
+  // Concepts tab state
+  const [conceptsData, setConceptsData] = useState([]);
+  const [conceptsLoading, setConceptsLoading] = useState(false);
+  const [filterConceptCourseId, setFilterConceptCourseId] = useState('');
+  const [filterConceptModuleId, setFilterConceptModuleId] = useState('');
+  const [filterConceptTopicId, setFilterConceptTopicId] = useState('');
+  const [filterConceptQ, setFilterConceptQ] = useState('');
+
   const load = async () => {
     setLoading(true);
     try {
@@ -124,10 +171,32 @@ export function AdminTopics() {
     }
   };
 
+  const loadConcepts = async () => {
+    setConceptsLoading(true);
+    try {
+      const params = {};
+      if (filterConceptCourseId) params.courseId = filterConceptCourseId;
+      if (filterConceptModuleId) params.moduleId = filterConceptModuleId;
+      if (filterConceptTopicId) params.topicId = filterConceptTopicId;
+      if (filterConceptQ) params.q = filterConceptQ;
+      const { data: res } = await api.get('/api/cms/concepts', { params });
+      setConceptsData(res.concepts ?? []);
+    } catch {
+      setConceptsData([]);
+    } finally {
+      setConceptsLoading(false);
+    }
+  };
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterCourseId, filterModuleId, filterModuleCourseId, filterVolumeId]);
+
+  useEffect(() => {
+    if (activeTab === 'concepts') loadConcepts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, filterConceptCourseId, filterConceptModuleId, filterConceptTopicId]);
 
   const loadMaterials = async (topicId) => {
     try {
@@ -264,13 +333,7 @@ export function AdminTopics() {
   };
 
   const deleteConcept = async (concept) => {
-    try {
-      await api.delete(`/api/cms/concepts/${concept.id}`);
-      message.success('Concept deleted');
-      load();
-    } catch {
-      message.error('Delete failed');
-    }
+    await cascadeDelete(`/api/cms/concepts/${concept.id}`, { entityName: 'Concept', onSuccess: () => { load(); if (activeTab === 'concepts') loadConcepts(); } });
   };
 
   const submit = async (values) => {
@@ -291,7 +354,10 @@ export function AdminTopics() {
         courseId: values.courseId,
         moduleId: values.moduleId,
         level,
-        order: values.order != null ? Number(values.order) : undefined
+        order: values.order != null ? Number(values.order) : undefined,
+        losCode: values.losCode || undefined,
+        commandWord: values.commandWord || undefined,
+        learningOutcomeStatement: values.learningOutcomeStatement || undefined
       };
       if (editing) {
         await api.put(`/api/cms/topics/${editing.id}`, payload);
@@ -365,23 +431,11 @@ export function AdminTopics() {
   };
 
   const removeModule = async (record) => {
-    try {
-      await api.delete(`/api/cms/modules/${record.id}`);
-      message.success('Module deleted');
-      load();
-    } catch {
-      message.error('Failed to delete module');
-    }
+    await cascadeDelete(`/api/cms/modules/${record.id}`, { entityName: 'Learning Module', onSuccess: load });
   };
 
   const remove = async (record) => {
-    try {
-      await api.delete(`/api/cms/topics/${record.id}`);
-      message.success('Deleted');
-      load();
-    } catch {
-      message.error('Failed to delete');
-    }
+    await cascadeDelete(`/api/cms/topics/${record.id}`, { entityName: 'Topic', onSuccess: load });
   };
 
   const moveTopic = async (record, direction) => {
@@ -456,34 +510,47 @@ export function AdminTopics() {
   ];
 
   const columns = [
-    { title: 'Order', dataIndex: 'order', width: 90, render: (_v, r, idx) => (
-      <Space size={4}>
-        <Button size="small" icon={<ArrowUpOutlined />} disabled={idx === 0} onClick={() => moveTopic(r, 'up')} />
-        <Button size="small" icon={<ArrowDownOutlined />} disabled={idx === data.length - 1} onClick={() => moveTopic(r, 'down')} />
-      </Space>
-    ) },
+    { title: 'Order', dataIndex: 'order', width: 70, render: (v) => v ?? '—' },
     { title: 'Learning Module', dataIndex: ['module', 'name'], width: 140, render: (v) => v ? <Tag color="default">{v}</Tag> : '—' },
     { title: 'Name', dataIndex: 'name' },
-    { title: 'Level', dataIndex: 'level', render: (v) => <Tag color="blue">{v}</Tag> },
+    {
+      title: 'Course',
+      key: 'course',
+      width: 160,
+      render: (_, record) => {
+        const linked = record.courseId ? courses.find(c => c.id === record.courseId) : null;
+        if (linked) return <Tag color="blue">{linked.name}</Tag>;
+        const matching = courses.filter(c => c.level === record.level);
+        if (matching.length === 0) return <span style={{ color: '#999' }}>—</span>;
+        return matching.map(c => <Tag key={c.id} color="blue" style={{ marginBottom: 2 }}>{c.name}</Tag>);
+      }
+    },
+    {
+      title: 'Concepts',
+      width: 80,
+      render: (_, r) => {
+        const count = (r.concepts || []).length;
+        return count > 0 ? <Tag color="purple">{count}</Tag> : '—';
+      }
+    },
     {
       title: 'Actions',
+      width: 160,
       render: (_, record) => (
-        <Space>
-          <Button icon={<EditOutlined />} size="small" onClick={() => {
+        <Space size={4}>
+          <Tooltip title="Edit"><Button type="text" icon={<EditOutlined />} size="small" onClick={() => {
             setEditing(record);
             setTopicStep(0);
             const courseId = record.courseId ?? (courses.find(c => c.level === record.level)?.id ?? '');
             const mod = modules.find(m => m.id === record.moduleId);
-            form.setFieldsValue({ name: record.name, moduleId: record.moduleId || '', courseId, volumeId: mod?.volumeId || undefined, order: record.order ?? '' });
+            form.setFieldsValue({ name: record.name, moduleId: record.moduleId || '', courseId, volumeId: mod?.volumeId || undefined, order: record.order ?? '', losCode: record.losCode || '', commandWord: record.commandWord || '', learningOutcomeStatement: record.learningOutcomeStatement || '' });
             setDrawerOpen(true);
-          }}>
-            Edit
-          </Button>
-          <Button size="small" style={{ color: '#722ed1' }} icon={<BulbOutlined />} onClick={() => openConceptDrawer(record)}>Concept</Button>
-          <Button size="small" onClick={() => openManage(record)}>Manage</Button>
-          <Button size="small" onClick={() => openPreview(record)}>Preview</Button>
+          }} /></Tooltip>
+          <Tooltip title="Add Concept"><Button type="text" icon={<BulbOutlined />} size="small" style={{ color: '#722ed1' }} onClick={() => openConceptDrawer(record)} /></Tooltip>
+          <Tooltip title="Manage"><Button type="text" icon={<SettingOutlined />} size="small" onClick={() => openManage(record)} /></Tooltip>
+          <Tooltip title="Preview"><Button type="text" icon={<EyeOutlined />} size="small" onClick={() => openPreview(record)} /></Tooltip>
           <Popconfirm title="Delete topic?" onConfirm={() => remove(record)}>
-            <Button danger icon={<DeleteOutlined />} size="small">Delete</Button>
+            <Tooltip title="Delete"><Button type="text" danger icon={<DeleteOutlined />} size="small" /></Tooltip>
           </Popconfirm>
         </Space>
       )
@@ -540,6 +607,29 @@ export function AdminTopics() {
     return options;
   }, [modules]);
 
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const handleBulkUpload = async (file, endpoint, entityLabel) => {
+    setBulkUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data: res } = await api.post(`/api/cms/bulk/${endpoint}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const msg = `${res.created ?? 0} ${entityLabel}(s) created.`;
+      if (res.errors?.length) {
+        Modal.warning({ title: `Bulk Upload: ${entityLabel}`, content: (<div><p>{msg}</p><p style={{ color: '#f5222d' }}>{res.errors.length} error(s):</p><ul style={{ maxHeight: 200, overflow: 'auto', paddingLeft: 20 }}>{res.errors.map((e, i) => <li key={i}>{e}</li>)}</ul></div>) });
+      } else {
+        message.success(msg);
+      }
+      load();
+      if (activeTab === 'concepts') loadConcepts();
+    } catch (err) {
+      message.error(err?.response?.data?.error || `Bulk upload failed`);
+    } finally {
+      setBulkUploading(false);
+    }
+    return false;
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -554,7 +644,19 @@ export function AdminTopics() {
             Organize course content into learning modules and topics
           </Typography.Text>
         </div>
-        <Space>
+        <Space wrap>
+          <Upload accept=".xlsx,.xls" showUploadList={false} beforeUpload={(f) => handleBulkUpload(f, 'volumes', 'Volume')} disabled={bulkUploading}>
+            <Tooltip title="Excel: Course Name, Volume Name/Description, Volume Number"><Button icon={<UploadOutlined />} size="small" loading={bulkUploading}>Bulk Volumes</Button></Tooltip>
+          </Upload>
+          <Upload accept=".xlsx,.xls" showUploadList={false} beforeUpload={(f) => handleBulkUpload(f, 'modules', 'Learning Module')} disabled={bulkUploading}>
+            <Tooltip title="Excel: Course Name, Volume Name/Description, LM Name/Description, Order Number"><Button icon={<UploadOutlined />} size="small" loading={bulkUploading}>Bulk LMs</Button></Tooltip>
+          </Upload>
+          <Upload accept=".xlsx,.xls" showUploadList={false} beforeUpload={(f) => handleBulkUpload(f, 'topics', 'Topic')} disabled={bulkUploading}>
+            <Tooltip title="Excel: Course Name, Volume Name/Description, LM Name/Description, Topic Name/Description, Order Number"><Button icon={<UploadOutlined />} size="small" loading={bulkUploading}>Bulk Topics</Button></Tooltip>
+          </Upload>
+          <Upload accept=".xlsx,.xls" showUploadList={false} beforeUpload={(f) => handleBulkUpload(f, 'concepts', 'Concept')} disabled={bulkUploading}>
+            <Tooltip title="Excel: Course Name, Volume Name/Description, LM Name/Description, Topic Name/Description, Concept Name/Description, Order Number"><Button icon={<UploadOutlined />} size="small" loading={bulkUploading}>Bulk Concepts</Button></Tooltip>
+          </Upload>
           <Button 
             icon={<FolderOutlined />} 
             onClick={() => { setEditingModule(null); moduleForm.resetFields(); moduleForm.setFieldsValue({ courseId: filterModuleCourseId || '', level: 'LEVEL1' }); setModuleDrawerOpen(true); }}
@@ -583,7 +685,7 @@ export function AdminTopics() {
                 <span>Course:</span>
                 <Select
                   value={filterModuleCourseId || undefined}
-                  onChange={(v) => setFilterModuleCourseId(v ?? '')}
+                  onChange={(v) => { setFilterModuleCourseId(v ?? ''); setFilterVolumeId(''); }}
                   placeholder="All courses"
                   allowClear
                   style={{ minWidth: 220 }}
@@ -594,21 +696,30 @@ export function AdminTopics() {
                   showSearch
                   optionFilterProp="label"
                 />
-                <span>Topic:</span>
+                <span>Volume:</span>
                 <Select
                   value={filterVolumeId || undefined}
                   onChange={(v) => setFilterVolumeId(v ?? '')}
-                  placeholder="All topics"
+                  placeholder="All volumes"
                   allowClear
                   style={{ minWidth: 220 }}
-                  options={[
-                    { label: 'All topics', value: '' },
-                    ...(volumes || []).map(v => ({ value: v.id, label: v.description ? `${v.description} (${v.name})` : v.name }))
-                  ]}
+                  options={(() => {
+                    // Filter volumes by selected course
+                    let filteredVols = volumes || [];
+                    if (filterModuleCourseId) {
+                      const courseModules = modules.filter(m => m.courseId === filterModuleCourseId);
+                      const courseVolumeIds = new Set(courseModules.map(m => m.volumeId).filter(Boolean));
+                      filteredVols = filteredVols.filter(v => courseVolumeIds.has(v.id));
+                    }
+                    return [
+                      { label: 'All volumes', value: '' },
+                      ...filteredVols.map(v => ({ value: v.id, label: v.description ? `${v.name} - ${v.description}` : v.name }))
+                    ];
+                  })()}
                   showSearch
                   optionFilterProp="label"
                 />
-                <Button onClick={() => setFilterModuleCourseId('')}>Reset</Button>
+                <Button onClick={() => { setFilterModuleCourseId(''); setFilterVolumeId(''); }}>Reset</Button>
               </Space>
               <Table
                 rowKey="id"
@@ -818,7 +929,169 @@ export function AdminTopics() {
                 <Button onClick={() => load()}>Apply</Button>
                 <Button onClick={() => { setFilterCourseId(''); setFilterModuleId(''); setFilterQ(''); }}>Reset</Button>
               </Space>
-              <Table rowKey="id" loading={loading} dataSource={data} columns={columns} pagination={{ total, pageSize: 20 }} />
+              <Table
+                rowKey="id"
+                loading={loading}
+                dataSource={data}
+                columns={columns}
+                pagination={{ total, pageSize: 20 }}
+                expandable={{
+                  defaultExpandAllRows: false,
+                  expandedRowRender: (record) => {
+                    const concepts = record.concepts || [];
+                    if (concepts.length === 0) return (
+                      <div style={{ paddingLeft: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>No concepts in this topic</Typography.Text>
+                        <Button size="small" type="link" icon={<PlusOutlined />} style={{ color: '#722ed1' }} onClick={() => openConceptDrawer(record)}>Add Concept</Button>
+                      </div>
+                    );
+                    return (
+                      <div style={{ paddingLeft: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <Typography.Text strong style={{ fontSize: 12, color: '#722ed1' }}><BulbOutlined /> Concepts ({concepts.length})</Typography.Text>
+                          <Button size="small" type="link" icon={<PlusOutlined />} style={{ color: '#722ed1' }} onClick={() => openConceptDrawer(record)}>Add Concept</Button>
+                        </div>
+                        {concepts.map(c => (
+                          <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', marginTop: 4, background: '#faf5ff', borderLeft: '3px solid #722ed1', borderRadius: 4 }}>
+                            <Space>
+                              <BulbOutlined style={{ color: '#722ed1' }} />
+                              <span>{c.order != null ? `${c.order}. ` : ''}{c.name}</span>
+                            </Space>
+                            <Space size={4}>
+                              <Tooltip title="Edit"><Button size="small" type="text" icon={<EditOutlined />} onClick={() => {
+                                const topic = data.find(t => t.id === record.id) || record;
+                                openEditConceptDrawer(c, topic);
+                              }} /></Tooltip>
+                              <Popconfirm title="Delete concept?" onConfirm={() => deleteConcept(c)}>
+                                <Tooltip title="Delete"><Button size="small" type="text" danger icon={<DeleteOutlined />} /></Tooltip>
+                              </Popconfirm>
+                            </Space>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  },
+                  rowExpandable: () => true
+                }}
+              />
+            </Space>
+          )
+        },
+        {
+          key: 'concepts',
+          label: 'Concepts',
+          children: (
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Space wrap align="center">
+                <span>Course:</span>
+                <Select
+                  value={filterConceptCourseId || undefined}
+                  onChange={(v) => { setFilterConceptCourseId(v ?? ''); setFilterConceptModuleId(''); setFilterConceptTopicId(''); }}
+                  placeholder="All courses"
+                  allowClear
+                  style={{ minWidth: 220 }}
+                  options={[
+                    { label: 'All courses', value: '' },
+                    ...(courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))
+                  ]}
+                  showSearch
+                  optionFilterProp="label"
+                />
+                <span>Learning Module:</span>
+                <Select
+                  value={filterConceptModuleId || undefined}
+                  onChange={(v) => { setFilterConceptModuleId(v ?? ''); setFilterConceptTopicId(''); }}
+                  placeholder="All modules"
+                  allowClear
+                  style={{ minWidth: 200 }}
+                  options={(() => {
+                    let filteredMods = modules || [];
+                    if (filterConceptCourseId) filteredMods = filteredMods.filter(m => m.courseId === filterConceptCourseId);
+                    return [
+                      { label: 'All modules', value: '' },
+                      ...filteredMods.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map(m => ({ value: m.id, label: m.order != null ? `${m.order}. ${m.name}` : m.name }))
+                    ];
+                  })()}
+                  showSearch
+                  optionFilterProp="label"
+                />
+                <span>Topic:</span>
+                <Select
+                  value={filterConceptTopicId || undefined}
+                  onChange={(v) => setFilterConceptTopicId(v ?? '')}
+                  placeholder="All topics"
+                  allowClear
+                  style={{ minWidth: 200 }}
+                  options={(() => {
+                    let filteredTopics = data || [];
+                    if (filterConceptCourseId) filteredTopics = filteredTopics.filter(t => t.courseId === filterConceptCourseId);
+                    if (filterConceptModuleId) filteredTopics = filteredTopics.filter(t => t.moduleId === filterConceptModuleId);
+                    return [
+                      { label: 'All topics', value: '' },
+                      ...filteredTopics.map(t => ({ value: t.id, label: t.name }))
+                    ];
+                  })()}
+                  showSearch
+                  optionFilterProp="label"
+                />
+                <Input
+                  prefix={<SearchOutlined />}
+                  placeholder="Search concept name"
+                  value={filterConceptQ}
+                  onChange={(e) => setFilterConceptQ(e.target.value)}
+                  allowClear
+                  style={{ width: 220 }}
+                  onPressEnter={() => loadConcepts()}
+                />
+                <Button onClick={() => loadConcepts()}>Apply</Button>
+                <Button onClick={() => { setFilterConceptCourseId(''); setFilterConceptModuleId(''); setFilterConceptTopicId(''); setFilterConceptQ(''); }}>Reset</Button>
+              </Space>
+              <Table
+                rowKey="id"
+                loading={conceptsLoading}
+                dataSource={conceptsData}
+                pagination={{ pageSize: 20 }}
+                columns={[
+                  { title: 'Order', dataIndex: 'order', width: 70, render: (v) => v ?? '—' },
+                  {
+                    title: 'Learning Module',
+                    width: 160,
+                    render: (_, r) => {
+                      const mod = r.topic?.module;
+                      return mod ? <Tag color="default">{mod.name}</Tag> : '—';
+                    }
+                  },
+                  {
+                    title: 'Topic Name',
+                    width: 160,
+                    render: (_, r) => r.topic?.name || '—'
+                  },
+                  { title: 'Concept Name', dataIndex: 'name' },
+                  {
+                    title: 'Course',
+                    width: 140,
+                    render: (_, r) => {
+                      const course = r.topic?.course;
+                      return course ? <Tag color="blue">{course.name}</Tag> : '—';
+                    }
+                  },
+                  {
+                    title: 'Actions',
+                    width: 100,
+                    render: (_, record) => (
+                      <Space size={4}>
+                        <Tooltip title="Edit"><Button type="text" icon={<EditOutlined />} size="small" onClick={() => {
+                          const topic = record.topic ? { id: record.topic.id, name: record.topic.name } : null;
+                          if (topic) openEditConceptDrawer(record, topic);
+                        }} /></Tooltip>
+                        <Popconfirm title="Delete concept?" onConfirm={() => deleteConcept(record)}>
+                          <Tooltip title="Delete"><Button type="text" danger icon={<DeleteOutlined />} size="small" /></Tooltip>
+                        </Popconfirm>
+                      </Space>
+                    )
+                  }
+                ]}
+              />
             </Space>
           )
         }
@@ -969,6 +1242,15 @@ export function AdminTopics() {
                 </Form.Item>
                 <Form.Item name="order" label="Order" tooltip="Auto-populated based on existing topics in the same module">
                   <Input type="number" min={1} placeholder="Display order" />
+                </Form.Item>
+                <Form.Item name="losCode" label="LOS Code" tooltip="e.g. LOS 1.a">
+                  <Input placeholder="e.g. LOS 1.a" />
+                </Form.Item>
+                <Form.Item name="commandWord" label="Command Word" tooltip="e.g. describe, calculate, evaluate">
+                  <Input placeholder="e.g. describe" />
+                </Form.Item>
+                <Form.Item name="learningOutcomeStatement" label="Learning Outcome Statement">
+                  <Input.TextArea rows={3} placeholder="Enter the full learning outcome statement" />
                 </Form.Item>
                 <Space>
                   <Button onClick={() => { setDrawerOpen(false); setTopicStep(0); setEditing(null); }}>Cancel</Button>

@@ -179,6 +179,124 @@ export function cmsRouter(prisma) {
     return res.json({ url: fileUrl, filename: f.originalname, size: f.size, mime: f.mimetype });
   });
 
+  // ── Bulk Upload endpoints ──────────────────────────────────────────
+  const xlsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+  router.post('/bulk/volumes', requireAuth(), requireRole('ADMIN'), xlsUpload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'file missing' });
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      if (!rows.length) return res.status(400).json({ error: 'Empty spreadsheet' });
+      const results = { created: 0, errors: [] };
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const courseName = (row['Course Name'] ?? '').toString().trim();
+        const volName = (row['Volume Name/Description'] ?? row['Volume Name'] ?? '').toString().trim();
+        const volNumber = row['Volume Number'] != null ? Number(row['Volume Number']) : undefined;
+        if (!courseName || !volName) { results.errors.push(`Row ${i + 2}: Missing Course Name or Volume Name`); continue; }
+        const course = await prisma.course.findFirst({ where: { name: { equals: courseName, mode: 'insensitive' } } });
+        if (!course) { results.errors.push(`Row ${i + 2}: Course "${courseName}" not found`); continue; }
+        let volume = await prisma.volume.findFirst({ where: { name: { equals: volName, mode: 'insensitive' } } });
+        if (!volume) {
+          volume = await prisma.volume.create({ data: { name: volName, description: volNumber != null ? String(volNumber) : undefined } });
+        }
+        const existing = await prisma.courseVolume.findUnique({ where: { courseId_volumeId: { courseId: course.id, volumeId: volume.id } } });
+        if (!existing) {
+          const max = await prisma.courseVolume.findFirst({ where: { courseId: course.id }, orderBy: { order: 'desc' }, select: { order: true } });
+          await prisma.courseVolume.create({ data: { courseId: course.id, volumeId: volume.id, order: volNumber ?? ((max?.order ?? 0) + 1) } });
+        }
+        results.created++;
+      }
+      return res.json({ ok: true, ...results });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  });
+
+  router.post('/bulk/modules', requireAuth(), requireRole('ADMIN'), xlsUpload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'file missing' });
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      if (!rows.length) return res.status(400).json({ error: 'Empty spreadsheet' });
+      const results = { created: 0, errors: [] };
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const courseName = (row['Course Name'] ?? '').toString().trim();
+        const volName = (row['Volume Name/Description'] ?? row['Volume Name'] ?? '').toString().trim();
+        const lmName = (row['LM Name/Description'] ?? row['LM Name'] ?? '').toString().trim();
+        const orderNum = row['Order Number'] != null ? Number(row['Order Number']) : undefined;
+        if (!courseName || !volName || !lmName) { results.errors.push(`Row ${i + 2}: Missing required field`); continue; }
+        const course = await prisma.course.findFirst({ where: { name: { equals: courseName, mode: 'insensitive' } } });
+        if (!course) { results.errors.push(`Row ${i + 2}: Course "${courseName}" not found`); continue; }
+        const volume = await prisma.volume.findFirst({ where: { name: { equals: volName, mode: 'insensitive' } } });
+        if (!volume) { results.errors.push(`Row ${i + 2}: Volume "${volName}" not found`); continue; }
+        const max = await prisma.module.findFirst({ where: { volumeId: volume.id }, orderBy: { order: 'desc' }, select: { order: true } });
+        const order = orderNum ?? ((max?.order ?? 0) + 1);
+        await prisma.module.create({ data: { name: lmName, level: course.level, courseId: course.id, volumeId: volume.id, order } });
+        results.created++;
+      }
+      return res.json({ ok: true, ...results });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  });
+
+  router.post('/bulk/topics', requireAuth(), requireRole('ADMIN'), xlsUpload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'file missing' });
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      if (!rows.length) return res.status(400).json({ error: 'Empty spreadsheet' });
+      const results = { created: 0, errors: [] };
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const courseName = (row['Course Name'] ?? '').toString().trim();
+        const volName = (row['Volume Name/Description'] ?? row['Volume Name'] ?? '').toString().trim();
+        const lmName = (row['LM Name/Description'] ?? row['LM Name'] ?? '').toString().trim();
+        const topicName = (row['Topic Name/Description'] ?? row['Topic Name'] ?? '').toString().trim();
+        const orderNum = row['Order Number'] != null ? Number(row['Order Number']) : undefined;
+        if (!courseName || !lmName || !topicName) { results.errors.push(`Row ${i + 2}: Missing required field`); continue; }
+        const course = await prisma.course.findFirst({ where: { name: { equals: courseName, mode: 'insensitive' } } });
+        if (!course) { results.errors.push(`Row ${i + 2}: Course "${courseName}" not found`); continue; }
+        const moduleWhere = { name: { equals: lmName, mode: 'insensitive' }, courseId: course.id };
+        const mod = await prisma.module.findFirst({ where: moduleWhere });
+        if (!mod) { results.errors.push(`Row ${i + 2}: Learning Module "${lmName}" not found for course "${courseName}"`); continue; }
+        const max = await prisma.topic.findFirst({ where: { moduleId: mod.id }, orderBy: { order: 'desc' }, select: { order: true } });
+        const order = orderNum ?? ((max?.order ?? 0) + 1);
+        await prisma.topic.create({ data: { name: topicName, level: course.level, courseId: course.id, moduleId: mod.id, order } });
+        results.created++;
+      }
+      return res.json({ ok: true, ...results });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  });
+
+  router.post('/bulk/concepts', requireAuth(), requireRole('ADMIN'), xlsUpload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'file missing' });
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      if (!rows.length) return res.status(400).json({ error: 'Empty spreadsheet' });
+      const results = { created: 0, errors: [] };
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const courseName = (row['Course Name'] ?? '').toString().trim();
+        const lmName = (row['LM Name/Description'] ?? row['LM Name'] ?? '').toString().trim();
+        const topicName = (row['Topic Name/Description'] ?? row['Topic Name'] ?? '').toString().trim();
+        const conceptName = (row['Concept Name/Description'] ?? row['Concept Name'] ?? '').toString().trim();
+        const orderNum = row['Order Number'] != null ? Number(row['Order Number']) : undefined;
+        if (!courseName || !topicName || !conceptName) { results.errors.push(`Row ${i + 2}: Missing required field`); continue; }
+        const course = await prisma.course.findFirst({ where: { name: { equals: courseName, mode: 'insensitive' } } });
+        if (!course) { results.errors.push(`Row ${i + 2}: Course "${courseName}" not found`); continue; }
+        const topicWhere = { name: { equals: topicName, mode: 'insensitive' }, courseId: course.id };
+        const topic = await prisma.topic.findFirst({ where: topicWhere });
+        if (!topic) { results.errors.push(`Row ${i + 2}: Topic "${topicName}" not found for course "${courseName}"`); continue; }
+        const max = await prisma.concept.findFirst({ where: { topicId: topic.id }, orderBy: { order: 'desc' }, select: { order: true } });
+        const order = orderNum ?? ((max?.order ?? 0) + 1);
+        await prisma.concept.create({ data: { name: conceptName, topicId: topic.id, order } });
+        results.created++;
+      }
+      return res.json({ ok: true, ...results });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  });
+
   // Levels
   router.get('/levels', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const levels = await prisma.levelDef.findMany({ orderBy: [{ order: 'asc' }, { name: 'asc' }] });
@@ -400,6 +518,67 @@ export function cmsRouter(prisma) {
   });
   router.delete('/courses/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const id = req.params.id;
+    const force = req.query.force === 'true';
+    const [enrollmentCount, moduleCount, topicCount, examCount, volumeLinkCount] = await Promise.all([
+      prisma.enrollment.count({ where: { courseId: id } }),
+      prisma.module.count({ where: { courseId: id } }),
+      prisma.topic.count({ where: { courseId: id } }),
+      prisma.exam.count({ where: { courseId: id } }),
+      prisma.courseVolume.count({ where: { courseId: id } })
+    ]);
+    const related = [];
+    if (enrollmentCount) related.push(`${enrollmentCount} enrollment(s)`);
+    if (moduleCount) related.push(`${moduleCount} learning module(s)`);
+    if (topicCount) related.push(`${topicCount} topic(s)`);
+    if (examCount) related.push(`${examCount} exam(s)`);
+    if (volumeLinkCount) related.push(`${volumeLinkCount} volume link(s)`);
+    if (related.length > 0 && !force) {
+      return res.status(409).json({ error: 'Has associated entities', related, message: `This course has ${related.join(', ')}. Delete them all?` });
+    }
+    if (force) {
+      await prisma.$transaction(async (tx) => {
+        // Delete exams and their related data
+        const exams = await tx.exam.findMany({ where: { courseId: id }, select: { id: true } });
+        const examIds = exams.map(e => e.id);
+        if (examIds.length) {
+          const attempts = await tx.examAttempt.findMany({ where: { examId: { in: examIds } }, select: { id: true } });
+          const attemptIds = attempts.map(a => a.id);
+          if (attemptIds.length) {
+            await tx.examAnswer.deleteMany({ where: { attemptId: { in: attemptIds } } });
+            await tx.examAttempt.deleteMany({ where: { id: { in: attemptIds } } });
+          }
+          await tx.examQuestion.deleteMany({ where: { examId: { in: examIds } } });
+          await tx.exam.deleteMany({ where: { id: { in: examIds } } });
+        }
+        // Delete topics and their related data
+        const topics = await tx.topic.findMany({ where: { courseId: id }, select: { id: true } });
+        const topicIds = topics.map(t => t.id);
+        if (topicIds.length) {
+          await tx.learningMaterial.deleteMany({ where: { topicId: { in: topicIds } } });
+          await tx.concept.deleteMany({ where: { topicId: { in: topicIds } } });
+          const qIds = (await tx.question.findMany({ where: { topicId: { in: topicIds } }, select: { id: true } })).map(q => q.id);
+          if (qIds.length) {
+            await tx.mcqOption.deleteMany({ where: { questionId: { in: qIds } } });
+            await tx.examAnswer.deleteMany({ where: { questionId: { in: qIds } } });
+            await tx.examQuestion.deleteMany({ where: { questionId: { in: qIds } } });
+            await tx.question.deleteMany({ where: { id: { in: qIds } } });
+          }
+          await tx.video.deleteMany({ where: { topicId: { in: topicIds } } });
+          await tx.revisionSummary.deleteMany({ where: { topicId: { in: topicIds } } });
+          await tx.topic.deleteMany({ where: { id: { in: topicIds } } });
+        }
+        // Delete modules
+        await tx.module.deleteMany({ where: { courseId: id } });
+        // Delete course links, enrollments, progress
+        await tx.courseVolume.deleteMany({ where: { courseId: id } });
+        await tx.courseProgress.deleteMany({ where: { courseId: id } });
+        await tx.enrollment.deleteMany({ where: { courseId: id } });
+        await tx.courseProduct.deleteMany({ where: { courseId: id } });
+        await tx.mockExam.deleteMany({ where: { courseId: id } }).catch(() => {});
+        await tx.course.delete({ where: { id } });
+      });
+      return res.json({ ok: true });
+    }
     await prisma.enrollment.deleteMany({ where: { courseId: id } });
     await prisma.course.delete({ where: { id } });
     return res.json({ ok: true });
@@ -506,6 +685,49 @@ export function cmsRouter(prisma) {
 	});
 	router.delete('/volumes/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const id = req.params.id;
+		const force = req.query.force === 'true';
+		const [moduleCount, linkCount, weightCount] = await Promise.all([
+			prisma.module.count({ where: { volumeId: id } }),
+			prisma.courseVolume.count({ where: { volumeId: id } }),
+			prisma.mockExamTopicWeight.count({ where: { volumeId: id } })
+		]);
+		const related = [];
+		if (moduleCount) related.push(`${moduleCount} learning module(s)`);
+		if (linkCount) related.push(`${linkCount} course link(s)`);
+		if (weightCount) related.push(`${weightCount} mock exam weight(s)`);
+		if (related.length > 0 && !force) {
+			return res.status(409).json({ error: 'Has associated entities', related, message: `This volume has ${related.join(', ')}. Delete them all?` });
+		}
+		if (force && related.length > 0) {
+			await prisma.$transaction(async (tx) => {
+				// Delete topics under modules of this volume
+				const mods = await tx.module.findMany({ where: { volumeId: id }, select: { id: true } });
+				const modIds = mods.map(m => m.id);
+				if (modIds.length) {
+					const topics = await tx.topic.findMany({ where: { moduleId: { in: modIds } }, select: { id: true } });
+					const topicIds = topics.map(t => t.id);
+					if (topicIds.length) {
+						await tx.learningMaterial.deleteMany({ where: { topicId: { in: topicIds } } });
+						await tx.concept.deleteMany({ where: { topicId: { in: topicIds } } });
+						const qIds = (await tx.question.findMany({ where: { topicId: { in: topicIds } }, select: { id: true } })).map(q => q.id);
+						if (qIds.length) {
+							await tx.mcqOption.deleteMany({ where: { questionId: { in: qIds } } });
+							await tx.examAnswer.deleteMany({ where: { questionId: { in: qIds } } });
+							await tx.examQuestion.deleteMany({ where: { questionId: { in: qIds } } });
+							await tx.question.deleteMany({ where: { id: { in: qIds } } });
+						}
+						await tx.video.deleteMany({ where: { topicId: { in: topicIds } } });
+						await tx.revisionSummary.deleteMany({ where: { topicId: { in: topicIds } } });
+						await tx.topic.deleteMany({ where: { id: { in: topicIds } } });
+					}
+					await tx.module.deleteMany({ where: { id: { in: modIds } } });
+				}
+				await tx.courseVolume.deleteMany({ where: { volumeId: id } });
+				await tx.mockExamTopicWeight.deleteMany({ where: { volumeId: id } });
+				await tx.volume.delete({ where: { id } });
+			});
+			return res.json({ ok: true });
+		}
 		await prisma.volume.delete({ where: { id } });
 		return res.json({ ok: true });
 	});
@@ -592,6 +814,11 @@ export function cmsRouter(prisma) {
 		const level = course.level;
 		const max = await prisma.module.findFirst({ where: { volumeId }, orderBy: { order: 'desc' }, select: { order: true } });
 		const order = parse.data.order ?? (max?.order ?? 0) + 1;
+		// Check for duplicate order in same volume
+		if (parse.data.order != null) {
+			const dup = await prisma.module.findFirst({ where: { volumeId, order } });
+			if (dup) return res.status(400).json({ error: `Order ${order} is already taken by another learning module in this volume` });
+		}
 		const module_ = await prisma.module.create({ data: { name: parse.data.name, level, courseId, volumeId, order } });
 		return res.status(201).json({ module: module_ });
 	});
@@ -616,6 +843,11 @@ export function cmsRouter(prisma) {
 		const linked = await assertVolumeLinkedToCourse({ courseId: nextCourseId, volumeId: nextVolumeId });
 		if (!linked) return res.status(400).json({ error: 'Volume is not linked to this course' });
 		const level = course.level;
+		// Check for duplicate order in same volume (exclude self)
+		if (typeof parse.data.order !== 'undefined' && parse.data.order != null) {
+			const dup = await prisma.module.findFirst({ where: { volumeId: nextVolumeId, order: parse.data.order, id: { not: id } } });
+			if (dup) return res.status(400).json({ error: `Order ${parse.data.order} is already taken by another learning module in this volume` });
+		}
 		const module_ = await prisma.module.update({
 			where: { id },
 			data: {
@@ -630,8 +862,36 @@ export function cmsRouter(prisma) {
 	});
 	router.delete('/modules/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const id = req.params.id;
+		const force = req.query.force === 'true';
 		const mod = await prisma.module.findUnique({ where: { id }, select: { id: true, courseId: true } });
 		if (!mod) return res.status(404).json({ error: 'Not found' });
+		const topicCount = await prisma.topic.count({ where: { moduleId: id } });
+		if (topicCount > 0 && !force) {
+			return res.status(409).json({ error: 'Has associated entities', related: [`${topicCount} topic(s)`], message: `This learning module has ${topicCount} topic(s). Delete them all?` });
+		}
+		if (force && topicCount > 0) {
+			await prisma.$transaction(async (tx) => {
+				const topics = await tx.topic.findMany({ where: { moduleId: id }, select: { id: true } });
+				const topicIds = topics.map(t => t.id);
+				if (topicIds.length) {
+					await tx.learningMaterial.deleteMany({ where: { topicId: { in: topicIds } } });
+					await tx.concept.deleteMany({ where: { topicId: { in: topicIds } } });
+					const qIds = (await tx.question.findMany({ where: { topicId: { in: topicIds } }, select: { id: true } })).map(q => q.id);
+					if (qIds.length) {
+						await tx.mcqOption.deleteMany({ where: { questionId: { in: qIds } } });
+						await tx.examAnswer.deleteMany({ where: { questionId: { in: qIds } } });
+						await tx.examQuestion.deleteMany({ where: { questionId: { in: qIds } } });
+						await tx.question.deleteMany({ where: { id: { in: qIds } } });
+					}
+					await tx.video.deleteMany({ where: { topicId: { in: topicIds } } });
+					await tx.revisionSummary.deleteMany({ where: { topicId: { in: topicIds } } });
+					await tx.topic.deleteMany({ where: { id: { in: topicIds } } });
+				}
+				await tx.module.delete({ where: { id } });
+			});
+			return res.json({ ok: true });
+		}
+		// No topics or not forced - old behavior: reassign topics then delete
 		const unassignedId = mod.courseId ? await getOrCreateUnassignedModuleForCourse(mod.courseId) : null;
 		if (!unassignedId) return res.status(400).json({ error: 'Unable to find course/unassigned module for this module. Fix module.courseId first.' });
 		await prisma.topic.updateMany({ where: { moduleId: id }, data: { moduleId: unassignedId } });
@@ -674,7 +934,10 @@ export function cmsRouter(prisma) {
 			courseId: z.string().min(1),
 			moduleId: z.string().min(1),
 			moduleNumber: z.number().int().optional(),
-			order: z.number().int().optional()
+			order: z.number().int().optional(),
+			losCode: z.string().optional(),
+			commandWord: z.string().optional(),
+			learningOutcomeStatement: z.string().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -695,6 +958,10 @@ export function cmsRouter(prisma) {
 				select: { order: true }
 			});
 			finalOrder = (max?.order ?? 0) + 1;
+		} else {
+			// Check for duplicate order in same module
+			const dup = await prisma.topic.findFirst({ where: { moduleId: data.moduleId, order: finalOrder } });
+			if (dup) return res.status(400).json({ error: `Order ${finalOrder} is already taken by another topic in this learning module` });
 		}
 		delete data.order;
 		const topic = await prisma.topic.create({ data: { ...data, order: finalOrder }, include: { module: true } });
@@ -707,7 +974,10 @@ export function cmsRouter(prisma) {
 			courseId: z.string().optional().nullable(),
 			moduleId: z.string().optional().nullable(),
 			moduleNumber: z.number().int().optional(),
-			order: z.number().int().optional()
+			order: z.number().int().optional(),
+			losCode: z.string().optional().nullable(),
+			commandWord: z.string().optional().nullable(),
+			learningOutcomeStatement: z.string().optional().nullable()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -731,6 +1001,12 @@ export function cmsRouter(prisma) {
 			if (!m) return res.status(400).json({ error: 'Invalid moduleId' });
 			if (effectiveCourseId && m.courseId && m.courseId !== effectiveCourseId) return res.status(400).json({ error: 'Module does not belong to this course' });
 		}
+		// Check for duplicate order in same module (exclude self)
+		const effectiveModuleId = nextModuleId || (await prisma.topic.findUnique({ where: { id }, select: { moduleId: true } }))?.moduleId;
+		if (typeof parse.data.order !== 'undefined' && parse.data.order != null && effectiveModuleId) {
+			const dup = await prisma.topic.findFirst({ where: { moduleId: effectiveModuleId, order: parse.data.order, id: { not: id } } });
+			if (dup) return res.status(400).json({ error: `Order ${parse.data.order} is already taken by another topic in this learning module` });
+		}
 		const data = {
 			...parse.data,
 			...(typeof level !== 'undefined' ? { level } : {}),
@@ -742,6 +1018,38 @@ export function cmsRouter(prisma) {
 	});
 	router.delete('/topics/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const id = req.params.id;
+		const force = req.query.force === 'true';
+		const [questionCount, conceptCount, materialCount, videoCount] = await Promise.all([
+			prisma.question.count({ where: { topicId: id } }),
+			prisma.concept.count({ where: { topicId: id } }),
+			prisma.learningMaterial.count({ where: { topicId: id } }),
+			prisma.video.count({ where: { topicId: id } })
+		]);
+		const related = [];
+		if (questionCount) related.push(`${questionCount} question(s)`);
+		if (conceptCount) related.push(`${conceptCount} concept(s)`);
+		if (materialCount) related.push(`${materialCount} learning material(s)`);
+		if (videoCount) related.push(`${videoCount} video(s)`);
+		if (related.length > 0 && !force) {
+			return res.status(409).json({ error: 'Has associated entities', related, message: `This topic has ${related.join(', ')}. Delete them all?` });
+		}
+		if (force && related.length > 0) {
+			await prisma.$transaction(async (tx) => {
+				const qIds = (await tx.question.findMany({ where: { topicId: id }, select: { id: true } })).map(q => q.id);
+				if (qIds.length) {
+					await tx.mcqOption.deleteMany({ where: { questionId: { in: qIds } } });
+					await tx.examAnswer.deleteMany({ where: { questionId: { in: qIds } } });
+					await tx.examQuestion.deleteMany({ where: { questionId: { in: qIds } } });
+					await tx.question.deleteMany({ where: { id: { in: qIds } } });
+				}
+				await tx.learningMaterial.deleteMany({ where: { topicId: id } });
+				await tx.concept.deleteMany({ where: { topicId: id } });
+				await tx.video.deleteMany({ where: { topicId: id } });
+				await tx.revisionSummary.deleteMany({ where: { topicId: id } });
+				await tx.topic.delete({ where: { id } });
+			});
+			return res.json({ ok: true });
+		}
 		await prisma.topic.delete({ where: { id } });
 		return res.json({ ok: true });
 	});
@@ -876,11 +1184,27 @@ export function cmsRouter(prisma) {
 
   // Concepts
   router.get('/concepts', requireAuth(), requireRole('ADMIN'), async (req, res) => {
-    const topicId = req.query.topicId;
-    const where = topicId ? { topicId } : {};
+    const topicId = (req.query.topicId ?? '').toString().trim() || undefined;
+    const moduleId = (req.query.moduleId ?? '').toString().trim() || undefined;
+    const courseId = (req.query.courseId ?? '').toString().trim() || undefined;
+    const q = (req.query.q ?? '').toString().trim() || undefined;
+    const where = {};
+    if (topicId) where.topicId = topicId;
+    if (moduleId) where.topic = { ...where.topic, moduleId };
+    if (courseId) where.topic = { ...where.topic, courseId };
+    if (q) where.name = { contains: q, mode: 'insensitive' };
     const concepts = await prisma.concept.findMany({
       where,
-      include: { topic: { select: { id: true, name: true, moduleId: true } }, materials: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] } },
+      include: {
+        topic: {
+          select: {
+            id: true, name: true, moduleId: true, courseId: true,
+            module: { select: { id: true, name: true, volumeId: true, volume: { select: { id: true, name: true, description: true } } } },
+            course: { select: { id: true, name: true, level: true } }
+          }
+        },
+        materials: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] }
+      },
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
     });
     return res.json({ concepts });
@@ -900,6 +1224,9 @@ export function cmsRouter(prisma) {
     if (nextOrder == null) {
       const max = await prisma.concept.findFirst({ where: { topicId }, orderBy: { order: 'desc' }, select: { order: true } });
       nextOrder = (max?.order ?? 0) + 1;
+    } else {
+      const dup = await prisma.concept.findFirst({ where: { topicId, order: nextOrder } });
+      if (dup) return res.status(400).json({ error: `Order ${nextOrder} is already taken by another concept in this topic` });
     }
     const concept = await prisma.concept.create({ data: { name, topicId, order: nextOrder }, include: { topic: true } });
     return res.status(201).json({ concept });
@@ -912,11 +1239,27 @@ export function cmsRouter(prisma) {
     });
     const parse = schema.safeParse(req.body);
     if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+    // Check for duplicate order in same topic (exclude self)
+    if (typeof parse.data.order !== 'undefined' && parse.data.order != null) {
+      const existing = await prisma.concept.findUnique({ where: { id }, select: { topicId: true } });
+      if (existing) {
+        const dup = await prisma.concept.findFirst({ where: { topicId: existing.topicId, order: parse.data.order, id: { not: id } } });
+        if (dup) return res.status(400).json({ error: `Order ${parse.data.order} is already taken by another concept in this topic` });
+      }
+    }
     const concept = await prisma.concept.update({ where: { id }, data: parse.data, include: { topic: true } });
     return res.json({ concept });
   });
   router.delete('/concepts/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const id = req.params.id;
+    const force = req.query.force === 'true';
+    const materialCount = await prisma.learningMaterial.count({ where: { conceptId: id } });
+    if (materialCount > 0 && !force) {
+      return res.status(409).json({ error: 'Has associated entities', related: [`${materialCount} learning material(s)`], message: `This concept has ${materialCount} learning material(s). Delete them all?` });
+    }
+    if (force && materialCount > 0) {
+      await prisma.learningMaterial.deleteMany({ where: { conceptId: id } });
+    }
     await prisma.concept.delete({ where: { id } });
     return res.json({ ok: true });
   });

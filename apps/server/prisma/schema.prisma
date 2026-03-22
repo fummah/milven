@@ -113,6 +113,9 @@ model Topic {
   moduleNumber Int?      // deprecated: use moduleId; kept for migration/display
   moduleId     String
   module       Module    @relation(fields: [moduleId], references: [id], onDelete: Restrict)
+  losCode      String?   // LOS Code (e.g. "LOS 1.a")
+  commandWord  String?   // Command Word (e.g. "describe", "calculate")
+  learningOutcomeStatement String? // Learning Outcome Statement (full text)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   // Relations

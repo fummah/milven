@@ -170,6 +170,28 @@ export function GradeAttemptDrawer({ attemptId, open, onClose, onSaved }) {
                     <Typography.Text strong className="text-slate-700 block mb-2">Question</Typography.Text>
                     <div className="text-slate-700 text-sm prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: a?.question?.stem || '' }} />
                   </div>
+
+                  {(a?.question?.topic?.losCode || a?.question?.topic?.commandWord || a?.question?.topic?.learningOutcomeStatement) && (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 p-3">
+                      <Typography.Text strong className="text-emerald-800 text-xs block mb-2">
+                        <BulbOutlined className="mr-1" /> Learning Outcome (LOS)
+                      </Typography.Text>
+                      <div className="text-slate-700 text-xs space-y-1">
+                        {a.question.topic.losCode && (
+                          <div><Typography.Text strong className="text-xs text-emerald-700">LOS Code:</Typography.Text> {a.question.topic.losCode}</div>
+                        )}
+                        {a.question.topic.commandWord && (
+                          <div><Typography.Text strong className="text-xs text-emerald-700">Command Word:</Typography.Text> {a.question.topic.commandWord}</div>
+                        )}
+                        {a.question.topic.learningOutcomeStatement && (
+                          <div>
+                            <Typography.Text strong className="text-xs text-emerald-700 block mb-1">Learning Outcome Statement:</Typography.Text>
+                            <div style={{ whiteSpace: 'pre-wrap' }}>{a.question.topic.learningOutcomeStatement}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   
                   <div className="rounded-lg border border-slate-200 bg-white p-3">
                     <Typography.Text strong className="text-slate-700 block mb-2">Candidate response</Typography.Text>

@@ -905,12 +905,7 @@ export function examsRouter(prisma) {
 			where: { id: attemptId },
 			data: { status: 'SUBMITTED', submittedAt: new Date(), scorePercent }
 		});
-		if (attempt.exam?.type === 'COURSE' && attempt.exam.courseId) {
-			await prisma.enrollment.updateMany({
-				where: { userId: req.user.id, courseId: attempt.exam.courseId },
-				data: { status: 'COMPLETED' }
-			});
-		}
+		// NOTE: Auto-completion removed. Only admins can mark a course as completed via PUT /users/:id/enrollments/:courseId
 		return res.json({ attempt: updated });
 	});
 
