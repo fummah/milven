@@ -80,7 +80,7 @@ export function AdminQuestionEdit() {
 						form.setFieldsValue({
 							type: q.type,
 							difficulty: q.difficulty,
-							topicId: q.topicId,
+							topicIds: Array.isArray(q.topics) && q.topics.length > 0 ? q.topics.map(t => t.id) : (q.topicId ? [q.topicId] : []),
 							courseId: q.courseId,
 							volumeId: q.module?.volumeId,
 							caseStudyText: q.vignetteText || '',
@@ -101,7 +101,7 @@ export function AdminQuestionEdit() {
 							type: q.type,
 							difficulty: q.difficulty,
 							marks: q.marks || 1,
-							topicId: q.topicId,
+							topicIds: Array.isArray(q.topics) && q.topics.length > 0 ? q.topics.map(t => t.id) : (q.topicId ? [q.topicId] : []),
 							courseId: q.courseId,
 							volumeId: q.module?.volumeId,
 							vignetteText: q.vignetteText || '',
@@ -200,7 +200,7 @@ export function AdminQuestionEdit() {
 				await api.put(`/api/cms/questions/${id}`, {
 					type: values.type,
 					difficulty: values.difficulty,
-					topicId: values.topicId,
+					topicIds: Array.isArray(values.topicIds) ? values.topicIds : (values.topicIds ? [values.topicIds] : []),
 					vignetteText: values.caseStudyText || null,
 					subQuestions,
 					qid: values.qid || null,
@@ -224,7 +224,7 @@ export function AdminQuestionEdit() {
 					type: values.type,
 					difficulty: values.difficulty,
 					marks: values.marks ? Number(values.marks) : undefined,
-					topicId: values.topicId,
+					topicIds: Array.isArray(values.topicIds) ? values.topicIds : (values.topicIds ? [values.topicIds] : []),
 					vignetteText: values.vignetteText || null,
 					subQuestions,
 					qid: values.qid || null,
@@ -241,7 +241,7 @@ export function AdminQuestionEdit() {
 					type: values.type,
 					difficulty: values.difficulty,
 					marks: values.marks ? Number(values.marks) : undefined,
-					topicId: values.topicId,
+					topicIds: Array.isArray(values.topicIds) ? values.topicIds : (values.topicIds ? [values.topicIds] : []),
 					options: values.type !== 'CONSTRUCTED_RESPONSE'
 						? (values.options || []).map(o => ({ text: o.text, isCorrect: !!o.isCorrect }))
 						: [],
@@ -303,7 +303,7 @@ export function AdminQuestionEdit() {
 							optionFilterProp="label"
 							allowClear
 							onChange={() => {
-								form.setFieldsValue({ topicId: undefined, volumeId: undefined, learningModuleId: undefined });
+								form.setFieldsValue({ topicIds: undefined, volumeId: undefined, learningModuleId: undefined });
 							}}
 						/>
 					</Form.Item>
@@ -316,7 +316,7 @@ export function AdminQuestionEdit() {
 							allowClear
 							disabled={!selectedCourseId || volumeOptions.length === 0}
 							onChange={() => {
-								form.setFieldsValue({ topicId: undefined, learningModuleId: undefined });
+								form.setFieldsValue({ topicIds: undefined, learningModuleId: undefined });
 							}}
 						/>
 					</Form.Item>
@@ -329,13 +329,14 @@ export function AdminQuestionEdit() {
 							allowClear
 							disabled={moduleOptions.length === 0}
 							onChange={() => {
-								form.setFieldsValue({ topicId: undefined });
+								form.setFieldsValue({ topicIds: undefined });
 							}}
 						/>
 					</Form.Item>
-					<Form.Item name="topicId" label="Topic" rules={[{ required: true }]}>
+					<Form.Item name="topicIds" label="Topic(s)" rules={[{ required: true, type: 'array', min: 1, message: 'Select at least one topic' }]}>
 						<Select
-							placeholder="Select topic"
+							mode="multiple"
+							placeholder="Select one or more topics"
 							options={topicOptions}
 							showSearch
 							optionFilterProp="label"

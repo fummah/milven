@@ -193,18 +193,19 @@ export function cmsRouter(prisma) {
         const row = rows[i];
         const courseName = (row['Course Name'] ?? '').toString().trim();
         const volName = (row['Volume Name/Description'] ?? row['Volume Name'] ?? '').toString().trim();
-        const volNumber = row['Volume Number'] != null ? Number(row['Volume Number']) : undefined;
+        const volNumberRaw = row['Volume Number'] != null ? String(row['Volume Number']).trim() : '';
+        const volNumberInt = volNumberRaw && !isNaN(Number(volNumberRaw)) ? Number(volNumberRaw) : undefined;
         if (!courseName || !volName) { results.errors.push(`Row ${i + 2}: Missing Course Name or Volume Name`); continue; }
         const course = await prisma.course.findFirst({ where: { name: { equals: courseName, mode: 'insensitive' } } });
         if (!course) { results.errors.push(`Row ${i + 2}: Course "${courseName}" not found`); continue; }
         let volume = await prisma.volume.findFirst({ where: { name: { equals: volName, mode: 'insensitive' } } });
         if (!volume) {
-          volume = await prisma.volume.create({ data: { name: volName, description: volNumber != null ? String(volNumber) : undefined } });
+          volume = await prisma.volume.create({ data: { name: volName, description: volNumberRaw || undefined } });
         }
         const existing = await prisma.courseVolume.findUnique({ where: { courseId_volumeId: { courseId: course.id, volumeId: volume.id } } });
         if (!existing) {
           const max = await prisma.courseVolume.findFirst({ where: { courseId: course.id }, orderBy: { order: 'desc' }, select: { order: true } });
-          await prisma.courseVolume.create({ data: { courseId: course.id, volumeId: volume.id, order: volNumber ?? ((max?.order ?? 0) + 1) } });
+          await prisma.courseVolume.create({ data: { courseId: course.id, volumeId: volume.id, order: volNumberInt ?? ((max?.order ?? 0) + 1) } });
         }
         results.created++;
       }
@@ -259,9 +260,12 @@ export function cmsRouter(prisma) {
         const moduleWhere = { name: { equals: lmName, mode: 'insensitive' }, courseId: course.id };
         const mod = await prisma.module.findFirst({ where: moduleWhere });
         if (!mod) { results.errors.push(`Row ${i + 2}: Learning Module "${lmName}" not found for course "${courseName}"`); continue; }
+        const losCode = (row['LOS Code'] ?? '').toString().trim() || undefined;
+        const commandWord = (row['Command Word'] ?? '').toString().trim() || undefined;
+        const learningOutcomeStatement = (row['Learning Outcome Statement'] ?? '').toString().trim() || undefined;
         const max = await prisma.topic.findFirst({ where: { moduleId: mod.id }, orderBy: { order: 'desc' }, select: { order: true } });
         const order = orderNum ?? ((max?.order ?? 0) + 1);
-        await prisma.topic.create({ data: { name: topicName, level: course.level, courseId: course.id, moduleId: mod.id, order } });
+        await prisma.topic.create({ data: { name: topicName, level: course.level, courseId: course.id, moduleId: mod.id, order, losCode, commandWord, learningOutcomeStatement } });
         results.created++;
       }
       return res.json({ ok: true, ...results });
@@ -832,7 +836,7 @@ export function cmsRouter(prisma) {
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const existing = await prisma.module.findUnique({ where: { id }, select: { id: true, courseId: true, volumeId: true } });
+		const existing = await prisma.module.findUnique({ where: { id }, select: { id: true, courseId: true, volumeId: true, order: true } });
 		if (!existing) return res.status(404).json({ error: 'Not found' });
 		const nextCourseId = parse.data.courseId ? String(parse.data.courseId) : existing.courseId;
 		const nextVolumeId = parse.data.volumeId ? String(parse.data.volumeId) : existing.volumeId;
@@ -843,10 +847,14 @@ export function cmsRouter(prisma) {
 		const linked = await assertVolumeLinkedToCourse({ courseId: nextCourseId, volumeId: nextVolumeId });
 		if (!linked) return res.status(400).json({ error: 'Volume is not linked to this course' });
 		const level = course.level;
-		// Check for duplicate order in same volume (exclude self)
+		// Check for duplicate order in same volume (exclude self) — only when order or volume actually changed
 		if (typeof parse.data.order !== 'undefined' && parse.data.order != null) {
-			const dup = await prisma.module.findFirst({ where: { volumeId: nextVolumeId, order: parse.data.order, id: { not: id } } });
-			if (dup) return res.status(400).json({ error: `Order ${parse.data.order} is already taken by another learning module in this volume` });
+			const orderChanged = parse.data.order !== existing.order;
+			const volumeChanged = nextVolumeId !== existing.volumeId;
+			if (orderChanged || volumeChanged) {
+				const dup = await prisma.module.findFirst({ where: { volumeId: nextVolumeId, order: parse.data.order, id: { not: id } } });
+				if (dup) return res.status(400).json({ error: `Order ${parse.data.order} is already taken by another learning module in this volume` });
+			}
 		}
 		const module_ = await prisma.module.update({
 			where: { id },
@@ -1020,7 +1028,7 @@ export function cmsRouter(prisma) {
 		const id = req.params.id;
 		const force = req.query.force === 'true';
 		const [questionCount, conceptCount, materialCount, videoCount] = await Promise.all([
-			prisma.question.count({ where: { topicId: id } }),
+			prisma.question.count({ where: { OR: [{ topicId: id }, { topics: { some: { id } } }] } }),
 			prisma.concept.count({ where: { topicId: id } }),
 			prisma.learningMaterial.count({ where: { topicId: id } }),
 			prisma.video.count({ where: { topicId: id } })
@@ -1035,7 +1043,7 @@ export function cmsRouter(prisma) {
 		}
 		if (force && related.length > 0) {
 			await prisma.$transaction(async (tx) => {
-				const qIds = (await tx.question.findMany({ where: { topicId: id }, select: { id: true } })).map(q => q.id);
+				const qIds = (await tx.question.findMany({ where: { OR: [{ topicId: id }, { topics: { some: { id } } }] }, select: { id: true } })).map(q => q.id);
 				if (qIds.length) {
 					await tx.mcqOption.deleteMany({ where: { questionId: { in: qIds } } });
 					await tx.examAnswer.deleteMany({ where: { questionId: { in: qIds } } });
@@ -1606,6 +1614,7 @@ export function cmsRouter(prisma) {
 							courseId,
 							volumeId,
 							moduleId,
+							topics: { connect: [{ id: topicId }] },
 							qid: qid || null,
 							los: los || null,
 							traceSection: traceSection || null,
@@ -1663,7 +1672,7 @@ export function cmsRouter(prisma) {
 						{ vignetteText: { contains: q, mode: 'insensitive' } }
 					]
 				} : {},
-				topicIdList.length > 0 ? { topicId: { in: topicIdList } } : {},
+				topicIdList.length > 0 ? { OR: [{ topicId: { in: topicIdList } }, { topics: { some: { id: { in: topicIdList } } } }] } : {},
 				level ? { level } : {},
 				courseId ? { courseId } : {},
 				volumeId ? { volumeId } : {},
@@ -1683,6 +1692,7 @@ export function cmsRouter(prisma) {
 				take: pageSize,
 				include: {
 					options: true,
+					topics: { select: { id: true, name: true } },
 					_count: { select: { children: true } }
 				}
 			})
@@ -1702,7 +1712,8 @@ export function cmsRouter(prisma) {
 			type: z.enum(['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']),
 			level: z.enum(['NONE','LEVEL1', 'LEVEL2', 'LEVEL3']),
 			difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']),
-			topicId: z.string(),
+			topicId: z.string().optional(),
+			topicIds: z.array(z.string()).optional(),
 			marks: z.number().int().positive().optional(),
 			orderIndex: z.number().int().nonnegative().optional(),
 			parentId: z.string().optional(),
@@ -1724,8 +1735,14 @@ export function cmsRouter(prisma) {
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const { vignetteText, parentId, options, subQuestions, qid, los, traceSection, tracePage, keyFormulas, workedSolution, orderIndex, ...q } = parse.data;
-		const pathIds = await deriveQuestionPathIdsFromTopic(q.topicId);
+		const { vignetteText, parentId, options, subQuestions, qid, los, traceSection, tracePage, keyFormulas, workedSolution, orderIndex, topicIds: rawTopicIds, ...q } = parse.data;
+		// Resolve topic IDs: prefer topicIds array, fall back to single topicId
+		const resolvedTopicIds = (Array.isArray(rawTopicIds) && rawTopicIds.length > 0) ? rawTopicIds : (q.topicId ? [q.topicId] : []);
+		if (resolvedTopicIds.length === 0) {
+			return res.status(400).json({ error: 'At least one topic is required (topicId or topicIds)' });
+		}
+		const primaryTopicId = resolvedTopicIds[0];
+		const pathIds = await deriveQuestionPathIdsFromTopic(primaryTopicId);
 		if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) {
 			return res.status(400).json({ error: 'Topic path is incomplete. Ensure topic has module and module has volume.' });
 		}
@@ -1739,7 +1756,9 @@ export function cmsRouter(prisma) {
 		const question = await prisma.question.create({
 			data: {
 				...q,
+				topicId: primaryTopicId,
 				...pathIds,
+				topics: { connect: resolvedTopicIds.map(id => ({ id })) },
 				parentId: parentId || null,
 				vignetteText: vignetteText || null,
 				orderIndex: typeof orderIndex === 'number' ? orderIndex : 0,
@@ -1770,8 +1789,9 @@ export function cmsRouter(prisma) {
 						type: q.type === 'VIGNETTE_MCQ' ? 'MCQ' : 'CONSTRUCTED_RESPONSE',
 						level: q.level,
 						difficulty: q.difficulty,
-						topicId: q.topicId,
+						topicId: primaryTopicId,
 						...pathIds,
+						topics: { connect: resolvedTopicIds.map(id => ({ id })) },
 						parentId: question.id,
 						orderIndex: i + 1,
 						marks: sq.marks || 1,
@@ -1829,10 +1849,19 @@ export function cmsRouter(prisma) {
 
 		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true } });
 		if (!course) return res.status(400).json({ error: 'Course not found' });
-		const topicIdList = Array.isArray(topicIds) && topicIds.length
+		let topicIdList = Array.isArray(topicIds) && topicIds.length
 			? topicIds
 			: (topicId ? [topicId] : []);
-		if (topicIdList.length === 0) return res.status(400).json({ error: 'topicIds required' });
+		// If no topics selected, auto-resolve from course modules
+		if (topicIdList.length === 0) {
+			const autoTopics = await prisma.topic.findMany({
+				where: { courseId, ...(volumeId ? { module: { volumeId } } : {}) },
+				select: { id: true },
+				orderBy: { order: 'asc' }
+			});
+			topicIdList = autoTopics.map(t => t.id);
+			if (topicIdList.length === 0) return res.status(400).json({ error: 'No topics found for the selected course/volume' });
+		}
 
 		// Load and validate topics
 		const selectedTopics = await prisma.topic.findMany({
@@ -1942,6 +1971,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 							difficulty: useDifficulty,
 							topicId: useTopicId,
 							...parentPathIds,
+							topics: { connect: selectedTopics.map(t => ({ id: t.id })) },
 							vignetteText: item.vignetteText,
 							marks: 1,
 							isAiGenerated: true
@@ -1961,6 +1991,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 								difficulty: useDifficulty,
 								topicId: useTopicId,
 								...parentPathIds,
+								topics: { connect: selectedTopics.map(t => ({ id: t.id })) },
 								parentId: parent.id,
 								orderIndex: si + 1,
 								marks: 1,
@@ -2003,6 +2034,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 							difficulty: useDifficulty,
 							topicId: useTopicId,
 							...pathIds,
+							topics: { connect: [{ id: useTopicId }] },
 							marks: 1,
 							qid: item.qid || null,
 							los: item.los || null,
@@ -2048,7 +2080,8 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 		const schema = z.object({
 			courseId: z.string(),
 			volumeId: z.string().optional(),
-			topicIds: z.array(z.string()).min(1),
+			moduleIds: z.array(z.string()).optional(),
+			topicIds: z.array(z.string()).optional(),
 			questionType: z.enum(['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']),
 			constructedMode: z.enum(['single', 'bundle']).optional(),
 			difficulties: z.array(z.enum(['EASY', 'MEDIUM', 'HARD'])).optional(),
@@ -2057,7 +2090,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const { courseId, volumeId, topicIds, questionType, constructedMode, difficulty, difficulties, count } = parse.data;
+		let { courseId, volumeId, moduleIds, topicIds, questionType, constructedMode, difficulty, difficulties, count } = parse.data;
 		const diffList = Array.isArray(difficulties) && difficulties.length
 			? difficulties
 			: (difficulty ? [difficulty] : ['MEDIUM']);
@@ -2067,6 +2100,19 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true } });
 		if (!course) return res.status(400).json({ error: 'Course not found' });
+
+		// Auto-resolve topics from moduleIds/course when none selected
+		if (!topicIds || topicIds.length === 0) {
+			const topicWhere = { courseId };
+			if (Array.isArray(moduleIds) && moduleIds.length > 0) {
+				topicWhere.moduleId = { in: moduleIds };
+			} else if (volumeId) {
+				topicWhere.module = { volumeId };
+			}
+			const autoTopics = await prisma.topic.findMany({ where: topicWhere, select: { id: true }, orderBy: { order: 'asc' } });
+			topicIds = autoTopics.map(t => t.id);
+			if (topicIds.length === 0) return res.status(400).json({ error: 'No topics found for the selected course/volume/modules' });
+		}
 
 		// Resolve volume name for better prompt context
 		let volumeName = 'N/A';
@@ -2374,6 +2420,7 @@ ${formatBlock}`;
 							difficulty: questions[0]?.difficulty || 'MEDIUM',
 							topicId: firstTopicId,
 							...parentPathIds,
+							topics: { connect: [{ id: firstTopicId }] },
 							vignetteText,
 							marks: 1,
 							isAiGenerated: true
@@ -2403,6 +2450,7 @@ ${formatBlock}`;
 								marks: sq?.marks ? Number(sq.marks) : 1,
 								topicId,
 								...pathIds,
+								topics: { connect: [{ id: topicId }] },
 								parentId: parent.id,
 								orderIndex: si + 1,
 								qid: sq?.qid || null,
@@ -2469,6 +2517,7 @@ ${formatBlock}`;
 						marks: item?.marks ? Number(item.marks) : 1,
 						topicId,
 						...pathIds,
+						topics: { connect: [{ id: topicId }] },
 						qid: item?.qid || null,
 						los: item?.los || null,
 						traceSection: item?.traceSection || null,
@@ -2508,9 +2557,10 @@ ${formatBlock}`;
       where: { id },
       include: {
         options: true,
+        topics: { select: { id: true, name: true } },
         children: {
           orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-          include: { options: true }
+          include: { options: true, topics: { select: { id: true, name: true } } }
         }
       }
     });
@@ -2525,6 +2575,7 @@ ${formatBlock}`;
       level: z.enum(['NONE','LEVEL1', 'LEVEL2', 'LEVEL3']).optional(),
       difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
       topicId: z.string().optional(),
+      topicIds: z.array(z.string()).optional(),
       marks: z.number().int().positive().optional(),
       orderIndex: z.number().int().nonnegative().optional(),
       vignetteText: z.string().optional().nullable(),
@@ -2552,9 +2603,15 @@ ${formatBlock}`;
     const newType = payload.type ?? existing.type;
 
     // Update core question fields
+    // Resolve topic IDs: prefer topicIds array, fall back to single topicId
+    const resolvedTopicIds = (Array.isArray(payload.topicIds) && payload.topicIds.length > 0)
+      ? payload.topicIds
+      : (typeof payload.topicId !== 'undefined' ? [payload.topicId] : null);
     let pathIds = null;
-    if (typeof payload.topicId !== 'undefined') {
-      pathIds = await deriveQuestionPathIdsFromTopic(payload.topicId);
+    let primaryTopicId = undefined;
+    if (resolvedTopicIds && resolvedTopicIds.length > 0) {
+      primaryTopicId = resolvedTopicIds[0];
+      pathIds = await deriveQuestionPathIdsFromTopic(primaryTopicId);
       if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) {
         return res.status(400).json({ error: 'Topic path is incomplete. Ensure topic has module and module has volume.' });
       }
@@ -2566,7 +2623,8 @@ ${formatBlock}`;
         ...(typeof payload.type !== 'undefined' ? { type: payload.type } : {}),
         ...(typeof payload.level !== 'undefined' ? { level: payload.level } : {}),
         ...(typeof payload.difficulty !== 'undefined' ? { difficulty: payload.difficulty } : {}),
-        ...(typeof payload.topicId !== 'undefined' ? { topicId: payload.topicId } : {}),
+        ...(typeof primaryTopicId !== 'undefined' ? { topicId: primaryTopicId } : {}),
+        ...(resolvedTopicIds ? { topics: { set: resolvedTopicIds.map(tid => ({ id: tid })) } } : {}),
         ...(typeof payload.orderIndex !== 'undefined' ? { orderIndex: payload.orderIndex } : {}),
         ...(typeof payload.marks !== 'undefined' ? { marks: payload.marks } : {}),
         ...(typeof payload.vignetteText !== 'undefined' ? { vignetteText: payload.vignetteText || null } : {}),
@@ -2644,6 +2702,7 @@ ${formatBlock}`;
               difficulty: payload.difficulty || existing.difficulty,
               topicId,
               ...effPathIds,
+              topics: topicId ? { connect: [{ id: topicId }] } : {},
               parentId: id,
               orderIndex: i + 1,
               marks: sq.marks || 1

@@ -425,8 +425,8 @@ export function AdminTopics() {
       setEditingModule(null);
       setModuleDrawerOpen(false);
       load();
-    } catch {
-      message.error('Failed to save module');
+    } catch (err) {
+      message.error(err?.response?.data?.error || 'Failed to save module');
     }
   };
 
@@ -823,9 +823,21 @@ export function AdminTopics() {
                     width: 180,
                     render: (_, record) => (
                       <Space>
-                        <Button size="small" icon={<EditOutlined />} onClick={() => { setEditingModule(record); moduleForm.setFieldsValue(record); setModuleDrawerOpen(true); }}>Edit</Button>
-                        <Popconfirm title="Delete module? Topics will be unlinked." onConfirm={() => removeModule(record)}>
-                          <Button size="small" danger icon={<DeleteOutlined />}>Delete</Button>
+                        <Tooltip title="Edit"><Button size="small" type="text" icon={<EditOutlined />} onClick={async () => {
+                          setEditingModule(record);
+                          // Load volumes for the module's course so the volumeId Select has options
+                          if (record.courseId) {
+                            setModuleCourseId(record.courseId);
+                            try {
+                              const volRes = await api.get('/api/cms/volumes', { params: { courseId: record.courseId } });
+                              setVolumes(sortByNaturalName(volRes.data.volumes ?? []));
+                            } catch { setVolumes([]); }
+                          }
+                          moduleForm.setFieldsValue({ name: record.name, courseId: record.courseId, volumeId: record.volumeId, order: record.order });
+                          setModuleDrawerOpen(true);
+                        }} /></Tooltip>
+                        <Popconfirm title="Delete module and all its topics?" onConfirm={() => removeModule(record)}>
+                          <Tooltip title="Delete"><Button size="small" type="text" danger icon={<DeleteOutlined />} /></Tooltip>
                         </Popconfirm>
                       </Space>
                     )

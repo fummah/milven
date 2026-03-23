@@ -119,7 +119,8 @@ model Topic {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   // Relations
-  questions Question[]
+  questions        Question[] @relation("PrimaryTopic")
+  linkedQuestions  Question[] @relation("QuestionTopics")
   videos    Video[]
   revisionSummaries RevisionSummary[]
   materials LearningMaterial[]
@@ -154,8 +155,9 @@ model Question {
   type           QuestionType
   level          CfaLevel
   difficulty     Difficulty
-  topicId        String
-  topic          Topic        @relation(fields: [topicId], references: [id])
+  topicId        String?
+  topic          Topic?       @relation("PrimaryTopic", fields: [topicId], references: [id])
+  topics         Topic[]      @relation("QuestionTopics")
   // Denormalized path fields for filtering and bulk import; derived from topic.module.volume.course
   courseId       String?
   volumeId       String?

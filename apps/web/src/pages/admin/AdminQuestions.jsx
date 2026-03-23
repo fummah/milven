@@ -364,8 +364,9 @@ export function AdminQuestions() {
 	const submit = async (values, mode = 'close') => {
 		try {
 			setSubmitting(true);
-			const chosenTopicId = values.topicId;
-			const t = (topics || []).find(x => x.id === chosenTopicId);
+			const chosenTopicIds = Array.isArray(values.topicIds) ? values.topicIds : (values.topicIds ? [values.topicIds] : []);
+			if (chosenTopicIds.length === 0) { message.error('Select at least one topic'); return; }
+			const t = (topics || []).find(x => x.id === chosenTopicIds[0]);
 
 			// Constructed Response bundle: case study parent + sub-questions created in one call
 			if (values.type === 'CONSTRUCTED_RESPONSE' && values.bundleMode === 'bundle') {
@@ -392,7 +393,7 @@ export function AdminQuestions() {
 					type: 'CONSTRUCTED_RESPONSE',
 					level: t?.level ?? 'LEVEL1',
 					difficulty: values.difficulty,
-					topicId: chosenTopicId,
+					topicIds: chosenTopicIds,
 					marks: 1,
 					vignetteText: caseStudyText,
 					subQuestions: subs,
@@ -430,7 +431,7 @@ export function AdminQuestions() {
 					type: 'VIGNETTE_MCQ',
 					level: t?.level ?? 'LEVEL1',
 					difficulty: values.difficulty,
-					topicId: chosenTopicId,
+					topicIds: chosenTopicIds,
 					marks: 1,
 					vignetteText: values.vignetteText || '',
 					subQuestions,
@@ -455,7 +456,7 @@ export function AdminQuestions() {
 				type: values.type,
 				level: t?.level ?? 'LEVEL1',
 				difficulty: values.difficulty,
-				topicId: chosenTopicId,
+				topicIds: chosenTopicIds,
 				marks: values.marks ? Number(values.marks) : undefined,
 				options: values.type !== 'CONSTRUCTED_RESPONSE'
 					? (values.options || []).map(o => ({ text: o.text, isCorrect: !!o.isCorrect }))
@@ -750,21 +751,25 @@ export function AdminQuestions() {
 			render: (v) => <Typography.Text strong style={{ color: '#3b82f6' }}>{v || 1}</Typography.Text>
 		},
 		{ 
-			title: 'Topic', 
-			dataIndex: 'topicId', 
-			width: 180,
+			title: 'Topic(s)', 
+			dataIndex: 'topics', 
+			width: 200,
 			ellipsis: true,
-			render: (topicId) => {
-				const topic = topics.find(t => t.id === topicId);
-				return topic ? (
-					<Tag 
-						icon={<BookOutlined />} 
-						style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-						title={topic.name}
-					>
-						{topic.name.length > 20 ? `${topic.name.substring(0, 20)}...` : topic.name}
-					</Tag>
-				) : <Tag>—</Tag>;
+			render: (topicsArr, record) => {
+				const arr = Array.isArray(topicsArr) && topicsArr.length > 0
+					? topicsArr
+					: (record.topicId ? [topics.find(t => t.id === record.topicId)].filter(Boolean) : []);
+				if (arr.length === 0) return <Tag>—</Tag>;
+				return (
+					<span style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+						{arr.slice(0, 2).map(t => (
+							<Tag key={t.id} icon={<BookOutlined />} style={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.name}>
+								{t.name.length > 18 ? `${t.name.substring(0, 18)}…` : t.name}
+							</Tag>
+						))}
+						{arr.length > 2 && <Tag>+{arr.length - 2}</Tag>}
+					</span>
+				);
 			}
 		},
 		{ 
@@ -1508,7 +1513,7 @@ export function AdminQuestions() {
 							optionFilterProp="label"
 							allowClear
 							onChange={(v) => {
-								form.setFieldsValue({ topicId: undefined, volumeId: undefined, learningModuleId: undefined });
+								form.setFieldsValue({ topicIds: undefined, volumeId: undefined, learningModuleId: undefined });
 								// When course changes, ensure question type still valid for that level
 								const course = (courses || []).find(c => c.id === v);
 								const level = course?.level;
@@ -1537,7 +1542,7 @@ export function AdminQuestions() {
 							allowClear
 							disabled={!selectedDrawerCourseId || drawerVolumeOptions.length === 0}
 							onChange={() => {
-								form.setFieldsValue({ topicId: undefined, learningModuleId: undefined });
+								form.setFieldsValue({ topicIds: undefined, learningModuleId: undefined });
 							}}
 						/>
 					</Form.Item>
@@ -1550,13 +1555,14 @@ export function AdminQuestions() {
 							allowClear
 							disabled={drawerModuleOptions.length === 0}
 							onChange={() => {
-								form.setFieldsValue({ topicId: undefined });
+								form.setFieldsValue({ topicIds: undefined });
 							}}
 						/>
 					</Form.Item>
-					<Form.Item name="topicId" label="Topic" rules={[{ required: true }]}>
+					<Form.Item name="topicIds" label="Topic(s)" rules={[{ required: true, type: 'array', min: 1, message: 'Select at least one topic' }]}>
 						<Select
-							placeholder="Select topic"
+							mode="multiple"
+							placeholder="Select one or more topics"
 							options={drawerTopicOptions}
 							showSearch
 							optionFilterProp="label"

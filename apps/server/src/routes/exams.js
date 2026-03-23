@@ -222,7 +222,7 @@ export function examsRouter(prisma) {
           payload.courseId ? { courseId: payload.courseId } : {},
           payload.volumeId ? { volumeId: payload.volumeId } : {},
           payload.moduleId ? { moduleId: payload.moduleId } : {},
-          topicIdList.length > 0 ? { topicId: { in: topicIdList } } : {},
+          topicIdList.length > 0 ? { OR: [{ topicId: { in: topicIdList } }, { topics: { some: { id: { in: topicIdList } } } }] } : {},
           difficulties.length > 0 ? { difficulty: { in: difficulties } } : {},
           level ? { level } : {},
           typeFilter
@@ -366,7 +366,7 @@ export function examsRouter(prisma) {
 				effectiveCourseId ? { courseId: effectiveCourseId } : {},
 				payload.volumeId ? { volumeId: payload.volumeId } : {},
 				payload.moduleId ? { moduleId: payload.moduleId } : {},
-				topicIdList.length > 0 ? { topicId: { in: topicIdList } } : {},
+				topicIdList.length > 0 ? { OR: [{ topicId: { in: topicIdList } }, { topics: { some: { id: { in: topicIdList } } } }] } : {},
 				difficulties.length > 0 ? { difficulty: { in: difficulties } } : {},
 				exam.level ? { level: exam.level } : {},
 				typeFilter
@@ -454,7 +454,7 @@ export function examsRouter(prisma) {
 				payload.courseId ? { courseId: payload.courseId } : {},
 				payload.volumeId ? { volumeId: payload.volumeId } : {},
 				payload.moduleId ? { moduleId: payload.moduleId } : {},
-				payload.topicId ? { topicId: payload.topicId } : {},
+				payload.topicId ? { OR: [{ topicId: payload.topicId }, { topics: { some: { id: payload.topicId } } }] } : {},
 				payload.difficulty ? { difficulty: payload.difficulty } : {},
 				level ? { level } : {},
 				typeFilter
