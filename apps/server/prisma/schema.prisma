@@ -129,14 +129,17 @@ model Topic {
 }
 
 model Concept {
-  id        String   @id @default(cuid())
-  name      String
-  topicId   String
-  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  order     Int?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  materials LearningMaterial[]
+  id                       String   @id @default(cuid())
+  name                     String
+  topicId                  String
+  topic                    Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  order                    Int?
+  losCode                  String?
+  commandWord              String?
+  learningOutcomeStatement String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  materials                LearningMaterial[]
   @@index([topicId, order])
 }
 

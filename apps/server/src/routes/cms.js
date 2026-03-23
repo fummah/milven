@@ -294,7 +294,10 @@ export function cmsRouter(prisma) {
         if (!topic) { results.errors.push(`Row ${i + 2}: Topic "${topicName}" not found for course "${courseName}"`); continue; }
         const max = await prisma.concept.findFirst({ where: { topicId: topic.id }, orderBy: { order: 'desc' }, select: { order: true } });
         const order = orderNum ?? ((max?.order ?? 0) + 1);
-        await prisma.concept.create({ data: { name: conceptName, topicId: topic.id, order } });
+        const losCode = (row['LOS Code'] ?? '').toString().trim() || undefined;
+        const commandWord = (row['Command Word'] ?? '').toString().trim() || undefined;
+        const learningOutcomeStatement = (row['Learning Outcome Statement'] ?? '').toString().trim() || undefined;
+        await prisma.concept.create({ data: { name: conceptName, topicId: topic.id, order, losCode, commandWord, learningOutcomeStatement } });
         results.created++;
       }
       return res.json({ ok: true, ...results });
@@ -1221,11 +1224,14 @@ export function cmsRouter(prisma) {
     const schema = z.object({
       name: z.string().min(2),
       topicId: z.string().min(1),
-      order: z.number().int().optional()
+      order: z.number().int().optional(),
+      losCode: z.string().optional(),
+      commandWord: z.string().optional(),
+      learningOutcomeStatement: z.string().optional()
     });
     const parse = schema.safeParse(req.body);
     if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-    const { name, topicId, order } = parse.data;
+    const { name, topicId, order, losCode, commandWord, learningOutcomeStatement } = parse.data;
     const topic = await prisma.topic.findUnique({ where: { id: topicId } });
     if (!topic) return res.status(404).json({ error: 'Topic not found' });
     let nextOrder = order;
@@ -1236,14 +1242,17 @@ export function cmsRouter(prisma) {
       const dup = await prisma.concept.findFirst({ where: { topicId, order: nextOrder } });
       if (dup) return res.status(400).json({ error: `Order ${nextOrder} is already taken by another concept in this topic` });
     }
-    const concept = await prisma.concept.create({ data: { name, topicId, order: nextOrder }, include: { topic: true } });
+    const concept = await prisma.concept.create({ data: { name, topicId, order: nextOrder, losCode, commandWord, learningOutcomeStatement }, include: { topic: true } });
     return res.status(201).json({ concept });
   });
   router.put('/concepts/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const id = req.params.id;
     const schema = z.object({
       name: z.string().min(2).optional(),
-      order: z.number().int().optional()
+      order: z.number().int().optional(),
+      losCode: z.string().optional().nullable(),
+      commandWord: z.string().optional().nullable(),
+      learningOutcomeStatement: z.string().optional().nullable()
     });
     const parse = schema.safeParse(req.body);
     if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });

@@ -264,7 +264,7 @@ export function AdminTopics() {
     setSelectedConcept(concept);
     setConceptParentTopic(topic);
     conceptForm.resetFields();
-    conceptForm.setFieldsValue({ name: concept.name, order: concept.order, topicId: concept.topicId, topicName: topic?.name || '' });
+    conceptForm.setFieldsValue({ name: concept.name, order: concept.order, topicId: concept.topicId, topicName: topic?.name || '', losCode: concept.losCode || '', commandWord: concept.commandWord || '', learningOutcomeStatement: concept.learningOutcomeStatement || '' });
     setConceptStep(0);
     await loadConceptMaterials(concept.id);
     setConceptDrawerOpen(true);
@@ -296,12 +296,12 @@ export function AdminTopics() {
     try {
       setSavingConcept(true);
       if (selectedConcept) {
-        await api.put(`/api/cms/concepts/${selectedConcept.id}`, { name: values.name, order: values.order ? Number(values.order) : undefined });
+        await api.put(`/api/cms/concepts/${selectedConcept.id}`, { name: values.name, order: values.order ? Number(values.order) : undefined, losCode: values.losCode || null, commandWord: values.commandWord || null, learningOutcomeStatement: values.learningOutcomeStatement || null });
         message.success('Concept updated');
         await loadConceptMaterials(selectedConcept.id);
         setConceptStep(1);
       } else {
-        const { data } = await api.post('/api/cms/concepts', { name: values.name, topicId: values.topicId, order: values.order ? Number(values.order) : undefined });
+        const { data } = await api.post('/api/cms/concepts', { name: values.name, topicId: values.topicId, order: values.order ? Number(values.order) : undefined, losCode: values.losCode || undefined, commandWord: values.commandWord || undefined, learningOutcomeStatement: values.learningOutcomeStatement || undefined });
         const created = data?.concept;
         if (created?.id) {
           setSelectedConcept(created);
@@ -655,7 +655,7 @@ export function AdminTopics() {
             <Tooltip title="Excel: Course Name, Volume Name/Description, LM Name/Description, Topic Name/Description, Order Number"><Button icon={<UploadOutlined />} size="small" loading={bulkUploading}>Bulk Topics</Button></Tooltip>
           </Upload>
           <Upload accept=".xlsx,.xls" showUploadList={false} beforeUpload={(f) => handleBulkUpload(f, 'concepts', 'Concept')} disabled={bulkUploading}>
-            <Tooltip title="Excel: Course Name, Volume Name/Description, LM Name/Description, Topic Name/Description, Concept Name/Description, Order Number"><Button icon={<UploadOutlined />} size="small" loading={bulkUploading}>Bulk Concepts</Button></Tooltip>
+            <Tooltip title="Excel: Course Name, LM Name/Description, Topic Name/Description, Concept Name/Description, Order Number, LOS Code, Command Word, Learning Outcome Statement"><Button icon={<UploadOutlined />} size="small" loading={bulkUploading}>Bulk Concepts</Button></Tooltip>
           </Upload>
           <Button 
             icon={<FolderOutlined />} 
@@ -1353,6 +1353,15 @@ export function AdminTopics() {
               </Form.Item>
               <Form.Item name="order" label="Order" tooltip="Order within this topic">
                 <Input type="number" min={1} placeholder="Display order" />
+              </Form.Item>
+              <Form.Item name="losCode" label="LOS Code">
+                <Input placeholder="e.g. 1.A.1" />
+              </Form.Item>
+              <Form.Item name="commandWord" label="Command Word">
+                <Input placeholder="e.g. Describe, Calculate, Explain" />
+              </Form.Item>
+              <Form.Item name="learningOutcomeStatement" label="Learning Outcome Statement">
+                <Input.TextArea rows={2} placeholder="e.g. Candidates should be able to..." />
               </Form.Item>
               <Space>
                 <Button onClick={() => setConceptDrawerOpen(false)}>Cancel</Button>
