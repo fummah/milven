@@ -59,37 +59,28 @@ export function AdminVolumes() {
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ name: '', description: '', courseIds: [] });
+    form.setFieldsValue({ name: '', description: '', courseId: filterCourseId || undefined });
     setOpen(true);
   };
 
   const openEdit = async (row) => {
     setEditing(row);
     form.resetFields();
-    // Load current course links for this volume
-    try {
-      const { data } = await api.get(`/api/cms/volumes/${row.id}`);
-      const currentCourseIds = (data.volume?.courseLinks || []).map(link => link.courseId);
-      form.setFieldsValue({ 
-        name: row.name, 
-        description: row.description || '',
-        courseIds: currentCourseIds
-      });
-    } catch {
-      form.setFieldsValue({ 
-        name: row.name, 
-        description: row.description || '',
-        courseIds: []
-      });
-    }
+    // Get current course link for this volume
+    const links = row.courseLinks || [];
+    const courseId = links.length > 0 ? links[0].courseId : undefined;
+    form.setFieldsValue({ 
+      name: row.name, 
+      description: row.description || '',
+      courseId
+    });
     setOpen(true);
   };
 
   const save = async (values) => {
     try {
       setSaving(true);
-      const courseIds = values.courseIds || [];
-      let volumeId;
+      const courseId = values.courseId;
       
       if (editing?.id) {
         // Update volume
@@ -97,50 +88,31 @@ export function AdminVolumes() {
           name: values.name, 
           description: values.description 
         });
-        volumeId = editing.id;
         
-        // Update course links for existing volume
-        const { data: currentData } = await api.get(`/api/cms/volumes/${volumeId}`);
-        const currentLinks = currentData.volume?.courseLinks || [];
-        const currentCourseIds = currentLinks.map(link => link.courseId);
+        // Update course link: remove old, add new
+        const currentLinks = editing.courseLinks || [];
+        const currentCourseId = currentLinks.length > 0 ? currentLinks[0].courseId : null;
         
-        // Find courses to add and remove
-        const toAdd = courseIds.filter(id => !currentCourseIds.includes(id));
-        const toRemove = currentCourseIds.filter(id => !courseIds.includes(id));
-        
-        // Add new links
-        for (const courseId of toAdd) {
-          try {
-            await api.post(`/api/cms/courses/${courseId}/volumes`, { volumeId });
-          } catch (e) {
-            console.error(`Failed to link course ${courseId}:`, e);
+        if (courseId !== currentCourseId) {
+          // Remove old link
+          if (currentCourseId) {
+            try { await api.delete(`/api/cms/courses/${currentCourseId}/volumes/${editing.id}`); } catch {}
           }
-        }
-        
-        // Remove old links
-        for (const courseId of toRemove) {
-          try {
-            await api.delete(`/api/cms/courses/${courseId}/volumes/${volumeId}`);
-          } catch (e) {
-            console.error(`Failed to unlink course ${courseId}:`, e);
+          // Add new link
+          if (courseId) {
+            try { await api.post(`/api/cms/courses/${courseId}/volumes`, { volumeId: editing.id }); } catch {}
           }
         }
         
         message.success('Volume updated');
-        if (toAdd.length > 0 || toRemove.length > 0) {
-          message.info(`Course links updated: ${courseIds.length} course(s) linked`);
-        }
       } else {
-        // Create volume with course links
+        // Create volume with single course link
         const { data } = await api.post('/api/cms/volumes', { 
           name: values.name, 
           description: values.description,
-          courseIds: courseIds
+          courseIds: courseId ? [courseId] : []
         });
-        volumeId = data.volume?.id;
-        message.success(courseIds.length > 0 
-          ? `Volume created and linked to ${courseIds.length} course(s)`
-          : 'Volume created');
+        message.success('Volume created');
       }
       
       setOpen(false);
@@ -154,25 +126,6 @@ export function AdminVolumes() {
     }
   };
 
-  const attach = async (volumeId, courseId) => {
-    try {
-      await api.post(`/api/cms/courses/${courseId}/volumes`, { volumeId });
-      message.success('Attached to course');
-      load();
-    } catch (e) {
-      message.error(e?.response?.data?.error || 'Attach failed');
-    }
-  };
-
-  const detach = async (volumeId, courseId) => {
-    try {
-      await api.delete(`/api/cms/courses/${courseId}/volumes/${volumeId}`);
-      message.success('Detached from course');
-      load();
-    } catch (e) {
-      message.error(e?.response?.data?.error || 'Detach failed');
-    }
-  };
 
   const remove = async (row) => {
     try {
@@ -222,17 +175,12 @@ export function AdminVolumes() {
       </Space>
     ) },
     {
-      title: 'Courses',
+      title: 'Course',
       render: (_, row) => {
         const links = row.courseLinks || [];
         if (!links.length) return <Typography.Text type="secondary">—</Typography.Text>;
-        return (
-          <Space wrap>
-            {links.map(l => (
-              <Tag key={l.courseId} color="blue">{l.course?.name || l.courseId}</Tag>
-            ))}
-          </Space>
-        );
+        const link = links[0];
+        return <Tag color="blue">{link.course?.name || link.courseId}</Tag>;
       }
     },
     {
@@ -295,22 +243,15 @@ export function AdminVolumes() {
               placeholder="e.g. Volume 1"
             />
           </Form.Item>
-          <Form.Item name="courseIds" label="Link to Courses" rules={[{ required: false }]}>
+          <Form.Item name="courseId" label="Course" rules={[{ required: true, message: 'Please select a course' }]}>
             <Select
-              mode="multiple"
-              placeholder="Select courses to link this volume to"
+              placeholder="Select the course this volume belongs to"
               options={courseOptions}
               showSearch
               optionFilterProp="label"
-              allowClear
             />
           </Form.Item>
         </Form>
-        <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
-          {editing 
-            ? 'Update course links by selecting/deselecting courses above. Changes will be saved when you click Save.'
-            : 'Select one or more courses to link this volume to. You can link it to more courses later by editing.'}
-        </Typography.Text>
       </Drawer>
     </Space>
   );
