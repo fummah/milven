@@ -400,7 +400,10 @@ export function cmsRouter(prisma) {
           volume: { select: { id: true, name: true, description: true } },
           topics: {
             where: { courseId: id },
-            orderBy: [{ order: 'asc' }, { createdAt: 'asc' }]
+            orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+            include: {
+              concepts: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, order: true, topicId: true, losCode: true, commandWord: true, learningOutcomeStatement: true, createdAt: true } }
+            }
           }
         }
       }),
@@ -409,7 +412,7 @@ export function cmsRouter(prisma) {
         orderBy: [{ moduleId: 'asc' }, { moduleNumber: 'asc' }, { order: 'asc' }, { createdAt: 'desc' }],
         include: {
           module: true,
-          concepts: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, order: true, topicId: true, createdAt: true } }
+          concepts: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, order: true, topicId: true, losCode: true, commandWord: true, learningOutcomeStatement: true, createdAt: true } }
         }
       })
     ]);
