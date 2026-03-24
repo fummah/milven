@@ -773,21 +773,21 @@ export function AdminTopics() {
                           { title: 'Level', dataIndex: 'level', render: (v) => v ? <Tag color="blue">{v}</Tag> : '—' },
                           {
                             title: 'Actions',
-                            width: 300,
+                            width: 180,
                             render: (_, topicRow) => (
                               <Space size={4}>
-                                <Button icon={<EditOutlined />} size="small" onClick={() => {
+                                <Tooltip title="Edit"><Button type="text" icon={<EditOutlined />} size="small" onClick={() => {
                                   setEditing(topicRow);
                                   const courseId = topicRow.courseId ?? (courses.find(c => c.level === topicRow.level)?.id ?? '');
                                   const mod = modules.find(m => m.id === topicRow.moduleId);
-                                  form.setFieldsValue({ name: topicRow.name, moduleId: topicRow.moduleId || '', courseId, volumeId: mod?.volumeId || undefined, order: topicRow.order ?? '' });
+                                  form.setFieldsValue({ name: topicRow.name, moduleId: topicRow.moduleId || '', courseId, volumeId: mod?.volumeId || undefined, order: topicRow.order ?? '', losCode: topicRow.losCode || '', commandWord: topicRow.commandWord || '', learningOutcomeStatement: topicRow.learningOutcomeStatement || '' });
                                   setDrawerOpen(true);
-                                }}>Edit</Button>
-                                <Button size="small" style={{ color: '#722ed1' }} icon={<BulbOutlined />} onClick={() => openConceptDrawer(topicRow)}>Concept</Button>
-                                <Button size="small" onClick={() => openManage(topicRow)}>Manage</Button>
-                                <Button size="small" onClick={() => openPreview(topicRow)}>Preview</Button>
+                                }} /></Tooltip>
+                                <Tooltip title="Add Concept"><Button type="text" size="small" style={{ color: '#722ed1' }} icon={<BulbOutlined />} onClick={() => openConceptDrawer(topicRow)} /></Tooltip>
+                                <Tooltip title="Manage"><Button type="text" size="small" icon={<SettingOutlined />} onClick={() => openManage(topicRow)} /></Tooltip>
+                                <Tooltip title="Preview"><Button type="text" size="small" icon={<EyeOutlined />} onClick={() => openPreview(topicRow)} /></Tooltip>
                                 <Popconfirm title="Delete topic?" onConfirm={() => remove(topicRow)}>
-                                  <Button danger icon={<DeleteOutlined />} size="small">Delete</Button>
+                                  <Tooltip title="Delete"><Button type="text" danger icon={<DeleteOutlined />} size="small" /></Tooltip>
                                 </Popconfirm>
                               </Space>
                             )

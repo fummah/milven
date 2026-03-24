@@ -328,7 +328,10 @@ export function AdminCourseView() {
       name: topic.name,
       volumeId: mod?.volumeId || undefined,
       moduleId: topic.moduleId ?? '',
-      order: topic.order ?? ''
+      order: topic.order ?? '',
+      losCode: topic.losCode || '',
+      commandWord: topic.commandWord || '',
+      learningOutcomeStatement: topic.learningOutcomeStatement || ''
     });
     await loadMaterialsFor(topic.id);
     setTopicStep(0);
@@ -344,7 +347,10 @@ export function AdminCourseView() {
         courseId: String(id),
         moduleId: values.moduleId || undefined,
         level: course.level,
-        order: values.order != null ? Number(values.order) : undefined
+        order: values.order != null ? Number(values.order) : undefined,
+        losCode: values.losCode || undefined,
+        commandWord: values.commandWord || undefined,
+        learningOutcomeStatement: values.learningOutcomeStatement || undefined
       });
       const created = data?.topic;
       if (created?.id) {
@@ -412,7 +418,7 @@ export function AdminCourseView() {
     setSelectedConcept(concept);
     conceptForm.resetFields();
     const topic = (detail?.topics || []).find(t => t.id === concept.topicId);
-    conceptForm.setFieldsValue({ name: concept.name, order: concept.order, topicId: concept.topicId, topicName: topic?.name || '' });
+    conceptForm.setFieldsValue({ name: concept.name, order: concept.order, topicId: concept.topicId, topicName: topic?.name || '', losCode: concept.losCode || '', commandWord: concept.commandWord || '', learningOutcomeStatement: concept.learningOutcomeStatement || '' });
     setConceptStep(0);
     await loadConceptMaterials(concept.id);
     setConceptDrawerOpen(true);
@@ -435,13 +441,13 @@ export function AdminCourseView() {
     try {
       setSavingConcept(true);
       if (selectedConcept) {
-        await api.put(`/api/cms/concepts/${selectedConcept.id}`, { name: values.name, order: values.order ? Number(values.order) : undefined });
+        await api.put(`/api/cms/concepts/${selectedConcept.id}`, { name: values.name, order: values.order ? Number(values.order) : undefined, losCode: values.losCode || null, commandWord: values.commandWord || null, learningOutcomeStatement: values.learningOutcomeStatement || null });
         message.success('Concept updated');
         await fetchDetail();
         await loadConceptMaterials(selectedConcept.id);
         setConceptStep(1);
       } else {
-        const { data } = await api.post('/api/cms/concepts', { name: values.name, topicId: values.topicId, order: values.order ? Number(values.order) : undefined });
+        const { data } = await api.post('/api/cms/concepts', { name: values.name, topicId: values.topicId, order: values.order ? Number(values.order) : undefined, losCode: values.losCode || undefined, commandWord: values.commandWord || undefined, learningOutcomeStatement: values.learningOutcomeStatement || undefined });
         const created = data?.concept;
         if (created?.id) {
           setSelectedConcept(created);
@@ -806,50 +812,26 @@ export function AdminCourseView() {
                       const expandable = {
                         expandedRowRender: (record) => {
                           const concepts = record.concepts || [];
-                          const topicMats = (materialsByTopic[record.id] || []).filter(m => !m.conceptId);
+                          if (concepts.length === 0) return <Typography.Text type="secondary" style={{ fontSize: 12, paddingLeft: 16 }}>No concepts yet</Typography.Text>;
                           return (
-                            <Space direction="vertical" size={8} style={{ width: '100%', padding: '4px 0' }}>
-                              {concepts.length > 0 && (
-                                <div>
-                                  <Typography.Text strong style={{ fontSize: 12, color: '#722ed1' }}><BulbOutlined /> Concepts</Typography.Text>
-                                  {concepts.map(c => (
-                                    <Card key={c.id} size="small" style={{ marginTop: 6, marginLeft: 16, borderLeft: '3px solid #722ed1', background: '#faf5ff' }}
-                                      title={<Space><BulbOutlined style={{ color: '#722ed1' }} /><span>{c.order != null ? `${c.order}. ` : ''}{c.name}</span></Space>}
-                                      extra={
-                                        <Space size={4}>
-                                          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditConceptDrawer(c)} />
-                                          <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => deleteConcept(c)} />
-                                        </Space>
-                                      }
-                                    >
-                                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>Learning materials at concept level</Typography.Text>
-                                    </Card>
-                                  ))}
+                            <div style={{ paddingLeft: 16 }}>
+                              <Typography.Text strong style={{ fontSize: 12, color: '#722ed1' }}><BulbOutlined /> Concepts ({concepts.length})</Typography.Text>
+                              {concepts.map(c => (
+                                <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', marginTop: 4, background: '#faf5ff', borderLeft: '3px solid #722ed1', borderRadius: 4 }}>
+                                  <Space>
+                                    <BulbOutlined style={{ color: '#722ed1' }} />
+                                    <span>{c.order != null ? `${c.order}. ` : ''}{c.name}</span>
+                                  </Space>
+                                  <Space size={4}>
+                                    <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditConceptDrawer(c)} />
+                                    <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => deleteConcept(c)} />
+                                  </Space>
                                 </div>
-                              )}
-                              {topicMats.length > 0 && (
-                                <div>
-                                  <Typography.Text strong style={{ fontSize: 12, color: '#1890ff' }}><FileTextOutlined /> Topic-Level Materials</Typography.Text>
-                                  <Table
-                                    rowKey="id"
-                                    size="small"
-                                    style={{ marginTop: 4 }}
-                                    loading={materialsLoading || savingMaterial}
-                                    dataSource={topicMats}
-                                    columns={materialsColumnsNoUrl}
-                                    pagination={false}
-                                  />
-                                </div>
-                              )}
-                              {concepts.length === 0 && topicMats.length === 0 && (
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>No concepts or materials yet. Add a concept or learning materials to this topic.</Typography.Text>
-                              )}
-                            </Space>
+                              ))}
+                            </div>
                           );
                         },
-                        onExpand: async (expanded, record) => {
-                          if (expanded) await loadMaterialsFor(record.id);
-                        }
+                        rowExpandable: (record) => (record.concepts || []).length > 0
                       };
                       const modulesList = detail?.modules ?? [];
                       const volumesList = sortByNaturalName(detail?.volumes ?? []);
@@ -1382,7 +1364,10 @@ export function AdminCourseView() {
                     courseId: String(id),
                     moduleId: values.moduleId || undefined,
                     level: course.level,
-                    order: values.order != null ? Number(values.order) : undefined
+                    order: values.order != null ? Number(values.order) : undefined,
+                    losCode: values.losCode || null,
+                    commandWord: values.commandWord || null,
+                    learningOutcomeStatement: values.learningOutcomeStatement || null
                   });
                   message.success('Topic updated');
                   await fetchDetail();
@@ -1464,6 +1449,15 @@ export function AdminCourseView() {
                 </Form.Item>
                 <Form.Item name="order" label="Order" tooltip="Auto-populated based on existing topics in the same module">
                   <Input type="number" min={1} placeholder="Display order" />
+                </Form.Item>
+                <Form.Item name="losCode" label="LOS Code">
+                  <Input placeholder="e.g. 1.A.1" />
+                </Form.Item>
+                <Form.Item name="commandWord" label="Command Word">
+                  <Input placeholder="e.g. Describe, Calculate, Explain" />
+                </Form.Item>
+                <Form.Item name="learningOutcomeStatement" label="Learning Outcome Statement">
+                  <Input.TextArea rows={2} placeholder="e.g. Candidates should be able to..." />
                 </Form.Item>
                 <Space>
                   <Button onClick={() => setTopicDrawerOpen(false)}>Cancel</Button>
@@ -1586,6 +1580,15 @@ export function AdminCourseView() {
               </Form.Item>
               <Form.Item name="order" label="Order" tooltip="Order within this topic">
                 <Input type="number" min={1} placeholder="Display order" />
+              </Form.Item>
+              <Form.Item name="losCode" label="LOS Code">
+                <Input placeholder="e.g. 1.A.1" />
+              </Form.Item>
+              <Form.Item name="commandWord" label="Command Word">
+                <Input placeholder="e.g. Describe, Calculate, Explain" />
+              </Form.Item>
+              <Form.Item name="learningOutcomeStatement" label="Learning Outcome Statement">
+                <Input.TextArea rows={2} placeholder="e.g. Candidates should be able to..." />
               </Form.Item>
               <Space>
                 <Button onClick={() => setConceptDrawerOpen(false)}>Cancel</Button>

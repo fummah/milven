@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Drawer, Form, Input, Select, Space, Table, Tag, Typography, message } from 'antd';
-import { PlusOutlined, LinkOutlined } from '@ant-design/icons';
+import { Button, Card, Drawer, Form, Input, Select, Space, Table, Tag, Typography, message, Modal, Popconfirm } from 'antd';
+import { PlusOutlined, LinkOutlined, ExclamationCircleFilled } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 // Natural sort comparison - handles "Volume 1", "Volume 10" correctly
@@ -177,10 +177,36 @@ export function AdminVolumes() {
   const remove = async (row) => {
     try {
       await api.delete(`/api/cms/volumes/${row.id}`);
-      message.success('Deleted');
+      message.success('Volume deleted');
       load();
-    } catch (e) {
-      message.error(e?.response?.data?.error || 'Delete failed');
+    } catch (err) {
+      if (err?.response?.status === 409 && err?.response?.data?.related) {
+        const { related, message: msg } = err.response.data;
+        Modal.confirm({
+          title: 'Delete Volume?',
+          icon: <ExclamationCircleFilled />,
+          content: (
+            <div>
+              <p>{msg || 'This volume has associated entities:'}</p>
+              <ul style={{ margin: '8px 0', paddingLeft: 20 }}>{related.map((r, i) => <li key={i}>{r}</li>)}</ul>
+              <p><strong>All associated data will be permanently deleted.</strong></p>
+            </div>
+          ),
+          okText: 'Delete All',
+          okType: 'danger',
+          async onOk() {
+            try {
+              await api.delete(`/api/cms/volumes/${row.id}?force=true`);
+              message.success('Volume and all associated data deleted');
+              load();
+            } catch {
+              message.error('Failed to delete volume');
+            }
+          }
+        });
+      } else {
+        message.error(err?.response?.data?.error || 'Delete failed');
+      }
     }
   };
 
@@ -215,7 +241,9 @@ export function AdminVolumes() {
       render: (_, row) => (
         <Space wrap>
           <Button size="small" onClick={() => openEdit(row)}>Edit</Button>
-          <Button size="small" danger onClick={() => remove(row)}>Delete</Button>
+          <Popconfirm title="Delete this volume?" onConfirm={() => remove(row)}>
+            <Button size="small" danger>Delete</Button>
+          </Popconfirm>
         </Space>
       )
     }
