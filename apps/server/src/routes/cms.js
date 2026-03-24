@@ -198,12 +198,15 @@ export function cmsRouter(prisma) {
         if (!courseName || !volName) { results.errors.push(`Row ${i + 2}: Missing Course Name or Volume Name`); continue; }
         const course = await prisma.course.findFirst({ where: { name: { equals: courseName, mode: 'insensitive' } } });
         if (!course) { results.errors.push(`Row ${i + 2}: Course "${courseName}" not found`); continue; }
-        let volume = await prisma.volume.findFirst({ where: { name: { equals: volName, mode: 'insensitive' } } });
+        // Find volume scoped to this course (one volume per course, even if names match)
+        const existingLink = await prisma.courseVolume.findFirst({
+          where: { courseId: course.id, volume: { name: { equals: volName, mode: 'insensitive' } } },
+          include: { volume: true }
+        });
+        let volume = existingLink?.volume;
         if (!volume) {
+          // Create a new volume for this course (never reuse from another course)
           volume = await prisma.volume.create({ data: { name: volName, description: volNumberRaw || undefined } });
-        }
-        const existing = await prisma.courseVolume.findUnique({ where: { courseId_volumeId: { courseId: course.id, volumeId: volume.id } } });
-        if (!existing) {
           const max = await prisma.courseVolume.findFirst({ where: { courseId: course.id }, orderBy: { order: 'desc' }, select: { order: true } });
           await prisma.courseVolume.create({ data: { courseId: course.id, volumeId: volume.id, order: volNumberInt ?? ((max?.order ?? 0) + 1) } });
         }
@@ -229,9 +232,14 @@ export function cmsRouter(prisma) {
         if (!courseName || !volName || !lmName) { results.errors.push(`Row ${i + 2}: Missing required field`); continue; }
         const course = await prisma.course.findFirst({ where: { name: { equals: courseName, mode: 'insensitive' } } });
         if (!course) { results.errors.push(`Row ${i + 2}: Course "${courseName}" not found`); continue; }
-        const volume = await prisma.volume.findFirst({ where: { name: { equals: volName, mode: 'insensitive' } } });
-        if (!volume) { results.errors.push(`Row ${i + 2}: Volume "${volName}" not found`); continue; }
-        const max = await prisma.module.findFirst({ where: { volumeId: volume.id }, orderBy: { order: 'desc' }, select: { order: true } });
+        // Find volume scoped to this course
+        const volLink = await prisma.courseVolume.findFirst({
+          where: { courseId: course.id, volume: { name: { equals: volName, mode: 'insensitive' } } },
+          include: { volume: true }
+        });
+        const volume = volLink?.volume;
+        if (!volume) { results.errors.push(`Row ${i + 2}: Volume "${volName}" not found for course "${courseName}"`); continue; }
+        const max = await prisma.module.findFirst({ where: { volumeId: volume.id, courseId: course.id }, orderBy: { order: 'desc' }, select: { order: true } });
         const order = orderNum ?? ((max?.order ?? 0) + 1);
         await prisma.module.create({ data: { name: lmName, level: course.level, courseId: course.id, volumeId: volume.id, order } });
         results.created++;

@@ -180,7 +180,8 @@ export function AdminVolumes() {
         const links = row.courseLinks || [];
         if (!links.length) return <Typography.Text type="secondary">—</Typography.Text>;
         const link = links[0];
-        return <Tag color="blue">{link.course?.name || link.courseId}</Tag>;
+        const c = link.course;
+        return <Tag color="blue">{c ? `${c.name} (${c.level})` : link.courseId}</Tag>;
       }
     },
     {
