@@ -1,7 +1,7 @@
 import { Card, Form, Input, InputNumber, Button, Select, message } from 'antd';
 import { api } from '../lib/api';
 import { useNavigate, useLocation } from 'react-router-dom';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 export function ExamBuilder() {
 	const [form] = Form.useForm();
@@ -15,6 +15,7 @@ export function ExamBuilder() {
   const [levelFromTopic, setLevelFromTopic] = useState(null);
   const [levelFromCourse, setLevelFromCourse] = useState(null);
   const [courses, setCourses] = useState([]);
+  const [topics, setTopics] = useState([]);
   const [selectedCourseId, setSelectedCourseId] = useState(courseId || '');
 
   useEffect(() => {
@@ -73,8 +74,39 @@ export function ExamBuilder() {
     })();
   }, [mode, courseId]);
 
+  // Load topics for the effective course (for concept filtering)
+  useEffect(() => {
+    const effCourse = courseId || selectedCourseId;
+    if (!effCourse) { setTopics([]); return; }
+    (async () => {
+      try {
+        const { data } = await api.get(`/api/cms/topics?courseId=${effCourse}`);
+        setTopics(Array.isArray(data?.topics) ? data.topics : []);
+      } catch {
+        setTopics([]);
+      }
+    })();
+  }, [courseId, selectedCourseId]);
+
+  const selectedTopicIds = Form.useWatch('topicIds', form);
+  const conceptOptions = useMemo(() => {
+    const tIds = Array.isArray(selectedTopicIds) ? selectedTopicIds : [];
+    // If no specific topics selected, show all concepts for the course
+    const relevantTopics = tIds.length > 0 ? topics.filter(t => tIds.includes(t.id)) : topics;
+    const concepts = [];
+    relevantTopics.forEach(t => {
+      if (t?.concepts) t.concepts.forEach(c => concepts.push({ value: c.id, label: `${c.name} (${t.name})` }));
+    });
+    return concepts;
+  }, [topics, selectedTopicIds]);
+
+  const topicOptions = useMemo(() => {
+    return topics.map(t => ({ value: t.id, label: t.name }));
+  }, [topics]);
+
   const onCourseChange = async (cid) => {
     setSelectedCourseId(cid);
+    form.setFieldsValue({ topicIds: undefined, conceptIds: undefined });
     try {
       const { data } = await api.get(`/api/cms/courses/${cid}`);
       const cl = data?.course?.level ?? null;
@@ -94,6 +126,7 @@ export function ExamBuilder() {
           : (effectiveCourseId ? (levelFromCourse ?? 'LEVEL1') : values.level),
 				timeLimitMinutes: values.timeLimitMinutes,
 				topicIds: mode === 'quiz' && topicId ? [topicId] : (values.topicIds ?? []),
+				conceptIds: Array.isArray(values.conceptIds) && values.conceptIds.length > 0 ? values.conceptIds : undefined,
 				questionCount: values.questionCount,
         examType: mode === 'quiz' ? 'QUIZ' : 'COURSE',
         topicId: mode === 'quiz' ? topicId : undefined,
@@ -136,6 +169,29 @@ export function ExamBuilder() {
                   { label: 'Level II', value: 'LEVEL2' },
                   { label: 'Level III', value: 'LEVEL3' }
                 ]}
+              />
+            </Form.Item>
+          )}
+          {(courseId || selectedCourseId) && mode !== 'quiz' && topicOptions.length > 0 && (
+            <Form.Item label="Topics (optional)" name="topicIds">
+              <Select
+                mode="multiple"
+                placeholder="All topics"
+                showSearch
+                optionFilterProp="label"
+                options={topicOptions}
+                onChange={() => { form.setFieldsValue({ conceptIds: undefined }); }}
+              />
+            </Form.Item>
+          )}
+          {(courseId || selectedCourseId) && mode !== 'quiz' && conceptOptions.length > 0 && (
+            <Form.Item label="Concepts (optional)" name="conceptIds">
+              <Select
+                mode="multiple"
+                placeholder="All concepts"
+                showSearch
+                optionFilterProp="label"
+                options={conceptOptions}
               />
             </Form.Item>
           )}

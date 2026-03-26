@@ -1,6 +1,10 @@
+version: "3.9"
+
 services:
   db:
     image: postgres:16
+    container_name: mutingwende_db
+    restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: Action15
@@ -11,27 +15,29 @@ services:
       timeout: 3s
       retries: 20
     ports:
-      - "5432:5432"
+      - "5432:5432"  # optional: mainly for admin tools
     volumes:
       - db_data:/var/lib/postgresql/data
-  api:
+    api:
     build:
       context: ./apps/server
       dockerfile: Dockerfile
+    container_name: mutingwende_api
+    restart: always
     environment:
       DATABASE_URL: postgresql://postgres:Action15@db:5432/mutingwende?schema=public
       PORT: 4000
       JWT_SECRET: dev_secret
-      CORS_ORIGIN: http://localhost:5173,http://localhost:3000,exp://127.0.0.1:19000,http://164.90.156.5
+      CORS_ORIGIN: http://localhost:5173,http://localhost:3000,exp://127.0.0.1:19000,http://164.90.156.5,https://dev.milven.zbsburial.com
       ALLOW_DEBUG: "1"
       DEFAULT_ADMIN_EMAIL: admin@milven.finance
       DEFAULT_ADMIN_PASSWORD: Milven#2026
       DEFAULT_ADMIN_FORCE_RESET: "1"
-      WEB_BASE_URL: 164.90.156.5
-      SMTP_HOST: smtp.zbsburial.com
-      SMTP_PORT: "465"
-      SMTP_USER: info@zbsburial.com
-      SMTP_PASS: "6r5r34A71C64G0"
+      WEB_BASE_URL: https://dev.milven.zbsburial.com
+      SMTP_HOST: smtp.ethereal.email
+      SMTP_PORT: "587"
+      SMTP_USER: trent.shanahan@ethereal.email
+      SMTP_PASS: "F5VG1E763zgskN8eGU"
       SMTP_FROM: info@zbsburial.com
     ports:
       - "4000:4000"
@@ -41,15 +47,15 @@ services:
       db:
         condition: service_healthy
     command: sh -c "npm run migrate && npm run dev"
-frontend:
+
+  frontend:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
     container_name: mutingwende_frontend
     restart: always
     ports:
-      - "80:80"  # serve React via Nginx in prod  
+      - "3000:80"  # serve React via Nginx in prod
+
 volumes:
   db_data:
-
-

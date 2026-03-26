@@ -138,6 +138,7 @@ export function examsRouter(prisma) {
       courseId: z.string().optional(),
       volumeId: z.string().optional(),
       moduleId: z.string().optional(),
+      conceptIds: z.array(z.string()).optional(),
       questionType: z.enum(['ANY', 'MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']).optional(),
       startAt: isStudent ? z.coerce.date() : z.coerce.date().optional().nullable(),
       endAt: isStudent ? z.coerce.date() : z.coerce.date().optional().nullable()
@@ -217,12 +218,14 @@ export function examsRouter(prisma) {
         typeFilter = { type: 'VIGNETTE_MCQ' };
       }
       
+      const conceptIdList = Array.isArray(payload.conceptIds) ? payload.conceptIds.filter(Boolean) : [];
       const where = {
         AND: [
           payload.courseId ? { courseId: payload.courseId } : {},
           payload.volumeId ? { volumeId: payload.volumeId } : {},
           payload.moduleId ? { moduleId: payload.moduleId } : {},
           topicIdList.length > 0 ? { OR: [{ topicId: { in: topicIdList } }, { topics: { some: { id: { in: topicIdList } } } }] } : {},
+          conceptIdList.length > 0 ? { concepts: { some: { id: { in: conceptIdList } } } } : {},
           difficulties.length > 0 ? { difficulty: { in: difficulties } } : {},
           level ? { level } : {},
           typeFilter

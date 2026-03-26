@@ -944,7 +944,7 @@ export function cmsRouter(prisma) {
 				orderBy: [{ moduleId: 'asc' }, { moduleNumber: 'asc' }, { order: 'asc' }, { createdAt: 'desc' }],
 				include: {
 					module: true,
-					concepts: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, order: true, topicId: true, createdAt: true } }
+					concepts: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }], select: { id: true, name: true, order: true, topicId: true, losCode: true, commandWord: true, learningOutcomeStatement: true, createdAt: true } }
 				}
 			})
 		]);
@@ -1713,6 +1713,7 @@ export function cmsRouter(prisma) {
 				include: {
 					options: true,
 					topics: { select: { id: true, name: true } },
+					concepts: { select: { id: true, name: true, topicId: true } },
 					_count: { select: { children: true } }
 				}
 			})
@@ -1751,11 +1752,12 @@ export function cmsRouter(prisma) {
 			traceSection: z.string().optional().nullable(),
 			tracePage: z.string().optional().nullable(),
 			keyFormulas: z.string().optional().nullable(),
-			workedSolution: z.string().optional().nullable()
+			workedSolution: z.string().optional().nullable(),
+			conceptIds: z.array(z.string()).optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const { vignetteText, parentId, options, subQuestions, qid, los, traceSection, tracePage, keyFormulas, workedSolution, orderIndex, topicIds: rawTopicIds, ...q } = parse.data;
+		const { vignetteText, parentId, options, subQuestions, qid, los, traceSection, tracePage, keyFormulas, workedSolution, orderIndex, topicIds: rawTopicIds, conceptIds, ...q } = parse.data;
 		// Resolve topic IDs: prefer topicIds array, fall back to single topicId
 		const resolvedTopicIds = (Array.isArray(rawTopicIds) && rawTopicIds.length > 0) ? rawTopicIds : (q.topicId ? [q.topicId] : []);
 		if (resolvedTopicIds.length === 0) {
@@ -1773,12 +1775,14 @@ export function cmsRouter(prisma) {
 			if (!parent) return res.status(400).json({ error: 'Parent question not found' });
 		}
 
+		const resolvedConceptIds = Array.isArray(conceptIds) && conceptIds.length > 0 ? conceptIds : [];
 		const question = await prisma.question.create({
 			data: {
 				...q,
 				topicId: primaryTopicId,
 				...pathIds,
 				topics: { connect: resolvedTopicIds.map(id => ({ id })) },
+				...(resolvedConceptIds.length > 0 ? { concepts: { connect: resolvedConceptIds.map(id => ({ id })) } } : {}),
 				parentId: parentId || null,
 				vignetteText: vignetteText || null,
 				orderIndex: typeof orderIndex === 'number' ? orderIndex : 0,
@@ -1852,6 +1856,7 @@ export function cmsRouter(prisma) {
 			volumeId: z.string().optional(),
 			topicId: z.string().optional(),
 			topicIds: z.array(z.string()).optional(),
+			conceptIds: z.array(z.string()).optional(),
 			questionType: z.enum(['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']),
 			difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
 			difficulties: z.array(z.enum(['EASY', 'MEDIUM', 'HARD'])).optional(),
@@ -1859,7 +1864,7 @@ export function cmsRouter(prisma) {
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const { courseId, volumeId, topicId, topicIds, questionType, difficulty, difficulties, count } = parse.data;
+		const { courseId, volumeId, topicId, topicIds, conceptIds, questionType, difficulty, difficulties, count } = parse.data;
 		const diffList = Array.isArray(difficulties) && difficulties.length
 			? difficulties
 			: (difficulty ? [difficulty] : ['MEDIUM']);
@@ -1900,6 +1905,14 @@ export function cmsRouter(prisma) {
 			const vol = await prisma.volume.findUnique({ where: { id: volumeId }, select: { name: true } });
 			if (vol) volumeName = vol.name;
 		}
+		// Load concepts for prompt context
+		let legacyConcepts = [];
+		if (Array.isArray(conceptIds) && conceptIds.length > 0) {
+			legacyConcepts = await prisma.concept.findMany({ where: { id: { in: conceptIds } }, select: { id: true, name: true, topicId: true } });
+		} else {
+			legacyConcepts = await prisma.concept.findMany({ where: { topicId: { in: topicIdList } }, orderBy: [{ order: 'asc' }], select: { id: true, name: true, topicId: true } });
+		}
+		const legacyConceptLabel = legacyConcepts.length > 0 ? legacyConcepts.map(c => c.name).join(', ') : 'All concepts under the selected topics';
 		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
 		const typeLabel = questionType === 'MCQ'
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
@@ -1918,6 +1931,7 @@ Context:
 - Course level: ${levelLabel}
 - Volume: ${volumeName}
 - Topics: ${topicLabel}
+- Concepts: ${legacyConceptLabel}
 - Question type: ${typeLabel}
 - Difficulty: ${difficultyLabel}
 - Count: ${count}
@@ -1933,7 +1947,7 @@ Return a JSON object with an "items" key. EVERY question/sub-question MUST inclu
 - "keyFormulas": string (key formula(s) with variable definitions)
 - "workedSolution": string (step-by-step worked solution - be thorough)
 
-For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of 2-4 MCQ sub-questions with same fields }.
+For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of 4-5 MCQ sub-questions with same fields }.
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		try {
@@ -2012,6 +2026,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 								topicId: useTopicId,
 								...parentPathIds,
 								topics: { connect: selectedTopics.map(t => ({ id: t.id })) },
+								...(legacyConcepts.length > 0 ? { concepts: { connect: legacyConcepts.map(c => ({ id: c.id })) } } : {}),
 								parentId: parent.id,
 								orderIndex: si + 1,
 								marks: 1,
@@ -2055,6 +2070,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 							topicId: useTopicId,
 							...pathIds,
 							topics: { connect: [{ id: useTopicId }] },
+							...(legacyConcepts.length > 0 ? { concepts: { connect: legacyConcepts.map(c => ({ id: c.id })) } } : {}),
 							marks: 1,
 							qid: item.qid || null,
 							los: item.los || null,
@@ -2102,6 +2118,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			volumeId: z.string().optional(),
 			moduleIds: z.array(z.string()).optional(),
 			topicIds: z.array(z.string()).optional(),
+			conceptIds: z.array(z.string()).optional(),
 			questionType: z.enum(['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']),
 			constructedMode: z.enum(['single', 'bundle']).optional(),
 			difficulties: z.array(z.enum(['EASY', 'MEDIUM', 'HARD'])).optional(),
@@ -2110,7 +2127,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		let { courseId, volumeId, moduleIds, topicIds, questionType, constructedMode, difficulty, difficulties, count } = parse.data;
+		let { courseId, volumeId, moduleIds, topicIds, conceptIds, questionType, constructedMode, difficulty, difficulties, count } = parse.data;
 		const diffList = Array.isArray(difficulties) && difficulties.length
 			? difficulties
 			: (difficulty ? [difficulty] : ['MEDIUM']);
@@ -2143,12 +2160,28 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		const selectedTopics = await prisma.topic.findMany({
 			where: { id: { in: topicIds } },
-			select: { id: true, name: true, courseId: true, moduleId: true, module: { select: { volumeId: true } } }
+			select: { id: true, name: true, courseId: true, moduleId: true, module: { select: { id: true, name: true, volumeId: true } } }
 		});
 		if (selectedTopics.length !== topicIds.length) return res.status(400).json({ error: 'One or more topics not found' });
 		for (const t of selectedTopics) {
 			if (t.courseId && t.courseId !== courseId) return res.status(400).json({ error: 'One or more topics do not belong to selected course' });
 			if (volumeId && t.module?.volumeId && t.module.volumeId !== volumeId) return res.status(400).json({ error: 'One or more topics do not belong to selected volume' });
+		}
+
+		// Load concepts: use provided conceptIds or auto-resolve from selected topics
+		let selectedConcepts = [];
+		if (Array.isArray(conceptIds) && conceptIds.length > 0) {
+			selectedConcepts = await prisma.concept.findMany({
+				where: { id: { in: conceptIds } },
+				select: { id: true, name: true, topicId: true }
+			});
+		} else {
+			// Auto-resolve all concepts under selected topics
+			selectedConcepts = await prisma.concept.findMany({
+				where: { topicId: { in: topicIds } },
+				orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+				select: { id: true, name: true, topicId: true }
+			});
 		}
 
 		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
@@ -2161,6 +2194,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 					? 'Constructed response case study: a detailed realistic scenario/case study passage followed by multiple constructed-response sub-questions requiring calculations, analysis, or written explanations'
 					: 'Constructed response (written answer requiring calculations or explanations)';
 		const topicLabel = selectedTopics.map(t => t.name).join(', ');
+		const conceptLabel = selectedConcepts.length > 0 ? selectedConcepts.map(c => c.name).join(', ') : 'All concepts under the selected topics';
 		const difficultyLabel = diffList.join(', ');
 
 		const isBundleType = questionType === 'VIGNETTE_MCQ' || isConstructedBundle;
@@ -2191,7 +2225,7 @@ ${metaFieldsBlock}`;
 			formatBlock = `Return a JSON object with this EXACT shape:
 { "items": [ ${count > 1 ? `${count} objects, each containing` : '1 object containing'}:
   { "vignetteText": string (a detailed, realistic case study passage of 150-300 words),
-    "questions": array of 2-4 MCQ sub-questions (you decide the appropriate number) }
+    "questions": array of 4-5 MCQ sub-questions }
 ] }
 Each sub-question must include: "stem", "options" (exactly 3 objects { "text": string, "isCorrect": boolean } with one correct), plus ALL metadata fields below.
 
@@ -2200,7 +2234,7 @@ ${metaFieldsBlock}`;
 			formatBlock = `Return a JSON object with this EXACT shape:
 { "items": [ ${count > 1 ? `${count} objects, each containing` : '1 object containing'}:
   { "vignetteText": string (a detailed, realistic case study/scenario passage of 200-400 words with specific company data, financial figures, dates, and context),
-    "questions": array of 2-4 constructed-response sub-question objects (you decide the appropriate number based on the scenario complexity) }
+    "questions": array of 4-5 constructed-response sub-question objects }
 ] }
 Each sub-question must include: "stem" (what the candidate must calculate/explain, with marks indicated), "marks" (integer), "questionGuidelines" (string, specific marking criteria and what the examiner expects), "output" (string, the expected model answer/output that would receive full marks), plus ALL metadata fields below. No "options" field.
 
@@ -2237,9 +2271,12 @@ Context:
 - Course level: ${levelLabel}
 - Volume: ${volumeName}
 - Topics: ${topicLabel}
+- Concepts: ${conceptLabel}
 - Question type: ${typeLabel}
 - Difficulty levels: ${difficultyLabel}
 - Number of ${isBundleType ? 'case studies' : 'questions'}: ${count}
+
+IMPORTANT: Each question MUST include a "conceptName" field — the name of the specific concept it tests, chosen from the Concepts list above (or a close match if the list says "All concepts"). This is used to map questions back to our curriculum database.
 
 ${formatBlock}`;
 
@@ -2302,6 +2339,18 @@ ${formatBlock}`;
 				return d;
 			};
 
+			// Map AI-returned conceptName back to concept IDs
+			const mapConceptIds = (item) => {
+				const cn = (item.conceptName || '').trim().toLowerCase();
+				if (!cn || selectedConcepts.length === 0) return [];
+				const exact = selectedConcepts.find(c => c.name.toLowerCase() === cn);
+				if (exact) return [exact.id];
+				// Fuzzy: find concept whose name contains the AI label or vice versa
+				const partial = selectedConcepts.find(c => c.name.toLowerCase().includes(cn) || cn.includes(c.name.toLowerCase()));
+				if (partial) return [partial.id];
+				return [];
+			};
+
 			if (questionType === 'VIGNETTE_MCQ' || isConstructedBundle) {
 				// Each item in the array is a separate case study bundle
 				const bundles = items.map((bundle) => {
@@ -2310,12 +2359,15 @@ ${formatBlock}`;
 					const subQuestions = sub.map((sq) => {
 						const t = nextTopic();
 						const useDifficulty = nextDifficulty();
+						const cIds = mapConceptIds(sq);
 						return {
 							stem: sq.stem || sq.question || '',
 							options: isConstructedBundle ? [] : (Array.isArray(sq.options) ? sq.options : []),
 							explanation: sq.explanation || '',
 							topicId: t.id,
 							topicName: t.name,
+							conceptIds: cIds,
+							conceptName: sq.conceptName || '',
 							difficulty: useDifficulty,
 							marks: sq.marks ? Number(sq.marks) : 1,
 							qid: sq.qid || '',
@@ -2333,6 +2385,7 @@ ${formatBlock}`;
 				return res.json({
 					course: { id: course.id, name: course.name, level },
 					questionType,
+					concepts: selectedConcepts,
 					generated: { bundles }
 				});
 			}
@@ -2341,12 +2394,15 @@ ${formatBlock}`;
 			const normalized = items.map((it) => {
 				const t = nextTopic();
 				const useDifficulty = nextDifficulty();
+				const cIds = mapConceptIds(it);
 				return {
 					stem: it.stem || it.question || '',
 					options: Array.isArray(it.options) ? it.options : [],
 					explanation: it.explanation || '',
 					topicId: t.id,
 					topicName: t.name,
+					conceptIds: cIds,
+					conceptName: it.conceptName || '',
 					difficulty: useDifficulty,
 					marks: it.marks ? Number(it.marks) : 1,
 					qid: it.qid || '',
@@ -2363,6 +2419,7 @@ ${formatBlock}`;
 			return res.json({
 				course: { id: course.id, name: course.name, level },
 				questionType,
+				concepts: selectedConcepts,
 				generated: { items: normalized }
 			});
 		} catch (err) {
@@ -2461,6 +2518,7 @@ ${formatBlock}`;
 						if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) continue;
 
 						const childType = isConstructed ? 'CONSTRUCTED_RESPONSE' : 'MCQ';
+						const sqConceptIds = Array.isArray(sq?.conceptIds) ? sq.conceptIds.filter(Boolean) : [];
 						const child = await prisma.question.create({
 							data: {
 								stem,
@@ -2471,6 +2529,7 @@ ${formatBlock}`;
 								topicId,
 								...pathIds,
 								topics: { connect: [{ id: topicId }] },
+								...(sqConceptIds.length > 0 ? { concepts: { connect: sqConceptIds.map(cid => ({ id: cid })) } } : {}),
 								parentId: parent.id,
 								orderIndex: si + 1,
 								qid: sq?.qid || null,
@@ -2528,6 +2587,7 @@ ${formatBlock}`;
 				if (!topicId) continue;
 				const pathIds = await deriveQuestionPathIdsFromTopic(topicId);
 				if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) continue;
+				const itemConceptIds = Array.isArray(item?.conceptIds) ? item.conceptIds.filter(Boolean) : [];
 				const q = await prisma.question.create({
 					data: {
 						stem,
@@ -2538,6 +2598,7 @@ ${formatBlock}`;
 						topicId,
 						...pathIds,
 						topics: { connect: [{ id: topicId }] },
+						...(itemConceptIds.length > 0 ? { concepts: { connect: itemConceptIds.map(cid => ({ id: cid })) } } : {}),
 						qid: item?.qid || null,
 						los: item?.los || null,
 						traceSection: item?.traceSection || null,
@@ -2578,9 +2639,10 @@ ${formatBlock}`;
       include: {
         options: true,
         topics: { select: { id: true, name: true } },
+        concepts: { select: { id: true, name: true, topicId: true } },
         children: {
           orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-          include: { options: true, topics: { select: { id: true, name: true } } }
+          include: { options: true, topics: { select: { id: true, name: true } }, concepts: { select: { id: true, name: true, topicId: true } } }
         }
       }
     });
@@ -2613,7 +2675,8 @@ ${formatBlock}`;
       traceSection: z.string().optional().nullable(),
       tracePage: z.string().optional().nullable(),
       keyFormulas: z.string().optional().nullable(),
-      workedSolution: z.string().optional().nullable()
+      workedSolution: z.string().optional().nullable(),
+      conceptIds: z.array(z.string()).optional()
     });
     const parse = schema.safeParse(req.body);
     if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -2645,6 +2708,7 @@ ${formatBlock}`;
         ...(typeof payload.difficulty !== 'undefined' ? { difficulty: payload.difficulty } : {}),
         ...(typeof primaryTopicId !== 'undefined' ? { topicId: primaryTopicId } : {}),
         ...(resolvedTopicIds ? { topics: { set: resolvedTopicIds.map(tid => ({ id: tid })) } } : {}),
+        ...(Array.isArray(payload.conceptIds) ? { concepts: { set: payload.conceptIds.map(cid => ({ id: cid })) } } : {}),
         ...(typeof payload.orderIndex !== 'undefined' ? { orderIndex: payload.orderIndex } : {}),
         ...(typeof payload.marks !== 'undefined' ? { marks: payload.marks } : {}),
         ...(typeof payload.vignetteText !== 'undefined' ? { vignetteText: payload.vignetteText || null } : {}),

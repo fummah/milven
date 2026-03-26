@@ -299,6 +299,20 @@ export function AdminQuestions() {
 		return filtered.map(t => ({ value: t.id, label: t.name }));
 	}, [topics, selectedDrawerCourseId, selectedDrawerVolumeId, selectedDrawerModuleId]);
 
+	const selectedDrawerTopicIds = Form.useWatch('topicIds', form);
+	const drawerConceptOptions = useMemo(() => {
+		const tIds = Array.isArray(selectedDrawerTopicIds) ? selectedDrawerTopicIds : (selectedDrawerTopicIds ? [selectedDrawerTopicIds] : []);
+		if (tIds.length === 0) return [];
+		const concepts = [];
+		tIds.forEach(tid => {
+			const topic = (topics || []).find(t => t.id === tid);
+			if (topic?.concepts) {
+				topic.concepts.forEach(c => concepts.push({ value: c.id, label: `${c.name}${topic.name ? ` (${topic.name})` : ''}` }));
+			}
+		});
+		return concepts;
+	}, [topics, selectedDrawerTopicIds]);
+
 	// Restrict question types in the manual "Add Question" drawer based on selected course level
 	const drawerQuestionTypeOptions = useMemo(() => {
 		if (!selectedDrawerCourseId) {
@@ -394,6 +408,7 @@ export function AdminQuestions() {
 					level: t?.level ?? 'LEVEL1',
 					difficulty: values.difficulty,
 					topicIds: chosenTopicIds,
+					conceptIds: Array.isArray(values.conceptIds) ? values.conceptIds : [],
 					marks: 1,
 					vignetteText: caseStudyText,
 					subQuestions: subs,
@@ -432,6 +447,7 @@ export function AdminQuestions() {
 					level: t?.level ?? 'LEVEL1',
 					difficulty: values.difficulty,
 					topicIds: chosenTopicIds,
+					conceptIds: Array.isArray(values.conceptIds) ? values.conceptIds : [],
 					marks: 1,
 					vignetteText: values.vignetteText || '',
 					subQuestions,
@@ -457,6 +473,7 @@ export function AdminQuestions() {
 				level: t?.level ?? 'LEVEL1',
 				difficulty: values.difficulty,
 				topicIds: chosenTopicIds,
+				conceptIds: Array.isArray(values.conceptIds) ? values.conceptIds : [],
 				marks: values.marks ? Number(values.marks) : undefined,
 				options: values.type !== 'CONSTRUCTED_RESPONSE'
 					? (values.options || []).map(o => ({ text: o.text, isCorrect: !!o.isCorrect }))
@@ -588,10 +605,12 @@ export function AdminQuestions() {
 				setAiGenerateLoading(false);
 				return;
 			}
+			const resolvedConceptIds = Array.isArray(values.conceptIds) && values.conceptIds.length > 0 ? values.conceptIds : undefined;
 			const payload = {
 				courseId: values.courseId,
 				volumeId: values.volumeId || undefined,
 				topicIds: resolvedTopicIds,
+				conceptIds: resolvedConceptIds,
 				questionType: values.questionType,
 				constructedMode: values.questionType === 'CONSTRUCTED_RESPONSE' ? (values.constructedMode || 'single') : undefined,
 				difficulties: diffs.length ? diffs : undefined,
@@ -1214,6 +1233,31 @@ export function AdminQuestions() {
 										.filter(t => !aiGenerateVolumeId || t?.module?.volumeId === aiGenerateVolumeId)
 										.filter(t => !aiGenerateModuleId || t?.moduleId === aiGenerateModuleId || t?.module?.id === aiGenerateModuleId)
 										.map(t => ({ value: t.id, label: t.name }))}
+									onChange={() => { aiForm.setFieldsValue({ conceptIds: undefined }); }}
+								/>
+							</Form.Item>
+						</Col>
+						<Col span={24}>
+							<Form.Item name="conceptIds" label="Concepts (optional — leave empty to auto-map)">
+								<Select
+									mode="multiple"
+									placeholder="Select concepts (optional)"
+									showSearch
+									optionFilterProp="label"
+									options={(() => {
+										const aiTopicIds = aiForm.getFieldValue('topicIds') || [];
+										let relevantTopics = aiGenerateCourseId
+											? (topics || []).filter(t => (t.courseId === aiGenerateCourseId || t.course?.id === aiGenerateCourseId))
+											: (topics || []);
+										if (aiGenerateVolumeId) relevantTopics = relevantTopics.filter(t => t.module?.volumeId === aiGenerateVolumeId);
+										if (aiGenerateModuleId) relevantTopics = relevantTopics.filter(t => t.moduleId === aiGenerateModuleId || t.module?.id === aiGenerateModuleId);
+										if (aiTopicIds.length > 0) relevantTopics = relevantTopics.filter(t => aiTopicIds.includes(t.id));
+										const concepts = [];
+										relevantTopics.forEach(t => {
+											if (t?.concepts) t.concepts.forEach(c => concepts.push({ value: c.id, label: `${c.name} (${t.name})` }));
+										});
+										return concepts;
+									})()}
 								/>
 							</Form.Item>
 						</Col>
@@ -1567,6 +1611,17 @@ export function AdminQuestions() {
 							showSearch
 							optionFilterProp="label"
 							disabled={drawerTopicOptions.length === 0}
+							onChange={() => { form.setFieldsValue({ conceptIds: undefined }); }}
+						/>
+					</Form.Item>
+					<Form.Item name="conceptIds" label="Concept(s)" rules={[{ required: true, type: 'array', min: 1, message: 'Select at least one concept' }]}>
+						<Select
+							mode="multiple"
+							placeholder={drawerConceptOptions.length === 0 ? 'Select topic(s) first' : 'Select one or more concepts'}
+							options={drawerConceptOptions}
+							showSearch
+							optionFilterProp="label"
+							disabled={drawerConceptOptions.length === 0}
 						/>
 					</Form.Item>
 					<Space size="large" wrap>

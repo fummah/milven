@@ -140,6 +140,7 @@ model Concept {
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
   materials                LearningMaterial[]
+  questions                Question[] @relation("QuestionConcepts")
   @@index([topicId, order])
 }
 
@@ -189,6 +190,7 @@ model Question {
   options        McqOption[]
   answers        ExamAnswer[]
   usedInExams    ExamQuestion[]
+  concepts        Concept[]    @relation("QuestionConcepts")
   @@index([topicId, difficulty])
   @@index([courseId, difficulty])
   @@index([moduleId, difficulty])
