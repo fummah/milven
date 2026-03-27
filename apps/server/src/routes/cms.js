@@ -6,6 +6,9 @@ import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
 import * as XLSX from 'xlsx';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { getOpenAIApiKey } from '../lib/openai.js';
@@ -177,6 +180,93 @@ export function cmsRouter(prisma) {
     if (!f) return res.status(400).json({ error: 'file missing' });
     const fileUrl = `/uploads/${f.filename}`;
     return res.json({ url: fileUrl, filename: f.originalname, size: f.size, mime: f.mimetype });
+  });
+
+  // ── Curriculum Document endpoints (PDF upload for AI fine-tuning) ──
+  const pdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+  // List all curriculum documents
+  router.get('/curriculum-documents', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    try {
+      const docs = await prisma.curriculumDocument.findMany({
+        include: { course: { select: { id: true, name: true, level: true } }, volume: { select: { id: true, name: true, description: true } } },
+        orderBy: { createdAt: 'desc' }
+      });
+      return res.json({ documents: docs.map(d => ({ ...d, extractedText: undefined, hasText: !!d.extractedText, textLength: d.extractedText?.length || 0 })) });
+    } catch (err) {
+      return res.status(500).json({ error: err.message || 'Failed to list documents' });
+    }
+  });
+
+  // Upload a curriculum PDF for a course + volume
+  router.post('/curriculum-documents', requireAuth(), requireRole('ADMIN'), pdfUpload.single('file'), async (req, res) => {
+    try {
+      const { courseId, volumeId } = req.body;
+      if (!courseId || !volumeId) return res.status(400).json({ error: 'courseId and volumeId are required' });
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: 'PDF file is required' });
+      if (!file.originalname.toLowerCase().endsWith('.pdf')) return res.status(400).json({ error: 'Only PDF files are accepted' });
+
+      // Verify course and volume exist
+      const [course, volume] = await Promise.all([
+        prisma.course.findUnique({ where: { id: courseId }, select: { id: true } }),
+        prisma.volume.findUnique({ where: { id: volumeId }, select: { id: true } })
+      ]);
+      if (!course) return res.status(404).json({ error: 'Course not found' });
+      if (!volume) return res.status(404).json({ error: 'Volume not found' });
+
+      // Extract text from PDF
+      let extractedText = '';
+      try {
+        const result = await pdfParse(file.buffer);
+        extractedText = result.text || '';
+      } catch (pdfErr) {
+        console.error('PDF parse error:', pdfErr.message, pdfErr.stack);
+        return res.status(400).json({ error: 'Failed to extract text from PDF. Ensure it is a valid, non-encrypted PDF.' });
+      }
+
+      if (!extractedText || extractedText.trim().length < 100) {
+        return res.status(400).json({ error: 'PDF appears to contain very little extractable text. Please upload a text-based PDF (not scanned images).' });
+      }
+
+      // Upsert: replace existing document for this course+volume
+      const doc = await prisma.curriculumDocument.upsert({
+        where: { courseId_volumeId: { courseId, volumeId } },
+        create: {
+          courseId,
+          volumeId,
+          filename: file.originalname,
+          fileSize: file.size,
+          extractedText,
+          uploadedById: req.user?.id || null
+        },
+        update: {
+          filename: file.originalname,
+          fileSize: file.size,
+          extractedText,
+          uploadedById: req.user?.id || null
+        },
+        include: { course: { select: { id: true, name: true, level: true } }, volume: { select: { id: true, name: true, description: true } } }
+      });
+
+      return res.status(201).json({
+        document: { ...doc, extractedText: undefined, hasText: true, textLength: extractedText.length }
+      });
+    } catch (err) {
+      if (err.code === 'P2002') return res.status(409).json({ error: 'A document already exists for this course + volume combination' });
+      return res.status(500).json({ error: err.message || 'Failed to upload document' });
+    }
+  });
+
+  // Delete a curriculum document
+  router.delete('/curriculum-documents/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    try {
+      await prisma.curriculumDocument.delete({ where: { id: req.params.id } });
+      return res.json({ success: true });
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Document not found' });
+      return res.status(500).json({ error: err.message || 'Failed to delete document' });
+    }
   });
 
   // ── Bulk Upload endpoints ──────────────────────────────────────────
@@ -1901,10 +1991,31 @@ export function cmsRouter(prisma) {
 
 		// Resolve volume name for better prompt context
 		let volumeName = 'N/A';
+		let effectiveVolumeId = volumeId;
 		if (volumeId) {
 			const vol = await prisma.volume.findUnique({ where: { id: volumeId }, select: { name: true } });
 			if (vol) volumeName = vol.name;
+		} else if (selectedTopics.length > 0 && selectedTopics[0].module?.volumeId) {
+			effectiveVolumeId = selectedTopics[0].module.volumeId;
+			const vol = await prisma.volume.findUnique({ where: { id: effectiveVolumeId }, select: { name: true } });
+			if (vol) volumeName = vol.name;
 		}
+
+		// Load curriculum document for fine-tuning (if uploaded for this course + volume)
+		let curriculumExcerpt = '';
+		if (effectiveVolumeId) {
+			const currDoc = await prisma.curriculumDocument.findUnique({
+				where: { courseId_volumeId: { courseId, volumeId: effectiveVolumeId } },
+				select: { extractedText: true }
+			});
+			if (currDoc?.extractedText) {
+				// Cap at ~30k chars to stay within token limits while providing rich context
+				curriculumExcerpt = currDoc.extractedText.length > 30000
+					? currDoc.extractedText.substring(0, 30000) + '\n... [document truncated]'
+					: currDoc.extractedText;
+			}
+		}
+
 		// Load concepts for prompt context
 		let legacyConcepts = [];
 		if (Array.isArray(conceptIds) && conceptIds.length > 0) {
@@ -1921,10 +2032,15 @@ export function cmsRouter(prisma) {
 				: 'Constructed response (written answer requiring calculations or explanations)';
 		const topicLabel = selectedTopics.map(t => t.name).join(', ');
 		const difficultyLabel = diffList.join(', ');
+		const curriculumSection = curriculumExcerpt
+			? `\n\nCURRICULUM REFERENCE MATERIAL (use this as the primary source for question content, terminology, formulas, examples, and scenarios — generate questions that closely reflect this material):\n---\n${curriculumExcerpt}\n---\n`
+			: '';
 		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions in JSON format.
 
 Draw inspiration from past CFA exam questions and real-world financial scenarios. Questions must be precise, unambiguous, and test genuine understanding.
 ALL metadata fields below are REQUIRED - always populate every single one to help students during revision.
+For VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles: a single case study/vignette may span MULTIPLE learning modules, topics, or concepts within the same volume. Sub-questions should draw from different topics/concepts where appropriate to create a rich, integrative scenario.
+${curriculumExcerpt ? 'IMPORTANT: A curriculum reference document has been provided below. You MUST base your questions on the content, terminology, formulas, and examples from this document. Generate questions that test understanding of the material in the document.' : ''}
 
 Context:
 - Course: ${course.name}
@@ -1935,7 +2051,7 @@ Context:
 - Question type: ${typeLabel}
 - Difficulty: ${difficultyLabel}
 - Count: ${count}
-
+${curriculumSection}
 Return a JSON object with an "items" key. EVERY question/sub-question MUST include ALL of these fields (never null):
 - "stem": string (question text, may include simple HTML)
 - "options": for MCQ only: array of exactly 3 objects { "text": string, "isCorrect": boolean } with exactly one isCorrect true
@@ -2153,6 +2269,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		// Resolve volume name for better prompt context
 		let volumeName = 'N/A';
+		let effectiveVolumeId = volumeId;
 		if (volumeId) {
 			const vol = await prisma.volume.findUnique({ where: { id: volumeId }, select: { name: true } });
 			if (vol) volumeName = vol.name;
@@ -2166,6 +2283,29 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 		for (const t of selectedTopics) {
 			if (t.courseId && t.courseId !== courseId) return res.status(400).json({ error: 'One or more topics do not belong to selected course' });
 			if (volumeId && t.module?.volumeId && t.module.volumeId !== volumeId) return res.status(400).json({ error: 'One or more topics do not belong to selected volume' });
+		}
+
+		// Derive volume from topics if not explicitly selected
+		if (!effectiveVolumeId && selectedTopics.length > 0 && selectedTopics[0].module?.volumeId) {
+			effectiveVolumeId = selectedTopics[0].module.volumeId;
+			if (!volumeId) {
+				const vol = await prisma.volume.findUnique({ where: { id: effectiveVolumeId }, select: { name: true } });
+				if (vol) volumeName = vol.name;
+			}
+		}
+
+		// Load curriculum document for fine-tuning (if uploaded for this course + volume)
+		let previewCurriculumExcerpt = '';
+		if (effectiveVolumeId) {
+			const currDoc = await prisma.curriculumDocument.findUnique({
+				where: { courseId_volumeId: { courseId, volumeId: effectiveVolumeId } },
+				select: { extractedText: true }
+			});
+			if (currDoc?.extractedText) {
+				previewCurriculumExcerpt = currDoc.extractedText.length > 30000
+					? currDoc.extractedText.substring(0, 30000) + '\n... [document truncated]'
+					: currDoc.extractedText;
+			}
 		}
 
 		// Load concepts: use provided conceptIds or auto-resolve from selected topics
@@ -2254,6 +2394,9 @@ Each object in the "items" array MUST have:
 ${metaFieldsBlock}`;
 		}
 
+		const previewCurriculumSection = previewCurriculumExcerpt
+			? `\n\nCURRICULUM REFERENCE MATERIAL (use this as the primary source for question content, terminology, formulas, examples, and scenarios — generate questions that closely reflect this material):\n---\n${previewCurriculumExcerpt}\n---\n`
+			: '';
 		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions that could appear on actual CFA or finance certification exams.
 
 IMPORTANT GUIDELINES:
@@ -2265,6 +2408,8 @@ IMPORTANT GUIDELINES:
 - Vary the difficulty across the specified difficulty levels: ${difficultyLabel}
 - EASY: straightforward recall/application; MEDIUM: multi-step analysis; HARD: complex scenario requiring synthesis of multiple concepts
 - ALL metadata fields below are REQUIRED (not optional) - always populate every single one to help students during revision
+- For VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles: a single case study/vignette may span MULTIPLE learning modules, topics, or concepts within the same volume. Sub-questions should draw from different topics/concepts where appropriate to create a rich, integrative scenario.
+${previewCurriculumExcerpt ? '- IMPORTANT: A curriculum reference document has been provided below. You MUST base your questions on the content, terminology, formulas, and examples from this document. Generate questions that test understanding of the material in the document.' : ''}
 
 Context:
 - Course: ${course.name}
@@ -2275,7 +2420,7 @@ Context:
 - Question type: ${typeLabel}
 - Difficulty levels: ${difficultyLabel}
 - Number of ${isBundleType ? 'case studies' : 'questions'}: ${count}
-
+${previewCurriculumSection}
 IMPORTANT: Each question MUST include a "conceptName" field — the name of the specific concept it tests, chosen from the Concepts list above (or a close match if the list says "All concepts"). This is used to map questions back to our curriculum database.
 
 ${formatBlock}`;
@@ -2638,7 +2783,7 @@ ${formatBlock}`;
       where: { id },
       include: {
         options: true,
-        topics: { select: { id: true, name: true } },
+        topics: { select: { id: true, name: true, moduleId: true, module: { select: { id: true, name: true, volumeId: true } } } },
         concepts: { select: { id: true, name: true, topicId: true } },
         children: {
           orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],

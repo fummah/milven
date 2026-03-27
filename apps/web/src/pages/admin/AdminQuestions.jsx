@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Upload, Modal, Drawer, Tag, Tooltip, Radio, Divider, Spin, Collapse, Tabs, InputNumber, Row, Col, Checkbox } from 'antd';
-import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PictureOutlined, DeleteFilled, FilterOutlined, QuestionCircleOutlined, BookOutlined, SearchOutlined, CalendarOutlined, CheckCircleOutlined, DownOutlined, UpOutlined, RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PictureOutlined, DeleteFilled, FilterOutlined, QuestionCircleOutlined, BookOutlined, SearchOutlined, CalendarOutlined, CheckCircleOutlined, DownOutlined, UpOutlined, RobotOutlined, ThunderboltOutlined, TagsOutlined } from '@ant-design/icons';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { RichTextEditor } from '../../components/RichTextEditor.jsx';
@@ -40,6 +40,7 @@ export function AdminQuestions() {
 	const [aiGenerateCourseId, setAiGenerateCourseId] = useState('');
 	const [aiGenerateVolumeId, setAiGenerateVolumeId] = useState('');
 	const [aiGenerateModuleId, setAiGenerateModuleId] = useState('');
+	const [curriculumDocs, setCurriculumDocs] = useState([]);
 	const [aiPreviewOpen, setAiPreviewOpen] = useState(false);
 	const [aiPreview, setAiPreview] = useState(null);
 	const [aiAcceptLoading, setAiAcceptLoading] = useState(false);
@@ -84,18 +85,21 @@ export function AdminQuestions() {
 
 	const loadMeta = async () => {
 		try {
-			const [{ data: t }, { data: c }, { data: v }] = await Promise.all([
+			const [{ data: t }, { data: c }, { data: v }, { data: d }] = await Promise.all([
 				api.get('/api/cms/topics'),
 				api.get('/api/cms/courses'),
-				api.get('/api/cms/volumes')
+				api.get('/api/cms/volumes'),
+				api.get('/api/cms/curriculum-documents')
 			]);
 			setTopics(t?.topics || []);
 			setCourses(c?.courses || []);
 			setVolumes(v?.volumes || []);
+			setCurriculumDocs(Array.isArray(d?.documents) ? d.documents : []);
 		} catch {
 			setTopics([]);
 			setCourses([]);
 			setVolumes([]);
+			setCurriculumDocs([]);
 		}
 	};
 
@@ -791,6 +795,26 @@ export function AdminQuestions() {
 				);
 			}
 		},
+		{
+			title: 'Concept(s)',
+			dataIndex: 'concepts',
+			width: 180,
+			ellipsis: true,
+			render: (conceptsArr) => {
+				const arr = Array.isArray(conceptsArr) ? conceptsArr : [];
+				if (arr.length === 0) return <Tag>—</Tag>;
+				return (
+					<span style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+						{arr.slice(0, 2).map(c => (
+							<Tag key={c.id} icon={<TagsOutlined />} color="purple" style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.name}>
+								{c.name.length > 16 ? `${c.name.substring(0, 16)}…` : c.name}
+							</Tag>
+						))}
+						{arr.length > 2 && <Tag color="purple">+{arr.length - 2}</Tag>}
+					</span>
+				);
+			}
+		},
 		{ 
 			title: 'Created', 
 			dataIndex: 'createdAt', 
@@ -1189,6 +1213,22 @@ export function AdminQuestions() {
 								/>
 							</Form.Item>
 						</Col>
+						{aiGenerateCourseId && aiGenerateVolumeId && (() => {
+							const hasDoc = curriculumDocs.some(d => d.courseId === aiGenerateCourseId && d.volumeId === aiGenerateVolumeId);
+							return (
+								<Col span={24} style={{ marginTop: -12, marginBottom: 8 }}>
+									{hasDoc ? (
+										<Tag icon={<CheckCircleOutlined />} color="success" style={{ fontSize: 12 }}>
+											Curriculum document available — AI will use it to generate curriculum-aligned questions
+										</Tag>
+									) : (
+										<Tag color="warning" style={{ fontSize: 12 }}>
+											No curriculum document uploaded for this Course + Volume. <a href="/admin/documents" target="_blank" rel="noopener noreferrer">Upload one</a> for better question quality.
+										</Tag>
+									)}
+								</Col>
+							);
+						})()}
 						<Col span={12}>
 							<Form.Item name="aiModuleId" label="Learning Module">
 								<Select
@@ -1557,7 +1597,7 @@ export function AdminQuestions() {
 							optionFilterProp="label"
 							allowClear
 							onChange={(v) => {
-								form.setFieldsValue({ topicIds: undefined, volumeId: undefined, learningModuleId: undefined });
+								form.setFieldsValue({ topicIds: undefined, volumeId: undefined, learningModuleId: undefined, conceptIds: undefined });
 								// When course changes, ensure question type still valid for that level
 								const course = (courses || []).find(c => c.id === v);
 								const level = course?.level;
@@ -1586,7 +1626,7 @@ export function AdminQuestions() {
 							allowClear
 							disabled={!selectedDrawerCourseId || drawerVolumeOptions.length === 0}
 							onChange={() => {
-								form.setFieldsValue({ topicIds: undefined, learningModuleId: undefined });
+								form.setFieldsValue({ topicIds: undefined, learningModuleId: undefined, conceptIds: undefined });
 							}}
 						/>
 					</Form.Item>
@@ -1599,7 +1639,7 @@ export function AdminQuestions() {
 							allowClear
 							disabled={drawerModuleOptions.length === 0}
 							onChange={() => {
-								form.setFieldsValue({ topicIds: undefined });
+								form.setFieldsValue({ topicIds: undefined, conceptIds: undefined });
 							}}
 						/>
 					</Form.Item>

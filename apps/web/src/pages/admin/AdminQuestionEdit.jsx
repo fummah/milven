@@ -50,13 +50,18 @@ export function AdminQuestionEdit() {
 							options: (item.options || []).map(o => ({ text: o.text, isCorrect: o.isCorrect }))
 						}));
 						setInitialVignetteQuestionIds(vignetteQuestions.map(v => v.id));
+						const qTopics = Array.isArray(q.topics) ? q.topics : [];
+						const derivedVolumeId = q.volumeId || qTopics[0]?.module?.volumeId || null;
+						const derivedModuleId = q.moduleId || qTopics[0]?.module?.id || null;
 						form.setFieldsValue({
 							type: q.type,
 							difficulty: q.difficulty,
 							marks: q.marks || 1,
-							topicId: q.topicId,
+							topicIds: qTopics.length > 0 ? qTopics.map(t => t.id) : (q.topicId ? [q.topicId] : []),
 							courseId: q.courseId,
-							volumeId: q.module?.volumeId,
+							volumeId: derivedVolumeId,
+							learningModuleId: derivedModuleId,
+							conceptIds: Array.isArray(q.concepts) && q.concepts.length > 0 ? q.concepts.map(c => c.id) : [],
 							vignetteText: q.vignetteText || '',
 							qid: q.qid || '',
 							los: q.los || '',
@@ -77,12 +82,17 @@ export function AdminQuestionEdit() {
 							orderIndex: item.orderIndex ?? 0
 						}));
 						setInitialConstructedQuestionIds(constructedSubQuestions.map(v => v.id).filter(Boolean));
+						const qTopics2 = Array.isArray(q.topics) ? q.topics : [];
+						const derivedVolumeId2 = q.volumeId || qTopics2[0]?.module?.volumeId || null;
+						const derivedModuleId2 = q.moduleId || qTopics2[0]?.module?.id || null;
 						form.setFieldsValue({
 							type: q.type,
 							difficulty: q.difficulty,
-							topicIds: Array.isArray(q.topics) && q.topics.length > 0 ? q.topics.map(t => t.id) : (q.topicId ? [q.topicId] : []),
+							topicIds: qTopics2.length > 0 ? qTopics2.map(t => t.id) : (q.topicId ? [q.topicId] : []),
 							courseId: q.courseId,
-							volumeId: q.module?.volumeId,
+							volumeId: derivedVolumeId2,
+							learningModuleId: derivedModuleId2,
+							conceptIds: Array.isArray(q.concepts) && q.concepts.length > 0 ? q.concepts.map(c => c.id) : [],
 							caseStudyText: q.vignetteText || '',
 							qid: q.qid || '',
 							los: q.los || '',
@@ -96,14 +106,19 @@ export function AdminQuestionEdit() {
 							setConstructedPanelsOpen([String(0)]);
 						}
 					} else {
+						const qTopics3 = Array.isArray(q.topics) ? q.topics : [];
+						const derivedVolumeId3 = q.volumeId || qTopics3[0]?.module?.volumeId || null;
+						const derivedModuleId3 = q.moduleId || qTopics3[0]?.module?.id || null;
 						form.setFieldsValue({
 							stem: q.stem,
 							type: q.type,
 							difficulty: q.difficulty,
 							marks: q.marks || 1,
-							topicIds: Array.isArray(q.topics) && q.topics.length > 0 ? q.topics.map(t => t.id) : (q.topicId ? [q.topicId] : []),
+							topicIds: qTopics3.length > 0 ? qTopics3.map(t => t.id) : (q.topicId ? [q.topicId] : []),
 							courseId: q.courseId,
-							volumeId: q.module?.volumeId,
+							volumeId: derivedVolumeId3,
+							learningModuleId: derivedModuleId3,
+							conceptIds: Array.isArray(q.concepts) && q.concepts.length > 0 ? q.concepts.map(c => c.id) : [],
 							vignetteText: q.vignetteText || '',
 							qid: q.qid || '',
 							los: q.los || '',
@@ -131,14 +146,6 @@ export function AdminQuestionEdit() {
 			.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 			.map(c => ({ value: c.id, label: `${c.name} (${c.level})` }));
 	}, [courses]);
-
-	const filteredTopicOptions = useMemo(() => {
-		const courseId = form.getFieldValue('courseId');
-		const filtered = courseId
-			? topics.filter(t => t.courseId === courseId)
-			: topics;
-		return filtered.map(t => ({ value: t.id, label: t.name }));
-	}, [topics, form]);
 
 	const selectedCourseId = Form.useWatch('courseId', form);
 	const selectedVolumeId = Form.useWatch('volumeId', form);
@@ -183,6 +190,20 @@ export function AdminQuestionEdit() {
 		return filtered.map(t => ({ value: t.id, label: t.name }));
 	}, [topics, selectedCourseId, selectedVolumeId, selectedModuleId]);
 
+	const selectedTopicIds = Form.useWatch('topicIds', form);
+	const conceptOptions = useMemo(() => {
+		const tIds = Array.isArray(selectedTopicIds) ? selectedTopicIds : (selectedTopicIds ? [selectedTopicIds] : []);
+		if (tIds.length === 0) return [];
+		const concepts = [];
+		tIds.forEach(tid => {
+			const topic = (topics || []).find(t => t.id === tid);
+			if (topic?.concepts) {
+				topic.concepts.forEach(c => concepts.push({ value: c.id, label: `${c.name}${topic.name ? ` (${topic.name})` : ''}` }));
+			}
+		});
+		return concepts;
+	}, [topics, selectedTopicIds]);
+
 	const submit = async (values) => {
 		try {
 			setSubmitting(true);
@@ -201,6 +222,7 @@ export function AdminQuestionEdit() {
 					type: values.type,
 					difficulty: values.difficulty,
 					topicIds: Array.isArray(values.topicIds) ? values.topicIds : (values.topicIds ? [values.topicIds] : []),
+					conceptIds: Array.isArray(values.conceptIds) ? values.conceptIds : [],
 					vignetteText: values.caseStudyText || null,
 					subQuestions,
 					qid: values.qid || null,
@@ -225,6 +247,7 @@ export function AdminQuestionEdit() {
 					difficulty: values.difficulty,
 					marks: values.marks ? Number(values.marks) : undefined,
 					topicIds: Array.isArray(values.topicIds) ? values.topicIds : (values.topicIds ? [values.topicIds] : []),
+					conceptIds: Array.isArray(values.conceptIds) ? values.conceptIds : [],
 					vignetteText: values.vignetteText || null,
 					subQuestions,
 					qid: values.qid || null,
@@ -242,6 +265,7 @@ export function AdminQuestionEdit() {
 					difficulty: values.difficulty,
 					marks: values.marks ? Number(values.marks) : undefined,
 					topicIds: Array.isArray(values.topicIds) ? values.topicIds : (values.topicIds ? [values.topicIds] : []),
+					conceptIds: Array.isArray(values.conceptIds) ? values.conceptIds : [],
 					options: values.type !== 'CONSTRUCTED_RESPONSE'
 						? (values.options || []).map(o => ({ text: o.text, isCorrect: !!o.isCorrect }))
 						: [],
@@ -303,20 +327,20 @@ export function AdminQuestionEdit() {
 							optionFilterProp="label"
 							allowClear
 							onChange={() => {
-								form.setFieldsValue({ topicIds: undefined, volumeId: undefined, learningModuleId: undefined });
+								form.setFieldsValue({ topicIds: undefined, volumeId: undefined, learningModuleId: undefined, conceptIds: undefined });
 							}}
 						/>
 					</Form.Item>
-					<Form.Item name="volumeId" label="Topic">
+					<Form.Item name="volumeId" label="Volume">
 						<Select
-							placeholder="Select topic"
+							placeholder="Select volume"
 							options={volumeOptions}
 							showSearch
 							optionFilterProp="label"
 							allowClear
 							disabled={!selectedCourseId || volumeOptions.length === 0}
 							onChange={() => {
-								form.setFieldsValue({ topicIds: undefined, learningModuleId: undefined });
+								form.setFieldsValue({ topicIds: undefined, learningModuleId: undefined, conceptIds: undefined });
 							}}
 						/>
 					</Form.Item>
@@ -329,7 +353,7 @@ export function AdminQuestionEdit() {
 							allowClear
 							disabled={moduleOptions.length === 0}
 							onChange={() => {
-								form.setFieldsValue({ topicIds: undefined });
+								form.setFieldsValue({ topicIds: undefined, conceptIds: undefined });
 							}}
 						/>
 					</Form.Item>
@@ -341,6 +365,17 @@ export function AdminQuestionEdit() {
 							showSearch
 							optionFilterProp="label"
 							disabled={topicOptions.length === 0}
+							onChange={() => { form.setFieldsValue({ conceptIds: undefined }); }}
+						/>
+					</Form.Item>
+					<Form.Item name="conceptIds" label="Concept(s)">
+						<Select
+							mode="multiple"
+							placeholder={conceptOptions.length === 0 ? 'Select topic(s) first' : 'Select one or more concepts'}
+							options={conceptOptions}
+							showSearch
+							optionFilterProp="label"
+							disabled={conceptOptions.length === 0}
 						/>
 					</Form.Item>
 					<Form.Item noStyle shouldUpdate>

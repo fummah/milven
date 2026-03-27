@@ -16,6 +16,7 @@ export function ExamBuilder() {
   const [levelFromCourse, setLevelFromCourse] = useState(null);
   const [courses, setCourses] = useState([]);
   const [topics, setTopics] = useState([]);
+  const [volumes, setVolumes] = useState([]);
   const [selectedCourseId, setSelectedCourseId] = useState(courseId || '');
 
   useEffect(() => {
@@ -60,19 +61,33 @@ export function ExamBuilder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load courses for selection when building course exam without context
+  // Load courses and volumes
   useEffect(() => {
     if (mode === 'quiz' || courseId) return;
     (async () => {
       try {
-        const { data } = await api.get('/api/cms/courses');
-        const list = Array.isArray(data?.courses) ? data.courses : (data?.items || []);
-        setCourses(list);
+        const [cRes, vRes] = await Promise.all([api.get('/api/cms/courses'), api.get('/api/cms/volumes')]);
+        setCourses(Array.isArray(cRes.data?.courses) ? cRes.data.courses : (cRes.data?.items || []));
+        setVolumes(Array.isArray(vRes.data?.volumes) ? vRes.data.volumes : []);
       } catch {
         setCourses([]);
+        setVolumes([]);
       }
     })();
   }, [mode, courseId]);
+
+  // Also load volumes when we have a courseId from URL
+  useEffect(() => {
+    if (!courseId && !selectedCourseId) return;
+    (async () => {
+      try {
+        const { data } = await api.get('/api/cms/volumes');
+        setVolumes(Array.isArray(data?.volumes) ? data.volumes : []);
+      } catch {
+        setVolumes([]);
+      }
+    })();
+  }, [courseId, selectedCourseId]);
 
   // Load topics for the effective course (for concept filtering)
   useEffect(() => {
@@ -88,25 +103,61 @@ export function ExamBuilder() {
     })();
   }, [courseId, selectedCourseId]);
 
+  const selectedVolumeId = Form.useWatch('volumeId', form);
+  const selectedModuleId = Form.useWatch('moduleId', form);
   const selectedTopicIds = Form.useWatch('topicIds', form);
+
+  const volumeOptions = useMemo(() => {
+    const effCourse = courseId || selectedCourseId;
+    if (!effCourse) return [];
+    const filteredTopics = topics.filter(t => t.courseId === effCourse || t.course?.id === effCourse);
+    const volumeIds = Array.from(new Set(filteredTopics.map(t => t.module?.volumeId).filter(Boolean)));
+    return volumeIds
+      .map(vid => {
+        const vol = (volumes || []).find(v => v.id === vid);
+        return vol ? { value: vol.id, label: vol.description ? `${vol.name} - ${vol.description}` : vol.name } : null;
+      })
+      .filter(Boolean);
+  }, [topics, volumes, courseId, selectedCourseId]);
+
+  const moduleOptions = useMemo(() => {
+    const effCourse = courseId || selectedCourseId;
+    let filtered = effCourse ? topics.filter(t => t.courseId === effCourse || t.course?.id === effCourse) : [];
+    if (selectedVolumeId) filtered = filtered.filter(t => t.module?.volumeId === selectedVolumeId);
+    const moduleMap = new Map();
+    filtered.forEach(t => {
+      if (t.module?.id && !moduleMap.has(t.module.id)) {
+        moduleMap.set(t.module.id, { value: t.module.id, label: t.module.name || t.module.id });
+      }
+    });
+    return Array.from(moduleMap.values());
+  }, [topics, courseId, selectedCourseId, selectedVolumeId]);
+
+  const topicOptions = useMemo(() => {
+    const effCourse = courseId || selectedCourseId;
+    let filtered = effCourse ? topics.filter(t => t.courseId === effCourse || t.course?.id === effCourse) : topics;
+    if (selectedVolumeId) filtered = filtered.filter(t => t.module?.volumeId === selectedVolumeId);
+    if (selectedModuleId) filtered = filtered.filter(t => t.moduleId === selectedModuleId || t.module?.id === selectedModuleId);
+    return filtered.map(t => ({ value: t.id, label: t.name }));
+  }, [topics, courseId, selectedCourseId, selectedVolumeId, selectedModuleId]);
+
   const conceptOptions = useMemo(() => {
     const tIds = Array.isArray(selectedTopicIds) ? selectedTopicIds : [];
-    // If no specific topics selected, show all concepts for the course
-    const relevantTopics = tIds.length > 0 ? topics.filter(t => tIds.includes(t.id)) : topics;
+    const effCourse = courseId || selectedCourseId;
+    let relevantTopics = effCourse ? topics.filter(t => t.courseId === effCourse || t.course?.id === effCourse) : topics;
+    if (selectedVolumeId) relevantTopics = relevantTopics.filter(t => t.module?.volumeId === selectedVolumeId);
+    if (selectedModuleId) relevantTopics = relevantTopics.filter(t => t.moduleId === selectedModuleId || t.module?.id === selectedModuleId);
+    if (tIds.length > 0) relevantTopics = relevantTopics.filter(t => tIds.includes(t.id));
     const concepts = [];
     relevantTopics.forEach(t => {
       if (t?.concepts) t.concepts.forEach(c => concepts.push({ value: c.id, label: `${c.name} (${t.name})` }));
     });
     return concepts;
-  }, [topics, selectedTopicIds]);
-
-  const topicOptions = useMemo(() => {
-    return topics.map(t => ({ value: t.id, label: t.name }));
-  }, [topics]);
+  }, [topics, selectedTopicIds, courseId, selectedCourseId, selectedVolumeId, selectedModuleId]);
 
   const onCourseChange = async (cid) => {
     setSelectedCourseId(cid);
-    form.setFieldsValue({ topicIds: undefined, conceptIds: undefined });
+    form.setFieldsValue({ volumeId: undefined, moduleId: undefined, topicIds: undefined, conceptIds: undefined });
     try {
       const { data } = await api.get(`/api/cms/courses/${cid}`);
       const cl = data?.course?.level ?? null;
@@ -125,6 +176,8 @@ export function ExamBuilder() {
           ? (levelFromTopic ?? 'LEVEL1')
           : (effectiveCourseId ? (levelFromCourse ?? 'LEVEL1') : values.level),
 				timeLimitMinutes: values.timeLimitMinutes,
+				volumeId: values.volumeId || undefined,
+				moduleId: values.moduleId || undefined,
 				topicIds: mode === 'quiz' && topicId ? [topicId] : (values.topicIds ?? []),
 				conceptIds: Array.isArray(values.conceptIds) && values.conceptIds.length > 0 ? values.conceptIds : undefined,
 				questionCount: values.questionCount,
@@ -172,8 +225,32 @@ export function ExamBuilder() {
               />
             </Form.Item>
           )}
+          {(courseId || selectedCourseId) && mode !== 'quiz' && volumeOptions.length > 0 && (
+            <Form.Item label="Volume (optional)" name="volumeId">
+              <Select
+                placeholder="All volumes"
+                showSearch
+                optionFilterProp="label"
+                options={volumeOptions}
+                allowClear
+                onChange={() => { form.setFieldsValue({ moduleId: undefined, topicIds: undefined, conceptIds: undefined }); }}
+              />
+            </Form.Item>
+          )}
+          {(courseId || selectedCourseId) && mode !== 'quiz' && moduleOptions.length > 0 && (
+            <Form.Item label="Learning Module (optional)" name="moduleId">
+              <Select
+                placeholder="All modules"
+                showSearch
+                optionFilterProp="label"
+                options={moduleOptions}
+                allowClear
+                onChange={() => { form.setFieldsValue({ topicIds: undefined, conceptIds: undefined }); }}
+              />
+            </Form.Item>
+          )}
           {(courseId || selectedCourseId) && mode !== 'quiz' && topicOptions.length > 0 && (
-            <Form.Item label="Topics (optional)" name="topicIds">
+            <Form.Item label="Topic(s) (optional)" name="topicIds">
               <Select
                 mode="multiple"
                 placeholder="All topics"
@@ -185,7 +262,7 @@ export function ExamBuilder() {
             </Form.Item>
           )}
           {(courseId || selectedCourseId) && mode !== 'quiz' && conceptOptions.length > 0 && (
-            <Form.Item label="Concepts (optional)" name="conceptIds">
+            <Form.Item label="Concept(s) (optional)" name="conceptIds">
               <Select
                 mode="multiple"
                 placeholder="All concepts"

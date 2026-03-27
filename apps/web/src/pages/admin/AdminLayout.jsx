@@ -63,6 +63,7 @@ const menuItems = [
       { key: 'topics', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #a855f7, #9333ea)'), label: <Link to="/admin/topics">Learning Modules</Link> },
       { key: 'questions', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/questions">Questions</Link> },
       { key: 'materials', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #06b6d4, #0891b2)'), label: <Link to="/admin/materials">Learning Materials</Link> },
+      { key: 'documents', icon: modernBadge(<FolderOutlined />, 'linear-gradient(135deg, #e74c3c, #c0392b)'), label: <Link to="/admin/documents">Curriculum Docs</Link> },
       { key: 'levels', icon: modernBadge(<ProfileOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/levels">Levels</Link> }
     ]
   },
@@ -103,7 +104,7 @@ const isPreviewPath = (pathname) => /^\/admin\/courses\/[^/]+\/preview$/.test(pa
 // Parent key for each submenu item so we keep the parent open when a child is selected
 const childToParentKey = {
   'users-list': 'users', students: 'users', roles: 'users',
-  'courses-list': 'courses', volumes: 'courses', topics: 'courses', questions: 'courses', materials: 'courses', levels: 'courses',
+  'courses-list': 'courses', volumes: 'courses', topics: 'courses', questions: 'courses', materials: 'courses', documents: 'courses', levels: 'courses',
   'exams-list': 'exams', 'exam-builder': 'exams',
   'reports-overview': 'reports',
   products: 'billing', purchases: 'billing', invoices: 'billing', subscriptions: 'billing', taxes: 'billing'

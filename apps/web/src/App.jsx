@@ -56,6 +56,7 @@ import { AdminMaterials } from './pages/admin/AdminMaterials.jsx';
 import { AdminExamEditor } from './pages/admin/AdminExamEditor.jsx';
 import { AdminExams } from './pages/admin/AdminExams.jsx';
 import { AdminVolumes } from './pages/admin/AdminVolumes.jsx';
+import AdminDocuments from './pages/admin/AdminDocuments.jsx';
 import { Home } from './pages/Home.jsx';
 import { CoursesPage } from './pages/Courses.jsx';
 import { Careers } from './pages/Careers.jsx';
@@ -788,6 +789,7 @@ export default function App() {
 						<Route path="materials" element={<AdminMaterials />} />
 						<Route path="topics" element={<AdminTopics />} />
 						<Route path="volumes" element={<AdminVolumes />} />
+						<Route path="documents" element={<AdminDocuments />} />
 						<Route path="questions" element={<AdminQuestions />} />
 						<Route path="questions/:id/edit" element={<AdminQuestionEdit />} />
 						<Route path="topics/:id/preview" element={<AdminTopicPreview />} />

@@ -72,6 +72,7 @@ model Volume {
   courseLinks CourseVolume[]
   modules    Module[]
   mockExamTopicWeights MockExamTopicWeight[]
+  curriculumDocuments CurriculumDocument[]
 }
 
 model CourseVolume {
@@ -356,6 +357,7 @@ model Course {
   topics         Topic[]
   mockExamTopicWeights MockExamTopicWeight[]
   mockExams      MockExam[]
+  curriculumDocuments CurriculumDocument[]
 }
 
 enum EnrollmentStatus {
@@ -636,6 +638,24 @@ model MockExam {
   session2Exam    Exam?    @relation("MockSession2", fields: [session2ExamId], references: [id])
   @@index([userId, status])
   @@index([courseId])
+}
+
+// Curriculum Documents - uploaded PDFs for AI question generation fine-tuning
+model CurriculumDocument {
+  id            String   @id @default(cuid())
+  courseId      String
+  course        Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  volumeId      String
+  volume        Volume   @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  filename      String
+  fileSize      Int      @default(0)
+  extractedText String?
+  uploadedById  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@unique([courseId, volumeId])
+  @@index([courseId])
+  @@index([volumeId])
 }
 
 // Weak Topics - Topics identified for focused study
