@@ -1,5 +1,8 @@
 your-domain.com {
 	encode zstd gzip
+	request_body {
+		max_size 60MB
+	}
 	handle_path /api/* {
 		reverse_proxy api:4000
 	}
@@ -8,5 +11,4 @@ your-domain.com {
 	}
 	tls you@example.com
 }
-
 

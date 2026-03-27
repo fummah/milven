@@ -6,7 +6,6 @@ node_modules
 dist
 build
 docker-compose.dev.yml
-docker-compose.prod.yml
 
 # Env
 .env
