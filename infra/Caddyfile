@@ -1,4 +1,4 @@
-your-domain.com {
+dev.milven.zbsburial.com {
 	encode zstd gzip
 	request_body {
 		max_size 60MB
@@ -9,6 +9,6 @@ your-domain.com {
 	handle {
 		respond "Mutingwende API is running. Deploy web static separately or via CDN." 200
 	}
-	tls you@example.com
+	tls dev.milven.zbsburial.com
 }
 

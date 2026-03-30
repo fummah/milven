@@ -163,6 +163,79 @@ export function cmsRouter(prisma) {
     }
     return p;
   }
+  /**
+   * Build a topic-aware curriculum excerpt from extracted PDF text.
+   * Instead of blindly taking the first N chars, this finds sections of the
+   * document that mention the selected topic/concept keywords and returns
+   * a weighted excerpt centred on those sections.
+   */
+  function buildCurriculumExcerpt(fullText, topicNames = [], conceptNames = [], maxChars = 30000) {
+    if (!fullText) return '';
+    if (fullText.length <= maxChars) return fullText;
+
+    const keywords = [...topicNames, ...conceptNames]
+      .flatMap(n => n.split(/[\s,;:()\-\/]+/).filter(w => w.length > 3))
+      .map(w => w.toLowerCase());
+
+    if (keywords.length === 0) {
+      return fullText.substring(0, maxChars) + '\n... [document truncated]';
+    }
+
+    // Split into overlapping windows of ~2000 chars with 500-char step
+    const WINDOW = 2000;
+    const STEP = 500;
+    const windows = [];
+    for (let i = 0; i < fullText.length; i += STEP) {
+      const chunk = fullText.substring(i, i + WINDOW);
+      const lower = chunk.toLowerCase();
+      const score = keywords.reduce((s, kw) => {
+        let count = 0;
+        let idx = 0;
+        while ((idx = lower.indexOf(kw, idx)) !== -1) { count++; idx += kw.length; }
+        return s + count;
+      }, 0);
+      windows.push({ start: i, score });
+    }
+
+    // Sort windows by score descending, take top-scoring until maxChars filled
+    windows.sort((a, b) => b.score - a.score);
+
+    const selectedRanges = [];
+    let totalChars = 0;
+
+    for (const w of windows) {
+      if (totalChars >= maxChars) break;
+      // Merge overlapping ranges
+      const start = w.start;
+      const end = Math.min(w.start + WINDOW, fullText.length);
+      const budget = Math.min(end - start, maxChars - totalChars);
+      selectedRanges.push({ start, end: start + budget });
+      totalChars += budget;
+    }
+
+    // Sort selected ranges by position for coherent reading order
+    selectedRanges.sort((a, b) => a.start - b.start);
+
+    // Merge adjacent/overlapping ranges
+    const merged = [];
+    for (const r of selectedRanges) {
+      if (merged.length > 0 && r.start <= merged[merged.length - 1].end + 200) {
+        merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, r.end);
+      } else {
+        merged.push({ ...r });
+      }
+    }
+
+    const excerpt = merged.map((r, i) => {
+      const text = fullText.substring(r.start, r.end).trim();
+      const prefix = r.start > 0 ? `[...excerpt from p.~${Math.ceil(r.start / 2500)}]\n` : '';
+      const suffix = i < merged.length - 1 ? '\n[...]\n' : '';
+      return prefix + text + suffix;
+    }).join('\n');
+
+    return excerpt + (merged[merged.length - 1]?.end < fullText.length ? '\n... [additional content omitted]' : '');
+  }
+
   // file upload setup
   const uploadDir = process.env.UPLOAD_DIR ?? path.join(process.cwd(), 'uploads');
   try { fs.mkdirSync(uploadDir, { recursive: true }); } catch {}
@@ -729,17 +802,31 @@ export function cmsRouter(prisma) {
 		});
 		return res.json({ volumes: sortVolumes(allVolumes) });
 	});
+	router.get('/volumes/pathways', async (req, res) => {
+		const volumes = await prisma.volume.findMany({
+			where: { isPathway: true },
+			orderBy: [{ name: 'asc' }],
+			include: {
+				courseLinks: {
+					orderBy: [{ order: 'asc' }],
+					include: { course: { select: { id: true, name: true, level: true } } }
+				}
+			}
+		});
+		return res.json({ volumes });
+	});
 	router.post('/volumes', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const schema = z.object({
 			name: z.string().min(2),
 			description: z.string().optional(),
+			isPathway: z.boolean().optional(),
 			courseId: z.string().optional(),
 			courseIds: z.array(z.string()).optional(),
 			order: z.number().int().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const volume = await prisma.volume.create({ data: { name: parse.data.name, description: parse.data.description } });
+		const volume = await prisma.volume.create({ data: { name: parse.data.name, description: parse.data.description, isPathway: parse.data.isPathway ?? false } });
 		// Handle multiple course links
 		const courseIds = parse.data.courseIds || (parse.data.courseId ? [parse.data.courseId] : []);
 		if (courseIds.length > 0) {
@@ -777,18 +864,20 @@ export function cmsRouter(prisma) {
 		const schema = z.object({
 			name: z.string().min(2).optional(),
 			description: z.string().optional(),
+			isPathway: z.boolean().optional(),
 			// course linkage is managed via /courses/:courseId/volumes endpoints
 			order: z.number().int().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
 		const volume = await prisma.volume.update({ 
-		where: { id }, 
-		data: { 
-			...(parse.data.name ? { name: parse.data.name } : {}),
-			...(parse.data.description ? { description: parse.data.description } : {})
-		} 
-	});
+			where: { id }, 
+			data: { 
+				...(parse.data.name ? { name: parse.data.name } : {}),
+				...(typeof parse.data.description !== 'undefined' ? { description: parse.data.description } : {}),
+				...(typeof parse.data.isPathway !== 'undefined' ? { isPathway: parse.data.isPathway } : {})
+			} 
+		});
 		return res.json({ volume });
 	});
 	router.delete('/volumes/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
@@ -2001,6 +2090,14 @@ export function cmsRouter(prisma) {
 			if (vol) volumeName = vol.name;
 		}
 
+		// Load concepts for prompt context (must be before curriculum excerpt for topic-aware extraction)
+		let legacyConcepts = [];
+		if (Array.isArray(conceptIds) && conceptIds.length > 0) {
+			legacyConcepts = await prisma.concept.findMany({ where: { id: { in: conceptIds } }, select: { id: true, name: true, topicId: true } });
+		} else {
+			legacyConcepts = await prisma.concept.findMany({ where: { topicId: { in: topicIdList } }, orderBy: [{ order: 'asc' }], select: { id: true, name: true, topicId: true } });
+		}
+
 		// Load curriculum document for fine-tuning (if uploaded for this course + volume)
 		let curriculumExcerpt = '';
 		if (effectiveVolumeId) {
@@ -2009,27 +2106,21 @@ export function cmsRouter(prisma) {
 				select: { extractedText: true }
 			});
 			if (currDoc?.extractedText) {
-				// Cap at ~30k chars to stay within token limits while providing rich context
-				curriculumExcerpt = currDoc.extractedText.length > 30000
-					? currDoc.extractedText.substring(0, 30000) + '\n... [document truncated]'
-					: currDoc.extractedText;
+				// Use topic-aware windowed extraction so relevant sections are found even in large PDFs
+				curriculumExcerpt = buildCurriculumExcerpt(
+					currDoc.extractedText,
+					selectedTopics.map(t => t.name),
+					legacyConcepts.map(c => c.name)
+				);
 			}
-		}
-
-		// Load concepts for prompt context
-		let legacyConcepts = [];
-		if (Array.isArray(conceptIds) && conceptIds.length > 0) {
-			legacyConcepts = await prisma.concept.findMany({ where: { id: { in: conceptIds } }, select: { id: true, name: true, topicId: true } });
-		} else {
-			legacyConcepts = await prisma.concept.findMany({ where: { topicId: { in: topicIdList } }, orderBy: [{ order: 'asc' }], select: { id: true, name: true, topicId: true } });
 		}
 		const legacyConceptLabel = legacyConcepts.length > 0 ? legacyConcepts.map(c => c.name).join(', ') : 'All concepts under the selected topics';
 		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
 		const typeLabel = questionType === 'MCQ'
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
-				? 'Vignette / item-set: a realistic case study passage followed by multiple choice sub-questions, each with 3 options and exactly one correct answer'
-				: 'Constructed response (written answer requiring calculations or explanations)';
+			? 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist, multiple financial scenarios, AT LEAST ONE HTML table as a CFA Exhibit, and 4-5 MCQ sub-questions that reference specific exhibits'
+			: 'Constructed response (written answer requiring calculations or explanations)';
 		const topicLabel = selectedTopics.map(t => t.name).join(', ');
 		const difficultyLabel = diffList.join(', ');
 		const curriculumSection = curriculumExcerpt
@@ -2037,10 +2128,22 @@ export function cmsRouter(prisma) {
 			: '';
 		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions in JSON format.
 
-Draw inspiration from past CFA exam questions and real-world financial scenarios. Questions must be precise, unambiguous, and test genuine understanding.
+Draw directly from past CFA exam question styles and real-world financial scenarios. Questions must be precise, unambiguous, and test genuine understanding.
 ALL metadata fields below are REQUIRED - always populate every single one to help students during revision.
 For VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles: a single case study/vignette may span MULTIPLE learning modules, topics, or concepts within the same volume. Sub-questions should draw from different topics/concepts where appropriate to create a rich, integrative scenario.
 ${curriculumExcerpt ? 'IMPORTANT: A curriculum reference document has been provided below. You MUST base your questions on the content, terminology, formulas, and examples from this document. Generate questions that test understanding of the material in the document.' : ''}
+
+VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles):
+- The vignetteText MUST be 400-600 words — long, rich, CFA-exam-quality narrative
+- Introduce a named protagonist (e.g. "Rebecca Jones is a financial advisor at Apex Capital Management. She is evaluating...")
+- Present multiple related financial scenarios, each with specific data, dates, company names
+- Include AT LEAST ONE HTML table as a CFA-style Exhibit using this exact structure:
+  <p><strong>Exhibit 1</strong></p>
+  <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%"><thead><tr><th>Column</th><th>Column</th></tr></thead><tbody><tr><td>Value</td><td>Value</td></tr></tbody></table>
+- The table must contain realistic financial data (portfolio weights, returns, yield components, financial ratios, performance attribution, etc.)
+- For complex scenarios include 2 exhibits (Exhibit 1, Exhibit 2)
+- Open the vignetteText with: "<p><strong>TOPIC: [TOPIC NAME]</strong></p><p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
+- Sub-questions must reference specific exhibits (e.g. "Based on Exhibit 1..." or "Regarding Jones's evaluation of...")
 
 Context:
 - Course: ${course.name}
@@ -2294,21 +2397,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			}
 		}
 
-		// Load curriculum document for fine-tuning (if uploaded for this course + volume)
-		let previewCurriculumExcerpt = '';
-		if (effectiveVolumeId) {
-			const currDoc = await prisma.curriculumDocument.findUnique({
-				where: { courseId_volumeId: { courseId, volumeId: effectiveVolumeId } },
-				select: { extractedText: true }
-			});
-			if (currDoc?.extractedText) {
-				previewCurriculumExcerpt = currDoc.extractedText.length > 30000
-					? currDoc.extractedText.substring(0, 30000) + '\n... [document truncated]'
-					: currDoc.extractedText;
-			}
-		}
-
-		// Load concepts: use provided conceptIds or auto-resolve from selected topics
+		// Load concepts: must be before curriculum excerpt for topic-aware extraction
 		let selectedConcepts = [];
 		if (Array.isArray(conceptIds) && conceptIds.length > 0) {
 			selectedConcepts = await prisma.concept.findMany({
@@ -2324,14 +2413,31 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			});
 		}
 
+		// Load curriculum document for fine-tuning (if uploaded for this course + volume)
+		let previewCurriculumExcerpt = '';
+		if (effectiveVolumeId) {
+			const currDoc = await prisma.curriculumDocument.findUnique({
+				where: { courseId_volumeId: { courseId, volumeId: effectiveVolumeId } },
+				select: { extractedText: true }
+			});
+			if (currDoc?.extractedText) {
+				// Use topic-aware windowed extraction so relevant sections are found even in large PDFs
+				previewCurriculumExcerpt = buildCurriculumExcerpt(
+					currDoc.extractedText,
+					selectedTopics.map(t => t.name),
+					selectedConcepts.map(c => c.name)
+				);
+			}
+		}
+
 		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
 		const isConstructedBundle = questionType === 'CONSTRUCTED_RESPONSE' && constructedMode === 'bundle';
 		const typeLabel = questionType === 'MCQ'
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
-				? 'Vignette / item-set: a realistic case study passage followed by multiple choice sub-questions, each with 3 options (A, B, C) and exactly one correct answer'
+				? 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist (financial analyst/advisor), multiple financial scenarios, and at least one HTML data table formatted as a CFA Exhibit. Sub-questions reference specific exhibits and test different aspects of the scenario. Each sub-question has exactly 3 MCQ options.'
 				: isConstructedBundle
-					? 'Constructed response case study: a detailed realistic scenario/case study passage followed by multiple constructed-response sub-questions requiring calculations, analysis, or written explanations'
+					? 'Constructed response case study: a detailed realistic scenario/case study passage (400-600 words) with a named protagonist and at least one HTML data table as an Exhibit, followed by multiple constructed-response sub-questions requiring calculations, analysis, or written explanations'
 					: 'Constructed response (written answer requiring calculations or explanations)';
 		const topicLabel = selectedTopics.map(t => t.name).join(', ');
 		const conceptLabel = selectedConcepts.length > 0 ? selectedConcepts.map(c => c.name).join(', ') : 'All concepts under the selected topics';
@@ -2363,20 +2469,56 @@ DO NOT wrap questions inside "vignetteText" or "questions" sub-arrays. Each item
 ${metaFieldsBlock}`;
 		} else if (questionType === 'VIGNETTE_MCQ') {
 			formatBlock = `Return a JSON object with this EXACT shape:
-{ "items": [ ${count > 1 ? `${count} objects, each containing` : '1 object containing'}:
-  { "vignetteText": string (a detailed, realistic case study passage of 150-300 words),
-    "questions": array of 4-5 MCQ sub-questions }
-] }
-Each sub-question must include: "stem", "options" (exactly 3 objects { "text": string, "isCorrect": boolean } with one correct), plus ALL metadata fields below.
+{ "items": [ ${count > 1 ? `${count} separate vignette case study objects` : '1 vignette case study object'} ] }
+
+Each object in "items" MUST follow this structure:
+{
+  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (400-600 words). Requirements:
+    • Open with: "<p><strong>TOPIC: [RELEVANT TOPIC NAME]</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
+    • Introduce a named protagonist: e.g. "Rebecca Jones is a senior analyst at Apex Capital Management. She is evaluating..."
+    • Present multiple related financial scenarios, each with specific data, dates, company names, and context
+    • Include AT LEAST ONE HTML table formatted as a CFA Exhibit with this structure:
+      <p><strong>Exhibit 1</strong></p>
+      <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%">
+        <thead><tr><th>...</th><th>...</th></tr></thead>
+        <tbody><tr><td>...</td><td>...</td></tr></tbody>
+      </table>
+    • The table must contain realistic financial data (e.g. portfolio weights, returns, yield components, financial ratios, performance attribution)
+    • For complex scenarios include 2 exhibits (Exhibit 1, Exhibit 2)
+    • The passage should weave naturally between narrative context and numerical exhibits
+  "questions": array of 4-5 MCQ sub-questions. Each sub-question MUST:
+    • Reference specific information or exhibit data from the vignetteText (e.g. "Based on Exhibit 1..." or "Regarding Jones's evaluation of XYZ...")
+    • Have "stem": string, "options": exactly 3 objects { "text": string, "isCorrect": boolean } with exactly ONE correct
+    • Cover a different aspect of the scenario/topic than the other sub-questions
+    • Plus ALL metadata fields listed below
+}
 
 ${metaFieldsBlock}`;
 		} else if (isConstructedBundle) {
 			formatBlock = `Return a JSON object with this EXACT shape:
-{ "items": [ ${count > 1 ? `${count} objects, each containing` : '1 object containing'}:
-  { "vignetteText": string (a detailed, realistic case study/scenario passage of 200-400 words with specific company data, financial figures, dates, and context),
-    "questions": array of 4-5 constructed-response sub-question objects }
-] }
-Each sub-question must include: "stem" (what the candidate must calculate/explain, with marks indicated), "marks" (integer), "questionGuidelines" (string, specific marking criteria and what the examiner expects), "output" (string, the expected model answer/output that would receive full marks), plus ALL metadata fields below. No "options" field.
+{ "items": [ ${count > 1 ? `${count} separate case study objects` : '1 case study object'} ] }
+
+Each object in "items" MUST follow this structure:
+{
+  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (400-600 words). Requirements:
+    • Open with: "<p><strong>TOPIC: [RELEVANT TOPIC NAME]</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
+    • Introduce a named protagonist: e.g. "Michael Torres, CFA, is a portfolio strategist at Meridian Asset Management..."
+    • Present multiple related financial scenarios with specific data, dates, company names, and context
+    • Include AT LEAST ONE HTML table formatted as a CFA Exhibit:
+      <p><strong>Exhibit 1</strong></p>
+      <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%">
+        <thead><tr><th>...</th><th>...</th></tr></thead>
+        <tbody><tr><td>...</td><td>...</td></tr></tbody>
+      </table>
+    • The table must contain realistic financial data appropriate to the topic
+  "questions": array of 4-5 constructed-response sub-questions. Each MUST:
+    • Reference specific data or exhibits from the vignetteText
+    • Have "stem" (clearly state what to calculate/explain and how many marks)
+    • Have "marks" (integer)
+    • Have "questionGuidelines" (specific marking criteria)
+    • Have "output" (full model answer that would receive maximum marks)
+    • Plus ALL metadata fields below. No "options" field.
+}
 
 ${metaFieldsBlock}`;
 		} else {
@@ -2397,19 +2539,24 @@ ${metaFieldsBlock}`;
 		const previewCurriculumSection = previewCurriculumExcerpt
 			? `\n\nCURRICULUM REFERENCE MATERIAL (use this as the primary source for question content, terminology, formulas, examples, and scenarios — generate questions that closely reflect this material):\n---\n${previewCurriculumExcerpt}\n---\n`
 			: '';
-		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions that could appear on actual CFA or finance certification exams.
+		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions that could appear on actual CFA Level I, II, or III examinations.
 
 IMPORTANT GUIDELINES:
-- Draw inspiration from past CFA exam questions and real-world financial scenarios
-- Questions must be precise, unambiguous, and test genuine understanding (not just memorization)
-- Include realistic numerical examples, company names, and market scenarios where appropriate
-- For calculations, ALWAYS provide the key formulas and a detailed worked solution - this is critical for student revision
+- Draw directly from past CFA exam question styles and real-world financial scenarios
+- Questions must be precise, unambiguous, and test genuine understanding — not memorization
+- Include realistic numerical examples, company names (e.g., Apex Capital, Meridian Asset Management), market scenarios, and specific dates
+- For calculations, ALWAYS provide the key formulas and a detailed step-by-step worked solution — this is critical for student revision
 - Each question should test a specific learning outcome related to the topic
-- Vary the difficulty across the specified difficulty levels: ${difficultyLabel}
-- EASY: straightforward recall/application; MEDIUM: multi-step analysis; HARD: complex scenario requiring synthesis of multiple concepts
-- ALL metadata fields below are REQUIRED (not optional) - always populate every single one to help students during revision
-- For VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles: a single case study/vignette may span MULTIPLE learning modules, topics, or concepts within the same volume. Sub-questions should draw from different topics/concepts where appropriate to create a rich, integrative scenario.
-${previewCurriculumExcerpt ? '- IMPORTANT: A curriculum reference document has been provided below. You MUST base your questions on the content, terminology, formulas, and examples from this document. Generate questions that test understanding of the material in the document.' : ''}
+- Vary the difficulty: EASY = straightforward recall/application; MEDIUM = multi-step analysis; HARD = complex scenario requiring synthesis of multiple concepts
+- ALL metadata fields below are REQUIRED — populate every single one to help students during revision
+- For VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles:
+  * The vignette MUST be 400–600 words — rich, narrative, CFA-exam-quality
+  * Use a named protagonist (e.g., "Sarah Chen, CFA, is a portfolio manager at Meridian Asset Management...")
+  * Include multiple related financial scenarios and data points within the passage
+  * Include AT LEAST ONE HTML data table formatted as a labelled CFA Exhibit (e.g., Exhibit 1, Exhibit 2), using full HTML <table> markup with <thead> and <tbody> — the table must contain realistic financial data (returns, weights, portfolio allocations, yield decompositions, financial ratios, etc.)
+  * Sub-questions should reference specific exhibits by name and test different aspects of the scenario, integrating multiple topics/concepts
+  * Open with a topic header line in the vignetteText such as: "<p><strong>TOPIC: [TOPIC NAME]</strong></p>"
+${previewCurriculumExcerpt ? '- IMPORTANT: A curriculum reference document has been provided below. You MUST base your questions on the content, terminology, formulas, and examples from this document.' : ''}
 
 Context:
 - Course: ${course.name}

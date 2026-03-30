@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Card, Button, Typography, Select, message, Form, Input, Space } from 'antd';
+import { BranchesOutlined } from '@ant-design/icons';
 import { countriesOptions } from '../constants/countries';
 
 export function Account() {
@@ -10,12 +11,16 @@ export function Account() {
 	const [plan, setPlan] = useState('standard');
 	const [saving, setSaving] = useState(false);
 	const [form] = Form.useForm();
+	const [pathwayVolumes, setPathwayVolumes] = useState([]);
+	const [watchedLevel, setWatchedLevel] = useState('');
 
 	useEffect(() => {
 		(async () => {
 			try {
 				const me = await api.get('/api/users/me');
-				setUser(me.data.user);
+				const u = me.data.user;
+				setUser(u);
+				setWatchedLevel(u?.level ?? '');
 				const s = await api.get('/api/payments/subscriptions/me');
 				setSub(s.data.subscription);
 			} catch {
@@ -23,6 +28,16 @@ export function Account() {
 			}
 		})();
 	}, []);
+
+	useEffect(() => {
+		if (watchedLevel === 'LEVEL3') {
+			api.get('/api/cms/volumes/pathways').then(res => {
+				setPathwayVolumes(res.data.volumes || []);
+			}).catch(() => setPathwayVolumes([]));
+		} else {
+			setPathwayVolumes([]);
+		}
+	}, [watchedLevel]);
 
 	const subscribe = async () => {
 		try {
@@ -48,13 +63,18 @@ export function Account() {
 							lastName: user.lastName,
 							phone: user.phone,
 							country: user.country,
-							level: user.level
+							level: user.level,
+							pathwayVolumeId: user.pathwayVolumeId ?? undefined
 						}}
 						onFinish={async (vals) => {
 							setSaving(true);
 							try {
-								const { data } = await api.put('/api/users/me', vals);
+								const { data } = await api.put('/api/users/me', {
+									...vals,
+									pathwayVolumeId: vals.level === 'LEVEL3' ? (vals.pathwayVolumeId ?? null) : null
+								});
 								setUser(data.user);
+								setWatchedLevel(data.user?.level ?? '');
 								message.success('Profile updated');
 							} catch {
 								message.error('Failed to update profile');
@@ -83,6 +103,7 @@ export function Account() {
 							</Form.Item>
 							<Form.Item label="Level" name="level" style={{ minWidth: 200 }}>
 								<Select
+									onChange={(v) => { setWatchedLevel(v ?? ''); form.setFieldValue('pathwayVolumeId', undefined); }}
 									options={[
 										{ label: 'None', value: 'NONE' },
 										{ label: 'Level I', value: 'LEVEL1' },
@@ -91,6 +112,25 @@ export function Account() {
 									]}
 								/>
 							</Form.Item>
+							{watchedLevel === 'LEVEL3' && (
+								<Form.Item
+									name="pathwayVolumeId"
+									label={<span><BranchesOutlined style={{ color: '#722ed1', marginRight: 6 }} />Level III Pathway</span>}
+									style={{ minWidth: 280 }}
+								>
+									<Select
+										allowClear
+										placeholder="Select pathway (optional)"
+										showSearch
+										optionFilterProp="label"
+										options={pathwayVolumes.map(v => ({
+											value: v.id,
+											label: v.description ? `${v.name} – ${v.description}` : v.name
+										}))}
+										notFoundContent="No pathways configured"
+									/>
+								</Form.Item>
+							)}
 						</Space>
 						<Button type="primary" htmlType="submit" loading={saving}>
 							Save changes

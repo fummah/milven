@@ -20,7 +20,8 @@ export function authRouter(prisma) {
 		lastName: z.string().max(200).optional(),
 		phone: z.string().max(50).optional(),
 		country: z.string().max(120).optional(),
-		level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']).optional()
+		level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']).optional(),
+		pathwayVolumeId: z.string().optional()
 	});
 
 	const loginSchema = z.object({
@@ -54,7 +55,7 @@ export function authRouter(prisma) {
 		if (!parse.success) {
 			return res.status(400).json({ error: parse.error.flatten() });
 		}
-		const { email, password, firstName, lastName, phone, country, level } = parse.data;
+		const { email, password, firstName, lastName, phone, country, level, pathwayVolumeId } = parse.data;
 		const existing = await prisma.user.findUnique({ where: { email } });
 		if (existing) {
 			return res.status(409).json({ error: 'Email already in use' });
@@ -69,7 +70,8 @@ export function authRouter(prisma) {
 				firstName: firstName || null,
 				lastName: lastName || null,
 				phone: phone || null,
-				country: country || null
+				country: country || null,
+				...(level === 'LEVEL3' && pathwayVolumeId ? { pathwayVolumeId } : {})
 			},
 			select: { id: true, email: true, role: true, level: true, createdAt: true }
 		});

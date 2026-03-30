@@ -37,6 +37,7 @@ model User {
   topicProgresses    TopicProgress[]
   courseProgresses   CourseProgress[]
   mockExams         MockExam[]
+  pathwayVolumeId   String?
 }
 
 enum UserRole {
@@ -67,6 +68,7 @@ model Volume {
   id          String   @id @default(cuid())
   name        String
   description String?
+  isPathway   Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   courseLinks CourseVolume[]

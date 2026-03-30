@@ -81,7 +81,7 @@ export function usersRouter(prisma) {
 			const payload = jwt.verify(token, process.env.JWT_SECRET ?? 'dev_secret');
 			const user = await prisma.user.findUnique({
 				where: { id: payload.sub },
-				select: { id: true, email: true, role: true, level: true, emailVerifiedAt: true, firstName: true, lastName: true, phone: true, country: true }
+				select: { id: true, email: true, role: true, level: true, emailVerifiedAt: true, firstName: true, lastName: true, phone: true, country: true, pathwayVolumeId: true }
 			});
 			return res.json({ user });
 		} catch {
@@ -96,7 +96,8 @@ export function usersRouter(prisma) {
 			lastName: z.string().max(200).optional(),
 			phone: z.string().max(50).optional(),
 			country: z.string().max(120).optional(),
-			level: z.enum(['NONE','LEVEL1','LEVEL2','LEVEL3']).optional()
+			level: z.enum(['NONE','LEVEL1','LEVEL2','LEVEL3']).optional(),
+			pathwayVolumeId: z.string().nullable().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
@@ -105,7 +106,7 @@ export function usersRouter(prisma) {
 			const updated = await prisma.user.update({
 				where: { id: req.user.id },
 				data,
-				select: { id: true, email: true, role: true, level: true, firstName: true, lastName: true, phone: true, country: true }
+				select: { id: true, email: true, role: true, level: true, firstName: true, lastName: true, phone: true, country: true, pathwayVolumeId: true }
 			});
 			return res.json({ user: updated });
 		} catch (e) {

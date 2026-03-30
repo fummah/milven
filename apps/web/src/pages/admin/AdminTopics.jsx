@@ -130,9 +130,12 @@ export function AdminTopics() {
   const [conceptsData, setConceptsData] = useState([]);
   const [conceptsLoading, setConceptsLoading] = useState(false);
   const [filterConceptCourseId, setFilterConceptCourseId] = useState('');
+  const [filterConceptVolumeId, setFilterConceptVolumeId] = useState('');
   const [filterConceptModuleId, setFilterConceptModuleId] = useState('');
   const [filterConceptTopicId, setFilterConceptTopicId] = useState('');
   const [filterConceptQ, setFilterConceptQ] = useState('');
+  // Topics tab volume filter
+  const [filterTopicVolumeId, setFilterTopicVolumeId] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -187,6 +190,41 @@ export function AdminTopics() {
       setConceptsLoading(false);
     }
   };
+
+  // Derived: topics filtered by volume (client-side, volumes already loaded)
+  const filteredTopics = useMemo(() => {
+    if (!filterTopicVolumeId) return data;
+    return data.filter(t => {
+      const mod = modules.find(m => m.id === t.moduleId);
+      return mod?.volumeId === filterTopicVolumeId;
+    });
+  }, [data, modules, filterTopicVolumeId]);
+
+  // Derived: concepts filtered by volume (client-side, volume info included in API response)
+  const filteredConcepts = useMemo(() => {
+    if (!filterConceptVolumeId) return conceptsData;
+    return conceptsData.filter(c => c.topic?.module?.volumeId === filterConceptVolumeId);
+  }, [conceptsData, filterConceptVolumeId]);
+
+  // Volume options for Topics tab filtered by selected course
+  const topicsTabVolumeOptions = useMemo(() => {
+    let vols = volumes || [];
+    if (filterCourseId) {
+      const ids = new Set(modules.filter(m => m.courseId === filterCourseId).map(m => m.volumeId).filter(Boolean));
+      vols = vols.filter(v => ids.has(v.id));
+    }
+    return vols.map(v => ({ value: v.id, label: v.description ? `${v.name} - ${v.description}` : v.name }));
+  }, [volumes, modules, filterCourseId]);
+
+  // Volume options for Concepts tab filtered by selected course
+  const conceptsTabVolumeOptions = useMemo(() => {
+    let vols = volumes || [];
+    if (filterConceptCourseId) {
+      const ids = new Set(modules.filter(m => m.courseId === filterConceptCourseId).map(m => m.volumeId).filter(Boolean));
+      vols = vols.filter(v => ids.has(v.id));
+    }
+    return vols.map(v => ({ value: v.id, label: v.description ? `${v.name} - ${v.description}` : v.name }));
+  }, [volumes, modules, filterConceptCourseId]);
 
   useEffect(() => {
     load();
@@ -856,7 +894,7 @@ export function AdminTopics() {
                 <span>Course:</span>
                 <Select
                   value={filterCourseId || undefined}
-                  onChange={(v) => setFilterCourseId(v ?? '')}
+                  onChange={(v) => { setFilterCourseId(v ?? ''); setFilterTopicVolumeId(''); setFilterModuleId(''); }}
                   options={[
                     { label: 'All courses', value: '' },
                     ...(courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))
@@ -867,13 +905,24 @@ export function AdminTopics() {
                   showSearch
                   optionFilterProp="label"
                 />
+                <span>Volume:</span>
+                <Select
+                  value={filterTopicVolumeId || undefined}
+                  onChange={(v) => { setFilterTopicVolumeId(v ?? ''); setFilterModuleId(''); }}
+                  options={[{ label: 'All volumes', value: '' }, ...topicsTabVolumeOptions]}
+                  style={{ minWidth: 200 }}
+                  allowClear
+                  placeholder="All volumes"
+                  showSearch
+                  optionFilterProp="label"
+                />
                 <span>Learning Module:</span>
                 <Select
                   value={filterModuleId || undefined}
                   onChange={(v) => setFilterModuleId(v ?? '')}
                   options={(() => {
-                    // Filter modules by course
                     const filteredMods = modules.filter(m => {
+                      if (filterTopicVolumeId && m.volumeId !== filterTopicVolumeId) return false;
                       if (!filterCourseId) return true;
                       if (m.courseId) return m.courseId === filterCourseId;
                       const lvl = courses.find(c => c.id === filterCourseId)?.level;
@@ -939,14 +988,14 @@ export function AdminTopics() {
                   onPressEnter={() => load()}
                 />
                 <Button onClick={() => load()}>Apply</Button>
-                <Button onClick={() => { setFilterCourseId(''); setFilterModuleId(''); setFilterQ(''); }}>Reset</Button>
+                <Button onClick={() => { setFilterCourseId(''); setFilterTopicVolumeId(''); setFilterModuleId(''); setFilterQ(''); }}>Reset</Button>
               </Space>
               <Table
                 rowKey="id"
                 loading={loading}
-                dataSource={data}
+                dataSource={filteredTopics}
                 columns={columns}
-                pagination={{ total, pageSize: 20 }}
+                pagination={{ pageSize: 20 }}
                 expandable={{
                   defaultExpandAllRows: false,
                   expandedRowRender: (record) => {
@@ -998,7 +1047,7 @@ export function AdminTopics() {
                 <span>Course:</span>
                 <Select
                   value={filterConceptCourseId || undefined}
-                  onChange={(v) => { setFilterConceptCourseId(v ?? ''); setFilterConceptModuleId(''); setFilterConceptTopicId(''); }}
+                  onChange={(v) => { setFilterConceptCourseId(v ?? ''); setFilterConceptVolumeId(''); setFilterConceptModuleId(''); setFilterConceptTopicId(''); }}
                   placeholder="All courses"
                   allowClear
                   style={{ minWidth: 220 }}
@@ -1006,6 +1055,17 @@ export function AdminTopics() {
                     { label: 'All courses', value: '' },
                     ...(courses || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ value: c.id, label: `${c.name} (${c.level})` }))
                   ]}
+                  showSearch
+                  optionFilterProp="label"
+                />
+                <span>Volume:</span>
+                <Select
+                  value={filterConceptVolumeId || undefined}
+                  onChange={(v) => { setFilterConceptVolumeId(v ?? ''); setFilterConceptModuleId(''); setFilterConceptTopicId(''); }}
+                  options={[{ label: 'All volumes', value: '' }, ...conceptsTabVolumeOptions]}
+                  style={{ minWidth: 200 }}
+                  allowClear
+                  placeholder="All volumes"
                   showSearch
                   optionFilterProp="label"
                 />
@@ -1018,6 +1078,7 @@ export function AdminTopics() {
                   style={{ minWidth: 200 }}
                   options={(() => {
                     let filteredMods = modules || [];
+                    if (filterConceptVolumeId) filteredMods = filteredMods.filter(m => m.volumeId === filterConceptVolumeId);
                     if (filterConceptCourseId) filteredMods = filteredMods.filter(m => m.courseId === filterConceptCourseId);
                     return [
                       { label: 'All modules', value: '' },
@@ -1056,12 +1117,12 @@ export function AdminTopics() {
                   onPressEnter={() => loadConcepts()}
                 />
                 <Button onClick={() => loadConcepts()}>Apply</Button>
-                <Button onClick={() => { setFilterConceptCourseId(''); setFilterConceptModuleId(''); setFilterConceptTopicId(''); setFilterConceptQ(''); }}>Reset</Button>
+                <Button onClick={() => { setFilterConceptCourseId(''); setFilterConceptVolumeId(''); setFilterConceptModuleId(''); setFilterConceptTopicId(''); setFilterConceptQ(''); }}>Reset</Button>
               </Space>
               <Table
                 rowKey="id"
                 loading={conceptsLoading}
-                dataSource={conceptsData}
+                dataSource={filteredConcepts}
                 pagination={{ pageSize: 20 }}
                 columns={[
                   { title: 'Order', dataIndex: 'order', width: 70, render: (v) => v ?? '—' },

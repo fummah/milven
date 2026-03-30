@@ -1,8 +1,8 @@
-import { Card, Form, Input, Button, Select, Row, Col, Typography, message } from 'antd';
-import { UserOutlined, MailOutlined, LockOutlined, PhoneOutlined, GlobalOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, Select, Row, Col, Typography, message, Tag } from 'antd';
+import { UserOutlined, MailOutlined, LockOutlined, PhoneOutlined, GlobalOutlined, BranchesOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { countriesOptions } from '../constants/countries';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
@@ -11,6 +11,25 @@ export function RegisterPage() {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
+  const [selectedLevel, setSelectedLevel] = useState('');
+  const [pathwayVolumes, setPathwayVolumes] = useState([]);
+  const [pathwayLoading, setPathwayLoading] = useState(false);
+
+  useEffect(() => {
+    if (selectedLevel === 'LEVEL3') {
+      setPathwayLoading(true);
+      axios.get(`${API_URL}/api/cms/volumes/pathways`, {
+        headers: { Authorization: '' }
+      }).then(res => {
+        setPathwayVolumes(res.data.volumes || []);
+      }).catch(() => {
+        setPathwayVolumes([]);
+      }).finally(() => setPathwayLoading(false));
+    } else {
+      setPathwayVolumes([]);
+      form.setFieldValue('pathwayVolumeId', undefined);
+    }
+  }, [selectedLevel, form]);
 
   const onFinish = async (values) => {
     setSubmitting(true);
@@ -22,7 +41,8 @@ export function RegisterPage() {
         lastName: values.lastName?.trim() || undefined,
         phone: values.phone?.trim() || undefined,
         country: values.country || undefined,
-        level: values.level
+        level: values.level,
+        ...(values.level === 'LEVEL3' && values.pathwayVolumeId ? { pathwayVolumeId: values.pathwayVolumeId } : {})
       });
       message.success(res.data?.message ?? 'Registration successful. Please check your email to verify your account.');
       navigate('/login');
@@ -95,6 +115,7 @@ export function RegisterPage() {
                 <Select
                   size="large"
                   placeholder="Select level"
+                  onChange={(v) => setSelectedLevel(v ?? '')}
                   options={[
                     { label: 'Level I', value: 'LEVEL1' },
                     { label: 'Level II', value: 'LEVEL2' },
@@ -102,6 +123,26 @@ export function RegisterPage() {
                   ]}
                 />
               </Form.Item>
+              {selectedLevel === 'LEVEL3' && (
+                <Form.Item
+                  name="pathwayVolumeId"
+                  label={
+                    <span><BranchesOutlined style={{ color: '#722ed1', marginRight: 6 }} />Level III Pathway</span>
+                  }
+                >
+                  <Select
+                    size="large"
+                    placeholder="Select your pathway (optional)"
+                    loading={pathwayLoading}
+                    allowClear
+                    options={pathwayVolumes.map(v => ({
+                      value: v.id,
+                      label: v.description ? `${v.name} – ${v.description}` : v.name
+                    }))}
+                    notFoundContent={pathwayLoading ? 'Loading...' : 'No pathways available'}
+                  />
+                </Form.Item>
+              )}
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item name="country" label="Country">

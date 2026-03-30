@@ -635,7 +635,7 @@ export default function App() {
 		}
 		return children;
 	}
-	const isPublicPage = !location.pathname.startsWith('/admin') && !location.pathname.startsWith('/student');
+	const isPublicPage = !location.pathname.startsWith('/admin') && !location.pathname.startsWith('/student') && location.pathname !== '/account';
 
 	return (
 		<Layout style={{ minHeight: '100vh' }} className="bg-gray-50">
@@ -772,7 +772,9 @@ export default function App() {
 					<Route path="/careers" element={<Careers />} />
 					<Route path="/about-cfa" element={<AboutCfa />} />
 					<Route path="/faq" element={<Faq />} />
-					<Route path="/account" element={<RequireAuth><Navigate to="/student/account" replace /></RequireAuth>} />
+					<Route path="/account" element={<RequireAuth><StudentLayout /></RequireAuth>}>
+						<Route index element={<Account />} />
+					</Route>
 					<Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
 						<Route index element={<AdminDashboard />} />
 						<Route path="users" element={<AdminUsers />} />

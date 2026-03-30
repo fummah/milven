@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Drawer, Form, Input, Select, Space, Table, Tag, Typography, message, Modal, Popconfirm } from 'antd';
-import { PlusOutlined, LinkOutlined, ExclamationCircleFilled } from '@ant-design/icons';
+import { Button, Card, Drawer, Form, Input, Select, Space, Switch, Table, Tag, Tooltip, Typography, message, Modal, Popconfirm } from 'antd';
+import { PlusOutlined, ExclamationCircleFilled, BranchesOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 // Natural sort comparison - handles "Volume 1", "Volume 10" correctly
@@ -66,13 +66,13 @@ export function AdminVolumes() {
   const openEdit = async (row) => {
     setEditing(row);
     form.resetFields();
-    // Get current course link for this volume
     const links = row.courseLinks || [];
     const courseId = links.length > 0 ? links[0].courseId : undefined;
     form.setFieldsValue({ 
       name: row.name, 
       description: row.description || '',
-      courseId
+      courseId,
+      isPathway: row.isPathway ?? false
     });
     setOpen(true);
   };
@@ -83,10 +83,10 @@ export function AdminVolumes() {
       const courseId = values.courseId;
       
       if (editing?.id) {
-        // Update volume
         await api.put(`/api/cms/volumes/${editing.id}`, { 
           name: values.name, 
-          description: values.description 
+          description: values.description,
+          isPathway: values.isPathway ?? false
         });
         
         // Update course link: remove old, add new
@@ -106,10 +106,10 @@ export function AdminVolumes() {
         
         message.success('Volume updated');
       } else {
-        // Create volume with single course link
         const { data } = await api.post('/api/cms/volumes', { 
           name: values.name, 
           description: values.description,
+          isPathway: values.isPathway ?? false,
           courseIds: courseId ? [courseId] : []
         });
         message.success('Volume created');
@@ -166,7 +166,10 @@ export function AdminVolumes() {
   const columns = [
     { title: 'Name', dataIndex: 'name', render: (text, record) => (
       <Space direction="vertical" size={0}>
-        <span>{text}</span>
+        <Space size={6}>
+          <span>{text}</span>
+          {record.isPathway && <Tooltip title="Level III Pathway"><Tag icon={<BranchesOutlined />} color="purple" style={{ fontSize: 11 }}>Pathway</Tag></Tooltip>}
+        </Space>
         {record.description && (
           <Typography.Text type="secondary" style={{ fontSize: '12px' }}>
             {record.description.length > 50 ? `${record.description.substring(0, 50)}...` : record.description}
@@ -240,9 +243,7 @@ export function AdminVolumes() {
             <Input.TextArea rows={3} placeholder="Enter volume name and description..." />
           </Form.Item>
           <Form.Item name="description" label="Volume Number">
-            <Input 
-              placeholder="e.g. Volume 1"
-            />
+            <Input placeholder="e.g. Volume 1" />
           </Form.Item>
           <Form.Item name="courseId" label="Course" rules={[{ required: true, message: 'Please select a course' }]}>
             <Select
@@ -252,6 +253,12 @@ export function AdminVolumes() {
               optionFilterProp="label"
             />
           </Form.Item>
+          <Form.Item name="isPathway" label="Is Pathway (Level III only)" valuePropName="checked">
+            <Switch checkedChildren="Pathway" unCheckedChildren="Standard" />
+          </Form.Item>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            Mark as Pathway if this volume represents a Level III specialisation pathway that students select during registration.
+          </Typography.Text>
         </Form>
       </Drawer>
     </Space>
