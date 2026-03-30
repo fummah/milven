@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Upload, Modal, Drawer, Tag, Tooltip, Radio, Divider, Spin, Collapse, Tabs, InputNumber, Row, Col, Checkbox } from 'antd';
 import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PictureOutlined, DeleteFilled, FilterOutlined, QuestionCircleOutlined, BookOutlined, SearchOutlined, CalendarOutlined, CheckCircleOutlined, DownOutlined, UpOutlined, RobotOutlined, ThunderboltOutlined, TagsOutlined } from '@ant-design/icons';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { api } from '../../lib/api';
+import { api, API_URL } from '../../lib/api';
 import { RichTextEditor } from '../../components/RichTextEditor.jsx';
 
 // Ensure HTML from API renders as HTML (unescape entities if stored escaped)
@@ -623,14 +623,51 @@ export function AdminQuestions() {
 			};
 
 			// Prefer preview flow (admin review before save)
+			// Uses fetch+SSE so heartbeats keep the connection alive on DigitalOcean
 			try {
-				const { data } = await api.post('/api/cms/questions/generate-ai/preview', payload);
+				const response = await fetch(`${API_URL}/api/cms/questions/generate-ai/preview`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+					},
+					body: JSON.stringify(payload),
+				});
+				if (!response.ok) {
+					const errBody = await response.json().catch(() => ({}));
+					throw new Error(errBody?.error || `Server error ${response.status}`);
+				}
+				// Read the SSE stream: ignore :heartbeat comments, handle result/error events
+				const reader = response.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = '';
+				let data = null;
+				let sseError = null;
+				outer: while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					buffer += decoder.decode(value, { stream: true });
+					const parts = buffer.split('\n\n');
+					buffer = parts.pop() ?? '';
+					for (const part of parts) {
+						if (part.startsWith('event: result\ndata: ')) {
+							data = JSON.parse(part.slice('event: result\ndata: '.length));
+							break outer;
+						} else if (part.startsWith('event: error\ndata: ')) {
+							const errObj = JSON.parse(part.slice('event: error\ndata: '.length));
+							sseError = errObj?.error || 'AI generation failed';
+							break outer;
+						}
+						// :heartbeat lines are ignored
+					}
+				}
+				if (sseError) throw new Error(sseError);
+				if (!data) throw new Error('No response received from server');
 				const gen = data?.generated || null;
 				setAiPreview({
 					questionType: values.questionType,
 					generated: gen
 				});
-				// Select all items by default
 				// bundles = array of case studies (for VIGNETTE_MCQ / constructed bundle)
 				// items = flat array of questions (for MCQ / single constructed)
 				const itemCount = Array.isArray(gen?.bundles)
@@ -639,8 +676,11 @@ export function AdminQuestions() {
 				setAiSelectedIndices(Array.from({ length: itemCount }, (_, i) => i));
 				setAiPreviewOpen(true);
 				return;
-			} catch {
-				// Fallback to legacy endpoint that writes directly to DB
+			} catch (previewErr) {
+				// If the SSE preview fails, fall through to legacy direct-save endpoint
+				if (previewErr?.message && previewErr.message !== 'No response received from server') {
+					throw previewErr;
+				}
 			}
 
 			const { data } = await api.post('/api/cms/questions/generate-ai', payload);

@@ -238,4 +238,9 @@ ensureDefaultAdmin().finally(() => {
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`API listening on http://0.0.0.0:${PORT}`);
   });
+  // Disable server-level timeouts so long-running AI generation requests
+  // (which can take 90-180s) are not cut off by Node.js itself.
+  server.timeout = 0;
+  server.headersTimeout = 0;
+  server.keepAliveTimeout = 620 * 1000;
 });

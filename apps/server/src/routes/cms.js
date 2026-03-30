@@ -2434,6 +2434,19 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			}
 		}
 
+		// ── SSE: switch to streaming before the long OpenAI call ─────────────────
+		// DigitalOcean (and most cloud networks) kill TCP connections with no data
+		// flowing for ~60 s. SSE heartbeats every 15 s keep the pipe alive.
+		res.writeHead(200, {
+			'Content-Type': 'text/event-stream',
+			'Cache-Control': 'no-cache, no-transform',
+			'X-Accel-Buffering': 'no',
+			'Connection': 'keep-alive',
+		});
+		const sseHeartbeat = setInterval(() => { try { res.write(':heartbeat\n\n'); } catch {} }, 15000);
+		const sseSend = (event, payload) => { try { res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`); } catch {} };
+		const sseEnd = () => { clearInterval(sseHeartbeat); try { res.end(); } catch {} };
+
 		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
 		const isConstructedBundle = questionType === 'CONSTRUCTED_RESPONSE' && constructedMode === 'bundle';
 		const typeLabel = questionType === 'MCQ'
@@ -2588,7 +2601,8 @@ ${formatBlock}`;
 			try {
 				parsed = JSON.parse(raw);
 			} catch {
-				return res.status(500).json({ error: 'AI returned invalid JSON', raw });
+				sseSend('error', { error: 'AI returned invalid JSON' });
+				return sseEnd();
 			}
 			let items = Array.isArray(parsed?.items) ? parsed.items : (Array.isArray(parsed?.questions) ? parsed.questions : []);
 
@@ -2674,12 +2688,8 @@ ${formatBlock}`;
 					});
 					return { vignetteText, questions: subQuestions };
 				}).filter(b => b.vignetteText && b.questions.length > 0);
-				return res.json({
-					course: { id: course.id, name: course.name, level },
-					questionType,
-					concepts: selectedConcepts,
-					generated: { bundles }
-				});
+				sseSend('result', { course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { bundles } });
+				return sseEnd();
 			}
 
 			items = items.slice(0, count);
@@ -2708,15 +2718,12 @@ ${formatBlock}`;
 				};
 			});
 
-			return res.json({
-				course: { id: course.id, name: course.name, level },
-				questionType,
-				concepts: selectedConcepts,
-				generated: { items: normalized }
-			});
+			sseSend('result', { course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { items: normalized } });
+			return sseEnd();
 		} catch (err) {
 			const msg = err?.message || err?.error?.message || 'OpenAI request failed';
-			return res.status(500).json({ error: msg });
+			sseSend('error', { error: msg });
+			return sseEnd();
 		}
 	});
 
