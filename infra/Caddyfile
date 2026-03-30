@@ -1,4 +1,4 @@
-dev.milven.zbsburial.com {
+xdev.milven.zbsburial.com {
 	encode zstd gzip
 	request_body {
 		max_size 60MB
@@ -16,6 +16,6 @@ dev.milven.zbsburial.com {
 	handle {
 		respond "Mutingwende API is running. Deploy web static separately or via CDN." 200
 	}
-	tls dev.milven.zbsburial.com
+	tls xdev.milven.zbsburial.com
 }
 
