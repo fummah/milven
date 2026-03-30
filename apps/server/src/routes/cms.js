@@ -2137,13 +2137,17 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles):
 - The vignetteText MUST be 400-600 words — long, rich, CFA-exam-quality narrative
 - Introduce a named protagonist (e.g. "Rebecca Jones is a financial advisor at Apex Capital Management. She is evaluating...")
 - Present multiple related financial scenarios, each with specific data, dates, company names
-- Include AT LEAST ONE HTML table as a CFA-style Exhibit using this exact structure:
-  <p><strong>Exhibit 1</strong></p>
-  <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%"><thead><tr><th>Column</th><th>Column</th></tr></thead><tbody><tr><td>Value</td><td>Value</td></tr></tbody></table>
-- The table must contain realistic financial data (portfolio weights, returns, yield components, financial ratios, performance attribution, etc.)
-- For complex scenarios include 2 exhibits (Exhibit 1, Exhibit 2)
 - Open the vignetteText with: "<p><strong>TOPIC: [TOPIC NAME]</strong></p><p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
-- Sub-questions must reference specific exhibits (e.g. "Based on Exhibit 1..." or "Regarding Jones's evaluation of...")
+- VARY THE EXHIBIT FORMAT across case studies — do NOT give every case study a table. Distribute formats roughly equally:
+  FORMAT A — TABLE: Include 1-2 HTML tables as CFA Exhibits with realistic financial data:
+    <p><strong>Exhibit 1</strong></p>
+    <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%"><thead><tr><th>Column</th><th>Column</th></tr></thead><tbody><tr><td>Value</td><td>Value</td></tr></tbody></table>
+  FORMAT B — NARRATIVE ONLY: No exhibit element — all data (specific numbers, ratios, dates, company names) must be woven naturally and richly into the prose. Sub-questions reference the narrative directly.
+  FORMAT C — CHART: Include a text-based chart or graph as a CFA Exhibit using a <pre> block:
+    <p><strong>Exhibit 1 – [Chart Title]</strong></p>
+    <pre style="font-family:monospace;font-size:12px;background:#f8f8f8;padding:8px;border-radius:4px;">[ASCII bar chart, trend line, or labelled data series with specific values]</pre>
+    Chart must show meaningful financial data (e.g. portfolio return over quarters, yield curve points, performance attribution bars)
+- Sub-questions must reference specific exhibits or narrative sections (e.g. "Based on Exhibit 1..." or "Regarding Jones's evaluation of...")
 
 Context:
 - Course: ${course.name}
@@ -2477,15 +2481,13 @@ Each object in "items" MUST follow this structure:
     • Open with: "<p><strong>TOPIC: [RELEVANT TOPIC NAME]</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
     • Introduce a named protagonist: e.g. "Rebecca Jones is a senior analyst at Apex Capital Management. She is evaluating..."
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
-    • Include AT LEAST ONE HTML table formatted as a CFA Exhibit with this structure:
-      <p><strong>Exhibit 1</strong></p>
-      <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%">
-        <thead><tr><th>...</th><th>...</th></tr></thead>
-        <tbody><tr><td>...</td><td>...</td></tr></tbody>
-      </table>
-    • The table must contain realistic financial data (e.g. portfolio weights, returns, yield components, financial ratios, performance attribution)
-    • For complex scenarios include 2 exhibits (Exhibit 1, Exhibit 2)
-    • The passage should weave naturally between narrative context and numerical exhibits
+    • VARY THE EXHIBIT FORMAT across case studies — choose one of these three formats per case study:
+      FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits:
+        <p><strong>Exhibit 1</strong></p><table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%"><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table>
+      FORMAT B (NARRATIVE ONLY): No exhibit — weave ALL specific numbers, ratios, dates, names richly into the prose. Sub-questions reference the narrative directly.
+      FORMAT C (CHART): Include a text-based chart as a CFA Exhibit:
+        <p><strong>Exhibit 1 – [Chart Title]</strong></p><pre style="font-family:monospace;font-size:12px;background:#f8f8f8;padding:8px;border-radius:4px;">[ASCII chart with labelled axes and specific data values]</pre>
+    • The passage should weave naturally between narrative context and any numerical exhibits
   "questions": array of 4-5 MCQ sub-questions. Each sub-question MUST:
     • Reference specific information or exhibit data from the vignetteText (e.g. "Based on Exhibit 1..." or "Regarding Jones's evaluation of XYZ...")
     • Have "stem": string, "options": exactly 3 objects { "text": string, "isCorrect": boolean } with exactly ONE correct
@@ -2504,13 +2506,11 @@ Each object in "items" MUST follow this structure:
     • Open with: "<p><strong>TOPIC: [RELEVANT TOPIC NAME]</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
     • Introduce a named protagonist: e.g. "Michael Torres, CFA, is a portfolio strategist at Meridian Asset Management..."
     • Present multiple related financial scenarios with specific data, dates, company names, and context
-    • Include AT LEAST ONE HTML table formatted as a CFA Exhibit:
-      <p><strong>Exhibit 1</strong></p>
-      <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%">
-        <thead><tr><th>...</th><th>...</th></tr></thead>
-        <tbody><tr><td>...</td><td>...</td></tr></tbody>
-      </table>
-    • The table must contain realistic financial data appropriate to the topic
+    • VARY THE EXHIBIT FORMAT across case studies — choose one of these three formats per case study:
+      FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits with realistic financial data
+      FORMAT B (NARRATIVE ONLY): No exhibit — embed ALL specific numbers, ratios, and data richly in the prose
+      FORMAT C (CHART): Include a text-based chart as a CFA Exhibit using <pre> with ASCII/labelled data
+    • The passage should weave naturally between narrative context and any numerical exhibits
   "questions": array of 4-5 constructed-response sub-questions. Each MUST:
     • Reference specific data or exhibits from the vignetteText
     • Have "stem" (clearly state what to calculate/explain and how many marks)

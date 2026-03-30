@@ -4,7 +4,14 @@ dev.milven.zbsburial.com {
 		max_size 60MB
 	}
 	handle_path /api/* {
-		reverse_proxy api:4000
+		reverse_proxy api:4000 {
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 580s
+				read_timeout 580s
+				write_timeout 580s
+			}
+		}
 	}
 	handle {
 		respond "Mutingwende API is running. Deploy web static separately or via CDN." 200

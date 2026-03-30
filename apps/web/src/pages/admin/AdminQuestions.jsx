@@ -1170,6 +1170,7 @@ export function AdminQuestions() {
 				maskClosable={!aiGenerateLoading}
 				footer={null}
 				className="modern-modal"
+				width={760}
 			>
 				<Form
 					form={aiForm}
@@ -1177,7 +1178,8 @@ export function AdminQuestions() {
 					onFinish={doAiGenerate}
 					initialValues={{ questionType: 'MCQ', difficulties: ['MEDIUM'], count: 3, constructedMode: 'single' }}
 				>
-					<Row gutter={12}>
+					<Row gutter={16}>
+						{/* Row 1: Course | Volume */}
 						<Col span={12}>
 							<Form.Item name="courseId" label="Course" rules={[{ required: true, message: 'Select a course' }]}>
 								<Select
@@ -1213,6 +1215,8 @@ export function AdminQuestions() {
 								/>
 							</Form.Item>
 						</Col>
+
+						{/* Curriculum doc indicator */}
 						{aiGenerateCourseId && aiGenerateVolumeId && (() => {
 							const hasDoc = curriculumDocs.some(d => d.courseId === aiGenerateCourseId && d.volumeId === aiGenerateVolumeId);
 							return (
@@ -1229,11 +1233,13 @@ export function AdminQuestions() {
 								</Col>
 							);
 						})()}
+
+						{/* Row 2: Learning Module | Topics */}
 						<Col span={12}>
 							<Form.Item name="aiModuleId" label="Learning Module">
 								<Select
 									allowClear
-									placeholder="Select learning module (optional)"
+									placeholder="Select module (optional)"
 									showSearch
 									optionFilterProp="label"
 									options={(() => {
@@ -1258,11 +1264,11 @@ export function AdminQuestions() {
 								/>
 							</Form.Item>
 						</Col>
-						<Col span={24}>
+						<Col span={12}>
 							<Form.Item name="topicIds" label="Topics">
 								<Select
 									mode="multiple"
-									placeholder="Select topics (optional — leave empty to use all matching)"
+									placeholder="Select topics (optional)"
 									showSearch
 									optionFilterProp="label"
 									options={(
@@ -1277,8 +1283,10 @@ export function AdminQuestions() {
 								/>
 							</Form.Item>
 						</Col>
-						<Col span={24}>
-							<Form.Item name="conceptIds" label="Concepts (optional — leave empty to auto-map)">
+
+						{/* Row 3: Concepts | Question type */}
+						<Col span={12}>
+							<Form.Item name="conceptIds" label="Concepts (optional)">
 								<Select
 									mode="multiple"
 									placeholder="Select concepts (optional)"
@@ -1302,30 +1310,14 @@ export function AdminQuestions() {
 							</Form.Item>
 						</Col>
 						<Col span={12}>
-							<Form.Item name="questionType" label="Question type" rules={[{ required: true }]}>
-								<Select
-									options={aiQuestionTypeOptions}
-								/>
+							<Form.Item name="questionType" label="Question type" rules={[{ required: true }]} >
+								<Select options={aiQuestionTypeOptions} />
 							</Form.Item>
 						</Col>
-						<Form.Item noStyle shouldUpdate={(prev, cur) => prev.questionType !== cur.questionType}>
-							{({ getFieldValue }) => (
-								getFieldValue('questionType') === 'CONSTRUCTED_RESPONSE' ? (
-									<Col span={12}>
-										<Form.Item name="constructedMode" label="Constructed format" rules={[{ required: true, message: 'Select format' }]}>
-											<Select
-												options={[
-													{ value: 'single', label: 'Single constructed question' },
-													{ value: 'bundle', label: 'Case study with sub-questions' }
-												]}
-											/>
-										</Form.Item>
-									</Col>
-								) : null
-							)}
-						</Form.Item>
+
+						{/* Row 4: Difficulty | Count */}
 						<Col span={12}>
-							<Form.Item name="difficulties" label="Difficulty" rules={[{ required: true, type: 'array', min: 1, message: 'Select at least one difficulty' }]}>
+							<Form.Item name="difficulties" label="Difficulty" rules={[{ required: true, type: 'array', min: 1, message: 'Select at least one difficulty' }]} >
 								<Select
 									mode="multiple"
 									options={[
@@ -1337,10 +1329,28 @@ export function AdminQuestions() {
 							</Form.Item>
 						</Col>
 						<Col span={12}>
-							<Form.Item name="count" label="Number of questions" rules={[{ required: true }]}>
+							<Form.Item name="count" label="Number of questions" rules={[{ required: true }]} >
 								<InputNumber min={1} max={10} style={{ width: '100%' }} />
 							</Form.Item>
 						</Col>
+
+						{/* Row 5: Constructed format (conditional) | OpenAI API key */}
+						<Form.Item noStyle shouldUpdate={(prev, cur) => prev.questionType !== cur.questionType}>
+							{({ getFieldValue }) => (
+								getFieldValue('questionType') === 'CONSTRUCTED_RESPONSE' ? (
+									<Col span={12}>
+										<Form.Item name="constructedMode" label="Constructed format" rules={[{ required: true, message: 'Select format' }]} >
+											<Select
+												options={[
+													{ value: 'single', label: 'Single constructed question' },
+													{ value: 'bundle', label: 'Case study with sub-questions' }
+												]}
+											/>
+										</Form.Item>
+									</Col>
+								) : null
+							)}
+						</Form.Item>
 						<Col span={12}>
 							<Form.Item name="openaiApiKey" label="OpenAI API key (optional)">
 								<Input.Password
