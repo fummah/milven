@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import Stripe from 'stripe';
 import OpenAI from 'openai';
 import multer from 'multer';
@@ -2662,12 +2662,13 @@ ${formatBlock}`;
 				const bundles = items.map((bundle) => {
 					const vignetteText = String(bundle.vignetteText || '').trim();
 					const sub = Array.isArray(bundle.questions) ? bundle.questions : [];
+					if (sub.length > 0) console.log('[preview] AI sub-question keys:', Object.keys(sub[0]), '| stem sample:', String(sub[0]?.stem || sub[0]?.question || sub[0]?.text || '').slice(0, 80));
 					const subQuestions = sub.map((sq) => {
 						const t = nextTopic();
 						const useDifficulty = nextDifficulty();
 						const cIds = mapConceptIds(sq);
 						return {
-							stem: sq.stem || sq.question || '',
+							stem: sq.stem || sq.question || sq.text || sq.question_text || sq.questionText || sq.prompt || '',
 							options: isConstructedBundle ? [] : (Array.isArray(sq.options) ? sq.options : []),
 							explanation: sq.explanation || '',
 							topicId: t.id,
@@ -2788,79 +2789,81 @@ ${formatBlock}`;
 					const parentPathIds = await deriveQuestionPathIdsFromTopic(firstTopicId);
 					if (!parentPathIds.courseId || !parentPathIds.volumeId || !parentPathIds.moduleId) continue;
 
-					const parent = await prisma.question.create({
-						data: {
-							stem: isConstructed ? '(Case study parent)' : '(Vignette parent)',
-							type: questionType,
-							level: parentPathIds.level || 'LEVEL1',
-							difficulty: questions[0]?.difficulty || 'MEDIUM',
-							topicId: firstTopicId,
-							...parentPathIds,
-							topics: { connect: [{ id: firstTopicId }] },
-							vignetteText,
-							marks: 1,
-							isAiGenerated: true
-						}
-					});
-
-					for (let si = 0; si < questions.length; si++) {
-						const sq = questions[si];
-						const stem = String(sq?.stem || '').trim();
-						if (!stem || stem.length < 5) continue;
-						if (await isDuplicateStem(stem)) {
-							skippedDuplicates.push(stem.substring(0, 60));
-							continue;
-						}
-						const topicId = String(sq?.topicId || '').trim();
-						if (!topicId) continue;
-						const pathIds = await deriveQuestionPathIdsFromTopic(topicId);
-						if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) continue;
-
-						const childType = isConstructed ? 'CONSTRUCTED_RESPONSE' : 'MCQ';
-						const sqConceptIds = Array.isArray(sq?.conceptIds) ? sq.conceptIds.filter(Boolean) : [];
-						const child = await prisma.question.create({
+					// Use a transaction so any child failure is immediately visible as an error (no orphaned parents)
+					const full = await prisma.$transaction(async (tx) => {
+						const parent = await tx.question.create({
 							data: {
-								stem,
-								type: childType,
-								level: pathIds.level || 'LEVEL1',
-								difficulty: sq?.difficulty || 'MEDIUM',
-								marks: sq?.marks ? Number(sq.marks) : 1,
-								topicId,
-								...pathIds,
-								topics: { connect: [{ id: topicId }] },
-								...(sqConceptIds.length > 0 ? { concepts: { connect: sqConceptIds.map(cid => ({ id: cid })) } } : {}),
-								parentId: parent.id,
-								orderIndex: si + 1,
-								qid: sq?.qid || null,
-								los: sq?.los || null,
-								traceSection: sq?.traceSection || null,
-								tracePage: sq?.tracePage || null,
-								keyFormulas: sq?.keyFormulas || null,
-								workedSolution: mergeWorkedSolution(sq),
-								questionGuidelines: sq?.questionGuidelines || null,
-								output: sq?.output || null,
+								stem: isConstructed ? '(Case study parent)' : '(Vignette parent)',
+								type: questionType,
+								level: parentPathIds.level || 'LEVEL1',
+								difficulty: questions[0]?.difficulty || 'MEDIUM',
+								topicId: firstTopicId,
+								courseId: parentPathIds.courseId,
+								volumeId: parentPathIds.volumeId,
+								moduleId: parentPathIds.moduleId,
+								topics: { connect: [{ id: firstTopicId }] },
+								vignetteText,
+								marks: 1,
 								isAiGenerated: true
 							}
 						});
 
-						// Create MCQ options for vignette sub-questions
-						if (!isConstructed) {
-							const opts = Array.isArray(sq?.options) ? sq.options : [];
-							if (opts.length >= 2) {
-								await prisma.mcqOption.createMany({
-									data: opts.map(o => ({
-										questionId: child.id,
-										text: String(o.text || '').trim() || 'Option',
-										isCorrect: !!o.isCorrect
-									}))
-								});
+						for (let si = 0; si < questions.length; si++) {
+							const sq = questions[si];
+							const stem = String(sq?.stem || sq?.question || sq?.text || '').trim();
+							if (!stem || stem.length < 3) continue;
+							// Use child's own topicId for curriculum mapping; fall back to firstTopicId.
+							// Always use parentPathIds for path fields (guaranteed complete).
+							const childTopicId = String(sq?.topicId || '').trim() || firstTopicId;
+							const childType = isConstructed ? 'CONSTRUCTED_RESPONSE' : 'MCQ';
+							const sqConceptIds = Array.isArray(sq?.conceptIds) ? sq.conceptIds.filter(Boolean) : [];
+
+							const child = await tx.question.create({
+								data: {
+									stem,
+									type: childType,
+									level: parentPathIds.level || 'LEVEL1',
+									difficulty: sq?.difficulty || 'MEDIUM',
+									marks: sq?.marks ? Number(sq.marks) : 1,
+									topicId: childTopicId,
+									courseId: parentPathIds.courseId,
+									volumeId: parentPathIds.volumeId,
+									moduleId: parentPathIds.moduleId,
+									topics: { connect: [{ id: childTopicId }] },
+									...(sqConceptIds.length > 0 ? { concepts: { connect: sqConceptIds.map(cid => ({ id: cid })) } } : {}),
+									parentId: parent.id,
+									orderIndex: si + 1,
+									qid: sq?.qid || null,
+									los: sq?.los || null,
+									traceSection: sq?.traceSection || null,
+									tracePage: sq?.tracePage || null,
+									keyFormulas: sq?.keyFormulas || null,
+									workedSolution: mergeWorkedSolution(sq),
+									questionGuidelines: sq?.questionGuidelines || null,
+									output: sq?.output || null,
+									isAiGenerated: true
+								}
+							});
+
+							// Create MCQ options for vignette sub-questions
+							if (!isConstructed) {
+								const opts = Array.isArray(sq?.options) ? sq.options : [];
+								if (opts.length >= 2) {
+									await tx.mcqOption.createMany({
+										data: opts.map(o => ({
+											questionId: child.id,
+											text: String(o.text || '').trim() || 'Option',
+											isCorrect: !!o.isCorrect
+										}))
+									});
+								}
 							}
 						}
-					}
 
-					const full = await prisma.question.findUnique({
-						where: { id: parent.id },
-						include: { options: true, children: { orderBy: [{ orderIndex: 'asc' }], include: { options: true } } }
+						return tx.question.findUnique({
+							where: { id: parent.id },
+							include: { options: true, children: { orderBy: [{ orderIndex: 'asc' }], include: { options: true } } }
+						});
 					});
 					created.push(full);
 				}

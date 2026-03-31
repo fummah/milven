@@ -2151,6 +2151,15 @@ export function AdminQuestions() {
 													</Space>
 												</Radio.Group>
 											)}
+											{(q.qid || q.los || q.traceSection || q.tracePage || q.keyFormulas || q.workedSolution) && (
+												<div style={{ marginTop: 4, borderTop: '1px solid #f0f0f0', paddingTop: 6 }}>
+													{q.qid && <div style={{ fontSize: 13 }}><Typography.Text strong>QID: </Typography.Text><Typography.Text>{q.qid}</Typography.Text></div>}
+													{q.los && <div style={{ fontSize: 13 }}><Typography.Text strong>LOS: </Typography.Text><Typography.Text>{q.los}</Typography.Text></div>}
+													{(q.traceSection || q.tracePage) && <div style={{ fontSize: 13 }}><Typography.Text strong>Trace: </Typography.Text><Typography.Text>{q.traceSection}{q.traceSection && q.tracePage ? ' – ' : ''}{q.tracePage ? `Page ${q.tracePage}` : ''}</Typography.Text></div>}
+													{q.keyFormulas && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f0f5ff', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Key Formula(s): </Typography.Text><span dangerouslySetInnerHTML={{ __html: safeHtml(q.keyFormulas) }} /></div>}
+													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution) }} /></div>}
+												</div>
+											)}
 										</Space>
 									</Card>
 								))}
@@ -2190,6 +2199,15 @@ export function AdminQuestions() {
 												style={{ margin: 0 }}
 												dangerouslySetInnerHTML={{ __html: safeHtml(q.stem) }}
 											/>
+											{(q.qid || q.los || q.traceSection || q.tracePage || q.keyFormulas || q.workedSolution) && (
+												<div style={{ marginTop: 4, borderTop: '1px solid #f0f0f0', paddingTop: 6 }}>
+													{q.qid && <div style={{ fontSize: 13 }}><Typography.Text strong>QID: </Typography.Text><Typography.Text>{q.qid}</Typography.Text></div>}
+													{q.los && <div style={{ fontSize: 13 }}><Typography.Text strong>LOS: </Typography.Text><Typography.Text>{q.los}</Typography.Text></div>}
+													{(q.traceSection || q.tracePage) && <div style={{ fontSize: 13 }}><Typography.Text strong>Trace: </Typography.Text><Typography.Text>{q.traceSection}{q.traceSection && q.tracePage ? ' – ' : ''}{q.tracePage ? `Page ${q.tracePage}` : ''}</Typography.Text></div>}
+													{q.keyFormulas && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f0f5ff', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Key Formula(s): </Typography.Text><span dangerouslySetInnerHTML={{ __html: safeHtml(q.keyFormulas) }} /></div>}
+													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution) }} /></div>}
+												</div>
+											)}
 										</Space>
 									</Card>
 								))}
