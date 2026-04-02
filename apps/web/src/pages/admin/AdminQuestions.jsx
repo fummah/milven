@@ -1467,7 +1467,7 @@ export function AdminQuestions() {
 										</Card>
 										{(bundle.questions || []).map((q, qIdx) => (
 											<div key={qIdx} style={{ padding: '10px 12px', borderRadius: 10, background: '#fafafa', border: '1px solid #f0f0f0', marginBottom: 8 }}>
-												<Typography.Text strong style={{ color: '#531dab' }}>{`Sub-question ${qIdx + 1}`}{q?.marks ? ` (${q.marks} mark${q.marks > 1 ? 's' : ''})` : ''}</Typography.Text>
+												<Typography.Text strong style={{ color: '#531dab' }}>{`Sub-question ${qIdx + 1}`}{!isVignette && q?.marks ? ` (${q.marks} mark${q.marks > 1 ? 's' : ''})` : ''}</Typography.Text>
 												<div className="prose prose-sm question-preview-content" style={{ marginTop: 4 }} dangerouslySetInnerHTML={{ __html: safeHtml(q?.stem || '') }} />
 												<div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
 													<Tag color="blue">{q?.topicName || q?.topicId}</Tag>
@@ -2130,7 +2130,6 @@ export function AdminQuestions() {
 												<Tag color={q.difficulty === 'EASY' ? 'green' : q.difficulty === 'MEDIUM' ? 'orange' : 'red'}>
 													{q.difficulty}
 												</Tag>
-												<Typography.Text type="secondary">Marks: {q.marks || 1}</Typography.Text>
 											</Space>
 											<div
 												className="prose question-preview-content"

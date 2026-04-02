@@ -2491,20 +2491,22 @@ ${metaFieldsBlock}`;
 Each object in "items" MUST follow this structure:
 {
   "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (400-600 words). Requirements:
-    • Open with: "<p><strong>TOPIC: [RELEVANT TOPIC NAME]</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
+    • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
     • Introduce a named protagonist: e.g. "Rebecca Jones is a senior analyst at Apex Capital Management. She is evaluating..."
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
-    • VARY THE EXHIBIT FORMAT across case studies — choose one of these three formats per case study:
-      FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits:
-        <p><strong>Exhibit 1</strong></p><table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%"><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table>
-      FORMAT B (NARRATIVE ONLY): No exhibit — weave ALL specific numbers, ratios, dates, names richly into the prose. Sub-questions reference the narrative directly.
-      FORMAT C (CHART): Include a text-based chart as a CFA Exhibit:
-        <p><strong>Exhibit 1 – [Chart Title]</strong></p><pre style="font-family:monospace;font-size:12px;background:#f8f8f8;padding:8px;border-radius:4px;">[ASCII chart with labelled axes and specific data values]</pre>
+    • IMPORTANT — VARY THE EXHIBIT FORMAT across case studies. Do NOT always use tables. Mix approaches:
+      FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits (use this for ~40% of case studies)
+      FORMAT B (NARRATIVE ONLY): No exhibit at all — weave ALL specific numbers, ratios, dates, names richly into the prose only. Sub-questions reference the narrative directly. (use this for ~30% of case studies)
+      FORMAT C (CHART/GRAPH): Include a text-based chart as a CFA Exhibit using <pre> with ASCII/labelled data (use this for ~30% of case studies)
     • The passage should weave naturally between narrative context and any numerical exhibits
-  "questions": array of 4-5 MCQ sub-questions. Each sub-question MUST:
+    • Different case studies MUST use different formats — do not repeat the same format for every case study
+  "questions": array of EXACTLY 4 MCQ sub-questions (no more, no less). Each sub-question MUST:
     • Reference specific information or exhibit data from the vignetteText (e.g. "Based on Exhibit 1..." or "Regarding Jones's evaluation of XYZ...")
     • Have "stem": string, "options": exactly 3 objects { "text": string, "isCorrect": boolean } with exactly ONE correct
     • Cover a different aspect of the scenario/topic than the other sub-questions
+    • Each sub-question is worth 3 marks (do NOT include a "marks" field for vignette MCQ sub-questions)
+${selectedTopics.length > 1 ? `    • TOPIC DISTRIBUTION: The selected topics are [${selectedTopics.map(t => t.name).join(', ')}]. You MUST spread these topics equally across the 4 sub-questions. Each sub-question should test a different topic from this list. Assign topics round-robin so all selected topics are covered.
+` : ''}
     • Plus ALL metadata fields listed below
 }
 
@@ -2516,20 +2518,25 @@ ${metaFieldsBlock}`;
 Each object in "items" MUST follow this structure:
 {
   "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (400-600 words). Requirements:
-    • Open with: "<p><strong>TOPIC: [RELEVANT TOPIC NAME]</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
+    • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
     • Introduce a named protagonist: e.g. "Michael Torres, CFA, is a portfolio strategist at Meridian Asset Management..."
     • Present multiple related financial scenarios with specific data, dates, company names, and context
-    • VARY THE EXHIBIT FORMAT across case studies — choose one of these three formats per case study:
-      FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits with realistic financial data
-      FORMAT B (NARRATIVE ONLY): No exhibit — embed ALL specific numbers, ratios, and data richly in the prose
-      FORMAT C (CHART): Include a text-based chart as a CFA Exhibit using <pre> with ASCII/labelled data
+    • IMPORTANT — VARY THE EXHIBIT FORMAT across case studies. Do NOT always use tables. Mix approaches:
+      FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits with realistic financial data (use for ~40% of case studies)
+      FORMAT B (NARRATIVE ONLY): No exhibit at all — embed ALL specific numbers, ratios, and data richly in the prose only (use for ~30% of case studies)
+      FORMAT C (CHART/GRAPH): Include a text-based chart as a CFA Exhibit using <pre> with ASCII/labelled data (use for ~30% of case studies)
+    • Different case studies MUST use different formats — do not repeat the same format for every case study
     • The passage should weave naturally between narrative context and any numerical exhibits
-  "questions": array of 4-5 constructed-response sub-questions. Each MUST:
+  "questions": array of 3 to 5 constructed-response sub-questions (vary the count between case studies). Each MUST:
     • Reference specific data or exhibits from the vignetteText
-    • Have "stem" (clearly state what to calculate/explain and how many marks)
-    • Have "marks" (integer)
+    • Have "stem" — clearly state what to calculate/explain. In SOME sub-questions (not all), include roman-numeral sub-points within the stem when it makes sense, e.g.:
+      "Determine whether the stock market is overvalued using the:\ni. Fed model.\nii. Yardeni model.\nJustify each response with one reason."
+      Only use sub-points when the question naturally breaks into distinct parts. Other sub-questions should be single direct prompts.
+    • Have "marks" (integer — the total across all sub-questions should equal 12)
     • Have "questionGuidelines" (specific marking criteria)
     • Have "output" (full model answer that would receive maximum marks)
+${selectedTopics.length > 1 ? `    • TOPIC DISTRIBUTION: The selected topics are [${selectedTopics.map(t => t.name).join(', ')}]. You MUST spread these topics equally across the sub-questions. Each sub-question should test a different topic from this list. Assign topics round-robin so all selected topics are covered.
+` : ''}
     • Plus ALL metadata fields below. No "options" field.
 }
 
@@ -2566,9 +2573,9 @@ IMPORTANT GUIDELINES:
   * The vignette MUST be 400–600 words — rich, narrative, CFA-exam-quality
   * Use a named protagonist (e.g., "Sarah Chen, CFA, is a portfolio manager at Meridian Asset Management...")
   * Include multiple related financial scenarios and data points within the passage
-  * Include AT LEAST ONE HTML data table formatted as a labelled CFA Exhibit (e.g., Exhibit 1, Exhibit 2), using full HTML <table> markup with <thead> and <tbody> — the table must contain realistic financial data (returns, weights, portfolio allocations, yield decompositions, financial ratios, etc.)
-  * Sub-questions should reference specific exhibits by name and test different aspects of the scenario, integrating multiple topics/concepts
-  * Open with a topic header line in the vignetteText such as: "<p><strong>TOPIC: [TOPIC NAME]</strong></p>"
+  * VARY exhibit formats across case studies: some with HTML tables, some narrative-only (no exhibits), some with text-based charts. Do NOT use tables in every single case study — mix approaches for realism
+  * Sub-questions should reference specific exhibits or narrative details by name and test different aspects of the scenario
+  * Open the vignetteText with the Volume name header: "<p><strong>${volumeName}</strong></p>"
 ${previewCurriculumExcerpt ? '- IMPORTANT: A curriculum reference document has been provided below. You MUST base your questions on the content, terminology, formulas, and examples from this document.' : ''}
 
 Context:
@@ -2676,7 +2683,7 @@ ${formatBlock}`;
 							conceptIds: cIds,
 							conceptName: sq.conceptName || '',
 							difficulty: useDifficulty,
-							marks: sq.marks ? Number(sq.marks) : 1,
+							marks: (questionType === 'VIGNETTE_MCQ') ? 3 : (sq.marks ? Number(sq.marks) : 1),
 							qid: sq.qid || '',
 							los: sq.los || '',
 							traceSection: sq.traceSection || '',
@@ -2824,7 +2831,7 @@ ${formatBlock}`;
 									type: childType,
 									level: parentPathIds.level || 'LEVEL1',
 									difficulty: sq?.difficulty || 'MEDIUM',
-									marks: sq?.marks ? Number(sq.marks) : 1,
+									marks: (questionType === 'VIGNETTE_MCQ') ? 3 : (sq?.marks ? Number(sq.marks) : 1),
 									topicId: childTopicId,
 									courseId: parentPathIds.courseId,
 									volumeId: parentPathIds.volumeId,
