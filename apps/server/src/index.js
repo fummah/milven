@@ -23,6 +23,7 @@ import { learningRouter } from './routes/learning.js';
 import { reportsRouter } from './routes/reports.js';
 import { settingsRouter } from './routes/settings.js';
 import { testRouter } from './routes/test.js';
+import { formulasRouter } from './routes/formulas.js';
 
 /* ===========================
    DATABASE URL COMPOSITION
@@ -197,6 +198,7 @@ app.use('/api/payments', safe(paymentsRouter));
 app.use('/api/billing', safe(billingRouter));
 app.use('/api/reports', safe(reportsRouter));
 app.use('/api/settings', safe(settingsRouter));
+app.use('/api/formulas', safe(formulasRouter));
 app.use('/api', safe(testRouter));
 
 /* ===========================

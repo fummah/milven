@@ -75,6 +75,7 @@ model Volume {
   modules    Module[]
   mockExamTopicWeights MockExamTopicWeight[]
   curriculumDocuments CurriculumDocument[]
+  formulas         Formula[]
 }
 
 model CourseVolume {
@@ -102,6 +103,7 @@ model Module {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   topics    Topic[]
+  formulas  Formula[]
   @@index([volumeId, order])
   @@index([courseId, order])
 }
@@ -128,6 +130,7 @@ model Topic {
   revisionSummaries RevisionSummary[]
   materials LearningMaterial[]
   concepts  Concept[]
+  formulas  Formula[]
   @@index([moduleId, order])
 }
 
@@ -360,6 +363,7 @@ model Course {
   mockExamTopicWeights MockExamTopicWeight[]
   mockExams      MockExam[]
   curriculumDocuments CurriculumDocument[]
+  formulas       Formula[]
 }
 
 enum EnrollmentStatus {
@@ -658,6 +662,36 @@ model CurriculumDocument {
   @@unique([courseId, volumeId])
   @@index([courseId])
   @@index([volumeId])
+}
+
+// ─── CFA Formula Book Master ───────────────────────────────
+model Formula {
+  id              String    @id @default(cuid())
+  name            String                // Formula title (e.g. "Holding Period Return")
+  formula         String                // Exact equation (LaTeX or plain text)
+  variables       String                // Variable definitions
+  interpretation  String                // Plain-English meaning
+  whenToUse       String                // Exam context / application
+  watchOut        String                // Common trap / confusion
+  calculatorCue   String?               // Optional calculator cue or assumption note
+  losTag          String?               // LOS mapping
+  // Hierarchy: Level → Volume → Topic → LM
+  level           CfaLevel
+  courseId        String?
+  course          Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  volumeId        String?
+  volume          Volume?   @relation(fields: [volumeId], references: [id], onDelete: SetNull)
+  moduleId        String?
+  module          Module?   @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  topicId         String?
+  topic           Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  order           Int       @default(0) // Display order within topic
+  highYield       Boolean   @default(false) // Flagged for recap pages
+  year            Int       @default(2026) // Version year
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  @@index([courseId, volumeId, moduleId, topicId])
+  @@index([level, highYield])
 }
 
 // Weak Topics - Topics identified for focused study

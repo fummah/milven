@@ -15,7 +15,8 @@ import {
   ProfileOutlined,
   FolderOutlined,
   MenuFoldOutlined,
-  MenuUnfoldOutlined
+  MenuUnfoldOutlined,
+  FunctionOutlined
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
@@ -64,6 +65,7 @@ const menuItems = [
       { key: 'questions', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/questions">Questions</Link> },
       { key: 'materials', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #06b6d4, #0891b2)'), label: <Link to="/admin/materials">Learning Materials</Link> },
       { key: 'documents', icon: modernBadge(<FolderOutlined />, 'linear-gradient(135deg, #e74c3c, #c0392b)'), label: <Link to="/admin/documents">Curriculum Docs</Link> },
+      { key: 'formulas', icon: modernBadge(<FunctionOutlined />, 'linear-gradient(135deg, #102540, #1b3a5b)'), label: <Link to="/admin/formulas">Formula Book</Link> },
       { key: 'levels', icon: modernBadge(<ProfileOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/levels">Levels</Link> }
     ]
   },
@@ -104,7 +106,7 @@ const isPreviewPath = (pathname) => /^\/admin\/courses\/[^/]+\/preview$/.test(pa
 // Parent key for each submenu item so we keep the parent open when a child is selected
 const childToParentKey = {
   'users-list': 'users', students: 'users', roles: 'users',
-  'courses-list': 'courses', volumes: 'courses', topics: 'courses', questions: 'courses', materials: 'courses', documents: 'courses', levels: 'courses',
+  'courses-list': 'courses', volumes: 'courses', topics: 'courses', questions: 'courses', materials: 'courses', documents: 'courses', formulas: 'courses', levels: 'courses',
   'exams-list': 'exams', 'exam-builder': 'exams',
   'reports-overview': 'reports',
   products: 'billing', purchases: 'billing', invoices: 'billing', subscriptions: 'billing', taxes: 'billing'
@@ -146,6 +148,7 @@ export default function AdminLayout() {
       'topics',
       'questions',
       'materials',
+      'formulas',
       'exams',
       'exams-list',
       'exam-builder',

@@ -56,12 +56,14 @@ import { AdminMaterials } from './pages/admin/AdminMaterials.jsx';
 import { AdminExamEditor } from './pages/admin/AdminExamEditor.jsx';
 import { AdminExams } from './pages/admin/AdminExams.jsx';
 import { AdminVolumes } from './pages/admin/AdminVolumes.jsx';
+import { AdminFormulas } from './pages/admin/AdminFormulas.jsx';
 import AdminDocuments from './pages/admin/AdminDocuments.jsx';
 import { Home } from './pages/Home.jsx';
 import { CoursesPage } from './pages/Courses.jsx';
 import { Careers } from './pages/Careers.jsx';
 import { CourseDetail } from './pages/CourseDetail.jsx';
 import { AboutCfa } from './pages/AboutCfa.jsx';
+import { FormulaBook } from './pages/FormulaBook.jsx';
 import { useSettings } from './contexts/SettingsContext.jsx';
 import { api } from './lib/api.js';
 
@@ -488,6 +490,7 @@ export default function App() {
 			<div style={{ marginTop: 8 }}>
 				<Link to="/courses" style={{ display: 'block', padding: '6px 0', color: '#102540' }}>Courses</Link>
 				<Link to="/about-cfa" style={{ display: 'block', padding: '6px 0', color: '#102540' }}>About CFA Program</Link>
+				<Link to="/formula-book" style={{ display: 'block', padding: '6px 0', color: '#102540' }}>Formula Book</Link>
 				<Link to="/faq" style={{ display: 'block', padding: '6px 0', color: '#102540' }}>FAQ</Link>
 				<Link to="/careers" style={{ display: 'block', padding: '6px 0', color: '#102540' }}>Careers</Link>
 			</div>
@@ -771,6 +774,7 @@ export default function App() {
 					<Route path="/videos" element={<Videos />} />
 					<Route path="/careers" element={<Careers />} />
 					<Route path="/about-cfa" element={<AboutCfa />} />
+					<Route path="/formula-book" element={<FormulaBook />} />
 					<Route path="/faq" element={<Faq />} />
 					<Route path="/account" element={<RequireAuth><StudentLayout /></RequireAuth>}>
 						<Route index element={<Account />} />
@@ -791,6 +795,7 @@ export default function App() {
 						<Route path="materials" element={<AdminMaterials />} />
 						<Route path="topics" element={<AdminTopics />} />
 						<Route path="volumes" element={<AdminVolumes />} />
+						<Route path="formulas" element={<AdminFormulas />} />
 						<Route path="documents" element={<AdminDocuments />} />
 						<Route path="questions" element={<AdminQuestions />} />
 						<Route path="questions/:id/edit" element={<AdminQuestionEdit />} />
@@ -820,6 +825,7 @@ export default function App() {
 						<Route path="revision" element={<StudentRevision />} />
 						<Route path="comparison" element={<StudentComparison />} />
 						<Route path="mock-exams" element={<StudentMockExams />} />
+						<Route path="formula-book" element={<FormulaBook />} />
 						<Route path="billing" element={<StudentBilling />} />
 						<Route path="invoices" element={<StudentInvoices />} />
 						<Route path="account" element={<Account />} />
