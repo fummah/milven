@@ -42,6 +42,27 @@ const modernBadge = (iconNode, gradient) => (
   </span>
 );
 
+const subMenuBadge = (iconNode, color = '#102540') => (
+  <span
+    className="menu-icon-badge sub-menu-icon-badge"
+    style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      background: '#fff',
+      border: `1.5px solid ${color}`,
+      color: color,
+      fontSize: 15,
+      boxShadow: '0 1px 4px rgba(16,37,64,0.08)'
+    }}
+  >
+    {React.isValidElement(iconNode) ? React.cloneElement(iconNode, { style: { ...iconNode.props?.style, color } }) : iconNode}
+  </span>
+);
+
 const menuItems = [
   { key: 'dashboard', icon: modernBadge(<DashboardOutlined />, 'linear-gradient(135deg, #3b82f6, #1d4ed8)'), label: <Link to="/admin">Dashboard</Link> },
   {
@@ -49,9 +70,9 @@ const menuItems = [
     icon: modernBadge(<UserOutlined />, 'linear-gradient(135deg, #06b6d4, #0891b2)'),
     label: 'Users',
     children: [
-      { key: 'users-list', icon: modernBadge(<TeamOutlined />, 'linear-gradient(135deg, #06b6d4, #0891b2)'), label: <Link to="/admin/users">Users</Link> },
-      { key: 'students', icon: modernBadge(<TeamOutlined />, 'linear-gradient(135deg, #14b8a6, #0d9488)'), label: <Link to="/admin/students">Candidates</Link> },
-      { key: 'roles', icon: modernBadge(<SolutionOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'), label: <Link to="/admin/roles">Roles</Link> }
+      { key: 'users-list', icon: subMenuBadge(<TeamOutlined />, '#06b6d4'), label: <Link to="/admin/users">Users</Link> },
+      { key: 'students', icon: subMenuBadge(<TeamOutlined />, '#06b6d4'), label: <Link to="/admin/students">Candidates</Link> },
+      { key: 'roles', icon: subMenuBadge(<SolutionOutlined />, '#06b6d4'), label: <Link to="/admin/roles">Roles</Link> }
     ]
   },
   {
@@ -59,14 +80,14 @@ const menuItems = [
     icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'),
     label: 'Courses',
     children: [
-      { key: 'courses-list', icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'), label: <Link to="/admin/courses">Courses</Link> },
-      { key: 'volumes', icon: modernBadge(<FolderOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/volumes">Volumes</Link> },
-      { key: 'topics', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #a855f7, #9333ea)'), label: <Link to="/admin/topics">Learning Modules</Link> },
-      { key: 'questions', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/questions">Questions</Link> },
-      { key: 'materials', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #06b6d4, #0891b2)'), label: <Link to="/admin/materials">Learning Materials</Link> },
-      { key: 'documents', icon: modernBadge(<FolderOutlined />, 'linear-gradient(135deg, #e74c3c, #c0392b)'), label: <Link to="/admin/documents">Curriculum Docs</Link> },
-      { key: 'formulas', icon: modernBadge(<FunctionOutlined />, 'linear-gradient(135deg, #102540, #1b3a5b)'), label: <Link to="/admin/formulas">Formula Book</Link> },
-      { key: 'levels', icon: modernBadge(<ProfileOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/levels">Levels</Link> }
+      { key: 'courses-list', icon: subMenuBadge(<BookOutlined />, '#8b5cf6'), label: <Link to="/admin/courses">Courses</Link> },
+      { key: 'volumes', icon: subMenuBadge(<FolderOutlined />, '#8b5cf6'), label: <Link to="/admin/volumes">Volumes</Link> },
+      { key: 'topics', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/topics">Learning Modules</Link> },
+      { key: 'questions', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/questions">Questions</Link> },
+      { key: 'materials', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/materials">Learning Materials</Link> },
+      { key: 'documents', icon: subMenuBadge(<FolderOutlined />, '#8b5cf6'), label: <Link to="/admin/documents">Curriculum Docs</Link> },
+      { key: 'formulas', icon: subMenuBadge(<FunctionOutlined />, '#8b5cf6'), label: <Link to="/admin/formulas">Formula Book</Link> },
+      { key: 'levels', icon: subMenuBadge(<ProfileOutlined />, '#8b5cf6'), label: <Link to="/admin/levels">Levels</Link> }
     ]
   },
   {
@@ -74,8 +95,8 @@ const menuItems = [
     icon: modernBadge(<ScheduleOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'),
     label: 'Exams',
     children: [
-      { key: 'exams-list', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #ec4899, #db2777)'), label: <Link to="/admin/exams">Exams</Link> },
-      { key: 'exam-builder', icon: modernBadge(<ScheduleOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'), label: <Link to="/admin/exams/builder">Exam Builder</Link> }
+      { key: 'exams-list', icon: subMenuBadge(<FileTextOutlined />, '#f97316'), label: <Link to="/admin/exams">Exams</Link> },
+      { key: 'exam-builder', icon: subMenuBadge(<ScheduleOutlined />, '#f97316'), label: <Link to="/admin/exams/builder">Exam Builder</Link> }
     ]
   },
   {
@@ -83,7 +104,7 @@ const menuItems = [
     icon: modernBadge(<BarChartOutlined />, 'linear-gradient(135deg, #eab308, #ca8a04)'),
     label: 'Reports',
     children: [
-      { key: 'reports-overview', icon: modernBadge(<PieChartOutlined />, 'linear-gradient(135deg, #3b82f6, #2563eb)'), label: <Link to="/admin/reports">Overview</Link> }
+      { key: 'reports-overview', icon: subMenuBadge(<PieChartOutlined />, '#eab308'), label: <Link to="/admin/reports">Overview</Link> }
     ]
   },
   {
@@ -91,11 +112,11 @@ const menuItems = [
     icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'),
     label: 'Billing',
     children: [
-      { key: 'products', icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'), label: <Link to="/admin/products">Products</Link> },
-      { key: 'purchases', icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/admin/purchases">Purchases</Link> },
-      { key: 'invoices', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'), label: <Link to="/admin/invoices">Invoices</Link> },
-      { key: 'subscriptions', icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'), label: <Link to="/admin/subscriptions">Subscriptions</Link> },
-      { key: 'taxes', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'), label: <Link to="/admin/taxes">Taxes</Link> }
+      { key: 'products', icon: subMenuBadge(<DollarOutlined />, '#22c55e'), label: <Link to="/admin/products">Products</Link> },
+      { key: 'purchases', icon: subMenuBadge(<DollarOutlined />, '#22c55e'), label: <Link to="/admin/purchases">Purchases</Link> },
+      { key: 'invoices', icon: subMenuBadge(<FileTextOutlined />, '#22c55e'), label: <Link to="/admin/invoices">Invoices</Link> },
+      { key: 'subscriptions', icon: subMenuBadge(<DollarOutlined />, '#22c55e'), label: <Link to="/admin/subscriptions">Subscriptions</Link> },
+      { key: 'taxes', icon: subMenuBadge(<FileTextOutlined />, '#22c55e'), label: <Link to="/admin/taxes">Taxes</Link> }
     ]
   },
   { key: 'settings', icon: modernBadge(<SettingOutlined />, 'linear-gradient(135deg, #64748b, #475569)'), label: <Link to="/admin/settings">Settings</Link> }
@@ -185,6 +206,13 @@ export default function AdminLayout() {
   
   return (
     <Layout style={{ minHeight: '100vh' }}>
+      <style>{`
+        .sub-menu-icon-badge .anticon,
+        .sub-menu-icon-badge svg {
+          color: inherit !important;
+          fill: currentColor !important;
+        }
+      `}</style>
       {!isMobile && (
         <Sider
           collapsible
