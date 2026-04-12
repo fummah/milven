@@ -791,6 +791,13 @@ h1, h2, h3, h4, h5, h6 {
   color: #ffffff !important;
 }
 
+/* Sub-menu icon badges - inherit color from parent (matches border) */
+.sub-menu-icon-badge .anticon,
+.sub-menu-icon-badge svg {
+  color: inherit !important;
+  fill: currentColor;
+}
+
 /* Modern Sider base styles */
 .modern-sider {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
