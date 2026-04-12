@@ -11,6 +11,44 @@ const LEVELS = [
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 const LEVEL_COLORS = { LEVEL1: '#3b82f6', LEVEL2: '#8b5cf6', LEVEL3: '#f59e0b' };
 
+/**
+ * Convert plain-text formula notation into rich HTML with subscripts, superscripts,
+ * fraction bars, Greek letters, and other financial math formatting.
+ */
+function renderFormulaHtml(text) {
+	if (!text) return '';
+	let html = text
+		// Escape HTML entities first
+		.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+		// Fractions: numerator / denominator in parentheses → stacked fraction
+		.replace(/\(([^)]+)\)\s*\/\s*\(([^)]+)\)/g,
+			'<span style="display:inline-flex;flex-direction:column;align-items:center;vertical-align:middle;margin:0 2px;"><span style="border-bottom:1.5px solid #102540;padding:0 4px 2px;">$1</span><span style="padding:2px 4px 0;">$2</span></span>')
+		// Subscripts: X_0, X_1, X_d, X_{abc}
+		.replace(/_(\{[^}]+\}|[A-Za-z0-9]+)/g, (_, m) => {
+			const inner = m.startsWith('{') ? m.slice(1, -1) : m;
+			return `<sub>${inner}</sub>`;
+		})
+		// Superscripts: X^2, X^{n}, X^n
+		.replace(/\^(\{[^}]+\}|[A-Za-z0-9]+)/g, (_, m) => {
+			const inner = m.startsWith('{') ? m.slice(1, -1) : m;
+			return `<sup>${inner}</sup>`;
+		})
+		// Square root: sqrt(x) → √x
+		.replace(/sqrt\(([^)]+)\)/gi, '√($1)')
+		// Summation: sum or Σ
+		.replace(/\bsum\b/gi, 'Σ')
+		// Greek letters commonly used in finance
+		.replace(/\balpha\b/gi, 'α').replace(/\bbeta\b/gi, 'β').replace(/\bgamma\b/gi, 'γ')
+		.replace(/\bdelta\b/gi, 'δ').replace(/\bsigma\b/gi, 'σ').replace(/\bmu\b/gi, 'μ')
+		.replace(/\brho\b/gi, 'ρ').replace(/\blambda\b/gi, 'λ').replace(/\bpi\b/gi, 'π')
+		.replace(/\btheta\b/gi, 'θ').replace(/\bepsilon\b/gi, 'ε').replace(/\btau\b/gi, 'τ')
+		// Multiply: * → ×
+		.replace(/\s\*\s/g, ' × ')
+		// Plus-minus
+		.replace(/\+\/-/g, '±').replace(/\+-/g, '±');
+	return html;
+}
+
 export function FormulaBook() {
 	const screens = Grid.useBreakpoint();
 	const isMobile = !screens.md;
@@ -296,7 +334,7 @@ export function FormulaBook() {
 												fontFamily: "'Cambria Math', Georgia, serif",
 												fontSize: 14, color: '#1e3a5f',
 											}}>
-												{f.formula}
+												<span dangerouslySetInnerHTML={{ __html: renderFormulaHtml(f.formula) }} />
 											</div>
 											<div style={{ fontSize: 11, color: '#64748b' }}>{f.whenToUse}</div>
 										</div>
@@ -334,7 +372,7 @@ export function FormulaBook() {
 						left: 0 !important;
 						top: 0 !important;
 						width: 100% !important;
-						padding: 20px !important;
+						padding: 20px 20px 60px 20px !important;
 					}
 					/* Hide interactive controls */
 					.ant-layout-header,
@@ -347,14 +385,39 @@ export function FormulaBook() {
 					.ant-modal-root { display: none !important; }
 					/* Page-break helpers */
 					.formula-card-hover { break-inside: avoid; page-break-inside: avoid; }
-					/* Force backgrounds to print (volume dividers, headers, etc.) */
+					/* Force backgrounds to print */
 					#formula-book-print * {
 						-webkit-print-color-adjust: exact !important;
 						print-color-adjust: exact !important;
 						color-adjust: exact !important;
 					}
+					/* Fixed footer on every printed page */
+					.print-page-footer {
+						visibility: visible !important;
+						position: fixed !important;
+						bottom: 0 !important;
+						left: 0 !important;
+						right: 0 !important;
+						text-align: center !important;
+						padding: 8px 0 !important;
+						border-top: 1px solid #cbd5e1 !important;
+						background: #fff !important;
+						font-size: 10px !important;
+						color: #64748b !important;
+						z-index: 99999 !important;
+					}
+					.print-page-footer * { visibility: visible !important; }
+					/* Hide footer on screen */
 				}
+				.print-page-footer { display: none; }
+				@media print { .print-page-footer { display: block; } }
 			`}</style>
+
+			{/* Fixed footer on every printed page */}
+			<div className="print-page-footer">
+				<div>Milven Finance School | CFA Formula Book {new Date().getFullYear()} | {LEVEL_LABELS[level]}</div>
+				<div style={{ fontSize: 9, color: '#94a3b8', marginTop: 2 }}>Precise. Calm. Premium. Exam-focused.</div>
+			</div>
 		</div>
 	);
 }
@@ -459,11 +522,9 @@ function FormulaCard({ formula, level }) {
 					fontSize: 16, fontWeight: 600, color: '#102540',
 					lineHeight: 1.5, whiteSpace: 'pre-wrap',
 				}}>
-					{formula.formula}
+					<span dangerouslySetInnerHTML={{ __html: renderFormulaHtml(formula.formula) }} />
 				</div>
 			</div>
-
-		
 
 			{/* Fields */}
 			<div style={{ padding: '12px 16px', fontSize: 12, color: '#374151', lineHeight: 1.6 }}>
@@ -561,7 +622,7 @@ function FormulaListView({ formulas }) {
 							</Space>
 						</div>
 						<div style={{ fontFamily: "'Cambria Math', Georgia, serif", color: '#1e3a5f' }}>
-							{f.formula?.length > 50 ? f.formula.slice(0, 50) + '…' : f.formula}
+							<span dangerouslySetInnerHTML={{ __html: renderFormulaHtml(f.formula?.length > 50 ? f.formula.slice(0, 50) + '…' : f.formula) }} />
 						</div>
 						<div style={{ color: '#64748b', fontSize: 12 }}>{f.volume?.name || '—'}</div>
 						<div style={{ color: '#64748b', fontSize: 12 }}>{f.module?.name || '—'}</div>
@@ -640,7 +701,7 @@ function ListPreviewCard({ formula }) {
 				<div style={{ background: '#f0f4f8', borderRadius: 10, padding: '14px 18px', marginBottom: 16, border: '1px solid #e2e8f0' }}>
 					<Typography.Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>FORMULA</Typography.Text>
 					<div style={{ fontFamily: "'Cambria Math', 'Latin Modern Math', Georgia, serif", fontSize: 18, fontWeight: 600, color: '#102540', marginTop: 4, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-						{formula.formula}
+						<span dangerouslySetInnerHTML={{ __html: renderFormulaHtml(formula.formula) }} />
 					</div>
 				</div>
 				{/* Variables */}

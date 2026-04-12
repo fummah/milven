@@ -76,6 +76,8 @@ model Volume {
   mockExamTopicWeights MockExamTopicWeight[]
   curriculumDocuments CurriculumDocument[]
   formulas         Formula[]
+  summarySheets    SummarySheet[]
+  moduleNotes      ModuleNote[]
 }
 
 model CourseVolume {
@@ -104,6 +106,8 @@ model Module {
   updatedAt DateTime @updatedAt
   topics    Topic[]
   formulas  Formula[]
+  summarySheets SummarySheet[]
+  moduleNotes   ModuleNote[]
   @@index([volumeId, order])
   @@index([courseId, order])
 }
@@ -131,6 +135,8 @@ model Topic {
   materials LearningMaterial[]
   concepts  Concept[]
   formulas  Formula[]
+  summarySheets SummarySheet[]
+  moduleNotes   ModuleNote[]
   @@index([moduleId, order])
 }
 
@@ -364,6 +370,8 @@ model Course {
   mockExams      MockExam[]
   curriculumDocuments CurriculumDocument[]
   formulas       Formula[]
+  summarySheets  SummarySheet[]
+  moduleNotes    ModuleNote[]
 }
 
 enum EnrollmentStatus {
@@ -692,6 +700,84 @@ model Formula {
   updatedAt       DateTime  @updatedAt
   @@index([courseId, volumeId, moduleId, topicId])
   @@index([level, highYield])
+}
+
+// ─── CFA Summary Sheet Master ─────────────────────────────
+model SummarySheet {
+  id              String    @id @default(cuid())
+  title           String                // Sheet title (e.g. "Rates and Returns")
+  level           CfaLevel
+  courseId        String?
+  course          Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  volumeId        String?
+  volume          Volume?   @relation(fields: [volumeId], references: [id], onDelete: SetNull)
+  moduleId        String?
+  module          Module?   @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  topicId         String?
+  topic           Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  year            Int       @default(2026)
+  // Section 1 — Module Snapshot
+  snapshot        String?               // What this sheet covers (max 4 lines)
+  useCase         String?               // Use case description
+  // Section 2 — Core Concepts (key definitions as JSON array)
+  coreDefinitions Json?                 // [{term, definition}]
+  // Section 3 — Formula Zone (JSON array)
+  formulas        Json?                 // [{formula, variables, whenToUse}]
+  // Section 4 — Distinctions / Traps
+  distinctions    Json?                 // [{left, right, difference}]
+  examTraps       Json?                 // [{trap}]
+  // Section 5 — Memory Hooks
+  memoryHooks     Json?                 // [{hook}]
+  // Section 6 — Quick Drills
+  quickDrills     Json?                 // [{question}]
+  // Section 7 — Revision Checklist
+  revisionCheck   Json?                 // [{item, checked}]
+  // Meta
+  order           Int       @default(0)
+  status          String    @default("DRAFT") // DRAFT | PUBLISHED
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  @@index([courseId, volumeId, moduleId, topicId])
+  @@index([level, status])
+}
+
+// ─── CFA Learning Module Notes ────────────────────────────
+model ModuleNote {
+  id              String    @id @default(cuid())
+  title           String                // Module note title (e.g. "Rates and Returns")
+  level           CfaLevel
+  courseId        String?
+  course          Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  volumeId        String?
+  volume          Volume?   @relation(fields: [volumeId], references: [id], onDelete: SetNull)
+  moduleId        String?
+  module          Module?   @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  topicId         String?
+  topic           Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  year            Int       @default(2026)
+  // Module Identity Strip
+  studyTime       String?               // e.g. "2.5 hours"
+  difficulty      String?               // e.g. "Foundational", "Intermediate", "Advanced"
+  calculatorUse   String?               // e.g. "Moderate", "Heavy", "Minimal"
+  // Overview
+  overview        String?               // Why the module matters, what success looks like
+  // Learning Outcome Statements (JSON array)
+  losStatements   Json?                 // [{ref, statement, commandWord}]
+  // Concept Pages (JSON array)
+  concepts        Json?                 // [{title, meaning, explanation, formula, formulaVariables, interpretation, workedExample, examTip, commonMistake}]
+  // End-of-module content
+  moduleSummary   String?               // Key ideas, must-know distinctions, exam traps
+  formulaRecap    Json?                 // [{name, formula, variables}]
+  practiceSet     Json?                 // [{question, losRef}]
+  workedSolutions Json?                 // [{question, answer, method, interpretation, trap}]
+  revisionCheck   Json?                 // [{item}]
+  // Meta
+  order           Int       @default(0)
+  status          String    @default("DRAFT") // DRAFT | PUBLISHED
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  @@index([courseId, volumeId, moduleId, topicId])
+  @@index([level, status])
 }
 
 // Weak Topics - Topics identified for focused study

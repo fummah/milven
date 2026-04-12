@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Layout, Menu, Typography, Avatar, Grid, Drawer, Button } from 'antd';
-import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined, TeamOutlined, ExperimentOutlined, FunctionOutlined } from '@ant-design/icons';
+import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined, TeamOutlined, ExperimentOutlined, FunctionOutlined, SolutionOutlined, SnippetsOutlined } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const { Sider, Content } = Layout;
@@ -27,18 +27,78 @@ const modernBadge = (iconNode, gradient) => (
   </span>
 );
 
+const subMenuBadge = (iconNode, color = '#102540') => (
+  <span
+    className="menu-icon-badge sub-menu-icon-badge"
+    style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      background: '#fff',
+      border: `1.5px solid ${color}`,
+      color: color,
+      fontSize: 15,
+      boxShadow: '0 1px 4px rgba(16,37,64,0.08)'
+    }}
+  >
+    <span style={{ display: 'inline-flex', color, fill: color }}>
+      {React.isValidElement(iconNode) ? React.cloneElement(iconNode, { style: { ...iconNode.props?.style, color, fontSize: 15 } }) : iconNode}
+    </span>
+  </span>
+);
+
+const childToParentKey = {
+  'student-courses': 'learning', 'student-module-notes': 'learning',
+  'student-formula-book': 'study-tools', 'student-summary-sheets': 'study-tools', 'student-revision': 'study-tools',
+  'student-exams': 'exams-group', 'student-mock-exams': 'exams-group', 'student-mistakes': 'exams-group', 'student-comparison': 'exams-group',
+  'student-billing': 'account-group', 'student-invoices': 'account-group', 'student-account': 'account-group'
+};
+
 const menuItems = [
   { key: 'student-home', icon: modernBadge(<HomeOutlined />, 'linear-gradient(135deg, #3b82f6, #1d4ed8)'), label: <Link to="/student">Dashboard</Link> },
-  { key: 'student-courses', icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'), label: <Link to="/student/courses">My Courses</Link> },
-  { key: 'student-exams', icon: modernBadge(<ReadOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'), label: <Link to="/student/exams">Exams</Link> },
-  { key: 'student-mistakes', icon: modernBadge(<ExclamationCircleOutlined />, 'linear-gradient(135deg, #ef4444, #dc2626)'), label: <Link to="/student/mistakes">My Mistakes</Link> },
-  { key: 'student-revision', icon: modernBadge(<StarOutlined />, 'linear-gradient(135deg, #eab308, #ca8a04)'), label: <Link to="/student/revision">Revision List</Link> },
-  { key: 'student-comparison', icon: modernBadge(<TeamOutlined />, 'linear-gradient(135deg, #0ea5e9, #2563eb)'), label: <Link to="/student/comparison">Compare With Peers</Link> },
-  { key: 'student-mock-exams', icon: modernBadge(<ExperimentOutlined />, 'linear-gradient(135deg, #6366f1, #4338ca)'), label: <Link to="/student/mock-exams">Mock Exams</Link> },
-  { key: 'student-formula-book', icon: modernBadge(<FunctionOutlined />, 'linear-gradient(135deg, #102540, #1b3a5b)'), label: <Link to="/student/formula-book">Formula Book</Link> },
-  { key: 'student-billing', icon: modernBadge(<DollarOutlined />, 'linear-gradient(135deg, #22c55e, #16a34a)'), label: <Link to="/student/billing">Billing</Link> },
-  { key: 'student-invoices', icon: modernBadge(<FileTextOutlined />, 'linear-gradient(135deg, #6366f1, #4f46e5)'), label: <Link to="/student/invoices">Invoices</Link> },
-  { key: 'student-account', icon: modernBadge(<UserOutlined />, 'linear-gradient(135deg, #64748b, #475569)'), label: <Link to="/student/account">Account</Link> }
+  {
+    key: 'learning',
+    icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'),
+    label: 'Learning',
+    children: [
+      { key: 'student-courses', icon: subMenuBadge(<BookOutlined />, '#8b5cf6'), label: <Link to="/student/courses">My Courses</Link> },
+      { key: 'student-module-notes', icon: subMenuBadge(<SnippetsOutlined />, '#8b5cf6'), label: <Link to="/student/module-notes">Module Notes</Link> },
+    ]
+  },
+  {
+    key: 'study-tools',
+    icon: modernBadge(<FunctionOutlined />, 'linear-gradient(135deg, #102540, #1b3a5b)'),
+    label: 'Study Tools',
+    children: [
+      { key: 'student-formula-book', icon: subMenuBadge(<FunctionOutlined />, '#102540'), label: <Link to="/student/formula-book">Formula Book</Link> },
+      { key: 'student-summary-sheets', icon: subMenuBadge(<FileTextOutlined />, '#102540'), label: <Link to="/student/summary-sheets">Summary Sheets</Link> },
+      { key: 'student-revision', icon: subMenuBadge(<StarOutlined />, '#eab308'), label: <Link to="/student/revision">Revision List</Link> },
+    ]
+  },
+  {
+    key: 'exams-group',
+    icon: modernBadge(<ReadOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'),
+    label: 'Exams & Practice',
+    children: [
+      { key: 'student-exams', icon: subMenuBadge(<ReadOutlined />, '#f97316'), label: <Link to="/student/exams">Exams</Link> },
+      { key: 'student-mock-exams', icon: subMenuBadge(<ExperimentOutlined />, '#6366f1'), label: <Link to="/student/mock-exams">Mock Exams</Link> },
+      { key: 'student-mistakes', icon: subMenuBadge(<ExclamationCircleOutlined />, '#ef4444'), label: <Link to="/student/mistakes">My Mistakes</Link> },
+      { key: 'student-comparison', icon: subMenuBadge(<TeamOutlined />, '#0ea5e9'), label: <Link to="/student/comparison">Compare With Peers</Link> },
+    ]
+  },
+  {
+    key: 'account-group',
+    icon: modernBadge(<UserOutlined />, 'linear-gradient(135deg, #64748b, #475569)'),
+    label: 'Account & Billing',
+    children: [
+      { key: 'student-billing', icon: subMenuBadge(<DollarOutlined />, '#22c55e'), label: <Link to="/student/billing">Billing</Link> },
+      { key: 'student-invoices', icon: subMenuBadge(<FileTextOutlined />, '#6366f1'), label: <Link to="/student/invoices">Invoices</Link> },
+      { key: 'student-account', icon: subMenuBadge(<UserOutlined />, '#64748b'), label: <Link to="/student/account">Account</Link> },
+    ]
+  }
 ];
 
 export default function StudentLayout() {
@@ -67,8 +127,24 @@ export default function StudentLayout() {
 
   const selected = (() => {
     const path = location.pathname.replace(/^\/student\/?/, '') || 'home';
-    return [`student-${path.split('/')[0]}`];
+    const segment = path.split('/')[0];
+    return [`student-${segment}`];
   })();
+  
+  // Keep parent submenus open when a child is selected
+  const [openKeys, setOpenKeys] = useState(() => {
+    const sel = selected[0];
+    const parent = childToParentKey[sel];
+    return parent ? [parent] : [];
+  });
+
+  useEffect(() => {
+    const sel = selected[0];
+    const parent = childToParentKey[sel];
+    if (parent && !openKeys.includes(parent)) {
+      setOpenKeys(prev => [...prev, parent]);
+    }
+  }, [location.pathname]);
   
   const siderWidth = (isMobile ? 0 : (collapsed ? 80 : 260));
   const HEADER_OFFSET = 64;
@@ -156,7 +232,9 @@ export default function StudentLayout() {
           <Menu 
             mode="inline" 
             items={menuItems} 
-            selectedKeys={selected} 
+            selectedKeys={selected}
+            openKeys={collapsed ? [] : openKeys}
+            onOpenChange={setOpenKeys}
             style={{ 
               borderRight: 0,
               padding: '0 8px',
@@ -189,7 +267,7 @@ export default function StudentLayout() {
                 width={Math.min(320, typeof window !== 'undefined' ? window.innerWidth * 0.86 : 320)}
                 className="modern-drawer"
               >
-                <Menu mode="inline" items={menuItems} selectedKeys={selected} onClick={() => setMobileOpen(false)} />
+                <Menu mode="inline" items={menuItems} selectedKeys={selected} openKeys={openKeys} onOpenChange={setOpenKeys} onClick={() => setMobileOpen(false)} />
               </Drawer>
             </div>
           )}

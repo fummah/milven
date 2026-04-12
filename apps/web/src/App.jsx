@@ -57,6 +57,8 @@ import { AdminExamEditor } from './pages/admin/AdminExamEditor.jsx';
 import { AdminExams } from './pages/admin/AdminExams.jsx';
 import { AdminVolumes } from './pages/admin/AdminVolumes.jsx';
 import { AdminFormulas } from './pages/admin/AdminFormulas.jsx';
+import { AdminSummarySheets } from './pages/admin/AdminSummarySheets.jsx';
+import { AdminModuleNotes } from './pages/admin/AdminModuleNotes.jsx';
 import AdminDocuments from './pages/admin/AdminDocuments.jsx';
 import { Home } from './pages/Home.jsx';
 import { CoursesPage } from './pages/Courses.jsx';
@@ -64,6 +66,8 @@ import { Careers } from './pages/Careers.jsx';
 import { CourseDetail } from './pages/CourseDetail.jsx';
 import { AboutCfa } from './pages/AboutCfa.jsx';
 import { FormulaBook } from './pages/FormulaBook.jsx';
+import { StudentSummarySheets } from './pages/student/StudentSummarySheets.jsx';
+import { StudentModuleNotes } from './pages/student/StudentModuleNotes.jsx';
 import { useSettings } from './contexts/SettingsContext.jsx';
 import { api } from './lib/api.js';
 
@@ -796,6 +800,8 @@ export default function App() {
 						<Route path="topics" element={<AdminTopics />} />
 						<Route path="volumes" element={<AdminVolumes />} />
 						<Route path="formulas" element={<AdminFormulas />} />
+						<Route path="summary-sheets" element={<AdminSummarySheets />} />
+						<Route path="module-notes" element={<AdminModuleNotes />} />
 						<Route path="documents" element={<AdminDocuments />} />
 						<Route path="questions" element={<AdminQuestions />} />
 						<Route path="questions/:id/edit" element={<AdminQuestionEdit />} />
@@ -826,6 +832,8 @@ export default function App() {
 						<Route path="comparison" element={<StudentComparison />} />
 						<Route path="mock-exams" element={<StudentMockExams />} />
 						<Route path="formula-book" element={<FormulaBook />} />
+						<Route path="summary-sheets" element={<StudentSummarySheets />} />
+						<Route path="module-notes" element={<StudentModuleNotes />} />
 						<Route path="billing" element={<StudentBilling />} />
 						<Route path="invoices" element={<StudentInvoices />} />
 						<Route path="account" element={<Account />} />
