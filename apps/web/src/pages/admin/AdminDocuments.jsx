@@ -88,7 +88,8 @@ export default function AdminDocuments() {
 					const filtered = prev.filter(d => d.id !== data.document.id && !(d.courseId === courseId && d.volumeId === volumeId));
 					return [data.document, ...filtered];
 				});
-				message.success(`Document uploaded successfully! Extracted ${(data.document.textLength || 0).toLocaleString()} characters.`);
+				const pgCount = data.document.pageCount || 0;
+				message.success(`Document uploaded successfully! Extracted ${(data.document.textLength || 0).toLocaleString()} characters from ${pgCount} pages.`);
 			}
 		} catch (err) {
 			const errMsg = err.response?.data?.error || 'Upload failed';
@@ -143,6 +144,12 @@ export default function AdminDocuments() {
 			render: (len, record) => record.hasText
 				? <Tag icon={<CheckCircleOutlined />} color="success">{(len || 0).toLocaleString()} chars</Tag>
 				: <Tag color="warning">No text</Tag>
+		},
+		{
+			title: 'Pages',
+			dataIndex: 'pageCount',
+			width: 80,
+			render: (count) => count ? <Tag color="cyan">{count}</Tag> : <Tag color="default">—</Tag>
 		},
 		{
 			title: 'Size',

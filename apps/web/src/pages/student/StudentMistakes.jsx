@@ -15,20 +15,11 @@ import {
 } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
+import { safeHtml, formatFormulaHtml } from '../../lib/formatFormula';
 import { AIHelpPanel } from '../../components/AIHelpPanel.jsx';
 import { useNavigate } from 'react-router-dom';
 
 const MISTAKES_PAGE_SIZE = 8;
-
-function safeHtml(html) {
-	if (html == null || typeof html !== 'string') return '';
-	return html
-		.replace(/&lt;/g, '<')
-		.replace(/&gt;/g, '>')
-		.replace(/&amp;/g, '&')
-		.replace(/&quot;/g, '"')
-		.replace(/&#39;/g, "'");
-}
 
 export default function StudentMistakes() {
 	const navigate = useNavigate();
@@ -544,7 +535,7 @@ export default function StudentMistakes() {
 										{practiceQuestion.workedSolution && (
 											<div
 												className="text-slate-600 text-sm prose max-w-none question-preview-content"
-												dangerouslySetInnerHTML={{ __html: safeHtml(practiceQuestion.workedSolution || '') }}
+												dangerouslySetInnerHTML={{ __html: formatFormulaHtml(practiceQuestion.workedSolution || '') }}
 											/>
 										)}
 										{!practiceQuestion.options.find(o => o.id === practiceAnswer)?.isCorrect && (

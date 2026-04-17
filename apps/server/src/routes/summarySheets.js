@@ -200,7 +200,47 @@ export function summarySheetsRouter(prisma) {
 				});
 				if (currDoc?.extractedText) {
 					const text = currDoc.extractedText;
-					curriculumExcerpt = text.length > 12000 ? text.slice(0, 12000) : text;
+					if (text.length <= 15000) {
+						curriculumExcerpt = text;
+					} else {
+						const keywords = [...topicNames, topicName, moduleName].filter(Boolean)
+							.flatMap(n => n.split(/[\s,;:()\-\/]+/).filter(w => w.length > 3))
+							.map(w => w.toLowerCase());
+						if (keywords.length === 0) {
+							curriculumExcerpt = text.substring(0, 15000) + '\n... [truncated]';
+						} else {
+							const WINDOW = 2500, STEP = 500;
+							const windows = [];
+							for (let i = 0; i < text.length; i += STEP) {
+								const chunk = text.substring(i, i + WINDOW).toLowerCase();
+								let score = keywords.reduce((s, kw) => { let c = 0, idx = 0; while ((idx = chunk.indexOf(kw, idx)) !== -1) { c++; idx += kw.length; } return s + c; }, 0);
+								windows.push({ start: i, score });
+							}
+							windows.sort((a, b) => b.score - a.score);
+							const ranges = [];
+							let total = 0;
+							for (const w of windows) {
+								if (total >= 15000 || w.score === 0) break;
+								const end = Math.min(w.start + WINDOW, text.length);
+								const budget = Math.min(end - w.start, 15000 - total);
+								ranges.push({ start: w.start, end: w.start + budget });
+								total += budget;
+							}
+							ranges.sort((a, b) => a.start - b.start);
+							const merged = [];
+							for (const r of ranges) {
+								if (merged.length > 0 && r.start <= merged[merged.length - 1].end + 300) merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, r.end);
+								else merged.push({ ...r });
+							}
+							curriculumExcerpt = merged.map((r, i) => {
+								const t = text.substring(r.start, r.end).trim();
+								const pm = text.substring(0, r.start).match(/\[PAGE (\d+)\]/g);
+								const pg = pm ? parseInt(pm[pm.length - 1].match(/\d+/)[0], 10) : null;
+								const prefix = pg ? `[... content from page ${pg} ...]\n` : (r.start > 0 ? '[...]\n' : '');
+								return prefix + t + (i < merged.length - 1 ? '\n[...]\n' : '');
+							}).join('\n') + (merged[merged.length - 1]?.end < text.length ? '\n... [additional content omitted]' : '');
+						}
+					}
 				}
 			}
 
@@ -214,7 +254,7 @@ export function summarySheetsRouter(prisma) {
 			].filter(Boolean).join('\n');
 
 			const curriculumSection = curriculumExcerpt
-				? `\n\nCURRICULUM REFERENCE MATERIAL:\n---\n${curriculumExcerpt}\n---\n`
+				? `\n\nCURRICULUM REFERENCE MATERIAL (use this as the primary source — reference exact LOS, formulas, and page numbers from the document):\n---\n${curriculumExcerpt}\n---\n`
 				: '';
 
 			const prompt = `You are a senior CFA curriculum expert at Milven Finance School. Generate ${count} CFA Summary Sheet(s) in JSON format following the Milven Summary Sheet Master standard.

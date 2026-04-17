@@ -4,6 +4,7 @@ import { EditOutlined, DeleteOutlined, EyeOutlined, CheckCircleOutlined, StopOut
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { api } from '../../lib/api';
+import { safeHtml, formatFormulaHtml } from '../../lib/formatFormula';
 import { GradeAttemptDrawer } from '../../components/GradeAttemptDrawer.jsx';
 
 const { Option } = Select;
@@ -927,23 +928,28 @@ export function AdminExams() {
                         <Tag color={q.difficulty === 'EASY' ? 'green' : q.difficulty === 'MEDIUM' ? 'orange' : 'red'}>{q.difficulty}</Tag>
                       </Space>
                       {q.vignette?.text && (
-                        <Typography.Paragraph style={{ margin: 0, padding: '8px', background: '#f5f5f5', borderRadius: 4 }}>
+                        <div style={{ margin: 0, padding: '8px', background: '#f5f5f5', borderRadius: 4 }}>
                           <Typography.Text strong>Vignette: </Typography.Text>
-                          {q.vignette.text}
-                        </Typography.Paragraph>
+                          <div className="prose question-preview-content" dangerouslySetInnerHTML={{ __html: safeHtml(q.vignette.text) }} />
+                        </div>
                       )}
-                      <Typography.Paragraph style={{ margin: 0 }}>{q.stem}</Typography.Paragraph>
+                      {q.vignetteText && !q.vignette?.text && (
+                        <div style={{ margin: 0, padding: '8px', background: '#f5f5f5', borderRadius: 4 }}>
+                          <Typography.Text strong>Vignette: </Typography.Text>
+                          <div className="prose question-preview-content" dangerouslySetInnerHTML={{ __html: safeHtml(q.vignetteText) }} />
+                        </div>
+                      )}
+                      <div className="prose question-preview-content" style={{ margin: 0 }} dangerouslySetInnerHTML={{ __html: safeHtml(q.stem || '') }} />
                       {q.options && q.options.length > 0 && (
                         <List
                           size="small"
                           dataSource={q.options}
                           renderItem={(opt, optIdx) => (
                             <List.Item style={{ padding: '4px 0' }}>
-                              <Space>
+                              <Space align="start">
                                 <Typography.Text>{String.fromCharCode(65 + optIdx)}.</Typography.Text>
-                                <Typography.Text style={{ color: opt.isCorrect ? '#52c41a' : 'inherit' }}>
-                                  {opt.text} {opt.isCorrect && <Tag color="green" size="small">Correct</Tag>}
-                                </Typography.Text>
+                                <span className="prose question-preview-content" style={{ display: 'inline-block', color: opt.isCorrect ? '#52c41a' : 'inherit' }} dangerouslySetInnerHTML={{ __html: safeHtml(opt.text || '') }} />
+                                {opt.isCorrect && <Tag color="green" size="small">Correct</Tag>}
                               </Space>
                             </List.Item>
                           )}

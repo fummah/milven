@@ -313,6 +313,7 @@ export function AdminCourses() {
             const payload = {
               name: values.name,
               description: values.description,
+              examConditions: values.examConditions || null,
               level: values.level,
               durationHours: typeof values.durationHours === 'number' ? values.durationHours : undefined,
               active: typeof values.active === 'boolean' ? values.active : undefined
@@ -373,6 +374,9 @@ export function AdminCourses() {
           </Form.Item>
           <Form.Item name="description" label="Description">
             <Input.TextArea rows={4} placeholder="Short description" />
+          </Form.Item>
+          <Form.Item name="examConditions" label="Exam Conditions" tooltip="Displayed to students on the mock exam instructions page (e.g. session format, timing, break rules)">
+            <Input.TextArea rows={4} placeholder="e.g. Level I: Two timed sessions of 135 minutes each with a mandatory 30-minute break. Each session contains 90 multiple-choice questions." />
           </Form.Item>
           <Form.Item name="level" label="Level" rules={[{ required: true }]}>
             <Select options={levelsList} />

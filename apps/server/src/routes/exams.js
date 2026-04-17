@@ -716,10 +716,30 @@ export function examsRouter(prisma) {
         return res.status(403).json({ error: 'Forbidden' });
       }
     }
-    // cascade delete attempts
-    await prisma.examAttempt.deleteMany({ where: { examId } });
-    await prisma.exam.delete({ where: { id: examId } });
-    return res.json({ ok: true });
+    // Cascade delete all related entities in correct order
+    try {
+      await prisma.$transaction(async (tx) => {
+        // 1. Delete all answers for all attempts of this exam
+        const attempts = await tx.examAttempt.findMany({ where: { examId }, select: { id: true } });
+        const attemptIds = attempts.map(a => a.id);
+        if (attemptIds.length > 0) {
+          await tx.examAnswer.deleteMany({ where: { attemptId: { in: attemptIds } } });
+        }
+        // 2. Delete all attempts
+        await tx.examAttempt.deleteMany({ where: { examId } });
+        // 3. Delete exam-question links
+        await tx.examQuestion.deleteMany({ where: { examId } });
+        // 4. Nullify mock exam references
+        await tx.mockExam.updateMany({ where: { session1ExamId: examId }, data: { session1ExamId: null } });
+        await tx.mockExam.updateMany({ where: { session2ExamId: examId }, data: { session2ExamId: null } });
+        // 5. Delete the exam itself
+        await tx.exam.delete({ where: { id: examId } });
+      });
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('[exam-delete] Failed:', err.message);
+      return res.status(500).json({ error: 'Failed to delete exam. ' + (err.message || '') });
+    }
   });
 	// Create a simple exam (admin)
 	router.post(
@@ -1987,6 +2007,43 @@ export function examsRouter(prisma) {
 		}
 	});
 
+	// Student: Get mock exam weight breakdown for a course (for instruction page)
+	router.get('/mock/weight-breakdown/:courseId', requireAuth(), async (req, res) => {
+		try {
+			const { courseId } = req.params;
+			const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true, examConditions: true } });
+			if (!course) return res.status(404).json({ error: 'Course not found' });
+
+			const level = course.level || 'LEVEL1';
+			const defaults = MOCK_DEFAULTS[level] || MOCK_DEFAULTS.LEVEL1;
+
+			const weights = await prisma.mockExamTopicWeight.findMany({
+				where: { courseId },
+				include: { volume: { select: { id: true, name: true, description: true } } },
+				orderBy: [{ session: 'asc' }, { createdAt: 'asc' }]
+			});
+
+			const totalQuestions = defaults.sessions === 1 ? defaults.totalQuestions : defaults.questionsPerSession;
+			const breakdown = weights.map(w => {
+				const midWeight = (w.weightMin + w.weightMax) / 2 / 100;
+				const estQuestions = Math.max(1, Math.round(totalQuestions * midWeight));
+				return {
+					volumeId: w.volumeId,
+					volumeName: w.volume?.description ? `${w.volume.description} (${w.volume.name})` : (w.volume?.name || 'Unknown'),
+					session: w.session,
+					weightMin: w.weightMin,
+					weightMax: w.weightMax,
+					estimatedQuestions: estQuestions
+				};
+			});
+
+			return res.json({ course, defaults, breakdown });
+		} catch (err) {
+			console.error('Weight breakdown error:', err);
+			return res.status(500).json({ error: 'Failed to fetch weight breakdown' });
+		}
+	});
+
 	// Student: Get mock exam eligible courses (enrolled courses that have topic weights configured)
 	router.get('/mock/eligible-courses', requireAuth(), async (req, res) => {
 		try {
@@ -2027,21 +2084,21 @@ export function examsRouter(prisma) {
 		try {
 			const { courseId } = parse.data;
 			const course = await prisma.course.findUnique({ where: { id: courseId } });
-			if (!course) return res.status(404).json({ error: 'Course not found' });
+			if (!course) return res.status(404).json({ error: 'Course not found', advice: 'Please go back and select a valid course.' });
 
 			// Check enrollment
 			const enrolled = await prisma.enrollment.findUnique({
 				where: { userId_courseId: { userId: req.user.id, courseId } }
 			});
 			if (!enrolled || enrolled.status === 'CANCELLED') {
-				return res.status(403).json({ error: 'Not enrolled in this course' });
+				return res.status(403).json({ error: 'You are not enrolled in this course.', advice: 'Please enrol in the course first, then try creating a mock exam again.' });
 			}
 
 			// Check no in-progress mock exists
 			const existing = await prisma.mockExam.findFirst({
 				where: { userId: req.user.id, courseId, status: { notIn: ['COMPLETED', 'CANCELLED'] } }
 			});
-			if (existing) return res.status(400).json({ error: 'You already have an active mock exam for this course', mockExamId: existing.id });
+			if (existing) return res.status(400).json({ error: 'You already have an active mock exam for this course.', advice: 'Please complete or cancel your existing mock exam before creating a new one.', mockExamId: existing.id });
 
 			const level = course.level || 'LEVEL1';
 			const defaults = MOCK_DEFAULTS[level] || MOCK_DEFAULTS.LEVEL1;
@@ -2051,7 +2108,7 @@ export function examsRouter(prisma) {
 				where: { courseId },
 				include: { volume: { include: { modules: { include: { topics: true } } } } }
 			});
-			if (weights.length === 0) return res.status(400).json({ error: 'Mock exam topic weights not configured for this course' });
+			if (weights.length === 0) return res.status(400).json({ error: 'Mock exam topic weights have not been configured for this course yet.', advice: 'Please contact your course administrator to set up mock exam weights.' });
 
 			// Build topic pool: map volumeId -> array of topic IDs
 			const volumeTopicMap = {};
@@ -2129,7 +2186,7 @@ export function examsRouter(prisma) {
 			}
 
 			if (s1Ids.length === 0 && s2Ids.length === 0) {
-				return res.status(400).json({ error: 'Not enough questions in the question bank to create a mock exam' });
+				return res.status(400).json({ error: 'Not enough questions in the question bank to create a mock exam.', advice: 'Please ask your administrator to add more questions to this course, then try again.' });
 			}
 
 			// Create session 1 exam
@@ -2180,32 +2237,32 @@ export function examsRouter(prisma) {
 				}
 			});
 
-			return res.status(201).json({
-				mockExam,
-				session1QuestionCount: s1Ids.length,
-				session2QuestionCount: s2Ids.length
-			});
-		} catch (err) {
-			console.error('Mock exam creation error:', err);
-			return res.status(500).json({ error: 'Failed to create mock exam' });
-		}
-	});
-
-	// Student: Get my mock exams
-	router.get('/mock/me', requireAuth(), async (req, res) => {
-		try {
-			const mockExams = await prisma.mockExam.findMany({
-				where: { userId: req.user.id },
+			// Fetch the created mock exam with full details for the frontend
+			const fullMockExam = await prisma.mockExam.findUnique({
+				where: { id: mockExam.id },
 				include: {
-					course: { select: { id: true, name: true, level: true } },
+					course: { select: { id: true, name: true, level: true, examConditions: true } },
 					session1Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true } } } },
 					session2Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true } } } }
-				},
-				orderBy: { createdAt: 'desc' }
+				}
 			});
-			return res.json({ mockExams });
+
+			return res.status(201).json({ mockExam: fullMockExam });
 		} catch (err) {
-			return res.status(500).json({ error: 'Failed to fetch mock exams' });
+			console.error('Mock exam creation error:', err);
+			let userMessage = 'Failed to create mock exam. Please try again later.';
+			let userAdvice = 'If this problem persists, please contact your course administrator.';
+			if (err.code === 'P2003' || err.message?.includes('Foreign key')) {
+				userMessage = 'Some questions referenced by the exam weights no longer exist.';
+				userAdvice = 'Please ask your administrator to regenerate questions for this course, then try again.';
+			} else if (err.code === 'P2002') {
+				userMessage = 'A duplicate record was detected.';
+				userAdvice = 'You may already have a mock exam in progress. Check your mock exams list and cancel any stale ones before trying again.';
+			} else if (err.code === 'P2025') {
+				userMessage = 'A required record was not found during creation.';
+				userAdvice = 'Please refresh the page and try again. If the issue persists, contact your administrator.';
+			}
+			return res.status(500).json({ error: userMessage, advice: userAdvice });
 		}
 	});
 
@@ -2215,7 +2272,7 @@ export function examsRouter(prisma) {
 			const mockExam = await prisma.mockExam.findUnique({
 				where: { id: req.params.mockExamId },
 				include: {
-					course: { select: { id: true, name: true, level: true } },
+					course: { select: { id: true, name: true, level: true, examConditions: true } },
 					session1Exam: {
 						select: {
 							id: true, name: true, timeLimitMinutes: true,

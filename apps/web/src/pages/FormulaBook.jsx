@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Tooltip, Collapse, Anchor, Grid, Tabs, Switch, Divider, Modal } from 'antd';
 import { BookOutlined, SearchOutlined, StarFilled, PrinterOutlined, FilterOutlined, UnorderedListOutlined, AppstoreOutlined, DownloadOutlined, EyeOutlined } from '@ant-design/icons';
 import { api } from '../lib/api';
+import { renderFormulaHtml } from '../lib/formatFormula';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -10,44 +11,6 @@ const LEVELS = [
 ];
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 const LEVEL_COLORS = { LEVEL1: '#3b82f6', LEVEL2: '#8b5cf6', LEVEL3: '#f59e0b' };
-
-/**
- * Convert plain-text formula notation into rich HTML with subscripts, superscripts,
- * fraction bars, Greek letters, and other financial math formatting.
- */
-function renderFormulaHtml(text) {
-	if (!text) return '';
-	let html = text
-		// Escape HTML entities first
-		.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-		// Fractions: numerator / denominator in parentheses → stacked fraction
-		.replace(/\(([^)]+)\)\s*\/\s*\(([^)]+)\)/g,
-			'<span style="display:inline-flex;flex-direction:column;align-items:center;vertical-align:middle;margin:0 2px;"><span style="border-bottom:1.5px solid #102540;padding:0 4px 2px;">$1</span><span style="padding:2px 4px 0;">$2</span></span>')
-		// Subscripts: X_0, X_1, X_d, X_{abc}
-		.replace(/_(\{[^}]+\}|[A-Za-z0-9]+)/g, (_, m) => {
-			const inner = m.startsWith('{') ? m.slice(1, -1) : m;
-			return `<sub>${inner}</sub>`;
-		})
-		// Superscripts: X^2, X^{n}, X^n
-		.replace(/\^(\{[^}]+\}|[A-Za-z0-9]+)/g, (_, m) => {
-			const inner = m.startsWith('{') ? m.slice(1, -1) : m;
-			return `<sup>${inner}</sup>`;
-		})
-		// Square root: sqrt(x) → √x
-		.replace(/sqrt\(([^)]+)\)/gi, '√($1)')
-		// Summation: sum or Σ
-		.replace(/\bsum\b/gi, 'Σ')
-		// Greek letters commonly used in finance
-		.replace(/\balpha\b/gi, 'α').replace(/\bbeta\b/gi, 'β').replace(/\bgamma\b/gi, 'γ')
-		.replace(/\bdelta\b/gi, 'δ').replace(/\bsigma\b/gi, 'σ').replace(/\bmu\b/gi, 'μ')
-		.replace(/\brho\b/gi, 'ρ').replace(/\blambda\b/gi, 'λ').replace(/\bpi\b/gi, 'π')
-		.replace(/\btheta\b/gi, 'θ').replace(/\bepsilon\b/gi, 'ε').replace(/\btau\b/gi, 'τ')
-		// Multiply: * → ×
-		.replace(/\s\*\s/g, ' × ')
-		// Plus-minus
-		.replace(/\+\/-/g, '±').replace(/\+-/g, '±');
-	return html;
-}
 
 export function FormulaBook() {
 	const screens = Grid.useBreakpoint();

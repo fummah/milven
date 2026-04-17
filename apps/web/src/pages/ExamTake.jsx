@@ -1,14 +1,16 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { formatFormulaHtml } from '../lib/formatFormula';
 import { Card, Button, Typography, Space, message, Switch, InputNumber, Radio, Modal, Drawer, Tag, Divider, Progress, Tooltip, Alert, Collapse } from 'antd';
 import { RichTextEditor } from '../components/RichTextEditor.jsx';
 import { AIHelpPanel } from '../components/AIHelpPanel.jsx';
-import { ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, TrophyOutlined, SendOutlined, CalculatorOutlined, BookOutlined, FireOutlined, ThunderboltOutlined, BulbOutlined, FileTextOutlined, PlusOutlined, StarOutlined, ExclamationCircleOutlined, RocketOutlined, SafetyOutlined, EyeOutlined, EyeInvisibleOutlined, LockOutlined, ExperimentOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, TrophyOutlined, SendOutlined, CalculatorOutlined, BookOutlined, FireOutlined, ThunderboltOutlined, BulbOutlined, FileTextOutlined, PlusOutlined, StarOutlined, ExclamationCircleOutlined, RocketOutlined, SafetyOutlined, EyeOutlined, EyeInvisibleOutlined, LockOutlined, ExperimentOutlined, SnippetsOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ModuleNotesDrawer } from '../components/ModuleNotesDrawer.jsx';
 
 // Smart Review Panel Component - Shows after answering in Practice Mode
-function SmartReviewPanel({ answer, question, visible, onAddToRevision, onAddToWeakTopic, mode }) {
+function SmartReviewPanel({ answer, question, visible, onAddToRevision, onAddToWeakTopic, onOpenNotes, mode }) {
 	if (!visible || mode === 'exam' || !answer?.selectedOptionId) return null;
 
 	const isCorrect = answer.isCorrect;
@@ -102,9 +104,7 @@ function SmartReviewPanel({ answer, question, visible, onAddToRevision, onAddToW
 								),
 								children: (
 									<div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
-										<Typography.Paragraph className="!mb-0 text-slate-700 whitespace-pre-wrap">
-											{question.workedSolution}
-										</Typography.Paragraph>
+										<div className="!mb-0 text-slate-700 whitespace-pre-wrap formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(question.workedSolution) }} />
 									</div>
 								)
 							}]}
@@ -144,9 +144,18 @@ function SmartReviewPanel({ answer, question, visible, onAddToRevision, onAddToW
 							<Typography.Text className="text-indigo-600 text-xs font-semibold uppercase tracking-wide block mb-2">
 								<ExperimentOutlined className="mr-1" /> Key Formulas
 							</Typography.Text>
-							<Typography.Text className="text-slate-700 font-mono text-sm whitespace-pre-wrap">
-								{question.keyFormulas}
-							</Typography.Text>
+							<div className="text-slate-700 font-mono text-sm whitespace-pre-wrap formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(question.keyFormulas) }} />
+						</div>
+					)}
+
+					{/* LOS Reference for incorrect answers */}
+					{!isCorrect && question?.los && (
+						<div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+							<div className="flex items-center gap-2 mb-1">
+								<FileTextOutlined className="text-blue-600" />
+								<Typography.Text className="text-blue-800 text-xs font-semibold uppercase tracking-wide">Learning Outcome Statement (LOS)</Typography.Text>
+							</div>
+							<Typography.Text className="text-slate-700 text-sm">{question.los}</Typography.Text>
 						</div>
 					)}
 
@@ -181,6 +190,16 @@ function SmartReviewPanel({ answer, question, visible, onAddToRevision, onAddToW
 									style={{ background: '#fef3c7', borderColor: '#fcd34d', color: '#b45309' }}
 								>
 									Mark as Weak Topic
+								</Button>
+							)}
+							{question?.topic?.id && onOpenNotes && (
+								<Button
+									icon={<SnippetsOutlined />}
+									onClick={() => onOpenNotes(question.topic.id, question.topic.name)}
+									className="rounded-xl"
+									style={{ background: '#f0f4f8', borderColor: '#cbd5e1', color: '#102540' }}
+								>
+									View Module Notes
 								</Button>
 							)}
 							<div className="w-full">
@@ -434,7 +453,19 @@ export function ExamTake() {
 	const [reviewedQuestions, setReviewedQuestions] = useState(new Set()); // Track which questions have been reviewed
 	const [revisionList, setRevisionList] = useState(new Set()); // Questions added to revision
 	const [weakTopics, setWeakTopics] = useState(new Set()); // Topics marked as weak
+	const [notesDrawerOpen, setNotesDrawerOpen] = useState(false);
+	const [notesDrawerTopicId, setNotesDrawerTopicId] = useState(null);
+	const [notesDrawerTopicName, setNotesDrawerTopicName] = useState(null);
+	const openNotesDrawer = (topicId, topicName) => { setNotesDrawerTopicId(topicId); setNotesDrawerTopicName(topicName); setNotesDrawerOpen(true); };
 	const [constructedDrafts, setConstructedDrafts] = useState({}); // questionId -> text for constructed response while typing
+
+	// Mock exam instructions state
+	const mockExamId = searchParams.get('mockExamId');
+	const mockSession = searchParams.get('session');
+	const isMockExam = !!mockExamId;
+	const [showInstructions, setShowInstructions] = useState(false);
+	const [instructionsData, setInstructionsData] = useState(null);
+	const [mockExamData, setMockExamData] = useState(null);
 
 	useEffect(() => {
 		let mounted = true;
@@ -447,6 +478,10 @@ export function ExamTake() {
 					if (!mode && res.data.attempt.status === 'IN_PROGRESS') {
 						setShowModeSelection(true);
 					}
+					// Show instructions for mock exams
+					if (isMockExam && res.data.attempt.status === 'IN_PROGRESS') {
+						setShowInstructions(true);
+					}
 				}
 			} catch {
 				message.error('Unable to load attempt');
@@ -456,6 +491,21 @@ export function ExamTake() {
 			mounted = false;
 		};
 	}, [attemptId]);
+
+	// Fetch mock exam details and weight breakdown for instructions
+	useEffect(() => {
+		if (!isMockExam || !mockExamId) return;
+		(async () => {
+			try {
+				const { data } = await api.get(`/api/exams/mock/${mockExamId}`);
+				setMockExamData(data.mockExam);
+				if (data.mockExam?.courseId) {
+					const bd = await api.get(`/api/exams/mock/weight-breakdown/${data.mockExam.courseId}`);
+					setInstructionsData(bd.data);
+				}
+			} catch { /* silent */ }
+		})();
+	}, [isMockExam, mockExamId]);
 
 	// Handle mode selection
 	const handleModeSelect = (selectedMode) => {
@@ -672,6 +722,201 @@ export function ExamTake() {
 					transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
 					className="w-12 h-12 rounded-full border-4 border-[#102540] border-t-transparent"
 				/>
+			</div>
+		);
+	}
+
+	// Mock exam instructions screen
+	if (showInstructions && isMockExam) {
+		const mock = mockExamData;
+		const course = mock?.course;
+		const level = course?.level || 'LEVEL1';
+		const s1Count = mock?.session1Exam?.examQuestions?.length || totalQuestions;
+		const s2Count = mock?.session2Exam?.examQuestions?.length || 0;
+		const bd = instructionsData;
+		const breakdown = bd?.breakdown || [];
+		const examConditions = course?.examConditions || bd?.course?.examConditions;
+		const session1Breakdown = breakdown.filter(b => b.session === 1);
+		const session2Breakdown = breakdown.filter(b => b.session === 2);
+		const currentSessionNum = parseInt(mockSession, 10) || 1;
+
+		return (
+			<div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/40">
+				<div className="max-w-3xl mx-auto px-4 py-8 sm:py-12">
+					<motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+						{/* Header */}
+						<div className="text-center">
+							<div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
+								<FileTextOutlined className="text-white text-2xl" />
+							</div>
+							<Typography.Title level={2} className="!mb-1">Exam Instructions</Typography.Title>
+							<Typography.Text className="text-slate-500 text-base">
+								{courseName} {level === 'LEVEL1' && s2Count > 0 ? `— Session ${currentSessionNum}` : ''}
+							</Typography.Text>
+						</div>
+
+						{/* Exam Conditions */}
+						{examConditions && (
+							<Card size="small" style={{ borderRadius: 16, background: '#fffbeb', borderColor: '#fde68a' }}>
+								<div className="flex items-start gap-3">
+									<InfoCircleOutlined className="text-amber-500 mt-0.5 text-lg" />
+									<div>
+										<Typography.Text strong className="text-amber-800 block mb-1">Exam Conditions</Typography.Text>
+										<Typography.Text className="text-slate-700 whitespace-pre-line">{examConditions}</Typography.Text>
+									</div>
+								</div>
+							</Card>
+						)}
+
+						{/* Level-specific format */}
+						{level === 'LEVEL1' && (
+							<Card size="small" style={{ borderRadius: 16, background: '#eff6ff', borderColor: '#bfdbfe' }}>
+								<div className="flex items-start gap-3">
+									<BookOutlined className="text-blue-500 mt-0.5 text-lg" />
+									<div>
+										<Typography.Text strong className="text-blue-800 block mb-1">CFA Level I Exam Format</Typography.Text>
+										<Typography.Text className="text-slate-700">
+											The CFA Level I exam consists of {s1Count + s2Count} multiple-choice questions, divided into two sessions of {mock?.session1Minutes || 135} minutes each.
+											Session 1 contains {s1Count} questions and Session 2 contains {s2Count} questions.
+											Candidates are advised to spend approximately 90 seconds per question. Maximum break time between sessions is {mock?.breakMinutes || 30} minutes.
+										</Typography.Text>
+									</div>
+								</div>
+							</Card>
+						)}
+						{level === 'LEVEL2' && (
+							<Card size="small" style={{ borderRadius: 16, background: '#f5f3ff', borderColor: '#c4b5fd' }}>
+								<div className="flex items-start gap-3">
+									<BookOutlined className="text-purple-500 mt-0.5 text-lg" />
+									<div>
+										<Typography.Text strong className="text-purple-800 block mb-1">CFA Level II Exam Format</Typography.Text>
+										<Typography.Text className="text-slate-700">
+											The Level II exam consists of {s1Count} vignette-based multiple-choice questions in a single session of {mock?.session1Minutes || 264} minutes.
+											Each vignette presents a scenario followed by related questions. All questions must be answered based on the information in the vignette.
+										</Typography.Text>
+									</div>
+								</div>
+							</Card>
+						)}
+						{level === 'LEVEL3' && (
+							<Card size="small" style={{ borderRadius: 16, background: '#fefce8', borderColor: '#fde047' }}>
+								<div className="flex items-start gap-3">
+									<BookOutlined className="text-yellow-600 mt-0.5 text-lg" />
+									<div>
+										<Typography.Text strong className="text-yellow-800 block mb-1">CFA Level III Exam Format</Typography.Text>
+										<Typography.Text className="text-slate-700">
+											The Level III exam consists of item sets and constructed response (essay) sets. Both question types combine vignettes with accompanying multiple-choice items for item sets and constructed response items for essay sets.
+											All questions must be answered in English based on the information in the vignette.
+											Each session will have either 6 item sets and 5 essay sets or 5 item sets and 6 essay sets.
+											Overall, the Level III exam contains 11 item sets and 11 essay sets for 12 points each.
+											The CFA Program curriculum topic areas for Level III will be randomly placed on the exam.
+										</Typography.Text>
+									</div>
+								</div>
+							</Card>
+						)}
+
+						{/* Current Session Info */}
+						{level === 'LEVEL1' && s2Count > 0 && (
+							<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<Card size="small" style={{ borderRadius: 16, borderColor: currentSessionNum === 1 ? '#3b82f6' : '#e2e8f0', borderWidth: currentSessionNum === 1 ? 2 : 1, background: currentSessionNum === 1 ? '#f0f7ff' : '#fafafa' }}>
+									<Typography.Text strong className={currentSessionNum === 1 ? 'text-blue-700 block mb-2' : 'text-slate-500 block mb-2'}>
+										Session 1 {currentSessionNum === 1 ? '(Current)' : ''}
+									</Typography.Text>
+									<ul className="text-sm text-slate-700 space-y-1 list-disc pl-4 mb-0">
+										<li>{s1Count} multiple-choice questions</li>
+										<li>{mock?.session1Minutes || 135} minutes time limit</li>
+										<li>~90 seconds per question</li>
+									</ul>
+								</Card>
+								<Card size="small" style={{ borderRadius: 16, borderColor: currentSessionNum === 2 ? '#8b5cf6' : '#e2e8f0', borderWidth: currentSessionNum === 2 ? 2 : 1, background: currentSessionNum === 2 ? '#f5f3ff' : '#fafafa' }}>
+									<Typography.Text strong className={currentSessionNum === 2 ? 'text-purple-700 block mb-2' : 'text-slate-500 block mb-2'}>
+										Session 2 {currentSessionNum === 2 ? '(Current)' : ''}
+									</Typography.Text>
+									<ul className="text-sm text-slate-700 space-y-1 list-disc pl-4 mb-0">
+										<li>{s2Count} multiple-choice questions</li>
+										<li>{mock?.session2Minutes || 135} minutes time limit</li>
+										<li>~90 seconds per question</li>
+									</ul>
+								</Card>
+							</div>
+						)}
+
+						{/* Question Distribution by Volume */}
+						{breakdown.length > 0 && (
+							<Card style={{ borderRadius: 16 }}>
+								<Typography.Text strong className="text-slate-800 block mb-3">Question Distribution by Volume</Typography.Text>
+								{level === 'LEVEL1' && session1Breakdown.length > 0 && session2Breakdown.length > 0 ? (
+									<div className="space-y-4">
+										{currentSessionNum === 1 || !currentSessionNum ? (
+											<div>
+												<Typography.Text className="text-blue-700 text-sm font-semibold block mb-2">Session 1</Typography.Text>
+												<table className="w-full text-sm">
+													<thead><tr className="border-b border-slate-200"><th className="text-left py-2 text-slate-500 font-medium">Volume</th><th className="text-left py-2 text-slate-500 font-medium w-28">Weight</th><th className="text-left py-2 text-slate-500 font-medium w-28">Est. Questions</th></tr></thead>
+													<tbody>
+														{session1Breakdown.map(r => (
+															<tr key={r.volumeId} className="border-b border-slate-100">
+																<td className="py-2 text-slate-700">{r.volumeName}</td>
+																<td className="py-2 text-slate-600">{r.weightMin}%–{r.weightMax}%</td>
+																<td className="py-2"><Tag color="blue">{r.estimatedQuestions}</Tag></td>
+															</tr>
+														))}
+													</tbody>
+												</table>
+											</div>
+										) : null}
+										{currentSessionNum === 2 ? (
+											<div>
+												<Typography.Text className="text-purple-700 text-sm font-semibold block mb-2">Session 2</Typography.Text>
+												<table className="w-full text-sm">
+													<thead><tr className="border-b border-slate-200"><th className="text-left py-2 text-slate-500 font-medium">Volume</th><th className="text-left py-2 text-slate-500 font-medium w-28">Weight</th><th className="text-left py-2 text-slate-500 font-medium w-28">Est. Questions</th></tr></thead>
+													<tbody>
+														{session2Breakdown.map(r => (
+															<tr key={r.volumeId} className="border-b border-slate-100">
+																<td className="py-2 text-slate-700">{r.volumeName}</td>
+																<td className="py-2 text-slate-600">{r.weightMin}%–{r.weightMax}%</td>
+																<td className="py-2"><Tag color="purple">{r.estimatedQuestions}</Tag></td>
+															</tr>
+														))}
+													</tbody>
+												</table>
+											</div>
+										) : null}
+									</div>
+								) : (
+									<table className="w-full text-sm">
+										<thead><tr className="border-b border-slate-200"><th className="text-left py-2 text-slate-500 font-medium">Volume</th><th className="text-left py-2 text-slate-500 font-medium w-28">Weight</th><th className="text-left py-2 text-slate-500 font-medium w-28">Est. Questions</th></tr></thead>
+										<tbody>
+											{breakdown.map(r => (
+												<tr key={r.volumeId} className="border-b border-slate-100">
+													<td className="py-2 text-slate-700">{r.volumeName}</td>
+													<td className="py-2 text-slate-600">{r.weightMin}%–{r.weightMax}%</td>
+													<td className="py-2"><Tag color="blue">{r.estimatedQuestions}</Tag></td>
+												</tr>
+											))}
+										</tbody>
+									</table>
+								)}
+							</Card>
+						)}
+
+						{/* Begin Button */}
+						<div className="text-center pt-4">
+							<Button
+								type="primary"
+								size="large"
+								onClick={() => setShowInstructions(false)}
+								className="rounded-xl px-12"
+								style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)', height: 52, fontSize: 16 }}
+							>
+								Begin Exam
+							</Button>
+							<Typography.Text className="text-slate-400 text-xs block mt-3">
+								Timer is already running. Click above when you are ready to start answering.
+							</Typography.Text>
+						</div>
+					</motion.div>
+				</div>
 			</div>
 		);
 	}
@@ -1266,6 +1511,7 @@ export function ExamTake() {
 																			visible={mode === 'practice' && subAnswered && reviewedQuestions.has(subQ?.id)}
 																			onAddToRevision={handleAddToRevision}
 																			onAddToWeakTopic={handleAddToWeakTopic}
+																			onOpenNotes={openNotesDrawer}
 																			mode={mode}
 																		/>
 																	</AnimatePresence>
@@ -1314,9 +1560,6 @@ export function ExamTake() {
 													<div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
 														<span className="text-white font-bold">{displayNumber}</span>
 													</div>
-													<Typography.Text className="text-white/80 text-sm">
-														Question {globalIdx + 1} of {totalQuestions}
-													</Typography.Text>
 													{isAnswered && (
 														<Tag className="bg-white/20 text-white border-0 rounded-full">
 															<CheckCircleOutlined className="mr-1" /> Answered
@@ -1381,6 +1624,7 @@ export function ExamTake() {
 														visible={mode === 'practice' && isAnswered && reviewedQuestions.has(q?.id)}
 														onAddToRevision={handleAddToRevision}
 														onAddToWeakTopic={handleAddToWeakTopic}
+														onOpenNotes={openNotesDrawer}
 														mode={mode}
 													/>
 												</AnimatePresence>
@@ -1629,7 +1873,7 @@ export function ExamTake() {
 												<CloseCircleOutlined className="text-white text-lg" />
 											)}
 											<Typography.Text className="text-white font-semibold">
-												Question {idx + 1}
+												{idx + 1}
 											</Typography.Text>
 											{isConstructed ? (
 												<>
@@ -1697,6 +1941,7 @@ export function ExamTake() {
 				onSelect={handleModeSelect}
 				examName={courseName}
 			/>
+			<ModuleNotesDrawer open={notesDrawerOpen} onClose={() => setNotesDrawerOpen(false)} topicId={notesDrawerTopicId} topicName={notesDrawerTopicName} />
 		</div>
 	);
 }

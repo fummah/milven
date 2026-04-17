@@ -12,18 +12,12 @@ import {
 	TrophyOutlined,
 	BookOutlined,
 	RocketOutlined,
-	RobotOutlined
+	RobotOutlined,
+	SnippetsOutlined,
+	FileTextOutlined
 } from '@ant-design/icons';
-
-function safeHtml(html) {
-	if (html == null || typeof html !== 'string') return '';
-	return html
-		.replace(/&lt;/g, '<')
-		.replace(/&gt;/g, '>')
-		.replace(/&amp;/g, '&')
-		.replace(/&quot;/g, '"')
-		.replace(/&#39;/g, "'");
-}
+import { ModuleNotesDrawer } from '../components/ModuleNotesDrawer.jsx';
+import { safeHtml, formatFormulaHtml } from '../lib/formatFormula';
 
 export function ExamResult() {
 	const { attemptId } = useParams();
@@ -33,6 +27,10 @@ export function ExamResult() {
 	const [loading, setLoading] = useState(true);
 	const [aiHints, setAiHints] = useState({});
 	const [hintsLoading, setHintsLoading] = useState(false);
+	const [notesDrawerOpen, setNotesDrawerOpen] = useState(false);
+	const [notesDrawerTopicId, setNotesDrawerTopicId] = useState(null);
+	const [notesDrawerTopicName, setNotesDrawerTopicName] = useState(null);
+	const openNotesDrawer = (topicId, topicName) => { setNotesDrawerTopicId(topicId); setNotesDrawerTopicName(topicName); setNotesDrawerOpen(true); };
 
 	useEffect(() => {
 		let mounted = true;
@@ -278,6 +276,29 @@ export function ExamResult() {
 										</div>
 									)}
 
+									{failed && a?.question?.los && (
+										<div className="mt-3 p-3 rounded-lg bg-blue-50 border border-blue-200">
+											<div className="flex items-center gap-2 mb-1">
+												<FileTextOutlined className="text-blue-600" />
+												<Typography.Text strong className="text-blue-800 text-sm">Learning Outcome Statement (LOS)</Typography.Text>
+											</div>
+											<Typography.Text className="text-slate-700 text-sm">{a.question.los}</Typography.Text>
+										</div>
+									)}
+
+									{failed && a?.question?.topic?.id && (
+										<div className="mt-3">
+											<Button
+												icon={<SnippetsOutlined />}
+												onClick={() => openNotesDrawer(a.question.topic.id, a.question.topic.name)}
+												className="rounded-xl"
+												style={{ background: '#f0f4f8', borderColor: '#cbd5e1', color: '#102540' }}
+											>
+												View Module Notes – {a.question.topic.name}
+											</Button>
+										</div>
+									)}
+
 									{failed && (
 										<AIHelpPanel
 											questionId={a?.question?.id}
@@ -327,7 +348,7 @@ export function ExamResult() {
 																</div>
 																<div
 																	className="prose prose-sm question-preview-content p-4 rounded-lg bg-blue-50/80 border border-blue-200 text-slate-800 max-w-none"
-																	dangerouslySetInnerHTML={{ __html: safeHtml(keyFormulas) }}
+																	dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }}
 																/>
 															</div>
 														)}
@@ -339,7 +360,7 @@ export function ExamResult() {
 																</div>
 																<div
 																	className="prose prose-sm question-preview-content p-4 rounded-lg bg-green-50/80 border border-green-200 text-slate-800 max-w-none"
-																	dangerouslySetInnerHTML={{ __html: safeHtml(workedSolution) }}
+																	dangerouslySetInnerHTML={{ __html: formatFormulaHtml(workedSolution) }}
 																/>
 															</div>
 														)}
@@ -386,13 +407,13 @@ export function ExamResult() {
 																{keyFormulas && (
 																	<div>
 																		<Typography.Text strong className="text-blue-700 text-sm">Key Formula(s)</Typography.Text>
-																		<div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-blue-50/50 border border-blue-100" dangerouslySetInnerHTML={{ __html: safeHtml(keyFormulas) }} />
+																		<div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-blue-50/50 border border-blue-100" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }} />
 																	</div>
 																)}
 																{workedSolution && (
 																	<div>
 																		<Typography.Text strong className="text-green-700 text-sm">Worked Solution</Typography.Text>
-																		<div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-green-50/50 border border-green-100" dangerouslySetInnerHTML={{ __html: safeHtml(workedSolution) }} />
+																		<div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-green-50/50 border border-green-100" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(workedSolution) }} />
 																	</div>
 																)}
 															</Space>
@@ -420,6 +441,7 @@ export function ExamResult() {
 					</Button>
 				</div>
 			</div>
+			<ModuleNotesDrawer open={notesDrawerOpen} onClose={() => setNotesDrawerOpen(false)} topicId={notesDrawerTopicId} topicName={notesDrawerTopicName} />
 		</div>
 	);
 }

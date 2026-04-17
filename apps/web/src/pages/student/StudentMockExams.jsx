@@ -41,6 +41,7 @@ export default function StudentMockExams() {
 
   useEffect(() => { loadData(); }, []);
 
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -67,12 +68,32 @@ export default function StudentMockExams() {
       loadData();
     } catch (err) {
       if (err.response?.data?.mockExamId) {
-        message.info('You already have an active mock exam for this course');
+        message.info('You already have an active mock exam for this course. Please complete or cancel it first.');
       } else {
-        message.error(err.response?.data?.error || 'Failed to create mock exam');
+        const errorMsg = err.response?.data?.error || 'Failed to create mock exam';
+        const advice = err.response?.data?.advice || 'Please try again. If the problem persists, contact your course administrator.';
+        Modal.error({
+          title: 'Could not create mock exam',
+          content: (
+            <div>
+              <p style={{ marginBottom: 8 }}>{errorMsg}</p>
+              <p style={{ color: '#666', fontSize: 13 }}><strong>What to do:</strong> {advice}</p>
+            </div>
+          ),
+        });
       }
     }
     setCreating(false);
+  };
+
+  // Auto-select latest eligible course when opening create modal
+  const openCreateModal = () => {
+    if (eligibleCourses.length > 0) {
+      setSelectedCourseId(eligibleCourses[0].id);
+    } else {
+      setSelectedCourseId(null);
+    }
+    setCreateModalOpen(true);
   };
 
   const startSession = async (mockExamId, session) => {
@@ -135,7 +156,7 @@ export default function StudentMockExams() {
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => { setCreateModalOpen(true); setSelectedCourseId(null); }}
+          onClick={openCreateModal}
           className="rounded-xl"
           style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}
           size="large"
@@ -160,7 +181,7 @@ export default function StudentMockExams() {
                 <Button
                   type="primary"
                   icon={<PlusOutlined />}
-                  onClick={() => setCreateModalOpen(true)}
+                  onClick={openCreateModal}
                   className="rounded-xl mt-4"
                   style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}
                 >
@@ -357,11 +378,23 @@ export default function StudentMockExams() {
         styles={{ body: { paddingTop: 16 } }}
       >
         <div className="space-y-6">
-          <Card size="small" style={{ borderRadius: 12, background: '#f0f5ff', borderColor: '#d6e4ff' }}>
-            <Typography.Text className="text-xs text-slate-600">
-              <strong>Exam Conditions:</strong> Level 1: Two timed sessions with a mandatory break. Level 2 &amp; 3: Single timed session with random topic placement. Questions are weighted by topic as configured by your course administrator. Simulates real CFA exam conditions.
-            </Typography.Text>
-          </Card>
+          {(() => {
+            const selectedCourse = eligibleCourses.find(c => c.id === selectedCourseId);
+            const conditions = selectedCourse?.examConditions;
+            return conditions ? (
+              <Card size="small" style={{ borderRadius: 12, background: '#f0f5ff', borderColor: '#d6e4ff' }}>
+                <Typography.Text className="text-xs text-slate-600">
+                  <strong>Exam Conditions:</strong> {conditions}
+                </Typography.Text>
+              </Card>
+            ) : (
+              <Card size="small" style={{ borderRadius: 12, background: '#f0f5ff', borderColor: '#d6e4ff' }}>
+                <Typography.Text className="text-xs text-slate-600">
+                  <strong>Exam Conditions:</strong> Questions are weighted by topic as configured by your course administrator. Simulates real CFA exam conditions.
+                </Typography.Text>
+              </Card>
+            );
+          })()}
 
           <div>
             <Typography.Text className="text-slate-600 block mb-2">Select Course</Typography.Text>
@@ -396,6 +429,7 @@ export default function StudentMockExams() {
           </Button>
         </div>
       </Modal>
+
     </div>
   );
 }

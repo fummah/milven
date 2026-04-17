@@ -164,12 +164,49 @@ export function cmsRouter(prisma) {
     return p;
   }
   /**
-   * Build a topic-aware curriculum excerpt from extracted PDF text.
-   * Instead of blindly taking the first N chars, this finds sections of the
-   * document that mention the selected topic/concept keywords and returns
-   * a weighted excerpt centred on those sections.
+   * Helper: resolve the page number at a given character offset in the full text
+   * by scanning backwards for the nearest [PAGE N] marker.
    */
-  function buildCurriculumExcerpt(fullText, topicNames = [], conceptNames = [], maxChars = 30000) {
+  function getPageAtOffset(fullText, offset) {
+    const before = fullText.substring(0, offset);
+    const matches = [...before.matchAll(/\[PAGE (\d+)\]/g)];
+    if (matches.length > 0) return parseInt(matches[matches.length - 1][1], 10);
+    return null;
+  }
+
+  /**
+   * LOS detection patterns — CFA Learning Outcome Statements typically start
+   * with action verbs like "describe", "explain", "calculate", "compare", etc.
+   */
+  const LOS_VERBS = [
+    'describe', 'explain', 'calculate', 'compare', 'contrast', 'evaluate',
+    'discuss', 'distinguish', 'interpret', 'identify', 'define', 'determine',
+    'demonstrate', 'formulate', 'recommend', 'justify', 'analyze', 'assess',
+    'classify', 'construct', 'estimate', 'illustrate', 'measure', 'select',
+    'support', 'critique'
+  ];
+  const LOS_PATTERN = new RegExp(
+    `(?:^|\\n)\\s*(?:(?:the candidate should be able to|the member should be able to|learning outcome(?:s)?:?|los:?)\\s*)?` +
+    `((?:${LOS_VERBS.join('|')})\\b[^\\n]{10,200})`,
+    'gim'
+  );
+
+  /**
+   * Formula detection — lines containing mathematical notation patterns
+   * (=, /, ×, ^, subscripts, Greek letters, common finance abbreviations).
+   */
+  const FORMULA_PATTERN = /(?:^|\n)([^\n]*(?:[\=][\s]*[^\n]*[\+\-\*\/\^]|(?:PV|FV|NPV|IRR|WACC|EPS|ROE|ROA|CAPM|YTM|HPR|DDM|FCF|FCFE|FCFF|EVA|σ|β|α|μ|Σ|√|∑|∏|∫|Δ)\s*[=])[^\n]*)/gim;
+
+  /**
+   * Build a topic-aware curriculum excerpt from extracted PDF text.
+   * This enhanced version:
+   * 1) Preserves [PAGE N] markers from the extracted text for accurate page references
+   * 2) Extracts LOS (Learning Outcome Statements) near selected topics
+   * 3) Prioritises formula-containing sections and topic-heading sections
+   * 4) Uses larger context windows around high-value hits (LOS + formulas)
+   * 5) Returns structured sections with page references
+   */
+  function buildCurriculumExcerpt(fullText, topicNames = [], conceptNames = [], maxChars = 40000) {
     if (!fullText) return '';
     if (fullText.length <= maxChars) return fullText;
 
@@ -181,19 +218,69 @@ export function cmsRouter(prisma) {
       return fullText.substring(0, maxChars) + '\n... [document truncated]';
     }
 
-    // Split into overlapping windows of ~2000 chars with 500-char step
-    const WINDOW = 2000;
+    // ── Phase 1: Find all LOS statements near topics ──────────────────────
+    const losHits = [];
+    let m;
+    while ((m = LOS_PATTERN.exec(fullText)) !== null) {
+      const losText = (m[1] || m[0]).trim();
+      const pos = m.index;
+      const page = getPageAtOffset(fullText, pos);
+      // Score: does this LOS relate to our topic keywords?
+      const lower = losText.toLowerCase();
+      const relevance = keywords.reduce((s, kw) => s + (lower.includes(kw) ? 3 : 0), 0);
+      // Also check the surrounding 500 chars for keyword proximity
+      const context = fullText.substring(Math.max(0, pos - 500), Math.min(fullText.length, pos + 500)).toLowerCase();
+      const proximity = keywords.reduce((s, kw) => s + (context.includes(kw) ? 2 : 0), 0);
+      losHits.push({ pos, losText, page, score: relevance + proximity });
+    }
+
+    // ── Phase 2: Find all formula sections ────────────────────────────────
+    const formulaHits = [];
+    while ((m = FORMULA_PATTERN.exec(fullText)) !== null) {
+      const formulaText = (m[1] || m[0]).trim();
+      const pos = m.index;
+      const page = getPageAtOffset(fullText, pos);
+      const context = fullText.substring(Math.max(0, pos - 500), Math.min(fullText.length, pos + 500)).toLowerCase();
+      const relevance = keywords.reduce((s, kw) => s + (context.includes(kw) ? 2 : 0), 0);
+      formulaHits.push({ pos, formulaText, page, score: relevance });
+    }
+
+    // ── Phase 3: Score windows with boosted weights for LOS + formulas ───
+    const WINDOW = 2500;
     const STEP = 500;
     const windows = [];
     for (let i = 0; i < fullText.length; i += STEP) {
       const chunk = fullText.substring(i, i + WINDOW);
       const lower = chunk.toLowerCase();
-      const score = keywords.reduce((s, kw) => {
+      // Base keyword score
+      let score = keywords.reduce((s, kw) => {
         let count = 0;
         let idx = 0;
         while ((idx = lower.indexOf(kw, idx)) !== -1) { count++; idx += kw.length; }
         return s + count;
       }, 0);
+
+      // Boost: +10 for each LOS in this window
+      for (const los of losHits) {
+        if (los.pos >= i && los.pos < i + WINDOW && los.score > 0) score += 10;
+      }
+
+      // Boost: +5 for each formula in this window
+      for (const f of formulaHits) {
+        if (f.pos >= i && f.pos < i + WINDOW && f.score > 0) score += 5;
+      }
+
+      // Boost: topic name appears as a heading (all caps or followed by newline)
+      for (const tn of topicNames) {
+        const tnLower = tn.toLowerCase();
+        if (lower.includes(tnLower)) {
+          // Check if it looks like a heading (preceded by newline, followed by newline)
+          const idx = lower.indexOf(tnLower);
+          const before = lower.substring(Math.max(0, idx - 5), idx);
+          if (before.includes('\n') || idx < 5) score += 8;
+        }
+      }
+
       windows.push({ start: i, score });
     }
 
@@ -205,11 +292,11 @@ export function cmsRouter(prisma) {
 
     for (const w of windows) {
       if (totalChars >= maxChars) break;
-      // Merge overlapping ranges
+      if (w.score === 0) break; // Don't include irrelevant sections
       const start = w.start;
       const end = Math.min(w.start + WINDOW, fullText.length);
       const budget = Math.min(end - start, maxChars - totalChars);
-      selectedRanges.push({ start, end: start + budget });
+      selectedRanges.push({ start, end: start + budget, score: w.score });
       totalChars += budget;
     }
 
@@ -219,21 +306,45 @@ export function cmsRouter(prisma) {
     // Merge adjacent/overlapping ranges
     const merged = [];
     for (const r of selectedRanges) {
-      if (merged.length > 0 && r.start <= merged[merged.length - 1].end + 200) {
+      if (merged.length > 0 && r.start <= merged[merged.length - 1].end + 300) {
         merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, r.end);
       } else {
         merged.push({ ...r });
       }
     }
 
+    // Build excerpt with page references
     const excerpt = merged.map((r, i) => {
       const text = fullText.substring(r.start, r.end).trim();
-      const prefix = r.start > 0 ? `[...excerpt from p.~${Math.ceil(r.start / 2500)}]\n` : '';
+      const page = getPageAtOffset(fullText, r.start);
+      const prefix = page ? `[... content from page ${page} ...]\n` : (r.start > 0 ? '[...]\n' : '');
       const suffix = i < merged.length - 1 ? '\n[...]\n' : '';
       return prefix + text + suffix;
     }).join('\n');
 
-    return excerpt + (merged[merged.length - 1]?.end < fullText.length ? '\n... [additional content omitted]' : '');
+    // Prepend a summary of found LOS for the AI
+    const relevantLOS = losHits.filter(l => l.score > 0).sort((a, b) => b.score - a.score).slice(0, 20);
+    let losSummary = '';
+    if (relevantLOS.length > 0) {
+      losSummary = 'LEARNING OUTCOME STATEMENTS (LOS) FOUND IN DOCUMENT:\n';
+      for (const los of relevantLOS) {
+        losSummary += `  • ${los.losText}${los.page ? ` (page ${los.page})` : ''}\n`;
+      }
+      losSummary += '\n';
+    }
+
+    // Prepend a summary of found formulas for the AI
+    const relevantFormulas = formulaHits.filter(f => f.score > 0).sort((a, b) => b.score - a.score).slice(0, 15);
+    let formulaSummary = '';
+    if (relevantFormulas.length > 0) {
+      formulaSummary = 'KEY FORMULAS FOUND IN DOCUMENT (use these EXACTLY as written — do not modify notation):\n';
+      for (const f of relevantFormulas) {
+        formulaSummary += `  • ${f.formulaText}${f.page ? ` (page ${f.page})` : ''}\n`;
+      }
+      formulaSummary += '\n';
+    }
+
+    return losSummary + formulaSummary + excerpt + (merged.length > 0 && merged[merged.length - 1]?.end < fullText.length ? '\n... [additional content omitted]' : '');
   }
 
   // file upload setup
@@ -265,7 +376,13 @@ export function cmsRouter(prisma) {
         include: { course: { select: { id: true, name: true, level: true } }, volume: { select: { id: true, name: true, description: true } } },
         orderBy: { createdAt: 'desc' }
       });
-      return res.json({ documents: docs.map(d => ({ ...d, extractedText: undefined, hasText: !!d.extractedText, textLength: d.extractedText?.length || 0 })) });
+      return res.json({ documents: docs.map(d => ({
+        ...d,
+        extractedText: undefined,
+        hasText: !!d.extractedText,
+        textLength: d.extractedText?.length || 0,
+        pageCount: d.extractedText ? (d.extractedText.match(/\[PAGE \d+\]/g) || []).length : 0
+      })) });
     } catch (err) {
       return res.status(500).json({ error: err.message || 'Failed to list documents' });
     }
@@ -288,10 +405,51 @@ export function cmsRouter(prisma) {
       if (!course) return res.status(404).json({ error: 'Course not found' });
       if (!volume) return res.status(404).json({ error: 'Volume not found' });
 
-      // Extract text from PDF
+      // Extract text from PDF with per-page markers for accurate page referencing
+      // Also detect superscript/subscript via font-size and baseline comparisons
       let extractedText = '';
       try {
-        const result = await pdfParse(file.buffer);
+        const pageTexts = [];
+        const result = await pdfParse(file.buffer, {
+          pagerender: async function (pageData) {
+            const textContent = await pageData.getTextContent({ normalizeWhitespace: true, disableCombineTextItems: false });
+            let text = '';
+            let lastY = null;
+            let lastFontSize = null;
+            for (const item of textContent.items) {
+              const y = item.transform[5];
+              const fontSize = Math.abs(item.transform[0]) || item.height || 12;
+              if (lastY !== null && Math.abs(lastY - y) > 2) text += '\n';
+
+              // Detect super/subscript: significantly smaller font AND on the same visual line
+              const str = item.str;
+              if (lastFontSize && fontSize > 0 && lastFontSize > 0) {
+                const ratio = fontSize / lastFontSize;
+                const yDiff = y - (lastY || y);
+                // Superscript: smaller font, shifted up (higher y in PDF coords)
+                if (ratio < 0.8 && yDiff > 1 && str.length <= 6) {
+                  text += `^{${str}}`;
+                  lastY = y;
+                  continue;
+                }
+                // Subscript: smaller font, shifted down (lower y in PDF coords)
+                if (ratio < 0.8 && yDiff < -1 && str.length <= 6) {
+                  text += `_{${str}}`;
+                  lastY = y;
+                  continue;
+                }
+              }
+
+              text += str;
+              lastY = y;
+              lastFontSize = fontSize;
+            }
+            const pageNum = pageTexts.length + 1;
+            const pageText = text.trim();
+            pageTexts.push(pageText);
+            return `\n[PAGE ${pageNum}]\n${pageText}`;
+          }
+        });
         extractedText = result.text || '';
       } catch (pdfErr) {
         console.error('PDF parse error:', pdfErr.message, pdfErr.stack);
@@ -322,8 +480,12 @@ export function cmsRouter(prisma) {
         include: { course: { select: { id: true, name: true, level: true } }, volume: { select: { id: true, name: true, description: true } } }
       });
 
+      // Count detected pages from [PAGE N] markers
+      const pageCount = (extractedText.match(/\[PAGE \d+\]/g) || []).length;
+      console.log(`[curriculum-upload] ${file.originalname}: ${pageCount} pages, ${extractedText.length} chars extracted`);
+
       return res.status(201).json({
-        document: { ...doc, extractedText: undefined, hasText: true, textLength: extractedText.length }
+        document: { ...doc, extractedText: undefined, hasText: true, textLength: extractedText.length, pageCount }
       });
     } catch (err) {
       if (err.code === 'P2002') return res.status(409).json({ error: 'A document already exists for this course + volume combination' });
@@ -632,7 +794,7 @@ export function cmsRouter(prisma) {
     });
   });
   router.post('/courses', requireAuth(), requireRole('ADMIN'), async (req, res) => {
-    const { name, level, description, durationHours, active, createProduct, productName, productDescription, productPriceCents, productInterval, productActive } = req.body ?? {};
+    const { name, level, description, examConditions, durationHours, active, createProduct, productName, productDescription, productPriceCents, productInterval, productActive } = req.body ?? {};
     if (!name || !level) return res.status(400).json({ error: 'name and level are required' });
     const created = await prisma.$transaction(async (tx) => {
       const course = await tx.course.create({
@@ -640,6 +802,7 @@ export function cmsRouter(prisma) {
           name,
           level,
           description: description ?? null,
+          examConditions: examConditions ?? null,
           durationHours: typeof durationHours === 'number' ? durationHours : null,
           active: typeof active === 'boolean' ? active : true
         }
@@ -683,13 +846,14 @@ export function cmsRouter(prisma) {
   });
   router.put('/courses/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const id = req.params.id;
-    const { name, level, description, durationHours, priceCents, active } = req.body ?? {};
+    const { name, level, description, examConditions, durationHours, priceCents, active } = req.body ?? {};
     const course = await prisma.course.update({
       where: { id },
       data: {
         ...(name ? { name } : {}),
         ...(level ? { level } : {}),
         ...(typeof description !== 'undefined' ? { description } : {}),
+        ...(typeof examConditions !== 'undefined' ? { examConditions } : {}),
         ...(typeof durationHours !== 'undefined' ? { durationHours } : {}),
         ...(typeof priceCents !== 'undefined' ? { priceCents } : {}),
         ...(typeof active !== 'undefined' ? { active } : {})
@@ -2124,14 +2288,30 @@ export function cmsRouter(prisma) {
 		const topicLabel = selectedTopics.map(t => t.name).join(', ');
 		const difficultyLabel = diffList.join(', ');
 		const curriculumSection = curriculumExcerpt
-			? `\n\nCURRICULUM REFERENCE MATERIAL (use this as the primary source for question content, terminology, formulas, examples, and scenarios — generate questions that closely reflect this material):\n---\n${curriculumExcerpt}\n---\n`
+			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
 			: '';
 		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions in JSON format.
 
 Draw directly from past CFA exam question styles and real-world financial scenarios. Questions must be precise, unambiguous, and test genuine understanding.
 ALL metadata fields below are REQUIRED - always populate every single one to help students during revision.
 For VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles: a single case study/vignette may span MULTIPLE learning modules, topics, or concepts within the same volume. Sub-questions should draw from different topics/concepts where appropriate to create a rich, integrative scenario.
-${curriculumExcerpt ? 'IMPORTANT: A curriculum reference document has been provided below. You MUST base your questions on the content, terminology, formulas, and examples from this document. Generate questions that test understanding of the material in the document.' : ''}
+${curriculumExcerpt ? `CRITICAL — CURRICULUM DOCUMENT RULES:
+A curriculum reference document has been provided below. You MUST:
+1. BASE every question on the content, terminology, and examples from this document.
+2. For "los": Copy the EXACT Learning Outcome Statement (LOS) from the document — these are statements starting with verbs like "describe", "explain", "calculate", etc. that appear just below each topic heading. Do NOT paraphrase or invent LOS — use the exact wording from the document.
+3. For "tracePage": Use the EXACT page numbers from the [PAGE N] markers in the document. Format as "p. X" or "p. X-Y" for ranges.
+4. For "traceSection": Use the EXACT section/reading/topic heading as it appears in the document.
+5. For "keyFormulas" and "workedSolution": ALWAYS use this exact notation for mathematical formatting:
+   - Superscripts: use ^ e.g. (1+r)^n, X^2, e^{-rt}
+   - Subscripts: use _ e.g. P_0, CF_{t}, r_{equity}
+   - Greek letters: spell out as words e.g. alpha, beta, sigma, delta, mu, rho, lambda, pi, theta, epsilon, tau
+   - Fractions: use (numerator) / (denominator) e.g. (CF_1) / (1+r)^1
+   - Square root: use sqrt(x) e.g. sqrt(variance)
+   - Summation: use sum
+   - Multiply: use * between terms
+   - Plus-minus: use +/-
+   Copy formulas from the document but ALWAYS convert them to this notation. Do NOT use Unicode superscript/subscript characters. Do NOT use LaTeX. Do NOT use HTML tags.
+6. Questions that involve calculations MUST use the exact formulas from the document with correct variable names.` : ''}
 
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles):
 - The vignetteText MUST be 400-600 words — long, rich, CFA-exam-quality narrative
@@ -2164,11 +2344,11 @@ Return a JSON object with an "items" key. EVERY question/sub-question MUST inclu
 - "options": for MCQ only: array of exactly 3 objects { "text": string, "isCorrect": boolean } with exactly one isCorrect true
 - "explanation": string (concise explanation of the correct answer and common mistakes)
 - "qid": string (short unique ID like "Q-TOPIC-001")
-- "los": string (specific learning outcome statement)
-- "traceSection": string (curriculum section reference, e.g. "Reading 33: Cost of Capital")
-- "tracePage": string (page reference, e.g. "p. 145-148")
-- "keyFormulas": string (key formula(s) with variable definitions)
-- "workedSolution": string (step-by-step worked solution - be thorough)
+- "los": string (the EXACT learning outcome statement from the curriculum document — copy it verbatim)
+- "traceSection": string (EXACT section/reading heading from the document, e.g. "Reading 33: Cost of Capital")
+- "tracePage": string (EXACT page from the document [PAGE N] markers, e.g. "p. 145" or "p. 145-148")
+- "keyFormulas": string (key formula(s) using ^ for superscripts, _ for subscripts, spelled-out Greek letters — e.g. "PV = (CF_1) / (1+r)^1 + (CF_2) / (1+r)^2". NEVER use Unicode super/subscript chars or LaTeX.)
+- "workedSolution": string (step-by-step worked solution using the same ^/_ notation for all math — be thorough)
 
 For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of 4-5 MCQ sub-questions with same fields }.
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
@@ -2464,11 +2644,11 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		const metaFieldsBlock = `EVERY question MUST include ALL of these metadata fields (populate ALL of them, never leave null):
 - "qid": string (a short unique identifier, e.g. "Q-${selectedTopics[0]?.name?.substring(0,4)?.toUpperCase() || 'CFA'}-001", increment the number for each question)
-- "los": string (the specific learning outcome statement this question tests, e.g. "Calculate and interpret the weighted average cost of capital")
-- "traceSection": string (curriculum section reference, e.g. "Reading 33: Cost of Capital")
-- "tracePage": string (page reference, e.g. "p. 145-148")
-- "keyFormulas": string (key formula(s) used, written clearly with variable definitions, e.g. "WACC = w_d × r_d(1-t) + w_e × r_e")
-- "workedSolution": string (step-by-step worked solution showing all calculations and reasoning - be thorough so students can learn from it)
+- "los": string (the EXACT Learning Outcome Statement from the curriculum document — copy it VERBATIM, e.g. "describe the features of a fixed-income security". These appear just below topic headings and start with verbs like describe, explain, calculate, etc.)
+- "traceSection": string (the EXACT section/reading/topic heading from the curriculum document, e.g. "Reading 33: Cost of Capital" — do NOT invent section names)
+- "tracePage": string (the EXACT page number from the [PAGE N] markers in the curriculum document, e.g. "p. 145" or "p. 145-148" — do NOT guess page numbers)
+- "keyFormulas": string (key formula(s) using ^ for superscripts, _ for subscripts, spelled-out Greek letters — e.g. "PV = (CF_1) / (1+r)^1 + (CF_2) / (1+r)^2", "WACC = w_d * r_d * (1 - t) + w_e * r_e". NEVER use Unicode super/subscript chars or LaTeX. Include variable definitions.)
+- "workedSolution": string (step-by-step worked solution using the same ^/_ notation for all math — be thorough so students can learn from it)
 - "explanation": string (concise explanation of why the answer is correct and common mistakes to avoid)`;
 
 		let formatBlock;
@@ -2557,7 +2737,7 @@ ${metaFieldsBlock}`;
 		}
 
 		const previewCurriculumSection = previewCurriculumExcerpt
-			? `\n\nCURRICULUM REFERENCE MATERIAL (use this as the primary source for question content, terminology, formulas, examples, and scenarios — generate questions that closely reflect this material):\n---\n${previewCurriculumExcerpt}\n---\n`
+			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${previewCurriculumExcerpt}\n---\n`
 			: '';
 		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions that could appear on actual CFA Level I, II, or III examinations.
 
@@ -2576,7 +2756,20 @@ IMPORTANT GUIDELINES:
   * VARY exhibit formats across case studies: some with HTML tables, some narrative-only (no exhibits), some with text-based charts. Do NOT use tables in every single case study — mix approaches for realism
   * Sub-questions should reference specific exhibits or narrative details by name and test different aspects of the scenario
   * Open the vignetteText with the Volume name header: "<p><strong>${volumeName}</strong></p>"
-${previewCurriculumExcerpt ? '- IMPORTANT: A curriculum reference document has been provided below. You MUST base your questions on the content, terminology, formulas, and examples from this document.' : ''}
+${previewCurriculumExcerpt ? `CRITICAL — CURRICULUM DOCUMENT RULES:
+A curriculum reference document has been provided below. You MUST:
+1. BASE every question on the content, terminology, and examples from this document.
+2. For "los": Copy the EXACT Learning Outcome Statement (LOS) from the document — these are statements starting with verbs like "describe", "explain", "calculate", etc. that appear just below each topic heading. Do NOT paraphrase or invent LOS — use the exact wording from the document.
+3. For "tracePage": Use the EXACT page numbers from the [PAGE N] markers in the document. Format as "p. X" or "p. X-Y" for ranges.
+4. For "traceSection": Use the EXACT section/reading/topic heading as it appears in the document.
+5. For "keyFormulas" and "workedSolution": ALWAYS use this exact notation for mathematical formatting:
+   - Superscripts: use ^ e.g. (1+r)^n, X^2, e^{-rt}
+   - Subscripts: use _ e.g. P_0, CF_{t}, r_{equity}
+   - Greek letters: spell out as words e.g. alpha, beta, sigma, delta, mu, rho, lambda, pi, theta, epsilon, tau
+   - Fractions: use (numerator) / (denominator) e.g. (CF_1) / (1+r)^1
+   - Square root: use sqrt(x), Summation: use sum, Multiply: use *, Plus-minus: use +/-
+   Copy formulas from the document but ALWAYS convert them to this notation. Do NOT use Unicode super/subscript chars or LaTeX or HTML tags.
+6. Questions that involve calculations MUST use the exact formulas from the document with correct variable names.` : ''}
 
 Context:
 - Course: ${course.name}

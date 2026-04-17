@@ -10,23 +10,16 @@ import {
 	EditOutlined,
 	BulbOutlined,
 	FileTextOutlined,
-	ExperimentOutlined
+	ExperimentOutlined,
+	SnippetsOutlined
 } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
+import { safeHtml, formatFormulaHtml } from '../../lib/formatFormula';
 import { AIHelpPanel } from '../../components/AIHelpPanel.jsx';
+import { ModuleNotesDrawer } from '../../components/ModuleNotesDrawer.jsx';
 
 const REVISION_PAGE_SIZE = 8;
-
-function safeHtml(html) {
-	if (html == null || typeof html !== 'string') return '';
-	return html
-		.replace(/&lt;/g, '<')
-		.replace(/&gt;/g, '>')
-		.replace(/&amp;/g, '&')
-		.replace(/&quot;/g, '"')
-		.replace(/&#39;/g, "'");
-}
 
 export default function StudentRevision() {
 	const [loading, setLoading] = useState(true);
@@ -36,6 +29,10 @@ export default function StudentRevision() {
 	const [currentPage, setCurrentPage] = useState(1);
 	const [editingNote, setEditingNote] = useState(null);
 	const [noteText, setNoteText] = useState('');
+	const [notesDrawerOpen, setNotesDrawerOpen] = useState(false);
+	const [notesDrawerTopicId, setNotesDrawerTopicId] = useState(null);
+	const [notesDrawerTopicName, setNotesDrawerTopicName] = useState(null);
+	const openNotesDrawer = (topicId, topicName) => { setNotesDrawerTopicId(topicId); setNotesDrawerTopicName(topicName); setNotesDrawerOpen(true); };
 
 	useEffect(() => {
 		loadRevision();
@@ -286,18 +283,6 @@ export default function StudentRevision() {
 												>
 													{q?.difficulty || 'MEDIUM'}
 												</Tag>
-												{q?.topic?.name && (
-													<Tag className="bg-white/10 text-white border-0 rounded-lg">
-														{q.topic.name}
-													</Tag>
-												)}
-											</div>
-											<div className="flex items-center gap-2">
-												{entry.reviewed && (
-													<Tag className="bg-emerald-500/20 text-emerald-400 border-0 rounded-full">
-														<CheckCircleOutlined className="mr-1" /> Reviewed
-													</Tag>
-												)}
 												<Select
 													size="small"
 													value={entry.priority}
@@ -365,7 +350,7 @@ export default function StudentRevision() {
 																		</div>
 																		<div
 																			className="text-slate-700 prose max-w-none question-preview-content"
-																			dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution || '') }}
+																			dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.workedSolution || '') }}
 																		/>
 																	</div>
 																)}
@@ -399,13 +384,22 @@ export default function StudentRevision() {
 																		<Typography.Text className="text-indigo-600 text-xs font-semibold block mb-1">
 																			<ExperimentOutlined className="mr-1" /> Key Formulas
 																		</Typography.Text>
-																		<Typography.Text className="text-slate-700 font-mono text-sm whitespace-pre-wrap">
-																			{q.keyFormulas}
-																		</Typography.Text>
+																		<div className="text-slate-700 font-mono text-sm whitespace-pre-wrap formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.keyFormulas) }} />
 																	</div>
 																)}
 
-																<AIHelpPanel questionId={q?.id} mode="revision_review" />
+																{q?.topic?.id && (
+															<Button
+																icon={<SnippetsOutlined />}
+																onClick={() => openNotesDrawer(q.topic.id, q.topic.name)}
+																className="rounded-xl"
+																style={{ background: '#f0f4f8', borderColor: '#cbd5e1', color: '#102540' }}
+															>
+																View Module Notes
+															</Button>
+														)}
+
+														<AIHelpPanel questionId={q?.id} mode="revision_review" />
 															</div>
 														)
 													}
@@ -498,6 +492,7 @@ export default function StudentRevision() {
 					/>
 				</div>
 			)}
+			<ModuleNotesDrawer open={notesDrawerOpen} onClose={() => setNotesDrawerOpen(false)} topicId={notesDrawerTopicId} topicName={notesDrawerTopicName} />
 		</div>
 	);
 }

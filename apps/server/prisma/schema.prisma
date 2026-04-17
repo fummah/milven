@@ -260,7 +260,7 @@ enum AttemptStatus {
 model ExamAttempt {
   id               String       @id @default(cuid())
   examId           String
-  exam             Exam         @relation(fields: [examId], references: [id])
+  exam             Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
   userId           String
   user             User         @relation(fields: [userId], references: [id])
   startedAt        DateTime     @default(now())
@@ -274,7 +274,7 @@ model ExamAttempt {
 model ExamAnswer {
   id               String      @id @default(cuid())
   attemptId        String
-  attempt          ExamAttempt @relation(fields: [attemptId], references: [id])
+  attempt          ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   questionId       String
   question         Question    @relation(fields: [questionId], references: [id])
   selectedOptionId String?
@@ -355,6 +355,7 @@ model Course {
   name           String
   level          CfaLevel
   description    String?
+  examConditions String?   @db.Text
   durationHours  Int?
   // (Deprecated) Price moved to Product; left for backward compatibility.
   priceCents     Int?
@@ -648,8 +649,8 @@ model MockExam {
   updatedAt       DateTime @updatedAt
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  session1Exam    Exam?    @relation("MockSession1", fields: [session1ExamId], references: [id])
-  session2Exam    Exam?    @relation("MockSession2", fields: [session2ExamId], references: [id])
+  session1Exam    Exam?    @relation("MockSession1", fields: [session1ExamId], references: [id], onDelete: SetNull)
+  session2Exam    Exam?    @relation("MockSession2", fields: [session2ExamId], references: [id], onDelete: SetNull)
   @@index([userId, status])
   @@index([courseId])
 }

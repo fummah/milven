@@ -5,6 +5,73 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { getOpenAIApiKey } from '../lib/openai.js';
 
+/**
+ * Build a formula-focused curriculum excerpt that prioritises formula sections
+ * and LOS near selected topics, preserving [PAGE N] markers for page references.
+ */
+function buildFormulaCurriculumExcerpt(fullText, topicNames = [], maxChars = 15000) {
+	if (!fullText) return '';
+	if (fullText.length <= maxChars) return fullText;
+
+	const keywords = topicNames
+		.flatMap(n => n.split(/[\s,;:()\-\/]+/).filter(w => w.length > 3))
+		.map(w => w.toLowerCase());
+
+	if (keywords.length === 0) return fullText.substring(0, maxChars) + '\n... [truncated]';
+
+	const FORMULA_RE = /(?:^|\n)([^\n]*(?:[\=][\s]*[^\n]*[\+\-\*\/\^]|(?:PV|FV|NPV|IRR|WACC|EPS|ROE|ROA|CAPM|YTM|HPR|DDM|FCF|FCFE|FCFF|EVA|σ|β|α|μ|Σ|√|∑|∏|∫|Δ)\s*[=])[^\n]*)/gim;
+
+	const WINDOW = 2500, STEP = 500;
+	const windows = [];
+	for (let i = 0; i < fullText.length; i += STEP) {
+		const chunk = fullText.substring(i, i + WINDOW);
+		const lower = chunk.toLowerCase();
+		let score = keywords.reduce((s, kw) => {
+			let c = 0, idx = 0;
+			while ((idx = lower.indexOf(kw, idx)) !== -1) { c++; idx += kw.length; }
+			return s + c;
+		}, 0);
+		// Boost formula-containing windows
+		FORMULA_RE.lastIndex = 0;
+		const formulaMatches = chunk.match(FORMULA_RE);
+		if (formulaMatches) score += formulaMatches.length * 5;
+		// Boost topic headings
+		for (const tn of topicNames) {
+			if (lower.includes(tn.toLowerCase())) score += 8;
+		}
+		windows.push({ start: i, score });
+	}
+
+	windows.sort((a, b) => b.score - a.score);
+	const ranges = [];
+	let total = 0;
+	for (const w of windows) {
+		if (total >= maxChars || w.score === 0) break;
+		const end = Math.min(w.start + WINDOW, fullText.length);
+		const budget = Math.min(end - w.start, maxChars - total);
+		ranges.push({ start: w.start, end: w.start + budget });
+		total += budget;
+	}
+
+	ranges.sort((a, b) => a.start - b.start);
+	const merged = [];
+	for (const r of ranges) {
+		if (merged.length > 0 && r.start <= merged[merged.length - 1].end + 300) {
+			merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, r.end);
+		} else {
+			merged.push({ ...r });
+		}
+	}
+
+	return merged.map((r, i) => {
+		const text = fullText.substring(r.start, r.end).trim();
+		const pageMatch = fullText.substring(0, r.start).match(/\[PAGE (\d+)\]/g);
+		const page = pageMatch ? parseInt(pageMatch[pageMatch.length - 1].match(/\d+/)[0], 10) : null;
+		const prefix = page ? `[... content from page ${page} ...]\n` : (r.start > 0 ? '[...]\n' : '');
+		return prefix + text + (i < merged.length - 1 ? '\n[...]\n' : '');
+	}).join('\n') + (merged[merged.length - 1]?.end < fullText.length ? '\n... [additional content omitted]' : '');
+}
+
 export function formulasRouter(prisma) {
 	const router = Router();
 
@@ -249,8 +316,7 @@ export function formulasRouter(prisma) {
 					select: { extractedText: true }
 				});
 				if (currDoc?.extractedText) {
-					const text = currDoc.extractedText;
-					curriculumExcerpt = text.length > 12000 ? text.slice(0, 12000) : text;
+					curriculumExcerpt = buildFormulaCurriculumExcerpt(currDoc.extractedText, topicNames, 15000);
 				}
 			}
 
@@ -264,7 +330,7 @@ export function formulasRouter(prisma) {
 			].filter(Boolean).join('\n');
 
 			const curriculumSection = curriculumExcerpt
-				? `\n\nCURRICULUM REFERENCE MATERIAL (use this to derive accurate formulas, variable definitions, and exam context):\n---\n${curriculumExcerpt}\n---\n`
+				? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — formulas MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
 				: '';
 
 			const prompt = `You are a senior CFA curriculum expert and formula book author at Milven Finance School. Generate ${count} professional, exam-quality formula cards in JSON format.
@@ -275,7 +341,10 @@ ${hierarchyContext}
 Year: ${year}
 ${curriculumSection}
 IMPORTANT RULES:
-- Each formula must be a REAL, commonly tested formula for this topic area in the CFA curriculum
+${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You MUST extract formulas EXACTLY as they appear in the document — preserve all notation, subscripts, superscripts, Greek letters, and variable names. Do NOT rewrite or simplify formulas from the document.
+- The "losTag" MUST be the EXACT Learning Outcome Statement from the document (starts with verbs like "describe", "explain", "calculate").
+- Page references in the document appear as [PAGE N] markers — use these for accurate "losTag" references.
+` : ''}- Each formula must be a REAL, commonly tested formula for this topic area in the CFA curriculum
 - The "formula" field must be the exact mathematical equation using RICH NOTATION:
   * Use _ for subscripts: P_0, r_d, w_{equity}, CF_t
   * Use ^ for superscripts/exponents: (1+r)^n, x^2, e^{-rT}
@@ -473,9 +542,7 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 					select: { extractedText: true }
 				});
 				if (currDoc?.extractedText) {
-					// Take a relevant portion (max 12000 chars)
-					const text = currDoc.extractedText;
-					curriculumExcerpt = text.length > 12000 ? text.slice(0, 12000) : text;
+					curriculumExcerpt = buildFormulaCurriculumExcerpt(currDoc.extractedText, topicNames, 15000);
 				}
 			}
 
@@ -489,7 +556,7 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 			].filter(Boolean).join('\n');
 
 			const curriculumSection = curriculumExcerpt
-				? `\n\nCURRICULUM REFERENCE MATERIAL (use this to derive accurate formulas, variable definitions, and exam context):\n---\n${curriculumExcerpt}\n---\n`
+				? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — formulas MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
 				: '';
 
 			const prompt = `You are a senior CFA curriculum expert and formula book author at Milven Finance School. Generate ${count} professional, exam-quality formula cards in JSON format.
@@ -500,7 +567,10 @@ ${hierarchyContext}
 Year: ${year}
 ${curriculumSection}
 IMPORTANT RULES:
-- Each formula must be a REAL, commonly tested formula for this topic area in the CFA curriculum
+${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You MUST extract formulas EXACTLY as they appear in the document — preserve all notation, subscripts, superscripts, Greek letters, and variable names. Do NOT rewrite or simplify formulas from the document.
+- The "losTag" MUST be the EXACT Learning Outcome Statement from the document (starts with verbs like "describe", "explain", "calculate").
+- Page references in the document appear as [PAGE N] markers — use these for accurate "losTag" references.
+` : ''}- Each formula must be a REAL, commonly tested formula for this topic area in the CFA curriculum
 - The "formula" field must be the exact mathematical equation using RICH NOTATION:
   * Use _ for subscripts: P_0, r_d, w_{equity}, CF_t
   * Use ^ for superscripts/exponents: (1+r)^n, x^2, e^{-rT}

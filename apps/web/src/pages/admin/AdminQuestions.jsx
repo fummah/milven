@@ -3,18 +3,9 @@ import { Card, Form, Input, Button, Select, message, Space, Typography, Table, U
 import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PictureOutlined, DeleteFilled, FilterOutlined, QuestionCircleOutlined, BookOutlined, SearchOutlined, CalendarOutlined, CheckCircleOutlined, DownOutlined, UpOutlined, RobotOutlined, ThunderboltOutlined, TagsOutlined } from '@ant-design/icons';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api, API_URL } from '../../lib/api';
+import { safeHtml, formatFormulaHtml } from '../../lib/formatFormula';
 import { RichTextEditor } from '../../components/RichTextEditor.jsx';
-
-// Ensure HTML from API renders as HTML (unescape entities if stored escaped)
-function safeHtml(html) {
-	if (html == null || typeof html !== 'string') return '';
-	return html
-		.replace(/&lt;/g, '<')
-		.replace(/&gt;/g, '>')
-		.replace(/&amp;/g, '&')
-		.replace(/&quot;/g, '"')
-		.replace(/&#39;/g, "'");
-}
+import { ModuleNotesDrawer } from '../../components/ModuleNotesDrawer.jsx';
 
 export function AdminQuestions() {
 	const [form] = Form.useForm();
@@ -47,6 +38,10 @@ export function AdminQuestions() {
 	const [aiSelectedIndices, setAiSelectedIndices] = useState([]);
 	const [drawerMode, setDrawerMode] = useState('single'); // 'single' | 'bundle'
 	const [aiForm] = Form.useForm();
+	const [notesDrawerOpen, setNotesDrawerOpen] = useState(false);
+	const [notesDrawerTopicId, setNotesDrawerTopicId] = useState(null);
+	const [notesDrawerTopicName, setNotesDrawerTopicName] = useState(null);
+	const openNotesDrawer = (topicId, topicName) => { setNotesDrawerTopicId(topicId); setNotesDrawerTopicName(topicName); setNotesDrawerOpen(true); };
 	const [page, setPage] = useState(1);
 	const [pageSize, setPageSize] = useState(20);
 	const [total, setTotal] = useState(0); // underlying questions (for pagination)
@@ -1470,7 +1465,7 @@ export function AdminQuestions() {
 												<Typography.Text strong style={{ color: '#531dab' }}>{`Sub-question ${qIdx + 1}`}{!isVignette && q?.marks ? ` (${q.marks} mark${q.marks > 1 ? 's' : ''})` : ''}</Typography.Text>
 												<div className="prose prose-sm question-preview-content" style={{ marginTop: 4 }} dangerouslySetInnerHTML={{ __html: safeHtml(q?.stem || '') }} />
 												<div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-													<Tag color="blue">{q?.topicName || q?.topicId}</Tag>
+													<Tag color="blue" style={{ cursor: q?.topicId ? 'pointer' : undefined }} onClick={(e) => { if (q?.topicId) { e.stopPropagation(); openNotesDrawer(q.topicId, q.topicName || q.topicId); } }}>{q?.topicName || q?.topicId}{q?.topicId ? ' 📖' : ''}</Tag>
 													<Tag color="purple">{q?.difficulty}</Tag>
 													{q?.qid && <Tag color="cyan">{q.qid}</Tag>}
 												</div>
@@ -1505,13 +1500,13 @@ export function AdminQuestions() {
 												{q?.keyFormulas && (
 													<div style={{ marginTop: 6, padding: '6px 10px', background: '#f0f5ff', borderRadius: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Key Formula(s): </Typography.Text>
-														<span dangerouslySetInnerHTML={{ __html: safeHtml(q.keyFormulas) }} />
+														<span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.keyFormulas) }} />
 													</div>
 												)}
 												{q?.workedSolution && (
 													<div style={{ marginTop: 6, padding: '6px 10px', background: '#f6ffed', borderRadius: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
-														<span dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution) }} />
+														<span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.workedSolution) }} />
 													</div>
 												)}
 											</div>
@@ -1536,10 +1531,9 @@ export function AdminQuestions() {
 												style={{ marginTop: 3 }}
 											/>
 											<div style={{ flex: 1, minWidth: 0 }}>
-												<Typography.Text strong>{`Question ${idx + 1}`}</Typography.Text>
 												<div className="prose prose-sm question-preview-content" dangerouslySetInnerHTML={{ __html: safeHtml(q?.stem || '') }} />
-												<div style={{ marginTop: 8 }}>
-													<Tag color="blue">{q?.topicName || q?.topicId}</Tag>
+												<div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+													<Tag color="blue" style={{ cursor: q?.topicId ? 'pointer' : undefined }} onClick={(e) => { if (q?.topicId) { e.stopPropagation(); openNotesDrawer(q.topicId, q.topicName || q.topicId); } }}>{q?.topicName || q?.topicId}{q?.topicId ? ' 📖' : ''}</Tag>
 													<Tag color="purple">{q?.difficulty}</Tag>
 													{q?.qid && <Tag>{q.qid}</Tag>}
 												</div>
@@ -1574,13 +1568,13 @@ export function AdminQuestions() {
 												{q?.keyFormulas && (
 													<div style={{ marginTop: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Key Formula(s): </Typography.Text>
-														<span dangerouslySetInnerHTML={{ __html: safeHtml(q.keyFormulas) }} />
+														<span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.keyFormulas) }} />
 													</div>
 												)}
 												{q?.workedSolution && (
 													<div style={{ marginTop: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
-														<span dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution) }} />
+														<span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.workedSolution) }} />
 													</div>
 												)}
 											</div>
@@ -2290,7 +2284,7 @@ export function AdminQuestions() {
 													<div
 														className="prose question-preview-content"
 														style={{ margin: '4px 0 0 0', padding: '6px', background: '#f5f5f5', borderRadius: 4 }}
-														dangerouslySetInnerHTML={{ __html: safeHtml(previewQuestion.question.keyFormulas) }}
+														dangerouslySetInnerHTML={{ __html: formatFormulaHtml(previewQuestion.question.keyFormulas) }}
 													/>
 												</div>
 											)}
@@ -2300,7 +2294,7 @@ export function AdminQuestions() {
 													<div
 														className="prose question-preview-content"
 														style={{ margin: '4px 0 0 0', padding: '6px', background: '#e6f7ff', borderRadius: 4 }}
-														dangerouslySetInnerHTML={{ __html: safeHtml(previewQuestion.question.workedSolution) }}
+														dangerouslySetInnerHTML={{ __html: formatFormulaHtml(previewQuestion.question.workedSolution) }}
 													/>
 												</div>
 											)}
@@ -2312,6 +2306,7 @@ export function AdminQuestions() {
 					</Space>
 				) : null}
 			</Drawer>
+			<ModuleNotesDrawer open={notesDrawerOpen} onClose={() => setNotesDrawerOpen(false)} topicId={notesDrawerTopicId} topicName={notesDrawerTopicName} />
 		</Space>
 	);
 }

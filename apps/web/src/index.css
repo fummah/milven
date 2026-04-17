@@ -926,3 +926,35 @@ h1, h2, h3, h4, h5, h6 {
   background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%) !important;
 }
 
+/* ── Formula rendering ─────────────────────────────────────── */
+/* Stacked fraction produced by renderFormulaHtml */
+.formula-frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 2px;
+  line-height: 1.2;
+}
+.formula-frac-num {
+  border-bottom: 1.5px solid #102540;
+  padding: 0 4px 2px;
+}
+.formula-frac-den {
+  padding: 2px 4px 0;
+}
+
+/* Ensure <sub> and <sup> inside formula/question content look good */
+.question-preview-content sub,
+.formula-content sub {
+  font-size: 0.75em;
+  vertical-align: sub;
+  line-height: 0;
+}
+.question-preview-content sup,
+.formula-content sup {
+  font-size: 0.75em;
+  vertical-align: super;
+  line-height: 0;
+}
+
