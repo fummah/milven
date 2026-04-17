@@ -2271,18 +2271,18 @@ export function examsRouter(prisma) {
 			}
 
 			// Create MockExam parent record
-			const mockExam = await prisma.mockExam.create({
-				data: {
-					userId: req.user.id,
-					courseId,
-					session1ExamId: exam1?.id || null,
-					session2ExamId: exam2?.id || null,
-					breakMinutes: defaults.sessions === 1 ? 0 : (defaults.breakMinutes || 30),
-					session1Minutes: s1Minutes,
-					session2Minutes: s2Minutes || null,
-					status: 'PENDING'
-				}
-			});
+			const mockExamData = {
+				user: { connect: { id: req.user.id } },
+				course: { connect: { id: courseId } },
+				breakMinutes: defaults.sessions === 1 ? 0 : (defaults.breakMinutes || 30),
+				session1Minutes: s1Minutes,
+				session2Minutes: s2Minutes || 0,
+				status: 'PENDING'
+			};
+			if (exam1) mockExamData.session1Exam = { connect: { id: exam1.id } };
+			if (exam2) mockExamData.session2Exam = { connect: { id: exam2.id } };
+
+			const mockExam = await prisma.mockExam.create({ data: mockExamData });
 
 			// Fetch the created mock exam with full details for the frontend
 			const fullMockExam = await prisma.mockExam.findUnique({
