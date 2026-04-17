@@ -9,6 +9,12 @@ import { ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, TrophyOu
 import { motion, AnimatePresence } from 'framer-motion';
 import { ModuleNotesDrawer } from '../components/ModuleNotesDrawer.jsx';
 
+// Strip leading question numbers like "Question 2:", "Q2.", "Question 12 -", "Q.2:", etc.
+function stripQuestionNumber(text) {
+	if (!text) return text;
+	return text.replace(/^(<[^>]*>)*\s*(Question|Q)\.?\s*\d+\s*[:.\-–—]\s*/i, '$1');
+}
+
 // Smart Review Panel Component - Shows after answering in Practice Mode
 function SmartReviewPanel({ answer, question, visible, onAddToRevision, onAddToWeakTopic, onOpenNotes, mode }) {
 	if (!visible || mode === 'exam' || !answer?.selectedOptionId) return null;
@@ -1458,7 +1464,7 @@ export function ExamTake() {
 																<div
   className="text-sm md:text-base text-slate-500 font-medium mb-6 prose max-w-none"
   style={{ display: "flex" }}
-  dangerouslySetInnerHTML={{ __html: `<p>${toRoman(subQuestionIdx + 1)}) ${subQ?.stem || ''}</p>` }}
+  dangerouslySetInnerHTML={{ __html: `<p>${toRoman(subQuestionIdx + 1)}) ${stripQuestionNumber(subQ?.stem) || ''}</p>` }}
 />
 
 																	{subConstructed ? (
@@ -1571,7 +1577,7 @@ export function ExamTake() {
 											<div className="p-6">
 												<div
 													className="text-lg text-slate-800 font-medium mb-6 prose max-w-none"
-													dangerouslySetInnerHTML={{ __html: q?.stem || '' }}
+													dangerouslySetInnerHTML={{ __html: stripQuestionNumber(q?.stem) || '' }}
 												/>
 
 												{isConstructed ? (

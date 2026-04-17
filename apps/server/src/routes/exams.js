@@ -2047,30 +2047,41 @@ export function examsRouter(prisma) {
 	// Student: Get mock exam eligible courses (enrolled courses that have topic weights configured)
 	router.get('/mock/eligible-courses', requireAuth(), async (req, res) => {
 		try {
+			// Step 1: Get all enrollments for this user (any status)
 			const enrollments = await prisma.enrollment.findMany({
 				where: {
-					userId: req.user.id,
-					status: { not: 'CANCELLED' },
-					course: { active: true }
+					userId: req.user.id
 				},
-				include: { course: true }
+				include: { course: true },
+				orderBy: { createdAt: 'desc' }
 			});
-			const courseIds = enrollments.map(e => e.courseId);
-			// Only include courses that have topic weights configured
-			const coursesWithWeights = await prisma.mockExamTopicWeight.findMany({
-				where: { courseId: { in: courseIds } },
+			console.log(`[eligible-courses] User ${req.user.id}: ${enrollments.length} enrollments found`);
+
+			// Step 2: Get all courses that have mock exam weights configured (regardless of enrollment)
+			const allWeights = await prisma.mockExamTopicWeight.findMany({
 				select: { courseId: true },
 				distinct: ['courseId']
 			});
-			const eligibleIds = new Set(coursesWithWeights.map(c => c.courseId));
+			const allWeightCourseIds = new Set(allWeights.map(w => w.courseId));
+			console.log(`[eligible-courses] Courses with weights: ${[...allWeightCourseIds].join(', ')}`);
+
+			// Step 3: Filter enrolled courses that have weights
 			const courses = enrollments
-				.filter(e => eligibleIds.has(e.courseId))
+				.filter(e => allWeightCourseIds.has(e.courseId))
 				.map(e => ({
 					...e.course,
-					enrollmentStatus: e.status
+					enrollmentStatus: e.status,
+					enrolledAt: e.createdAt
 				}));
+
+			if (courses.length === 0 && enrollments.length > 0) {
+				const enrolledCourseIds = enrollments.map(e => e.courseId);
+				console.log(`[eligible-courses] No match. Enrolled courseIds: ${enrolledCourseIds.join(', ')} | Weighted courseIds: ${[...allWeightCourseIds].join(', ')}`);
+			}
+
 			return res.json({ courses });
 		} catch (err) {
+			console.error('[eligible-courses] Error:', err);
 			return res.status(500).json({ error: 'Failed to fetch eligible courses' });
 		}
 	});
@@ -2086,11 +2097,11 @@ export function examsRouter(prisma) {
 			const course = await prisma.course.findUnique({ where: { id: courseId } });
 			if (!course) return res.status(404).json({ error: 'Course not found', advice: 'Please go back and select a valid course.' });
 
-			// Check enrollment
+			// Check enrollment (any status counts)
 			const enrolled = await prisma.enrollment.findUnique({
 				where: { userId_courseId: { userId: req.user.id, courseId } }
 			});
-			if (!enrolled || enrolled.status === 'CANCELLED') {
+			if (!enrolled) {
 				return res.status(403).json({ error: 'You are not enrolled in this course.', advice: 'Please enrol in the course first, then try creating a mock exam again.' });
 			}
 
@@ -2117,48 +2128,64 @@ export function examsRouter(prisma) {
 				volumeTopicMap[w.volumeId] = topicIds;
 			}
 
-			// Select questions based on weights for a given set of weight rows
-			async function selectWeightedQuestions(weightRows, totalQuestions, questionType) {
+			// Select questions based on weights, respecting target count and deduplicating
+			async function selectWeightedQuestions(weightRows, totalQuestions, questionType, excludeIds = new Set()) {
 				if (weightRows.length === 0) return [];
 
-				const allQuestionIds = [];
-				for (const sw of weightRows) {
-					const midWeight = (sw.weightMin + sw.weightMax) / 2 / 100;
-					const targetCount = Math.max(1, Math.round(totalQuestions * midWeight));
+				// Step 1: Calculate proportional target per weight row
+				const totalWeight = weightRows.reduce((sum, sw) => sum + (sw.weightMin + sw.weightMax) / 2, 0);
+				const weightTargets = weightRows.map(sw => {
+					const midWeight = (sw.weightMin + sw.weightMax) / 2;
+					const proportion = totalWeight > 0 ? midWeight / totalWeight : 1 / weightRows.length;
+					return { ...sw, target: Math.max(1, Math.round(totalQuestions * proportion)) };
+				});
+
+				// Step 2: Fetch and select questions per weight row
+				const usedIds = new Set(excludeIds);
+				const selectedParents = []; // { id, type } for each selected parent question
+
+				for (const sw of weightTargets) {
 					const topicIds = volumeTopicMap[sw.volumeId] || [];
 					if (topicIds.length === 0) continue;
 
-					// Fetch questions from this volume's topics
-					let where = { topicId: { in: topicIds }, parentId: null };
+					let where = { topicId: { in: topicIds }, parentId: null, id: { notIn: [...usedIds] } };
 					if (questionType === 'MCQ') {
 						where.type = 'MCQ';
 					} else if (questionType === 'VIGNETTE_MCQ') {
 						where.type = 'VIGNETTE_MCQ';
 					} else if (questionType === 'CONSTRUCTED_RESPONSE') {
-						where.OR = [{ type: 'CONSTRUCTED_RESPONSE', parentId: null }];
+						where.type = 'CONSTRUCTED_RESPONSE';
 					}
-					// questionType === null means any type (for L3)
 
-					const questions = await prisma.question.findMany({
+					const available = await prisma.question.findMany({
 						where,
-						select: { id: true, type: true },
-						take: targetCount * 3 // fetch extra for shuffling
+						select: { id: true, type: true }
 					});
 
-					// For vignettes/bundles, each parent is one "logical" question
-					shuffleInPlace(questions);
-					const selected = questions.slice(0, targetCount);
-					for (const q of selected) {
-						allQuestionIds.push(q.id);
-						// For vignette/bundle parents, also add children
-						if (q.type === 'VIGNETTE_MCQ' || q.type === 'CONSTRUCTED_RESPONSE') {
-							const children = await prisma.question.findMany({
-								where: { parentId: q.id },
-								select: { id: true },
-								orderBy: { orderIndex: 'asc' }
-							});
-							for (const c of children) allQuestionIds.push(c.id);
-						}
+					shuffleInPlace(available);
+					// Take up to target, or all available if fewer
+					const picked = available.slice(0, sw.target);
+					for (const q of picked) {
+						usedIds.add(q.id);
+						selectedParents.push(q);
+					}
+				}
+
+				// Step 3: If we have more than totalQuestions, trim; if fewer, that's all we have
+				shuffleInPlace(selectedParents);
+				const finalParents = selectedParents.slice(0, totalQuestions);
+
+				// Step 4: Build final ID list including children for vignette/bundle types
+				const allQuestionIds = [];
+				for (const q of finalParents) {
+					allQuestionIds.push(q.id);
+					if (q.type === 'VIGNETTE_MCQ' || q.type === 'CONSTRUCTED_RESPONSE') {
+						const children = await prisma.question.findMany({
+							where: { parentId: q.id },
+							select: { id: true },
+							orderBy: { orderIndex: 'asc' }
+						});
+						for (const c of children) allQuestionIds.push(c.id);
 					}
 				}
 				return allQuestionIds;
@@ -2168,25 +2195,45 @@ export function examsRouter(prisma) {
 
 			if (defaults.sessions === 1) {
 				// L2/L3: Single session — all weights combined, random topic placement
-				const allWeightRows = weights;
-				s1Ids = await selectWeightedQuestions(allWeightRows, defaults.totalQuestions, defaults.questionType);
-				// Shuffle for random topic placement across the entire exam
+				s1Ids = await selectWeightedQuestions(weights, defaults.totalQuestions, defaults.questionType);
 				shuffleInPlace(s1Ids);
 				s1Minutes = defaults.totalMinutes;
 				s2Ids = [];
 				s2Minutes = 0;
 			} else {
-				// L1: Two sessions
+				// L1: Two sessions of 90 MCQs each (180 total), 135 min each
+				// Weights with session=1 go to session 1, session=2 go to session 2
+				// Weights with session=0 (unassigned) contribute to both sessions equally
 				const session1Weights = weights.filter(w => w.session === 1);
 				const session2Weights = weights.filter(w => w.session === 2);
-				s1Ids = await selectWeightedQuestions(session1Weights, defaults.questionsPerSession, defaults.questionType);
-				s2Ids = await selectWeightedQuestions(session2Weights, defaults.questionsPerSession, defaults.questionType);
+				const sharedWeights = weights.filter(w => w.session === 0);
+
+				// Combine session-specific + shared weights for each session
+				const s1WeightRows = [...session1Weights, ...sharedWeights];
+				const s2WeightRows = [...session2Weights, ...sharedWeights];
+
+				// Select session 1 questions
+				s1Ids = await selectWeightedQuestions(s1WeightRows, defaults.questionsPerSession, defaults.questionType);
+				// Select session 2 questions, excluding any already used in session 1
+				const s1IdSet = new Set(s1Ids);
+				s2Ids = await selectWeightedQuestions(s2WeightRows, defaults.questionsPerSession, defaults.questionType, s1IdSet);
+
 				s1Minutes = defaults.session1Minutes;
 				s2Minutes = defaults.session2Minutes;
+
+				console.log(`[mock-create] L1 sessions: S1=${s1Ids.length} questions, S2=${s2Ids.length} questions (target ${defaults.questionsPerSession} each)`);
 			}
 
 			if (s1Ids.length === 0 && s2Ids.length === 0) {
-				return res.status(400).json({ error: 'Not enough questions in the question bank to create a mock exam.', advice: 'Please ask your administrator to add more questions to this course, then try again.' });
+				return res.status(400).json({ error: 'No questions found in the question bank for this course.', advice: 'Please ask your administrator to add questions to this course, then try again.' });
+			}
+
+			// Log how many questions were selected vs target
+			const targetTotal = defaults.sessions === 1 ? defaults.totalQuestions : defaults.questionsPerSession * 2;
+			const actualTotal = s1Ids.length + s2Ids.length;
+			console.log(`[mock-create] Selected ${actualTotal}/${targetTotal} questions for ${course.name} (${level})`);
+			if (actualTotal < targetTotal) {
+				console.log(`[mock-create] Warning: Only ${actualTotal} questions available, target was ${targetTotal}. Using all available.`);
 			}
 
 			// Create session 1 exam
@@ -2266,6 +2313,25 @@ export function examsRouter(prisma) {
 		}
 	});
 
+	// Student: Get my mock exams
+	router.get('/mock/me', requireAuth(), async (req, res) => {
+		try {
+			const mockExams = await prisma.mockExam.findMany({
+				where: { userId: req.user.id },
+				include: {
+					course: { select: { id: true, name: true, level: true, examConditions: true } },
+					session1Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true } }, attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 } } },
+					session2Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true } }, attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 } } }
+				},
+				orderBy: { createdAt: 'desc' }
+			});
+			return res.json({ mockExams });
+		} catch (err) {
+			console.error('Fetch my mock exams error:', err);
+			return res.status(500).json({ error: 'Failed to fetch mock exams' });
+		}
+	});
+
 	// Student: Get single mock exam detail
 	router.get('/mock/:mockExamId', requireAuth(), async (req, res) => {
 		try {
@@ -2277,14 +2343,14 @@ export function examsRouter(prisma) {
 						select: {
 							id: true, name: true, timeLimitMinutes: true,
 							examQuestions: { select: { questionId: true } },
-							attempts: { where: { userId: req.user.id }, select: { id: true, status: true, score: true, submittedAt: true }, orderBy: { createdAt: 'desc' }, take: 1 }
+							attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 }
 						}
 					},
 					session2Exam: {
 						select: {
 							id: true, name: true, timeLimitMinutes: true,
 							examQuestions: { select: { questionId: true } },
-							attempts: { where: { userId: req.user.id }, select: { id: true, status: true, score: true, submittedAt: true }, orderBy: { createdAt: 'desc' }, take: 1 }
+							attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 }
 						}
 					}
 				}
@@ -2292,6 +2358,7 @@ export function examsRouter(prisma) {
 			if (!mockExam || mockExam.userId !== req.user.id) return res.status(404).json({ error: 'Mock exam not found' });
 			return res.json({ mockExam });
 		} catch (err) {
+			console.error('Fetch mock exam detail error:', err);
 			return res.status(500).json({ error: 'Failed to fetch mock exam' });
 		}
 	});
