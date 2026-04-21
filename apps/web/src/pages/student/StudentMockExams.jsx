@@ -196,8 +196,15 @@ export default function StudentMockExams() {
           <div className="grid grid-cols-1 gap-5">
             {mockExams.map((mock, idx) => {
               const sc = STATUS_CONFIG[mock.status] || STATUS_CONFIG.PENDING;
-              const s1Count = mock.session1Exam?.examQuestions?.length || 0;
-              const s2Count = mock.session2Exam?.examQuestions?.length || 0;
+              const isVignetteExam = mock.course?.level === 'LEVEL2' || mock.course?.level === 'LEVEL3';
+              // For vignette exams, count only parent questions (parentId is null = item sets)
+              const s1Count = isVignetteExam
+                ? (mock.session1Exam?.examQuestions || []).filter(eq => !eq.question?.parentId).length
+                : (mock.session1Exam?.examQuestions?.length || 0);
+              const s2Count = isVignetteExam
+                ? (mock.session2Exam?.examQuestions || []).filter(eq => !eq.question?.parentId).length
+                : (mock.session2Exam?.examQuestions?.length || 0);
+              const countLabel = isVignetteExam ? 'Item Sets' : 'Qs';
               const isSingleSession = !mock.session2ExamId && (mock.breakMinutes === 0 || !mock.breakMinutes);
               const currentStep = getSessionStep(mock.status, isSingleSession);
 
@@ -241,12 +248,12 @@ export default function StudentMockExams() {
                         status={mock.status === 'CANCELLED' ? 'error' : 'process'}
                         className="mb-6"
                         items={isSingleSession ? [
-                          { title: 'Exam', description: `${s1Count} Qs · ${mock.session1Minutes} min` },
+                          { title: 'Exam', description: `${s1Count} ${countLabel} · ${mock.session1Minutes} min` },
                           { title: 'Results' }
                         ] : [
-                          { title: 'Session 1', description: `${s1Count} Qs · ${mock.session1Minutes} min` },
+                          { title: 'Session 1', description: `${s1Count} ${countLabel} · ${mock.session1Minutes} min` },
                           { title: 'Break', description: `${mock.breakMinutes} min` },
-                          { title: 'Session 2', description: `${s2Count} Qs · ${mock.session2Minutes} min` },
+                          { title: 'Session 2', description: `${s2Count} ${countLabel} · ${mock.session2Minutes} min` },
                           { title: 'Results' }
                         ]}
                       />

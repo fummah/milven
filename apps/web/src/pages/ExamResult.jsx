@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Card, Typography, Button, Space, Collapse, Tag, Spin } from 'antd';
+import { Card, Typography, Button, Space, Collapse, Tag, Spin, Tree, Progress } from 'antd';
 import { AIHelpPanel } from '../components/AIHelpPanel.jsx';
 import {
 	CheckCircleOutlined,
@@ -24,6 +24,7 @@ export function ExamResult() {
 	const navigate = useNavigate();
 	const [attempt, setAttempt] = useState(null);
 	const [topics, setTopics] = useState([]);
+	const [analyticsTree, setAnalyticsTree] = useState([]);
 	const [loading, setLoading] = useState(true);
 	const [aiHints, setAiHints] = useState({});
 	const [hintsLoading, setHintsLoading] = useState(false);
@@ -43,6 +44,7 @@ export function ExamResult() {
 				if (mounted) {
 					setAttempt(a.data.attempt);
 					setTopics(analytics?.data?.byTopic ?? []);
+					setAnalyticsTree(analytics?.data?.tree ?? []);
 				}
 			} finally {
 				if (mounted) setLoading(false);
@@ -156,20 +158,70 @@ export function ExamResult() {
 							</Tag>
 						</div>
 					)}
-					{topics.length > 0 && !hasPendingConstructed && (
+					{analyticsTree.length > 0 && !hasPendingConstructed && (
 						<div className="p-6 bg-white border-t border-slate-100">
-							<Typography.Text strong className="text-slate-700 block mb-3">By topic</Typography.Text>
-							<div className="flex flex-wrap gap-3">
-								{topics.map((t) => (
-									<div
-										key={t.topic}
-										className="flex items-center justify-between gap-4 px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 min-w-[140px]"
-									>
-										<span className="text-slate-700 font-medium truncate">{t.topic}</span>
-										<span className="text-slate-500 text-sm whitespace-nowrap">
-											{t.correct}/{t.total} · {Math.round(t.percent)}%
-										</span>
-									</div>
+							<Typography.Text strong className="text-slate-700 block mb-3">Performance Breakdown</Typography.Text>
+							<div className="space-y-2">
+								{analyticsTree.map((vol) => (
+									<Collapse
+										key={vol.id}
+										size="small"
+										items={[
+											{
+												key: vol.id,
+												label: (
+													<div className="flex items-center justify-between w-full pr-2">
+														<span className="font-semibold text-slate-800">{vol.name}</span>
+														<span className="flex items-center gap-2">
+															<Progress percent={vol.percent} size="small" style={{ width: 80 }} strokeColor={vol.percent >= 70 ? '#22c55e' : '#ef4444'} />
+															<Tag color={vol.percent >= 70 ? 'green' : 'red'}>{vol.correct}/{vol.total}</Tag>
+														</span>
+													</div>
+												),
+												children: (
+													<div className="space-y-1 pl-2">
+														{vol.modules.map((mod) => (
+															<Collapse
+																key={mod.id}
+																size="small"
+																items={[
+																	{
+																		key: mod.id,
+																		label: (
+																			<div className="flex items-center justify-between w-full pr-2">
+																				<span className="font-medium text-slate-700">{mod.name}</span>
+																				<span className="flex items-center gap-2">
+																					<Progress percent={mod.percent} size="small" style={{ width: 70 }} strokeColor={mod.percent >= 70 ? '#22c55e' : '#ef4444'} />
+																					<span className="text-xs text-slate-500">{mod.correct}/{mod.total}</span>
+																				</span>
+																			</div>
+																		),
+																		children: (
+																			<div className="space-y-1 pl-4">
+																				{mod.topics.map((t) => (
+																					<div key={t.id} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-slate-50 border border-slate-100">
+																						<span className="text-slate-600 text-sm">{t.name}</span>
+																						<span className="flex items-center gap-2">
+																							<Progress percent={t.percent} size="small" style={{ width: 60 }} strokeColor={t.percent >= 70 ? '#22c55e' : '#ef4444'} />
+																							<span className="text-xs text-slate-500">{t.correct}/{t.total}</span>
+																						</span>
+																					</div>
+																				))}
+																			</div>
+																		)
+																	}
+																]}
+																className="bg-transparent"
+																style={{ border: 'none' }}
+															/>
+														))}
+													</div>
+												)
+											}
+										]}
+										className="bg-transparent"
+										style={{ border: 'none' }}
+									/>
 								))}
 							</div>
 						</div>

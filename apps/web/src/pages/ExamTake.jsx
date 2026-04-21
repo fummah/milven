@@ -5,7 +5,7 @@ import { formatFormulaHtml } from '../lib/formatFormula';
 import { Card, Button, Typography, Space, message, Switch, InputNumber, Radio, Modal, Drawer, Tag, Divider, Progress, Tooltip, Alert, Collapse } from 'antd';
 import { RichTextEditor } from '../components/RichTextEditor.jsx';
 import { AIHelpPanel } from '../components/AIHelpPanel.jsx';
-import { ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, TrophyOutlined, SendOutlined, CalculatorOutlined, BookOutlined, FireOutlined, ThunderboltOutlined, BulbOutlined, FileTextOutlined, PlusOutlined, StarOutlined, ExclamationCircleOutlined, RocketOutlined, SafetyOutlined, EyeOutlined, EyeInvisibleOutlined, LockOutlined, ExperimentOutlined, SnippetsOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, TrophyOutlined, SendOutlined, CalculatorOutlined, BookOutlined, FireOutlined, ThunderboltOutlined, BulbOutlined, FileTextOutlined, PlusOutlined, StarOutlined, ExclamationCircleOutlined, RocketOutlined, SafetyOutlined, EyeOutlined, EyeInvisibleOutlined, LockOutlined, ExperimentOutlined, SnippetsOutlined, InfoCircleOutlined, PauseCircleOutlined } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ModuleNotesDrawer } from '../components/ModuleNotesDrawer.jsx';
 
@@ -473,6 +473,35 @@ export function ExamTake() {
 	const [instructionsData, setInstructionsData] = useState(null);
 	const [mockExamData, setMockExamData] = useState(null);
 
+	// Session 2 prompt state (shown after S1 submission for multi-session mocks)
+	const [showSession2Prompt, setShowSession2Prompt] = useState(false);
+	const [breakExpiresAt, setBreakExpiresAt] = useState(null);
+	const [breakNow, setBreakNow] = useState(() => Date.now());
+
+	// Break countdown timer
+	useEffect(() => {
+		if (!showSession2Prompt || !breakExpiresAt) return;
+		const t = setInterval(() => setBreakNow(Date.now()), 1000);
+		return () => clearInterval(t);
+	}, [showSession2Prompt, breakExpiresAt]);
+
+	// Auto-complete mock if break expires
+	const breakExpiredRef = useRef(false);
+	useEffect(() => {
+		if (!showSession2Prompt || !breakExpiresAt || breakExpiredRef.current) return;
+		const remaining = breakExpiresAt - breakNow;
+		if (remaining > 0) return;
+		breakExpiredRef.current = true;
+		(async () => {
+			try {
+				await api.post(`/api/exams/mock/${mockExamId}/complete-session`, { session: 2, score: 0 });
+			} catch { /* silent */ }
+			setShowSession2Prompt(false);
+			message.warning('Break time expired. Session 2 scored as 0%.');
+			navigate(window.location.pathname.startsWith('/student/') ? '/student/mock-exams' : -1);
+		})();
+	}, [showSession2Prompt, breakExpiresAt, breakNow, mockExamId, navigate]);
+
 	useEffect(() => {
 		let mounted = true;
 		(async () => {
@@ -586,14 +615,37 @@ export function ExamTake() {
 	useEffect(() => {
 		if (remainingSec !== 0 || attempt?.status !== 'IN_PROGRESS' || submitRef.current) return;
 		submitRef.current = true;
-		api.post(`/api/exams/attempts/${attemptId}/submit`)
-			.then(() => api.get(`/api/exams/attempts/${attemptId}`))
-			.then((res) => {
+		(async () => {
+			try {
+				await api.post(`/api/exams/attempts/${attemptId}/submit`);
+				const res = await api.get(`/api/exams/attempts/${attemptId}`);
 				setAttempt(res.data.attempt);
+
+				// Handle mock exam session completion
+				const mId = searchParams.get('mockExamId');
+				const mSession = searchParams.get('session');
+				if (mId && mSession) {
+					try {
+						const score = res.data.attempt?.scorePercent ?? null;
+						const completeRes = await api.post(`/api/exams/mock/${mId}/complete-session`, {
+							session: parseInt(mSession, 10), score
+						});
+						const updatedMock = completeRes.data?.mockExam;
+						if (parseInt(mSession, 10) === 1 && updatedMock?.status === 'BREAK' && updatedMock?.session2ExamId) {
+							const breakMins = updatedMock.breakMinutes || 30;
+							setBreakExpiresAt(Date.now() + breakMins * 60 * 1000);
+							setShowSession2Prompt(true);
+							return;
+						}
+					} catch { /* silent */ }
+				}
+
 				setResultAttempt(res.data.attempt);
 				setResultModalOpen(true);
-			})
-			.catch(() => { submitRef.current = false; });
+			} catch {
+				submitRef.current = false;
+			}
+		})();
 	}, [remainingSec, attempt?.status, attemptId]);
 
 	const courseName = attempt?.courseName || attempt?.exam?.name || 'Exam';
@@ -642,7 +694,7 @@ export function ExamTake() {
 	// Paginate by groups (never split a vignette group)
 	// IMPORTANT: Each vignette/case-study bundle must occupy its OWN page.
 	// This matches CFA-style layout and prevents mixing vignette bundles with unrelated questions.
-	const { pageGroups, totalPages, pageStart: pageStartAnswerIndex } = useMemo(() => {
+	const { pageGroups, totalPages, pageStart: pageStartAnswerIndex, allPages } = useMemo(() => {
 		let count = 0;
 		const pages = [];
 		let current = [];
@@ -677,7 +729,8 @@ export function ExamTake() {
 		return {
 			pageGroups: pages[currentPage] || [],
 			totalPages: total,
-			pageStart: start
+			pageStart: start,
+			allPages: pages
 		};
 	}, [groups, currentPage]);
 
@@ -712,6 +765,51 @@ export function ExamTake() {
 	const pageStart = pageStartAnswerIndex;
 	const pageEnd = pageStartAnswerIndex + flatPageItems.length;
 
+	// Build navigation items: each group (vignette = 1 item, single = 1 item) gets one pill
+	// Also map each group to its page index
+	const navItems = useMemo(() => {
+		// Build group-to-page mapping from allPages
+		const groupPageMap = new Map(); // group ref -> page index
+		for (let pIdx = 0; pIdx < allPages.length; pIdx++) {
+			for (const g of allPages[pIdx]) {
+				groupPageMap.set(g, pIdx);
+			}
+		}
+
+		const items = [];
+		let ansIdx = 0;
+		for (const g of groups) {
+			const groupAnswers = g.answers;
+			const isAnswered = groupAnswers.every(a => {
+				const q = a?.question;
+				if (q?.type === 'CONSTRUCTED_RESPONSE') return a?.textAnswer != null && String(a.textAnswer).trim() !== '';
+				return !!a?.selectedOptionId;
+			});
+			items.push({
+				type: g.type,
+				label: items.length + 1,
+				answerStartIdx: ansIdx,
+				answerCount: groupAnswers.length,
+				isAnswered,
+				vignetteGroupNumber: g.vignetteGroupNumber,
+				pageIdx: groupPageMap.get(g) ?? 0
+			});
+			ansIdx += groupAnswers.length;
+		}
+		return items;
+	}, [groups, allPages]);
+
+	// Total display items (vignettes count as 1, singles count as 1)
+	const displayTotalItems = navItems.length;
+
+	// Answered count based on nav items (each vignette/single = 1 if all sub-Qs answered)
+	const answeredNavCount = useMemo(() => navItems.filter(n => n.isAnswered).length, [navItems]);
+
+	// Scroll to top when page changes
+	useEffect(() => {
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+	}, [currentPage]);
+
 	const scorePct = Math.round(attempt?.scorePercent ?? 0);
 	const passed = scorePct >= 70;
 	const answeredCount = useMemo(() => answers.filter(a => {
@@ -737,8 +835,13 @@ export function ExamTake() {
 		const mock = mockExamData;
 		const course = mock?.course;
 		const level = course?.level || 'LEVEL1';
-		const s1Count = mock?.session1Exam?.examQuestions?.length || totalQuestions;
-		const s2Count = mock?.session2Exam?.examQuestions?.length || 0;
+		const isVignetteExam = level === 'LEVEL2' || level === 'LEVEL3';
+		const s1Count = isVignetteExam
+			? (mock?.session1Exam?.examQuestions || []).filter(eq => !eq.question?.parentId).length || totalQuestions
+			: (mock?.session1Exam?.examQuestions?.length || totalQuestions);
+		const s2Count = isVignetteExam
+			? (mock?.session2Exam?.examQuestions || []).filter(eq => !eq.question?.parentId).length
+			: (mock?.session2Exam?.examQuestions?.length || 0);
 		const bd = instructionsData;
 		const breakdown = bd?.breakdown || [];
 		const examConditions = course?.examConditions || bd?.course?.examConditions;
@@ -757,7 +860,7 @@ export function ExamTake() {
 							</div>
 							<Typography.Title level={2} className="!mb-1">Exam Instructions</Typography.Title>
 							<Typography.Text className="text-slate-500 text-base">
-								{courseName} {level === 'LEVEL1' && s2Count > 0 ? `— Session ${currentSessionNum}` : ''}
+								{courseName} {(level === 'LEVEL1' || level === 'LEVEL2') && s2Count > 0 ? `— Session ${currentSessionNum}` : ''}
 							</Typography.Text>
 						</div>
 
@@ -795,10 +898,9 @@ export function ExamTake() {
 								<div className="flex items-start gap-3">
 									<BookOutlined className="text-purple-500 mt-0.5 text-lg" />
 									<div>
-										<Typography.Text strong className="text-purple-800 block mb-1">CFA Level II Exam Format</Typography.Text>
+										<Typography.Text strong className="text-purple-800 block mb-1">Exam Conditions</Typography.Text>
 										<Typography.Text className="text-slate-700">
-											The Level II exam consists of {s1Count} vignette-based multiple-choice questions in a single session of {mock?.session1Minutes || 264} minutes.
-											Each vignette presents a scenario followed by related questions. All questions must be answered based on the information in the vignette.
+											The CFA Level II exam is standardized with 11 item sets for each session, for a total of 22 on the exam. Each Vignette is followed by 4 questions.
 										</Typography.Text>
 									</div>
 								</div>
@@ -843,6 +945,32 @@ export function ExamTake() {
 										<li>{s2Count} multiple-choice questions</li>
 										<li>{mock?.session2Minutes || 135} minutes time limit</li>
 										<li>~90 seconds per question</li>
+									</ul>
+								</Card>
+							</div>
+						)}
+
+						{/* L2 Current Session Info */}
+						{level === 'LEVEL2' && s2Count > 0 && (
+							<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<Card size="small" style={{ borderRadius: 16, borderColor: currentSessionNum === 1 ? '#8b5cf6' : '#e2e8f0', borderWidth: currentSessionNum === 1 ? 2 : 1, background: currentSessionNum === 1 ? '#f5f3ff' : '#fafafa' }}>
+									<Typography.Text strong className={currentSessionNum === 1 ? 'text-purple-700 block mb-2' : 'text-slate-500 block mb-2'}>
+										Session 1 {currentSessionNum === 1 ? '(Current)' : ''}
+									</Typography.Text>
+									<ul className="text-sm text-slate-700 space-y-1 list-disc pl-4 mb-0">
+										<li>{s1Count} item sets (vignettes)</li>
+										<li>4 questions per item set</li>
+										<li>{mock?.session1Minutes || 132} minutes time limit</li>
+									</ul>
+								</Card>
+								<Card size="small" style={{ borderRadius: 16, borderColor: currentSessionNum === 2 ? '#8b5cf6' : '#e2e8f0', borderWidth: currentSessionNum === 2 ? 2 : 1, background: currentSessionNum === 2 ? '#f5f3ff' : '#fafafa' }}>
+									<Typography.Text strong className={currentSessionNum === 2 ? 'text-purple-700 block mb-2' : 'text-slate-500 block mb-2'}>
+										Session 2 {currentSessionNum === 2 ? '(Current)' : ''}
+									</Typography.Text>
+									<ul className="text-sm text-slate-700 space-y-1 list-disc pl-4 mb-0">
+										<li>{s2Count} item sets (vignettes)</li>
+										<li>4 questions per item set</li>
+										<li>{mock?.session2Minutes || 132} minutes time limit</li>
 									</ul>
 								</Card>
 							</div>
@@ -1012,19 +1140,32 @@ export function ExamTake() {
 			setAttempt(res.data.attempt);
 
 			// If this is a mock exam session, complete the session
-			const mockExamId = searchParams.get('mockExamId');
-			const mockSession = searchParams.get('session');
-			if (mockExamId && mockSession) {
+			const mId = searchParams.get('mockExamId');
+			const mSession = searchParams.get('session');
+			if (mId && mSession) {
 				try {
-					const score = res.data.attempt?.score ?? null;
-					await api.post(`/api/exams/mock/${mockExamId}/complete-session`, {
-						session: parseInt(mockSession, 10),
+					const score = res.data.attempt?.scorePercent ?? null;
+					const completeRes = await api.post(`/api/exams/mock/${mId}/complete-session`, {
+						session: parseInt(mSession, 10),
 						score
 					});
+
+					// If session 1 just completed and there IS a session 2, show the S2 prompt
+					const updatedMock = completeRes.data?.mockExam;
+					if (parseInt(mSession, 10) === 1 && updatedMock?.status === 'BREAK' && updatedMock?.session2ExamId) {
+						const breakMins = updatedMock.breakMinutes || 30;
+						setBreakExpiresAt(Date.now() + breakMins * 60 * 1000);
+						setShowSession2Prompt(true);
+						return; // Don't show the normal result modal
+					}
 				} catch {
 					// Silent fail - mock status will be stale but not blocking
 				}
 			}
+
+			// Show result modal for non-mock or after final session
+			setResultAttempt(res.data.attempt);
+			setResultModalOpen(true);
 		} catch {
 			submitRef.current = false;
 		}
@@ -1131,27 +1272,23 @@ export function ExamTake() {
 					{/* Bottom Section: Question Numbers & Actions */}
 					<div className="px-4 py-4">
 						<div className="max-w-6xl mx-auto flex items-center justify-between gap-4 flex-wrap">
-							{/* Question Number Pills */}
+							{/* Question/Item-Set Number Pills */}
 							<div className="flex-1 overflow-x-auto py-1 thin-scrollbar">
 								<div className="flex items-center gap-2 min-w-max">
-									<Typography.Text className="text-white/60 text-xs mr-2 hidden sm:inline">Questions:</Typography.Text>
-									{Array.from({ length: totalQuestions }, (_, i) => {
-										const a = answers[i];
-										const q = questions[i];
-										const isConstructedQ = q?.type === 'CONSTRUCTED_RESPONSE';
-										const isAnswered = isConstructedQ
-											? (a?.textAnswer != null && String(a.textAnswer).trim() !== '')
-											: !!a?.selectedOptionId;
-										const isCurrent = i >= pageStart && i < pageEnd;
+									<Typography.Text className="text-white/60 text-xs mr-2 hidden sm:inline">
+										{navItems.some(n => n.type === 'vignette') ? 'Item Sets:' : 'Questions:'}
+									</Typography.Text>
+									{navItems.map((nav, i) => {
+										const isCurrent = nav.pageIdx === currentPage;
 										return (
-											<Tooltip key={i} title={`Question ${i + 1}${isAnswered ? ' (Answered)' : ' (Not answered)'}`}>
+											<Tooltip key={i} title={`${nav.type === 'vignette' ? 'Item Set' : 'Question'} ${nav.label}${nav.isAnswered ? ' (Answered)' : ' (Not answered)'}`}>
 												<motion.button
 													whileHover={{ scale: 1.1 }}
 													whileTap={{ scale: 0.95 }}
-													onClick={() => scrollToQuestion(i)}
+													onClick={() => setCurrentPage(nav.pageIdx)}
 													className={`
 														w-8 h-8 rounded-lg text-xs font-semibold transition-all
-														${isAnswered
+														${nav.isAnswered
 															? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-500/30'
 															: isCurrent
 																? 'bg-white/20 text-white ring-2 ring-cyan-400'
@@ -1159,7 +1296,7 @@ export function ExamTake() {
 														}
 													`}
 												>
-													{i + 1}
+													{nav.label}
 												</motion.button>
 											</Tooltip>
 										);
@@ -1171,7 +1308,7 @@ export function ExamTake() {
 							<div className="flex items-center gap-2 relative">
 								<div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-white/80 text-sm">
 									<CheckCircleOutlined className="text-emerald-400" />
-									<span>{answeredCount}/{totalQuestions}</span>
+									<span>{answeredNavCount}/{displayTotalItems}</span>
 								</div>
 
 								<Tooltip title="Calculator">
@@ -1351,7 +1488,10 @@ export function ExamTake() {
 						{/* Page indicator */}
 						<div className="flex items-center justify-between">
 							<Typography.Text className="text-slate-500">
-								Showing questions {pageStartAnswerIndex + 1} - {pageStartAnswerIndex + flatPageItems.length} of {totalQuestions}
+								{navItems.some(n => n.type === 'vignette')
+									? `Item Set ${currentPage + 1} of ${totalPages}`
+									: `Showing questions ${pageStartAnswerIndex + 1} - ${pageStartAnswerIndex + flatPageItems.length} of ${totalQuestions}`
+								}
 							</Typography.Text>
 							<Space>
 								<Button
@@ -1691,6 +1831,90 @@ export function ExamTake() {
 				)}
 			</div>
 
+			{/* Session 2 Break Prompt */}
+			<Modal
+				title={null}
+				open={showSession2Prompt}
+				closable={false}
+				footer={null}
+				width={480}
+				centered
+				destroyOnClose
+				styles={{ body: { padding: 0 } }}
+			>
+				{(() => {
+					const breakRemainingSec = breakExpiresAt ? Math.max(0, Math.floor((breakExpiresAt - breakNow) / 1000)) : 0;
+					const breakMins = Math.floor(breakRemainingSec / 60);
+					const breakSecs = breakRemainingSec % 60;
+					const breakExpired = breakRemainingSec <= 0 && breakExpiresAt;
+
+					return (
+						<>
+							<div className="p-8 text-center" style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #8b5cf6 50%, #a78bfa 100%)' }}>
+								<motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', duration: 0.5 }}>
+									<PauseCircleOutlined className="text-6xl text-white/90 mb-4" />
+								</motion.div>
+								<Typography.Title level={3} className="!text-white !mb-2">
+									Session 1 Complete!
+								</Typography.Title>
+								<Typography.Paragraph className="!text-white/90 !mb-4 text-base">
+									Take a break before starting Session 2
+								</Typography.Paragraph>
+								<div className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/20 backdrop-blur">
+									<ClockCircleOutlined className="text-white text-xl" />
+									<span className="text-white text-2xl font-mono font-bold">
+										{String(breakMins).padStart(2, '0')}:{String(breakSecs).padStart(2, '0')}
+									</span>
+									<span className="text-white/70 text-sm ml-1">remaining</span>
+								</div>
+							</div>
+							<div className="p-6 bg-white space-y-3">
+								<Alert
+									type="warning"
+									showIcon
+									message="Session 2 must be started within the break time"
+									description="If you don't start Session 2 before the timer expires, it will be scored as 0% and your exam will be completed."
+									className="rounded-xl"
+								/>
+								<Button
+									type="primary"
+									block
+									size="large"
+									onClick={async () => {
+										try {
+											const { data } = await api.post(`/api/exams/mock/${mockExamId}/start-session`, { session: 2 });
+											setShowSession2Prompt(false);
+											navigate(`/student/exam/${data.attempt.id}?mode=mock&mockExamId=${mockExamId}&session=2`);
+										} catch (err) {
+											message.error(err.response?.data?.error || 'Failed to start Session 2');
+										}
+									}}
+									disabled={breakExpired}
+									className="rounded-xl h-12 font-semibold"
+									style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)' }}
+								>
+									Start Session 2
+								</Button>
+								<Button
+									block
+									size="large"
+									onClick={async () => {
+										try {
+											await api.post(`/api/exams/mock/${mockExamId}/complete-session`, { session: 2, score: 0 });
+										} catch { /* silent */ }
+										setShowSession2Prompt(false);
+										navigate(window.location.pathname.startsWith('/student/') ? '/student/mock-exams' : -1);
+									}}
+									className="rounded-xl"
+								>
+									Skip Session 2 (Score as 0%)
+								</Button>
+							</div>
+						</>
+					);
+				})()}
+			</Modal>
+
 			{/* Result Modal */}
 			<Modal
 				title={null}
@@ -1771,6 +1995,16 @@ export function ExamTake() {
 							</div>
 							<div className="p-6 bg-white">
 								<Space direction="vertical" size={12} className="w-full">
+									<Button
+										type="primary"
+										size="large"
+										block
+										onClick={() => { closeResultModal(); navigate(`/student/exams/result/${resultAttempt?.id || attemptId}`); }}
+										className="h-12 rounded-xl font-semibold"
+										style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}
+									>
+										View Detailed Results
+									</Button>
 									<Button size="large" block onClick={() => { closeResultModal(); navigate(window.location.pathname.startsWith('/student/') ? '/student' : -1); }} className="h-12 rounded-xl font-semibold">
 										Back to Dashboard
 									</Button>
