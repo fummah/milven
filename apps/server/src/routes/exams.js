@@ -2029,7 +2029,7 @@ export function examsRouter(prisma) {
 	const MOCK_DEFAULTS = {
 		LEVEL1: { sessions: 2, session1Minutes: 135, session2Minutes: 135, breakMinutes: 30, questionsPerSession: 90, questionType: 'MCQ' },
 		LEVEL2: { sessions: 2, session1Minutes: 132, session2Minutes: 132, breakMinutes: 30, itemSetsPerSession: 11, questionType: 'VIGNETTE_MCQ' },
-		LEVEL3: { sessions: 1, totalMinutes: 264, totalQuestions: 55, questionType: null }
+		LEVEL3: { sessions: 1, totalMinutes: 264, totalQuestions: 55, questionType: 'MIXED_VIGNETTE' }
 	};
 
 	// Admin: Get topic weights for a course
@@ -2234,6 +2234,8 @@ export function examsRouter(prisma) {
 						where.type = 'VIGNETTE_MCQ';
 					} else if (questionType === 'CONSTRUCTED_RESPONSE') {
 						where.type = 'CONSTRUCTED_RESPONSE';
+					} else if (questionType === 'MIXED_VIGNETTE') {
+						where.type = { in: ['VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE'] };
 					}
 
 					// If childrenPerItem is set, only select parents that have enough children
@@ -2261,10 +2263,10 @@ export function examsRouter(prisma) {
 				shuffleInPlace(selectedParents);
 				const finalParents = selectedParents.slice(0, totalQuestions);
 
-				// Step 4: Build final ID list including children for vignette/bundle types
+				// Step 4: Build final ID list — for vignette/bundle parents, include ONLY children
+				// (children reference parent via relation, so frontend gets vignetteText from question.parent)
 				const allQuestionIds = [];
 				for (const q of finalParents) {
-					allQuestionIds.push(q.id);
 					if (q.type === 'VIGNETTE_MCQ' || q.type === 'CONSTRUCTED_RESPONSE') {
 						const children = await prisma.question.findMany({
 							where: { parentId: q.id },
@@ -2274,6 +2276,8 @@ export function examsRouter(prisma) {
 						// If childrenPerItem is set, take exactly that many; otherwise take all
 						const childSlice = childrenPerItem ? children.slice(0, childrenPerItem) : children;
 						for (const c of childSlice) allQuestionIds.push(c.id);
+					} else {
+						allQuestionIds.push(q.id);
 					}
 				}
 				return allQuestionIds;
@@ -2283,11 +2287,13 @@ export function examsRouter(prisma) {
 
 			if (defaults.sessions === 1) {
 				// L3: Single session — all weights combined, random topic placement
+				// For MIXED_VIGNETTE, totalQuestions = number of parent case studies (vignette + constructed)
 				s1Ids = await selectWeightedQuestions(weights, defaults.totalQuestions, defaults.questionType);
 				shuffleInPlace(s1Ids);
 				s1Minutes = defaults.totalMinutes;
 				s2Ids = [];
 				s2Minutes = 0;
+				console.log(`[mock-create] L3 single session: ${s1Ids.length} total IDs (target ${defaults.totalQuestions} parent case studies)`);
 			} else if (level === 'LEVEL2') {
 				// L2: Two sessions of 11 vignette item sets each (22 total), 132 min each
 				// All topics can appear in either or both sessions
@@ -2295,30 +2301,36 @@ export function examsRouter(prisma) {
 				const totalItemSets = (defaults.itemSetsPerSession || 11) * 2;
 				const allItemSetIds = await selectWeightedQuestions(weights, totalItemSets, defaults.questionType, new Set(), { childrenPerItem: 4 });
 
-				// allItemSetIds contains parent + children IDs grouped together
-				// Split into item set groups (parent followed by its children)
-				const itemSetGroups = [];
-				let currentGroup = [];
-
-				// Batch query to identify which IDs are parents (parentId is null)
+				// allItemSetIds contains only child question IDs (parents excluded)
+				// Group children by their parentId to form item set groups
 				const allQs = await prisma.question.findMany({
 					where: { id: { in: allItemSetIds } },
 					select: { id: true, parentId: true }
 				});
-				const parentIds = new Set(allQs.filter(q => !q.parentId).map(q => q.id));
+				const qMap = new Map(allQs.map(q => [q.id, q]));
 
-				// Group sequentially: each parent starts a new group
+				// Group by parentId, preserving order within each group
+				const groupMap = new Map(); // parentId -> [childId, ...]
+				const groupOrder = []; // track insertion order of parentIds
 				for (const id of allItemSetIds) {
-					if (parentIds.has(id)) {
-						if (currentGroup.length > 0) itemSetGroups.push(currentGroup);
-						currentGroup = [id];
-					} else {
-						currentGroup.push(id);
+					const q = qMap.get(id);
+					const pid = q?.parentId;
+					if (!pid) continue; // skip any orphan
+					if (!groupMap.has(pid)) {
+						groupMap.set(pid, []);
+						groupOrder.push(pid);
 					}
+					groupMap.get(pid).push(id);
 				}
-				if (currentGroup.length > 0) itemSetGroups.push(currentGroup);
+				const itemSetGroups = groupOrder.map(pid => groupMap.get(pid));
 
-				// Shuffle and split into 2 sessions
+				// Validate item set count
+				console.log(`[mock-create] L2: Found ${itemSetGroups.length} item set groups from ${allItemSetIds.length} total IDs (target: ${totalItemSets} item sets)`);
+				if (itemSetGroups.length < totalItemSets) {
+					console.warn(`[mock-create] L2: Only ${itemSetGroups.length} vignette item sets available (need ${totalItemSets}). The question bank may not have enough qualifying vignettes with ${4} sub-questions each.`);
+				}
+
+				// Shuffle and split into 2 sessions of exactly perSession each
 				shuffleInPlace(itemSetGroups);
 				const perSession = defaults.itemSetsPerSession || 11;
 				const s1Groups = itemSetGroups.slice(0, perSession);
@@ -2446,8 +2458,8 @@ export function examsRouter(prisma) {
 				where: { userId: req.user.id },
 				include: {
 					course: { select: { id: true, name: true, level: true, examConditions: true } },
-					session1Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true, question: { select: { parentId: true } } } }, attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 } } },
-					session2Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true, question: { select: { parentId: true } } } }, attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 } } }
+					session1Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true, question: { select: { parentId: true, type: true } } } }, attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 } } },
+					session2Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true, question: { select: { parentId: true, type: true } } } }, attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 } } }
 				},
 				orderBy: { createdAt: 'desc' }
 			});
@@ -2468,14 +2480,14 @@ export function examsRouter(prisma) {
 					session1Exam: {
 						select: {
 							id: true, name: true, timeLimitMinutes: true,
-							examQuestions: { select: { questionId: true, question: { select: { parentId: true } } } },
+							examQuestions: { select: { questionId: true, question: { select: { parentId: true, type: true } } } },
 							attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 }
 						}
 					},
 					session2Exam: {
 						select: {
 							id: true, name: true, timeLimitMinutes: true,
-							examQuestions: { select: { questionId: true, question: { select: { parentId: true } } } },
+							examQuestions: { select: { questionId: true, question: { select: { parentId: true, type: true } } } },
 							attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 }
 						}
 					}

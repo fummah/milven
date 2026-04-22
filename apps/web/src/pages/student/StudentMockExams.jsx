@@ -196,13 +196,31 @@ export default function StudentMockExams() {
           <div className="grid grid-cols-1 gap-5">
             {mockExams.map((mock, idx) => {
               const sc = STATUS_CONFIG[mock.status] || STATUS_CONFIG.PENDING;
-              const isVignetteExam = mock.course?.level === 'LEVEL2' || mock.course?.level === 'LEVEL3';
-              // For vignette exams, count only parent questions (parentId is null = item sets)
+              const lvl = mock.course?.level;
+              const isVignetteExam = lvl === 'LEVEL2' || lvl === 'LEVEL3';
+              // For vignette/constructed exams, count distinct item sets (unique parentIds from children)
+              // Also handles old mocks where parent questions are included as exam questions
+              const countItemSets = (eqs) => {
+                if (!eqs) return 0;
+                const parentIds = new Set();
+                const standaloneIds = [];
+                for (const eq of eqs) {
+                  const pid = eq.question?.parentId;
+                  if (pid) {
+                    parentIds.add(pid);
+                  } else {
+                    standaloneIds.push(eq.questionId);
+                  }
+                }
+                // Exclude standalone questions that are parents of children in the same set
+                const trueStandalone = standaloneIds.filter(id => !parentIds.has(id)).length;
+                return parentIds.size + trueStandalone;
+              };
               const s1Count = isVignetteExam
-                ? (mock.session1Exam?.examQuestions || []).filter(eq => !eq.question?.parentId).length
+                ? countItemSets(mock.session1Exam?.examQuestions)
                 : (mock.session1Exam?.examQuestions?.length || 0);
               const s2Count = isVignetteExam
-                ? (mock.session2Exam?.examQuestions || []).filter(eq => !eq.question?.parentId).length
+                ? countItemSets(mock.session2Exam?.examQuestions)
                 : (mock.session2Exam?.examQuestions?.length || 0);
               const countLabel = isVignetteExam ? 'Item Sets' : 'Qs';
               const isSingleSession = !mock.session2ExamId && (mock.breakMinutes === 0 || !mock.breakMinutes);

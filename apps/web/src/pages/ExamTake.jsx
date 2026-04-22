@@ -836,11 +836,27 @@ export function ExamTake() {
 		const course = mock?.course;
 		const level = course?.level || 'LEVEL1';
 		const isVignetteExam = level === 'LEVEL2' || level === 'LEVEL3';
+		const countItemSets = (eqs) => {
+			if (!eqs) return 0;
+			const parentIds = new Set();
+			const standaloneIds = [];
+			for (const eq of eqs) {
+				const pid = eq.question?.parentId;
+				if (pid) {
+					parentIds.add(pid);
+				} else {
+					standaloneIds.push(eq.questionId);
+				}
+			}
+			// Exclude standalone questions that are parents of children in the same set
+			const trueStandalone = standaloneIds.filter(id => !parentIds.has(id)).length;
+			return parentIds.size + trueStandalone;
+		};
 		const s1Count = isVignetteExam
-			? (mock?.session1Exam?.examQuestions || []).filter(eq => !eq.question?.parentId).length || totalQuestions
+			? (countItemSets(mock?.session1Exam?.examQuestions) || totalQuestions)
 			: (mock?.session1Exam?.examQuestions?.length || totalQuestions);
 		const s2Count = isVignetteExam
-			? (mock?.session2Exam?.examQuestions || []).filter(eq => !eq.question?.parentId).length
+			? countItemSets(mock?.session2Exam?.examQuestions)
 			: (mock?.session2Exam?.examQuestions?.length || 0);
 		const bd = instructionsData;
 		const breakdown = bd?.breakdown || [];
