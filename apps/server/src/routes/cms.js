@@ -2319,9 +2319,12 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles):
 - Present multiple related financial scenarios, each with specific data, dates, company names
 - Open the vignetteText with: "<p><strong>TOPIC: [TOPIC NAME]</strong></p><p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
 - VARY THE EXHIBIT FORMAT across case studies — do NOT give every case study a table. Distribute formats roughly equally:
-  FORMAT A — TABLE: Include 1-2 HTML tables as CFA Exhibits with realistic financial data:
+  FORMAT A — TABLE: Include 1-2 HTML tables as CFA Exhibits with realistic financial data.
+    CRITICAL TABLE STYLING: All tables MUST use SOLID borders only — never dashed, dotted, or broken lines.
+    Use this EXACT format (do not modify the style attributes):
     <p><strong>Exhibit 1</strong></p>
-    <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%"><thead><tr><th>Column</th><th>Column</th></tr></thead><tbody><tr><td>Value</td><td>Value</td></tr></tbody></table>
+    <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;border:1px solid #000;"><thead><tr><th style="border:1px solid #000;padding:6px;">Column</th><th style="border:1px solid #000;padding:6px;">Column</th></tr></thead><tbody><tr><td style="border:1px solid #000;padding:6px;">Value</td><td style="border:1px solid #000;padding:6px;">Value</td></tr></tbody></table>
+    Every <th> and <td> MUST have inline style="border:1px solid #000;padding:6px;" — this guarantees solid borders in all renderings. NEVER use border-style:dashed or border-style:dotted.
   FORMAT B — NARRATIVE ONLY: No exhibit element — all data (specific numbers, ratios, dates, company names) must be woven naturally and richly into the prose. Sub-questions reference the narrative directly.
   FORMAT C — CHART: Include a text-based chart or graph as a CFA Exhibit using a <pre> block:
     <p><strong>Exhibit 1 – [Chart Title]</strong></p>

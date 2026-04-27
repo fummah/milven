@@ -98,7 +98,8 @@ const menuItems = [
     label: 'Exams',
     children: [
       { key: 'exams-list', icon: subMenuBadge(<FileTextOutlined />, '#f97316'), label: <Link to="/admin/exams">Exams</Link> },
-      { key: 'exam-builder', icon: subMenuBadge(<ScheduleOutlined />, '#f97316'), label: <Link to="/admin/exams/builder">Exam Builder</Link> }
+      { key: 'exam-builder', icon: subMenuBadge(<ScheduleOutlined />, '#f97316'), label: <Link to="/admin/exams/builder">Exam Builder</Link> },
+      { key: 'mock-exams', icon: subMenuBadge(<SolutionOutlined />, '#f97316'), label: <Link to="/admin/mock-exams">Mock Exams</Link> }
     ]
   },
   {
@@ -130,7 +131,7 @@ const isPreviewPath = (pathname) => /^\/admin\/courses\/[^/]+\/preview$/.test(pa
 const childToParentKey = {
   'users-list': 'users', students: 'users', roles: 'users',
   'courses-list': 'courses', volumes: 'courses', topics: 'courses', questions: 'courses', materials: 'courses', documents: 'courses', formulas: 'courses', 'summary-sheets': 'courses', 'module-notes': 'courses', levels: 'courses',
-  'exams-list': 'exams', 'exam-builder': 'exams',
+  'exams-list': 'exams', 'exam-builder': 'exams', 'mock-exams': 'exams',
   'reports-overview': 'reports',
   products: 'billing', purchases: 'billing', invoices: 'billing', subscriptions: 'billing', taxes: 'billing'
 };

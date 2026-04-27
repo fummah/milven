@@ -37,6 +37,7 @@ model User {
   topicProgresses    TopicProgress[]
   courseProgresses   CourseProgress[]
   mockExams         MockExam[]
+  scheduledMocks    MockExam[] @relation("MockScheduledBy")
   pathwayVolumeId   String?
 }
 
@@ -645,6 +646,13 @@ model MockExam {
   totalScore      Float?
   session1Score   Float?
   session2Score   Float?
+  // Admin-scheduled mock exam fields
+  isScheduled     Boolean  @default(false)
+  scheduledById   String?
+  scheduledBy     User?    @relation("MockScheduledBy", fields: [scheduledById], references: [id])
+  title           String?  // Admin-defined title for scheduled mocks
+  availableFrom   DateTime?
+  availableUntil  DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -653,6 +661,7 @@ model MockExam {
   session2Exam    Exam?    @relation("MockSession2", fields: [session2ExamId], references: [id], onDelete: SetNull)
   @@index([userId, status])
   @@index([courseId])
+  @@index([isScheduled, courseId])
 }
 
 // Curriculum Documents - uploaded PDFs for AI question generation fine-tuning

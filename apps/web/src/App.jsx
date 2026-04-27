@@ -60,6 +60,7 @@ import { AdminFormulas } from './pages/admin/AdminFormulas.jsx';
 import { AdminSummarySheets } from './pages/admin/AdminSummarySheets.jsx';
 import { AdminModuleNotes } from './pages/admin/AdminModuleNotes.jsx';
 import AdminDocuments from './pages/admin/AdminDocuments.jsx';
+import AdminMockExams from './pages/admin/AdminMockExams.jsx';
 import { Home } from './pages/Home.jsx';
 import { CoursesPage } from './pages/Courses.jsx';
 import { Careers } from './pages/Careers.jsx';
@@ -810,6 +811,7 @@ export default function App() {
 						<Route path="revision" element={<AdminRevision />} />
 						<Route path="exams/builder" element={<AdminExamBuilder />} />
 						<Route path="exams" element={<AdminExams />} />
+						<Route path="mock-exams" element={<AdminMockExams />} />
 						<Route path="reports" element={<AdminReports />} />
 						<Route path="enrollments" element={<Placeholder title="Enrolled Students" />} />
 						<Route path="progress" element={<Placeholder title="Progress Tracking" />} />

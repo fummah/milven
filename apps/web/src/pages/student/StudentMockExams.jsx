@@ -246,9 +246,9 @@ export default function StudentMockExams() {
                       <div className="flex items-center gap-3">
                         <span className="text-lg" style={{ color: sc.color }}>{sc.icon}</span>
                         <div>
-                          <Typography.Text strong className="text-base block">{mock.course?.name || 'Mock Exam'}</Typography.Text>
+                          <Typography.Text strong className="text-base block">{mock.title || mock.course?.name || 'Mock Exam'}</Typography.Text>
                           <Typography.Text className="text-xs text-slate-500">
-                            {mock.course?.level} · Created {new Date(mock.createdAt).toLocaleDateString()}
+                            {mock.course?.level} · {mock.isScheduled ? 'Scheduled' : 'Created'} {new Date(mock.createdAt).toLocaleDateString()}
                           </Typography.Text>
                         </div>
                       </div>
@@ -319,20 +319,40 @@ export default function StudentMockExams() {
                         )
                       )}
 
+                      {/* Availability window notice for scheduled mocks */}
+                      {mock.isScheduled && (mock.availableFrom || mock.availableUntil) && mock.status === 'PENDING' && (() => {
+                        const now = new Date();
+                        const from = mock.availableFrom ? new Date(mock.availableFrom) : null;
+                        const until = mock.availableUntil ? new Date(mock.availableUntil) : null;
+                        const notYet = from && now < from;
+                        const expired = until && now > until;
+                        if (notYet) return <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm">Available from <strong>{from.toLocaleString()}</strong></div>;
+                        if (expired) return <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm">This exam expired on <strong>{until.toLocaleString()}</strong></div>;
+                        if (until) return <div className="mb-4 p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-sm">Available until <strong>{until.toLocaleString()}</strong></div>;
+                        return null;
+                      })()}
+
                       {/* Action buttons */}
                       <div className="flex items-center gap-3 flex-wrap">
-                        {mock.status === 'PENDING' && (
-                          <Button
-                            type="primary"
-                            size="large"
-                            icon={<PlayCircleOutlined />}
-                            onClick={() => startSession(mock.id, 1)}
-                            className="rounded-xl"
-                            style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}
-                          >
-                            {isSingleSession ? 'Start Exam' : 'Start Session 1'}
-                          </Button>
-                        )}
+                        {mock.status === 'PENDING' && (() => {
+                          const now = new Date();
+                          const from = mock.availableFrom ? new Date(mock.availableFrom) : null;
+                          const until = mock.availableUntil ? new Date(mock.availableUntil) : null;
+                          const locked = (from && now < from) || (until && now > until);
+                          return (
+                            <Button
+                              type="primary"
+                              size="large"
+                              icon={<PlayCircleOutlined />}
+                              onClick={() => startSession(mock.id, 1)}
+                              className="rounded-xl"
+                              style={{ background: locked ? '#94a3b8' : 'linear-gradient(135deg, #3b82f6, #2563eb)' }}
+                              disabled={locked}
+                            >
+                              {isSingleSession ? 'Start Exam' : 'Start Session 1'}
+                            </Button>
+                          );
+                        })()}
                         {mock.status === 'BREAK' && (
                           <Button
                             type="primary"

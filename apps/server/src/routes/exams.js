@@ -2344,26 +2344,74 @@ export function examsRouter(prisma) {
 				console.log(`[mock-create] L2 sessions: S1=${s1Groups.length} item sets (${s1Ids.length} Qs), S2=${s2Groups.length} item sets (${s2Ids.length} Qs)`);
 			} else {
 				// L1: Two sessions of 90 MCQs each (180 total), 135 min each
-				// Weights with session=1 go to session 1, session=2 go to session 2
-				// Weights with session=0 (unassigned) contribute to both sessions equally
-				const session1Weights = weights.filter(w => w.session === 1);
-				const session2Weights = weights.filter(w => w.session === 2);
-				const sharedWeights = weights.filter(w => w.session === 0);
+				// IMPORTANT: Volume weight percentages apply to the TOTAL of 180 questions,
+				// not to each session of 90. e.g. Ethics 15-20% => 27-36 questions of 180.
+				// - Volumes with session=1 -> all weighted questions go to Session 1
+				// - Volumes with session=2 -> all weighted questions go to Session 2
+				// - Volumes with session=0 (unassigned) -> split roughly evenly between S1 and S2
+				const totalTarget = (defaults.questionsPerSession || 90) * 2; // 180
+				const usedIds = new Set();
+				const s1Selected = [];
+				const s2Selected = [];
 
-				// Combine session-specific + shared weights for each session
-				const s1WeightRows = [...session1Weights, ...sharedWeights];
-				const s2WeightRows = [...session2Weights, ...sharedWeights];
+				// Helper: pick N MCQ parents from a volume's topics, excluding already-used IDs
+				const pickFromVolume = async (volumeId, count) => {
+					if (count <= 0) return [];
+					const topicIds = volumeTopicMap[volumeId] || [];
+					if (topicIds.length === 0) return [];
+					const available = await prisma.question.findMany({
+						where: {
+							topicId: { in: topicIds },
+							parentId: null,
+							type: 'MCQ',
+							id: { notIn: [...usedIds] }
+						},
+						select: { id: true }
+					});
+					shuffleInPlace(available);
+					const picked = available.slice(0, count).map(q => q.id);
+					for (const id of picked) usedIds.add(id);
+					return picked;
+				};
 
-				// Select session 1 questions
-				s1Ids = await selectWeightedQuestions(s1WeightRows, defaults.questionsPerSession, defaults.questionType);
-				// Select session 2 questions, excluding any already used in session 1
-				const s1IdSet = new Set(s1Ids);
-				s2Ids = await selectWeightedQuestions(s2WeightRows, defaults.questionsPerSession, defaults.questionType, s1IdSet);
+				// Compute volume-level target counts from 180 total
+				const volumeTargets = weights.map(w => {
+					const mid = (w.weightMin + w.weightMax) / 2;
+					const target = Math.max(1, Math.round((mid / 100) * totalTarget));
+					return { ...w, target };
+				});
+
+				// Distribute targets per session based on session assignment
+				for (const vt of volumeTargets) {
+					if (vt.session === 1) {
+						const ids = await pickFromVolume(vt.volumeId, vt.target);
+						s1Selected.push(...ids);
+					} else if (vt.session === 2) {
+						const ids = await pickFromVolume(vt.volumeId, vt.target);
+						s2Selected.push(...ids);
+					} else {
+						// Unassigned: split in half (s1 gets ceil, s2 gets floor)
+						const s1Half = Math.ceil(vt.target / 2);
+						const s2Half = vt.target - s1Half;
+						const ids1 = await pickFromVolume(vt.volumeId, s1Half);
+						s1Selected.push(...ids1);
+						const ids2 = await pickFromVolume(vt.volumeId, s2Half);
+						s2Selected.push(...ids2);
+					}
+				}
+
+				// Trim or pad to exactly questionsPerSession (90) per session
+				shuffleInPlace(s1Selected);
+				shuffleInPlace(s2Selected);
+				const perSession = defaults.questionsPerSession || 90;
+				s1Ids = s1Selected.slice(0, perSession);
+				s2Ids = s2Selected.slice(0, perSession);
 
 				s1Minutes = defaults.session1Minutes;
 				s2Minutes = defaults.session2Minutes;
 
-				console.log(`[mock-create] L1 sessions: S1=${s1Ids.length} questions, S2=${s2Ids.length} questions (target ${defaults.questionsPerSession} each)`);
+				console.log(`[mock-create] L1: percentages computed on ${totalTarget} total. S1=${s1Ids.length} Qs, S2=${s2Ids.length} Qs (target ${perSession} each)`);
+				console.log(`[mock-create] L1 volume targets:`, volumeTargets.map(v => `vol=${v.volumeId} session=${v.session} mid=${(v.weightMin+v.weightMax)/2}% -> ${v.target}Qs`));
 			}
 
 			if (s1Ids.length === 0 && s2Ids.length === 0) {
@@ -2451,6 +2499,189 @@ export function examsRouter(prisma) {
 		}
 	});
 
+	// ==========================================
+	// ADMIN: Schedule mock exams for students
+	// ==========================================
+	router.post('/mock/schedule', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const schema = z.object({
+			courseId: z.string(),
+			studentIds: z.array(z.string()).min(1),
+			title: z.string().min(1).max(200),
+			availableFrom: z.string().optional(),
+			availableUntil: z.string().optional()
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
+
+		try {
+			const { courseId, studentIds, title, availableFrom, availableUntil } = parse.data;
+			const course = await prisma.course.findUnique({ where: { id: courseId } });
+			if (!course) return res.status(404).json({ error: 'Course not found' });
+
+			const level = course.level || 'LEVEL1';
+			const defaults = MOCK_DEFAULTS[level] || MOCK_DEFAULTS.LEVEL1;
+
+			// Get topic weights
+			const weights = await prisma.mockExamTopicWeight.findMany({
+				where: { courseId },
+				include: { volume: { include: { modules: { include: { topics: true } } } } }
+			});
+			if (weights.length === 0) return res.status(400).json({ error: 'Mock exam topic weights have not been configured for this course.' });
+
+			// Build topic pool
+			const volumeTopicMap = {};
+			for (const w of weights) {
+				const topicIds = (w.volume?.modules || []).flatMap(m => (m.topics || []).map(t => t.id));
+				volumeTopicMap[w.volumeId] = topicIds;
+			}
+
+			// Select questions once — all students get the same exam
+			let s1Ids = [], s2Ids = [], s1Minutes = 0, s2Minutes = 0;
+
+			if (defaults.sessions === 1) {
+				s1Ids = await selectWeightedQuestions(weights, defaults.totalQuestions, defaults.questionType);
+				shuffleInPlace(s1Ids);
+				s1Minutes = defaults.totalMinutes;
+			} else if (level === 'LEVEL2') {
+				const totalItemSets = (defaults.itemSetsPerSession || 11) * 2;
+				const allItemSetIds = await selectWeightedQuestions(weights, totalItemSets, defaults.questionType, new Set(), { childrenPerItem: 4 });
+				const allQs = await prisma.question.findMany({ where: { id: { in: allItemSetIds } }, select: { id: true, parentId: true } });
+				const qMap = new Map(allQs.map(q => [q.id, q]));
+				const groupMap = new Map();
+				const groupOrder = [];
+				for (const id of allItemSetIds) {
+					const q = qMap.get(id);
+					const pid = q?.parentId;
+					if (!pid) continue;
+					if (!groupMap.has(pid)) { groupMap.set(pid, []); groupOrder.push(pid); }
+					groupMap.get(pid).push(id);
+				}
+				const itemSetGroups = groupOrder.map(pid => groupMap.get(pid));
+				shuffleInPlace(itemSetGroups);
+				const perSession = defaults.itemSetsPerSession || 11;
+				s1Ids = itemSetGroups.slice(0, perSession).flat();
+				s2Ids = itemSetGroups.slice(perSession, perSession * 2).flat();
+				s1Minutes = defaults.session1Minutes;
+				s2Minutes = defaults.session2Minutes;
+			} else {
+				// L1 — percentages on 180 total
+				const totalTarget = (defaults.questionsPerSession || 90) * 2;
+				const usedIds = new Set();
+				const s1Selected = [], s2Selected = [];
+				const pickFromVolume = async (volumeId, count) => {
+					if (count <= 0) return [];
+					const topicIds = volumeTopicMap[volumeId] || [];
+					if (topicIds.length === 0) return [];
+					const available = await prisma.question.findMany({ where: { topicId: { in: topicIds }, parentId: null, type: 'MCQ', id: { notIn: [...usedIds] } }, select: { id: true } });
+					shuffleInPlace(available);
+					const picked = available.slice(0, count).map(q => q.id);
+					for (const id of picked) usedIds.add(id);
+					return picked;
+				};
+				const volumeTargets = weights.map(w => {
+					const mid = (w.weightMin + w.weightMax) / 2;
+					return { ...w, target: Math.max(1, Math.round((mid / 100) * totalTarget)) };
+				});
+				for (const vt of volumeTargets) {
+					if (vt.session === 1) { s1Selected.push(...await pickFromVolume(vt.volumeId, vt.target)); }
+					else if (vt.session === 2) { s2Selected.push(...await pickFromVolume(vt.volumeId, vt.target)); }
+					else { const h = Math.ceil(vt.target / 2); s1Selected.push(...await pickFromVolume(vt.volumeId, h)); s2Selected.push(...await pickFromVolume(vt.volumeId, vt.target - h)); }
+				}
+				shuffleInPlace(s1Selected); shuffleInPlace(s2Selected);
+				const perSession = defaults.questionsPerSession || 90;
+				s1Ids = s1Selected.slice(0, perSession);
+				s2Ids = s2Selected.slice(0, perSession);
+				s1Minutes = defaults.session1Minutes;
+				s2Minutes = defaults.session2Minutes;
+			}
+
+			if (s1Ids.length === 0 && s2Ids.length === 0) {
+				return res.status(400).json({ error: 'No questions found in the question bank for this course.' });
+			}
+
+			// Create shared exam shells (all students share the same exam questions)
+			const exam1 = s1Ids.length > 0 ? await prisma.exam.create({ data: { name: `${title} - Session 1`, level: course.level, timeLimitMinutes: s1Minutes, type: 'MOCK', active: true, createdById: req.user.id } }) : null;
+			if (exam1) await prisma.examQuestion.createMany({ data: s1Ids.map((qid, idx) => ({ examId: exam1.id, questionId: qid, order: idx + 1 })) });
+
+			const exam2 = s2Ids.length > 0 ? await prisma.exam.create({ data: { name: `${title} - Session 2`, level: course.level, timeLimitMinutes: s2Minutes, type: 'MOCK', active: true, createdById: req.user.id } }) : null;
+			if (exam2) await prisma.examQuestion.createMany({ data: s2Ids.map((qid, idx) => ({ examId: exam2.id, questionId: qid, order: idx + 1 })) });
+
+			// Create one MockExam per student
+			const created = [];
+			for (const studentId of studentIds) {
+				// Skip if student already has an active scheduled mock for this course
+				const existing = await prisma.mockExam.findFirst({ where: { userId: studentId, courseId, isScheduled: true, status: { notIn: ['COMPLETED', 'CANCELLED'] } } });
+				if (existing) continue;
+
+				const mockData = {
+					user: { connect: { id: studentId } },
+					course: { connect: { id: courseId } },
+					breakMinutes: defaults.sessions === 1 ? 0 : (defaults.breakMinutes || 30),
+					session1Minutes: s1Minutes,
+					session2Minutes: s2Minutes || 0,
+					status: 'PENDING',
+					isScheduled: true,
+					scheduledBy: { connect: { id: req.user.id } },
+					title,
+					...(availableFrom ? { availableFrom: new Date(availableFrom) } : {}),
+					...(availableUntil ? { availableUntil: new Date(availableUntil) } : {})
+				};
+				if (exam1) mockData.session1Exam = { connect: { id: exam1.id } };
+				if (exam2) mockData.session2Exam = { connect: { id: exam2.id } };
+
+				const mock = await prisma.mockExam.create({ data: mockData });
+				created.push(mock);
+			}
+
+			console.log(`[mock-schedule] Admin ${req.user.id} scheduled "${title}" for ${created.length}/${studentIds.length} students on course ${courseId}`);
+			return res.status(201).json({ created: created.length, skipped: studentIds.length - created.length, mockExams: created });
+		} catch (err) {
+			console.error('Mock exam schedule error:', err);
+			return res.status(500).json({ error: 'Failed to schedule mock exams' });
+		}
+	});
+
+	// Admin: List all scheduled mock exams
+	router.get('/mock/scheduled', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		try {
+			const { courseId } = req.query;
+			const where = { isScheduled: true };
+			if (courseId) where.courseId = courseId;
+
+			const mockExams = await prisma.mockExam.findMany({
+				where,
+				include: {
+					user: { select: { id: true, email: true, firstName: true, lastName: true } },
+					course: { select: { id: true, name: true, level: true } },
+					scheduledBy: { select: { id: true, email: true, firstName: true, lastName: true } },
+					session1Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true } } } },
+					session2Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true } } } }
+				},
+				orderBy: { createdAt: 'desc' }
+			});
+			return res.json({ mockExams });
+		} catch (err) {
+			console.error('Fetch scheduled mocks error:', err);
+			return res.status(500).json({ error: 'Failed to fetch scheduled mock exams' });
+		}
+	});
+
+	// Admin: Cancel a scheduled mock exam
+	router.delete('/mock/scheduled/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		try {
+			const mock = await prisma.mockExam.findUnique({ where: { id: req.params.id } });
+			if (!mock) return res.status(404).json({ error: 'Mock exam not found' });
+			if (!mock.isScheduled) return res.status(400).json({ error: 'This is not a scheduled mock exam' });
+			if (mock.status !== 'PENDING') return res.status(400).json({ error: 'Cannot cancel a mock exam that has already been started' });
+
+			await prisma.mockExam.update({ where: { id: req.params.id }, data: { status: 'CANCELLED' } });
+			return res.json({ success: true });
+		} catch (err) {
+			console.error('Cancel scheduled mock error:', err);
+			return res.status(500).json({ error: 'Failed to cancel scheduled mock exam' });
+		}
+	});
+
 	// Student: Get my mock exams
 	router.get('/mock/me', requireAuth(), async (req, res) => {
 		try {
@@ -2510,6 +2741,17 @@ export function examsRouter(prisma) {
 		try {
 			const mockExam = await prisma.mockExam.findUnique({ where: { id: req.params.mockExamId } });
 			if (!mockExam || mockExam.userId !== req.user.id) return res.status(404).json({ error: 'Mock exam not found' });
+
+			// Check availability window for scheduled mocks
+			if (mockExam.isScheduled) {
+				const now = new Date();
+				if (mockExam.availableFrom && now < new Date(mockExam.availableFrom)) {
+					return res.status(403).json({ error: 'This mock exam is not available yet.', availableFrom: mockExam.availableFrom });
+				}
+				if (mockExam.availableUntil && now > new Date(mockExam.availableUntil)) {
+					return res.status(403).json({ error: 'This mock exam has expired.', availableUntil: mockExam.availableUntil });
+				}
+			}
 
 			const { session } = parse.data;
 			const examId = session === 1 ? mockExam.session1ExamId : mockExam.session2ExamId;

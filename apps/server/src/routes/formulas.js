@@ -271,7 +271,7 @@ export function formulasRouter(prisma) {
 			topicId: z.string().optional().nullable(),
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 			year: z.coerce.number().int().optional().default(2026),
-			count: z.coerce.number().int().min(1).max(20).optional().default(5),
+			count: z.coerce.number().int().min(1).max(50).optional().default(5),
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: 'Validation failed', details: parse.error.flatten() });
@@ -333,15 +333,16 @@ export function formulasRouter(prisma) {
 				? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — formulas MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
 				: '';
 
-			const prompt = `You are a senior CFA curriculum expert and formula book author at Milven Finance School. Generate ${count} professional, exam-quality formula cards in JSON format.
+			const isComprehensive = count >= 20;
+			const prompt = `You are a senior CFA curriculum expert and formula book author at Milven Finance School. Generate ${isComprehensive ? 'ALL' : count} professional, exam-quality formula cards in JSON format.
 
 Each formula card is used in a premium CFA Formula Book. Every field must be populated with accurate, useful content. Draw from actual CFA curriculum material, financial theory, and exam patterns.
-
+${isComprehensive ? `\nCOMPREHENSIVE MODE: You MUST generate EVERY formula that appears in this module/topic area of the CFA curriculum. Do NOT skip or omit any formula — include foundational definitions, intermediate results, and advanced formulas. Aim for completeness. If the curriculum document is provided, extract EVERY mathematical formula or equation from it. Generate at least ${count} formulas.\n` : ''}
 ${hierarchyContext}
 Year: ${year}
 ${curriculumSection}
 IMPORTANT RULES:
-${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You MUST extract formulas EXACTLY as they appear in the document — preserve all notation, subscripts, superscripts, Greek letters, and variable names. Do NOT rewrite or simplify formulas from the document.
+${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You MUST extract formulas EXACTLY as they appear in the document — preserve all notation, subscripts, superscripts, Greek letters, and variable names. Do NOT rewrite or simplify formulas from the document.${isComprehensive ? ' Extract EVERY formula from every page of the provided document for this module.' : ''}
 - The "losTag" MUST be the EXACT Learning Outcome Statement from the document (starts with verbs like "describe", "explain", "calculate").
 - Page references in the document appear as [PAGE N] markers — use these for accurate "losTag" references.
 ` : ''}- Each formula must be a REAL, commonly tested formula for this topic area in the CFA curriculum
@@ -380,7 +381,7 @@ Return a JSON object:
   ]
 }
 
-Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
+Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula cards. Return ONLY valid JSON.`;
 
 			const openai = new OpenAI({ apiKey });
 			const completion = await openai.chat.completions.create({
@@ -390,6 +391,7 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,
+				max_tokens: isComprehensive ? 16000 : 4096,
 				response_format: { type: 'json_object' }
 			});
 
@@ -494,7 +496,7 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 			topicId: z.string().optional().nullable(),
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 			year: z.coerce.number().int().optional().default(2026),
-			count: z.coerce.number().int().min(1).max(20).optional().default(5),
+			count: z.coerce.number().int().min(1).max(50).optional().default(5),
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: 'Validation failed', details: parse.error.flatten() });
