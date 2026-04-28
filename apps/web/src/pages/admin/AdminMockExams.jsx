@@ -10,7 +10,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import api from '../../lib/api';
+import { api } from '../../lib/api';
 
 dayjs.extend(relativeTime);
 
