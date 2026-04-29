@@ -1948,6 +1948,20 @@ export function ExamTake() {
 						(a) => a?.question?.type === 'CONSTRUCTED_RESPONSE' && a.marksAwarded == null
 					);
 					if (hasConstructedPending) {
+						const setMarkingPref = async (pref) => {
+							try {
+								await api.post(`/api/exams/attempts/${resultAttempt.id}/marking-preference`, { preference: pref });
+								if (pref === 'SELF') {
+									closeResultModal();
+									navigate(`/student/exams/result/${resultAttempt.id}?selfMark=1`);
+								} else {
+									closeResultModal();
+									navigate(window.location.pathname.startsWith('/student/') ? '/student' : -1);
+								}
+							} catch {
+								message.error('Failed to set marking preference');
+							}
+						};
 						return (
 							<>
 								<div
@@ -1961,19 +1975,33 @@ export function ExamTake() {
 										Responses submitted
 									</Typography.Title>
 									<Typography.Paragraph className="!text-white/90 !mb-0 text-base" style={{ maxWidth: 320, margin: '0 auto' }}>
-										Your responses have been submitted for marking. You will be notified when the admin is done marking.
+										Your constructed responses need marking. How would you like them to be marked?
 									</Typography.Paragraph>
 								</div>
 								<div className="p-6 bg-white">
 									<Space direction="vertical" size={12} className="w-full">
 										<Button
+											type="primary"
 											size="large"
 											block
-											onClick={() => { closeResultModal(); navigate(window.location.pathname.startsWith('/student/') ? '/student' : -1); }}
+											onClick={() => setMarkingPref('SELF')}
 											className="h-12 rounded-xl font-semibold"
+											style={{ background: 'linear-gradient(135deg, #059669, #10b981)' }}
 										>
-											Back to Dashboard
+											Mark it myself
 										</Button>
+										<Button
+											size="large"
+											block
+											onClick={() => setMarkingPref('ADMIN')}
+											className="h-12 rounded-xl font-semibold"
+											style={{ background: 'linear-gradient(135deg, #1e40af, #3b82f6)', color: '#fff', border: 'none' }}
+										>
+											Submit to admin for marking
+										</Button>
+										<Typography.Text type="secondary" className="text-center block text-xs mt-1">
+											If you choose admin marking, you will be notified when marking is complete.
+										</Typography.Text>
 									</Space>
 								</div>
 							</>

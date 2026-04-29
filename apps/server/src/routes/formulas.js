@@ -271,12 +271,13 @@ export function formulasRouter(prisma) {
 			topicId: z.string().optional().nullable(),
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 			year: z.coerce.number().int().optional().default(2026),
-			count: z.coerce.number().int().min(1).max(50).optional().default(5),
+			count: z.coerce.number().int().min(1).max(100).optional().nullable(),
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: 'Validation failed', details: parse.error.flatten() });
 
-		const { courseId, volumeId, moduleId, topicId, level, year, count } = parse.data;
+		const { courseId, volumeId, moduleId, topicId, level, year } = parse.data;
+		let count = parse.data.count || null;
 
 		const apiKey = await getOpenAIApiKey(prisma);
 		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured. Set OPENAI_API_KEY in .env or in Admin Settings.' });
@@ -287,6 +288,7 @@ export function formulasRouter(prisma) {
 
 			let volumeName = null, moduleName = null, topicName = null;
 			let topicNames = [];
+			let resolvedTopics = [];
 
 			if (volumeId) {
 				const vol = await prisma.volume.findUnique({ where: { id: volumeId }, select: { name: true } });
@@ -297,15 +299,20 @@ export function formulasRouter(prisma) {
 				if (mod) moduleName = mod.name;
 			}
 			if (topicId) {
-				const t = await prisma.topic.findUnique({ where: { id: topicId }, select: { name: true } });
-				if (t) topicName = t.name;
+				const t = await prisma.topic.findUnique({ where: { id: topicId }, select: { id: true, name: true } });
+				if (t) { topicName = t.name; resolvedTopics = [t]; }
 				topicNames = [topicName];
 			} else {
 				const topicWhere = { courseId };
 				if (moduleId) topicWhere.moduleId = moduleId;
 				else if (volumeId) topicWhere.module = { volumeId };
-				const resolvedTopics = await prisma.topic.findMany({ where: topicWhere, select: { id: true, name: true }, orderBy: { order: 'asc' }, take: 20 });
+				resolvedTopics = await prisma.topic.findMany({ where: topicWhere, select: { id: true, name: true }, orderBy: { order: 'asc' }, take: 50 });
 				topicNames = resolvedTopics.map(t => t.name);
+			}
+
+			// Auto-detect count if not provided
+			if (!count) {
+				count = resolvedTopics.length > 0 ? Math.min(50, Math.max(5, resolvedTopics.length * 3)) : 10;
 			}
 
 			let curriculumExcerpt = '';
@@ -376,7 +383,8 @@ Return a JSON object:
       "calculatorCue": "string or null",
       "losTag": "string",
       "highYield": boolean,
-      "order": number
+      "order": number,
+      "topicName": "string (the exact topic name from the list above that this formula belongs to, or null if no match)"
     }
   ]
 }
@@ -406,6 +414,22 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 
 			if (!items.length) return res.status(502).json({ error: 'AI returned no formulas' });
 
+			// Build topic lookup for matching AI topicName to DB topic IDs
+			const topicLookup = new Map();
+			for (const t of resolvedTopics) {
+				topicLookup.set(t.name.toLowerCase().trim(), t.id);
+			}
+			const matchTopicId = (aiTopicName) => {
+				if (topicId) return topicId;
+				if (!aiTopicName) return null;
+				const key = aiTopicName.toLowerCase().trim();
+				if (topicLookup.has(key)) return topicLookup.get(key);
+				for (const [name, id] of topicLookup) {
+					if (key.includes(name) || name.includes(key)) return id;
+				}
+				return null;
+			};
+
 			// Return formulas for preview — do NOT save yet
 			const previewItems = items.map((item, i) => ({
 				name: String(item.name || `Formula ${i + 1}`).slice(0, 255),
@@ -418,6 +442,8 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 				losTag: item.losTag || null,
 				highYield: !!item.highYield,
 				order: item.order || (i + 1),
+				topicName: item.topicName || null,
+				matchedTopicId: matchTopicId(item.topicName),
 			}));
 
 			return res.json({
@@ -466,7 +492,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 							courseId,
 							volumeId: volumeId || null,
 							moduleId: moduleId || null,
-							topicId: topicId || null,
+							topicId: item.matchedTopicId || topicId || null,
 							order: item.order || (idx + 1),
 							highYield: !!item.highYield,
 							year: year || 2026,
@@ -496,12 +522,13 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 			topicId: z.string().optional().nullable(),
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 			year: z.coerce.number().int().optional().default(2026),
-			count: z.coerce.number().int().min(1).max(50).optional().default(5),
+			count: z.coerce.number().int().min(1).max(100).optional().nullable(),
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: 'Validation failed', details: parse.error.flatten() });
 
-		const { courseId, volumeId, moduleId, topicId, level, year, count } = parse.data;
+		const { courseId, volumeId, moduleId, topicId, level, year } = parse.data;
+		let count = parse.data.count || null;
 
 		const apiKey = await getOpenAIApiKey(prisma);
 		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured. Set OPENAI_API_KEY in .env or in Admin Settings.' });
@@ -513,6 +540,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 
 			let volumeName = null, moduleName = null, topicName = null;
 			let topicNames = [];
+			let resolvedTopics = []; // {id, name} — used for topic matching on save
 
 			if (volumeId) {
 				const vol = await prisma.volume.findUnique({ where: { id: volumeId }, select: { name: true } });
@@ -523,16 +551,22 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 				if (mod) moduleName = mod.name;
 			}
 			if (topicId) {
-				const t = await prisma.topic.findUnique({ where: { id: topicId }, select: { name: true } });
-				if (t) topicName = t.name;
+				const t = await prisma.topic.findUnique({ where: { id: topicId }, select: { id: true, name: true } });
+				if (t) { topicName = t.name; resolvedTopics = [t]; }
 				topicNames = [topicName];
 			} else {
 				// Auto-resolve topics within the selected hierarchy
 				const topicWhere = { courseId };
 				if (moduleId) topicWhere.moduleId = moduleId;
 				else if (volumeId) topicWhere.module = { volumeId };
-				const resolvedTopics = await prisma.topic.findMany({ where: topicWhere, select: { id: true, name: true }, orderBy: { order: 'asc' }, take: 20 });
+				resolvedTopics = await prisma.topic.findMany({ where: topicWhere, select: { id: true, name: true }, orderBy: { order: 'asc' }, take: 50 });
 				topicNames = resolvedTopics.map(t => t.name);
+			}
+
+			// Auto-detect count: if no count provided, generate ~3 formulas per topic in the module (min 5, max 50)
+			if (!count) {
+				count = resolvedTopics.length > 0 ? Math.min(50, Math.max(5, resolvedTopics.length * 3)) : 10;
+				console.log(`[formulas.generate-ai] Auto count = ${count} (${resolvedTopics.length} topics)`);
 			}
 
 			// Load curriculum document for richer context
@@ -606,7 +640,8 @@ Return a JSON object:
       "calculatorCue": "string or null",
       "losTag": "string (CFA LOS reference)",
       "highYield": boolean,
-      "order": number (starting from 1)
+      "order": number (starting from 1),
+      "topicName": "string (the exact topic name from the list above that this formula belongs to, or null if no match)"
     }
   ]
 }
@@ -635,11 +670,29 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 
 			if (!items.length) return res.status(502).json({ error: 'AI returned no formulas' });
 
+			// Build a topic name -> id lookup for fuzzy matching AI-returned topicName
+			const topicLookup = new Map();
+			for (const t of resolvedTopics) {
+				topicLookup.set(t.name.toLowerCase().trim(), t.id);
+			}
+			const matchTopicId = (aiTopicName) => {
+				if (topicId) return topicId; // explicit topic always wins
+				if (!aiTopicName) return null;
+				const key = aiTopicName.toLowerCase().trim();
+				if (topicLookup.has(key)) return topicLookup.get(key);
+				// Partial match: find first topic whose name is contained in AI's topicName or vice versa
+				for (const [name, id] of topicLookup) {
+					if (key.includes(name) || name.includes(key)) return id;
+				}
+				return null;
+			};
+
 			// Save each formula to the database
 			const created = [];
 			for (let i = 0; i < items.length; i++) {
 				const item = items[i];
 				try {
+					const matchedTopicId = matchTopicId(item.topicName);
 					const formula = await prisma.formula.create({
 						data: {
 							name: String(item.name || `Formula ${i + 1}`).slice(0, 255),
@@ -654,7 +707,7 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 							courseId,
 							volumeId: volumeId || null,
 							moduleId: moduleId || null,
-							topicId: topicId || null,
+							topicId: matchedTopicId,
 							order: item.order || (i + 1),
 							highYield: !!item.highYield,
 							year,

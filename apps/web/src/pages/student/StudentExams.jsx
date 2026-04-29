@@ -764,21 +764,34 @@ export function StudentExams() {
                     if (courseId) {
                       try {
                         const { data } = await api.get(`/api/learning/courses/${courseId}/detail`);
-                        const nextVolumes = (data?.volumes || []).map((volume) => ({
-                          id: volume.id,
-                          name: volume.name,
-                          order: volume.order ?? volume.orderNo ?? null
-                        }));
-                        const nextTopics = (data?.modules || []).flatMap((module) =>
-                          (module.topics || []).map((topic) => ({
-                            id: topic.id,
-                            name: topic.name,
-                            moduleId: module.id || topic.moduleId,
-                            moduleName: module.name || null,
-                            moduleNumber: topic.moduleNumber,
-                            volumeId: module.volumeId || null
-                          }))
-                        );
+                        // Filter pathway volumes: only show student's chosen pathway
+                        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+                        const studentPathwayId = currentUser?.pathwayVolumeId;
+                        const nextVolumes = (data?.volumes || [])
+                          .filter(volume => {
+                            if (!volume.isPathway) return true; // non-pathway always included
+                            if (!studentPathwayId) return true; // no preference -> include all
+                            return volume.id === studentPathwayId; // only student's chosen pathway
+                          })
+                          .map((volume) => ({
+                            id: volume.id,
+                            name: volume.name,
+                            isPathway: volume.isPathway || false,
+                            order: volume.order ?? volume.orderNo ?? null
+                          }));
+                        const allowedVolumeIds = new Set(nextVolumes.map(v => v.id));
+                        const nextTopics = (data?.modules || [])
+                          .filter(module => !module.volumeId || allowedVolumeIds.has(module.volumeId))
+                          .flatMap((module) =>
+                            (module.topics || []).map((topic) => ({
+                              id: topic.id,
+                              name: topic.name,
+                              moduleId: module.id || topic.moduleId,
+                              moduleName: module.name || null,
+                              moduleNumber: topic.moduleNumber,
+                              volumeId: module.volumeId || null
+                            }))
+                          );
                         setVolumes(nextVolumes);
                         setTopics(nextTopics);
                       } catch {

@@ -932,11 +932,69 @@ export function examsRouter(prisma) {
 		return res.json({ attempt: updated });
 	});
 
+	// Set marking preference for an attempt (SELF or ADMIN)
+	router.post('/attempts/:attemptId/marking-preference', requireAuth(), async (req, res) => {
+		const schema = z.object({ preference: z.enum(['SELF', 'ADMIN']) });
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: 'Invalid preference' });
+
+		const attempt = await prisma.examAttempt.findUnique({ where: { id: req.params.attemptId } });
+		if (!attempt || attempt.userId !== req.user.id) return res.status(404).json({ error: 'Attempt not found' });
+		if (attempt.status !== 'SUBMITTED') return res.status(400).json({ error: 'Attempt must be submitted first' });
+
+		const updated = await prisma.examAttempt.update({
+			where: { id: req.params.attemptId },
+			data: { markingPreference: parse.data.preference }
+		});
+		return res.json({ attempt: updated });
+	});
+
+	// Student self-grade: award marks for constructed response answers
+	router.post('/attempts/:attemptId/self-grade', requireAuth(), async (req, res) => {
+		const schema = z.object({
+			grades: z.array(z.object({
+				answerId: z.string(),
+				marksAwarded: z.number().int().min(0)
+			}))
+		});
+		const parse = schema.safeParse(req.body);
+		if (!parse.success) return res.status(400).json({ error: 'Invalid grades' });
+
+		const attempt = await prisma.examAttempt.findUnique({
+			where: { id: req.params.attemptId },
+			include: { answers: { include: { question: { select: { type: true, marks: true } } } } }
+		});
+		if (!attempt || attempt.userId !== req.user.id) return res.status(404).json({ error: 'Attempt not found' });
+		if (attempt.markingPreference !== 'SELF') return res.status(400).json({ error: 'This attempt is not set for self-marking' });
+
+		// Apply grades
+		for (const { answerId, marksAwarded } of parse.data.grades) {
+			const answer = attempt.answers.find(a => a.id === answerId);
+			if (!answer) continue;
+			if (answer.question?.type !== 'CONSTRUCTED_RESPONSE') continue;
+			const maxMarks = answer.question?.marks || 10;
+			await prisma.examAnswer.update({
+				where: { id: answerId },
+				data: { marksAwarded: Math.min(marksAwarded, maxMarks) }
+			});
+		}
+
+		// Recompute score
+		const scorePercent = await computeAttemptScorePercent(req.params.attemptId);
+		const updated = await prisma.examAttempt.update({
+			where: { id: req.params.attemptId },
+			data: { scorePercent }
+		});
+		return res.json({ attempt: updated });
+	});
+
 	// List attempts pending marking (admin): submitted attempts with ≥1 constructed answer where marksAwarded is null
+	// Only show attempts where student chose admin marking (or legacy null preference)
 	router.get('/attempts/pending-marking', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const attempts = await prisma.examAttempt.findMany({
 			where: {
 				status: 'SUBMITTED',
+				OR: [{ markingPreference: 'ADMIN' }, { markingPreference: null }],
 				answers: {
 					some: {
 						question: { type: 'CONSTRUCTED_RESPONSE' },
@@ -2102,19 +2160,71 @@ export function examsRouter(prisma) {
 				orderBy: [{ session: 'asc' }, { createdAt: 'asc' }]
 			});
 
-			const totalQuestions = defaults.sessions === 1 ? defaults.totalQuestions : defaults.questionsPerSession;
-			const breakdown = weights.map(w => {
-				const midWeight = (w.weightMin + w.weightMax) / 2 / 100;
-				const estQuestions = Math.max(1, Math.round(totalQuestions * midWeight));
-				return {
+			let breakdown;
+			if (defaults.sessions === 2 && defaults.questionsPerSession) {
+				// L1/L2: weights are % of total (e.g. 180). Compute per-session targets that sum to exactly questionsPerSession.
+				const perSession = defaults.questionsPerSession; // 90
+				const totalTarget = perSession * 2; // 180
+
+				// For each weight, compute raw target from the full total
+				const raw = weights.map(w => {
+					const mid = (w.weightMin + w.weightMax) / 2;
+					return { ...w, rawTarget: Math.max(1, Math.round((mid / 100) * totalTarget)) };
+				});
+
+				// Group by session to normalize each session to exactly perSession
+				const sessions = { 1: [], 2: [], 0: [] };
+				for (const r of raw) sessions[r.session ?? 0]?.push(r) || sessions[0].push(r);
+
+				// Unassigned (session=0) volumes split evenly: half to S1, half to S2
+				for (const r of sessions[0]) {
+					const s1Half = Math.ceil(r.rawTarget / 2);
+					sessions[1].push({ ...r, rawTarget: s1Half, session: 1 });
+					sessions[2].push({ ...r, rawTarget: r.rawTarget - s1Half, session: 2 });
+				}
+
+				// Normalize each session so targets sum to exactly perSession
+				const normalizeSession = (items, target) => {
+					const rawSum = items.reduce((s, i) => s + i.rawTarget, 0);
+					if (rawSum === 0 || items.length === 0) return items;
+					let assigned = items.map(i => ({ ...i, estQuestions: Math.max(1, Math.round((i.rawTarget / rawSum) * target)) }));
+					let sum = assigned.reduce((s, i) => s + i.estQuestions, 0);
+					// Adjust the largest bucket to hit exact target
+					while (sum !== target && assigned.length > 0) {
+						assigned.sort((a, b) => b.estQuestions - a.estQuestions);
+						assigned[0].estQuestions += (target - sum > 0 ? 1 : -1);
+						sum = assigned.reduce((s, i) => s + i.estQuestions, 0);
+					}
+					return assigned;
+				};
+
+				const s1Norm = normalizeSession(sessions[1], perSession);
+				const s2Norm = normalizeSession(sessions[2], perSession);
+
+				breakdown = [...s1Norm, ...s2Norm].map(w => ({
 					volumeId: w.volumeId,
 					volumeName: w.volume?.description ? `${w.volume.description} (${w.volume.name})` : (w.volume?.name || 'Unknown'),
 					session: w.session,
 					weightMin: w.weightMin,
 					weightMax: w.weightMax,
-					estimatedQuestions: estQuestions
-				};
-			});
+					estimatedQuestions: w.estQuestions
+				}));
+			} else {
+				// L3 or single-session: simple calculation
+				const totalQuestions = defaults.totalQuestions || 55;
+				breakdown = weights.map(w => {
+					const midWeight = (w.weightMin + w.weightMax) / 2 / 100;
+					const estQuestions = Math.max(1, Math.round(totalQuestions * midWeight));
+					return {
+						volumeId: w.volumeId,
+						volumeName: w.volume?.description ? `${w.volume.description} (${w.volume.name})` : (w.volume?.name || 'Unknown'),
+						session: w.session,
+						weightMin: w.weightMin,
+						weightMax: w.weightMax,
+						estimatedQuestions: estQuestions
+					};
+				});
+			}
 
 			return res.json({ course, defaults, breakdown });
 		} catch (err) {
@@ -2194,11 +2304,20 @@ export function examsRouter(prisma) {
 			const defaults = MOCK_DEFAULTS[level] || MOCK_DEFAULTS.LEVEL1;
 
 			// Get topic weights
-			const weights = await prisma.mockExamTopicWeight.findMany({
+			const allWeights = await prisma.mockExamTopicWeight.findMany({
 				where: { courseId },
 				include: { volume: { include: { modules: { include: { topics: true } } } } }
 			});
-			if (weights.length === 0) return res.status(400).json({ error: 'Mock exam topic weights have not been configured for this course yet.', advice: 'Please contact your course administrator to set up mock exam weights.' });
+			if (allWeights.length === 0) return res.status(400).json({ error: 'Mock exam topic weights have not been configured for this course yet.', advice: 'Please contact your course administrator to set up mock exam weights.' });
+
+			// Pathway filtering: if student has a pathwayVolumeId, exclude other pathway volumes
+			const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { pathwayVolumeId: true } });
+			const weights = allWeights.filter(w => {
+				if (!w.volume?.isPathway) return true; // non-pathway volumes always included
+				if (!user?.pathwayVolumeId) return true; // no preference set -> include all
+				return w.volumeId === user.pathwayVolumeId; // only include student's chosen pathway
+			});
+			if (weights.length === 0) return res.status(400).json({ error: 'No topic weights match your pathway selection.', advice: 'Please check your pathway setting in your profile.' });
 
 			// Build topic pool: map volumeId -> array of topic IDs
 			const volumeTopicMap = {};
@@ -2344,15 +2463,11 @@ export function examsRouter(prisma) {
 				console.log(`[mock-create] L2 sessions: S1=${s1Groups.length} item sets (${s1Ids.length} Qs), S2=${s2Groups.length} item sets (${s2Ids.length} Qs)`);
 			} else {
 				// L1: Two sessions of 90 MCQs each (180 total), 135 min each
-				// IMPORTANT: Volume weight percentages apply to the TOTAL of 180 questions,
-				// not to each session of 90. e.g. Ethics 15-20% => 27-36 questions of 180.
-				// - Volumes with session=1 -> all weighted questions go to Session 1
-				// - Volumes with session=2 -> all weighted questions go to Session 2
-				// - Volumes with session=0 (unassigned) -> split roughly evenly between S1 and S2
-				const totalTarget = (defaults.questionsPerSession || 90) * 2; // 180
+				// IMPORTANT: Volume weight percentages apply to the TOTAL of 180 questions.
+				// We normalize per-session targets so each session sums to exactly 90.
+				const perSession = defaults.questionsPerSession || 90;
+				const totalTarget = perSession * 2; // 180
 				const usedIds = new Set();
-				const s1Selected = [];
-				const s2Selected = [];
 
 				// Helper: pick N MCQ parents from a volume's topics, excluding already-used IDs
 				const pickFromVolume = async (volumeId, count) => {
@@ -2360,12 +2475,7 @@ export function examsRouter(prisma) {
 					const topicIds = volumeTopicMap[volumeId] || [];
 					if (topicIds.length === 0) return [];
 					const available = await prisma.question.findMany({
-						where: {
-							topicId: { in: topicIds },
-							parentId: null,
-							type: 'MCQ',
-							id: { notIn: [...usedIds] }
-						},
+						where: { topicId: { in: topicIds }, parentId: null, type: 'MCQ', id: { notIn: [...usedIds] } },
 						select: { id: true }
 					});
 					shuffleInPlace(available);
@@ -2374,44 +2484,88 @@ export function examsRouter(prisma) {
 					return picked;
 				};
 
-				// Compute volume-level target counts from 180 total
-				const volumeTargets = weights.map(w => {
+				// Helper: pick N MCQ questions from ALL course topics (for padding)
+				const allCourseTopicIds = Object.values(volumeTopicMap).flat();
+				const pickFromPool = async (count) => {
+					if (count <= 0) return [];
+					const available = await prisma.question.findMany({
+						where: { topicId: { in: allCourseTopicIds }, parentId: null, type: 'MCQ', id: { notIn: [...usedIds] } },
+						select: { id: true }
+					});
+					shuffleInPlace(available);
+					const picked = available.slice(0, count).map(q => q.id);
+					for (const id of picked) usedIds.add(id);
+					return picked;
+				};
+
+				// Compute raw volume targets from 180 total
+				const rawTargets = weights.map(w => {
 					const mid = (w.weightMin + w.weightMax) / 2;
-					const target = Math.max(1, Math.round((mid / 100) * totalTarget));
-					return { ...w, target };
+					return { ...w, rawTarget: Math.max(1, Math.round((mid / 100) * totalTarget)) };
 				});
 
-				// Distribute targets per session based on session assignment
-				for (const vt of volumeTargets) {
+				// Split by session and split unassigned volumes evenly
+				const s1Weights = [], s2Weights = [];
+				for (const vt of rawTargets) {
 					if (vt.session === 1) {
-						const ids = await pickFromVolume(vt.volumeId, vt.target);
-						s1Selected.push(...ids);
+						s1Weights.push({ ...vt });
 					} else if (vt.session === 2) {
-						const ids = await pickFromVolume(vt.volumeId, vt.target);
-						s2Selected.push(...ids);
+						s2Weights.push({ ...vt });
 					} else {
-						// Unassigned: split in half (s1 gets ceil, s2 gets floor)
-						const s1Half = Math.ceil(vt.target / 2);
-						const s2Half = vt.target - s1Half;
-						const ids1 = await pickFromVolume(vt.volumeId, s1Half);
-						s1Selected.push(...ids1);
-						const ids2 = await pickFromVolume(vt.volumeId, s2Half);
-						s2Selected.push(...ids2);
+						const s1Half = Math.ceil(vt.rawTarget / 2);
+						s1Weights.push({ ...vt, rawTarget: s1Half });
+						s2Weights.push({ ...vt, rawTarget: vt.rawTarget - s1Half });
 					}
 				}
 
-				// Trim or pad to exactly questionsPerSession (90) per session
+				// Normalize each session's targets so they sum to exactly perSession (90)
+				const normalizeTargets = (items, target) => {
+					const rawSum = items.reduce((s, i) => s + i.rawTarget, 0);
+					if (rawSum === 0 || items.length === 0) return items;
+					let assigned = items.map(i => ({ ...i, normalizedTarget: Math.max(1, Math.round((i.rawTarget / rawSum) * target)) }));
+					let sum = assigned.reduce((s, i) => s + i.normalizedTarget, 0);
+					while (sum !== target && assigned.length > 0) {
+						assigned.sort((a, b) => b.normalizedTarget - a.normalizedTarget);
+						assigned[0].normalizedTarget += (target - sum > 0 ? 1 : -1);
+						sum = assigned.reduce((s, i) => s + i.normalizedTarget, 0);
+					}
+					return assigned;
+				};
+
+				const s1Norm = normalizeTargets(s1Weights, perSession);
+				const s2Norm = normalizeTargets(s2Weights, perSession);
+
+				console.log(`[mock-create] L1 S1 normalized targets:`, s1Norm.map(v => `vol=${v.volumeId} target=${v.normalizedTarget}`));
+				console.log(`[mock-create] L1 S2 normalized targets:`, s2Norm.map(v => `vol=${v.volumeId} target=${v.normalizedTarget}`));
+
+				// Pick questions per volume for each session
+				const s1Selected = [];
+				for (const vt of s1Norm) {
+					s1Selected.push(...await pickFromVolume(vt.volumeId, vt.normalizedTarget));
+				}
+				const s2Selected = [];
+				for (const vt of s2Norm) {
+					s2Selected.push(...await pickFromVolume(vt.volumeId, vt.normalizedTarget));
+				}
+
+				// Pad shortfall from general pool if a volume didn't have enough questions
+				if (s1Selected.length < perSession) {
+					console.log(`[mock-create] L1 S1 shortfall: ${perSession - s1Selected.length} — padding from pool`);
+					s1Selected.push(...await pickFromPool(perSession - s1Selected.length));
+				}
+				if (s2Selected.length < perSession) {
+					console.log(`[mock-create] L1 S2 shortfall: ${perSession - s2Selected.length} — padding from pool`);
+					s2Selected.push(...await pickFromPool(perSession - s2Selected.length));
+				}
+
 				shuffleInPlace(s1Selected);
 				shuffleInPlace(s2Selected);
-				const perSession = defaults.questionsPerSession || 90;
 				s1Ids = s1Selected.slice(0, perSession);
 				s2Ids = s2Selected.slice(0, perSession);
-
 				s1Minutes = defaults.session1Minutes;
 				s2Minutes = defaults.session2Minutes;
 
-				console.log(`[mock-create] L1: percentages computed on ${totalTarget} total. S1=${s1Ids.length} Qs, S2=${s2Ids.length} Qs (target ${perSession} each)`);
-				console.log(`[mock-create] L1 volume targets:`, volumeTargets.map(v => `vol=${v.volumeId} session=${v.session} mid=${(v.weightMin+v.weightMax)/2}% -> ${v.target}Qs`));
+				console.log(`[mock-create] L1 final: S1=${s1Ids.length} Qs, S2=${s2Ids.length} Qs (target ${perSession} each)`);
 			}
 
 			if (s1Ids.length === 0 && s2Ids.length === 0) {
@@ -2564,10 +2718,10 @@ export function examsRouter(prisma) {
 				s1Minutes = defaults.session1Minutes;
 				s2Minutes = defaults.session2Minutes;
 			} else {
-				// L1 — percentages on 180 total
-				const totalTarget = (defaults.questionsPerSession || 90) * 2;
+				// L1 — normalize per-session targets to exactly 90
+				const perSession = defaults.questionsPerSession || 90;
+				const totalTarget = perSession * 2;
 				const usedIds = new Set();
-				const s1Selected = [], s2Selected = [];
 				const pickFromVolume = async (volumeId, count) => {
 					if (count <= 0) return [];
 					const topicIds = volumeTopicMap[volumeId] || [];
@@ -2578,17 +2732,45 @@ export function examsRouter(prisma) {
 					for (const id of picked) usedIds.add(id);
 					return picked;
 				};
-				const volumeTargets = weights.map(w => {
+				const allCourseTopicIds = Object.values(volumeTopicMap).flat();
+				const pickFromPool = async (count) => {
+					if (count <= 0) return [];
+					const available = await prisma.question.findMany({ where: { topicId: { in: allCourseTopicIds }, parentId: null, type: 'MCQ', id: { notIn: [...usedIds] } }, select: { id: true } });
+					shuffleInPlace(available);
+					const picked = available.slice(0, count).map(q => q.id);
+					for (const id of picked) usedIds.add(id);
+					return picked;
+				};
+				const rawTargets = weights.map(w => {
 					const mid = (w.weightMin + w.weightMax) / 2;
-					return { ...w, target: Math.max(1, Math.round((mid / 100) * totalTarget)) };
+					return { ...w, rawTarget: Math.max(1, Math.round((mid / 100) * totalTarget)) };
 				});
-				for (const vt of volumeTargets) {
-					if (vt.session === 1) { s1Selected.push(...await pickFromVolume(vt.volumeId, vt.target)); }
-					else if (vt.session === 2) { s2Selected.push(...await pickFromVolume(vt.volumeId, vt.target)); }
-					else { const h = Math.ceil(vt.target / 2); s1Selected.push(...await pickFromVolume(vt.volumeId, h)); s2Selected.push(...await pickFromVolume(vt.volumeId, vt.target - h)); }
+				const s1Weights = [], s2Weights = [];
+				for (const vt of rawTargets) {
+					if (vt.session === 1) { s1Weights.push({ ...vt }); }
+					else if (vt.session === 2) { s2Weights.push({ ...vt }); }
+					else { const h = Math.ceil(vt.rawTarget / 2); s1Weights.push({ ...vt, rawTarget: h }); s2Weights.push({ ...vt, rawTarget: vt.rawTarget - h }); }
 				}
+				const normalizeTargets = (items, target) => {
+					const rawSum = items.reduce((s, i) => s + i.rawTarget, 0);
+					if (rawSum === 0 || items.length === 0) return items;
+					let assigned = items.map(i => ({ ...i, normalizedTarget: Math.max(1, Math.round((i.rawTarget / rawSum) * target)) }));
+					let sum = assigned.reduce((s, i) => s + i.normalizedTarget, 0);
+					while (sum !== target && assigned.length > 0) {
+						assigned.sort((a, b) => b.normalizedTarget - a.normalizedTarget);
+						assigned[0].normalizedTarget += (target - sum > 0 ? 1 : -1);
+						sum = assigned.reduce((s, i) => s + i.normalizedTarget, 0);
+					}
+					return assigned;
+				};
+				const s1Norm = normalizeTargets(s1Weights, perSession);
+				const s2Norm = normalizeTargets(s2Weights, perSession);
+				const s1Selected = [], s2Selected = [];
+				for (const vt of s1Norm) s1Selected.push(...await pickFromVolume(vt.volumeId, vt.normalizedTarget));
+				for (const vt of s2Norm) s2Selected.push(...await pickFromVolume(vt.volumeId, vt.normalizedTarget));
+				if (s1Selected.length < perSession) s1Selected.push(...await pickFromPool(perSession - s1Selected.length));
+				if (s2Selected.length < perSession) s2Selected.push(...await pickFromPool(perSession - s2Selected.length));
 				shuffleInPlace(s1Selected); shuffleInPlace(s2Selected);
-				const perSession = defaults.questionsPerSession || 90;
 				s1Ids = s1Selected.slice(0, perSession);
 				s2Ids = s2Selected.slice(0, perSession);
 				s1Minutes = defaults.session1Minutes;

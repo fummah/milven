@@ -269,6 +269,7 @@ model ExamAttempt {
   status           AttemptStatus @default(IN_PROGRESS)
   timeRemainingSec Int?
   scorePercent     Float?
+  markingPreference String?     // 'SELF' | 'ADMIN' — how constructed responses should be marked
   answers          ExamAnswer[]
 }
 

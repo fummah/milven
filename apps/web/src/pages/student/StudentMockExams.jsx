@@ -252,9 +252,16 @@ export default function StudentMockExams() {
                           </Typography.Text>
                         </div>
                       </div>
-                      <Tag style={{ background: sc.bg, color: sc.color, border: `1px solid ${sc.color}40`, borderRadius: 20, fontWeight: 600 }}>
-                        {sc.label}
-                      </Tag>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {mock.isScheduled && (
+                          <Tag style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: 20, fontWeight: 600 }}>
+                            Assigned by Admin
+                          </Tag>
+                        )}
+                        <Tag style={{ background: sc.bg, color: sc.color, border: `1px solid ${sc.color}40`, borderRadius: 20, fontWeight: 600 }}>
+                          {sc.label}
+                        </Tag>
+                      </div>
                     </div>
 
                     {/* Body */}

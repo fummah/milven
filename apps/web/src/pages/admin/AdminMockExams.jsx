@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card, Button, Typography, Table, Tag, Modal, Form, Input, Select, DatePicker,
-  Space, message, Tooltip, Spin, Empty, Popconfirm, Badge, Statistic, Row, Col
+  Space, message, Tooltip, Spin, Empty, Popconfirm, Badge, Statistic, Row, Col, Radio
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, CalendarOutlined, TeamOutlined,
@@ -25,7 +25,19 @@ export default function AdminMockExams() {
   const [creating, setCreating] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [filterCourse, setFilterCourse] = useState(null);
+  const [studentMode, setStudentMode] = useState('all'); // 'all' | 'individual'
   const [form] = Form.useForm();
+  const selectedCourseId = Form.useWatch('courseId', form);
+
+  // Derive the course level from selected course
+  const selectedCourse = useMemo(() => courses.find(c => c.id === selectedCourseId), [courses, selectedCourseId]);
+  const selectedLevel = selectedCourse?.level;
+
+  // Filter students by the course's level
+  const studentsAtLevel = useMemo(() => {
+    if (!selectedLevel) return students;
+    return students.filter(s => s.level === selectedLevel);
+  }, [students, selectedLevel]);
 
   const fetchScheduled = useCallback(async () => {
     setLoading(true);
@@ -58,11 +70,20 @@ export default function AdminMockExams() {
   useEffect(() => { fetchScheduled(); }, [fetchScheduled]);
 
   const handleCreate = async (values) => {
+    const resolvedStudentIds = studentMode === 'all'
+      ? studentsAtLevel.map(s => s.id)
+      : values.studentIds;
+
+    if (!resolvedStudentIds || resolvedStudentIds.length === 0) {
+      message.warning(studentMode === 'all' ? 'No active students found at this level' : 'Please select at least one student');
+      return;
+    }
+
     setCreating(true);
     try {
       const payload = {
         courseId: values.courseId,
-        studentIds: values.studentIds,
+        studentIds: resolvedStudentIds,
         title: values.title,
       };
       if (values.dateRange?.[0]) payload.availableFrom = values.dateRange[0].toISOString();
@@ -72,6 +93,7 @@ export default function AdminMockExams() {
       message.success(`Scheduled for ${data.created} student(s)${data.skipped ? ` (${data.skipped} skipped — already have active mock)` : ''}`);
       setModalOpen(false);
       form.resetFields();
+      setStudentMode('all');
       fetchScheduled();
     } catch (err) {
       message.error(err?.response?.data?.error || 'Failed to schedule mock exam');
@@ -256,32 +278,33 @@ export default function AdminMockExams() {
             />
           </Form.Item>
 
-          <Form.Item name="studentIds" label="Students" rules={[{ required: true, message: 'Select at least one student' }]}>
-            <Select
-              mode="multiple"
-              placeholder="Select students"
-              showSearch
-              optionFilterProp="label"
-              maxTagCount={5}
-              options={students.map(s => ({
-                label: `${s.firstName || ''} ${s.lastName || ''} (${s.email})`.trim(),
-                value: s.id
-              }))}
-              dropdownRender={(menu) => (
-                <div>
-                  {menu}
-                  <div className="p-2 border-t">
-                    <Button
-                      type="link"
-                      size="small"
-                      onClick={() => form.setFieldsValue({ studentIds: students.map(s => s.id) })}
-                    >
-                      Select all students
-                    </Button>
-                  </div>
-                </div>
-              )}
-            />
+          <Form.Item label="Students">
+            <Radio.Group value={studentMode} onChange={e => { setStudentMode(e.target.value); form.setFieldsValue({ studentIds: undefined }); }} className="mb-3">
+              <Radio value="all">All active students at this level</Radio>
+              <Radio value="individual">Select individual students</Radio>
+            </Radio.Group>
+            {studentMode === 'all' ? (
+              <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-sm">
+                <TeamOutlined className="mr-2" />
+                {selectedLevel
+                  ? <><strong>{studentsAtLevel.length}</strong> {selectedLevel.replace('LEVEL', 'Level ')} student(s) will receive this mock exam</>
+                  : 'Select a course first to see the student count'}
+              </div>
+            ) : (
+              <Form.Item name="studentIds" noStyle rules={[{ required: studentMode === 'individual', message: 'Select at least one student' }]}>
+                <Select
+                  mode="multiple"
+                  placeholder="Search and select students"
+                  showSearch
+                  optionFilterProp="label"
+                  maxTagCount={5}
+                  options={studentsAtLevel.map(s => ({
+                    label: `${s.firstName || ''} ${s.lastName || ''} (${s.email})`.trim(),
+                    value: s.id
+                  }))}
+                />
+              </Form.Item>
+            )}
           </Form.Item>
 
           <Form.Item name="dateRange" label="Availability Window (optional)">
