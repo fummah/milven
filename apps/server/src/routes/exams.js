@@ -2087,7 +2087,7 @@ export function examsRouter(prisma) {
 	const MOCK_DEFAULTS = {
 		LEVEL1: { sessions: 2, session1Minutes: 135, session2Minutes: 135, breakMinutes: 30, questionsPerSession: 90, questionType: 'MCQ' },
 		LEVEL2: { sessions: 2, session1Minutes: 132, session2Minutes: 132, breakMinutes: 30, itemSetsPerSession: 11, questionType: 'VIGNETTE_MCQ' },
-		LEVEL3: { sessions: 1, totalMinutes: 264, totalQuestions: 55, questionType: 'MIXED_VIGNETTE' }
+		LEVEL3: { sessions: 2, session1Minutes: 132, session2Minutes: 132, breakMinutes: 30, totalItemSets: 11, marksPerItemSet: 12, questionType: 'MIXED_VIGNETTE' }
 	};
 
 	// Admin: Get topic weights for a course
@@ -2161,10 +2161,13 @@ export function examsRouter(prisma) {
 			});
 
 			let breakdown;
-			if (defaults.sessions === 2 && defaults.questionsPerSession) {
-				// L1/L2: weights are % of total (e.g. 180). Compute per-session targets that sum to exactly questionsPerSession.
-				const perSession = defaults.questionsPerSession; // 90
-				const totalTarget = perSession * 2; // 180
+			if (defaults.sessions === 2 && (defaults.questionsPerSession || defaults.itemSetsPerSession || defaults.totalItemSets)) {
+				// L1/L2/L3: weights are % of total. Compute per-session targets.
+				// L1: 90 per session (180 total), L2: 11 per session (22 total), L3: 11 total (5+6 split)
+				const totalTarget = defaults.questionsPerSession ? defaults.questionsPerSession * 2
+					: defaults.itemSetsPerSession ? defaults.itemSetsPerSession * 2
+					: defaults.totalItemSets || 11;
+				const perSession = Math.ceil(totalTarget / 2);
 
 				// For each weight, compute raw target from the full total
 				const raw = weights.map(w => {
@@ -2311,10 +2314,19 @@ export function examsRouter(prisma) {
 			if (allWeights.length === 0) return res.status(400).json({ error: 'Mock exam topic weights have not been configured for this course yet.', advice: 'Please contact your course administrator to set up mock exam weights.' });
 
 			// Pathway filtering: if student has a pathwayVolumeId, exclude other pathway volumes
+			// For courses with pathway volumes, REQUIRE the student to have a pathway selected
 			const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { pathwayVolumeId: true } });
+			const hasPathwayVolumes = allWeights.some(w => w.volume?.isPathway);
+			if (hasPathwayVolumes && !user?.pathwayVolumeId) {
+				return res.status(400).json({
+					error: 'You must select a pathway before creating a mock exam for this course.',
+					advice: 'Please go to your Profile and choose your pathway, then try again.',
+					code: 'PATHWAY_REQUIRED'
+				});
+			}
 			const weights = allWeights.filter(w => {
 				if (!w.volume?.isPathway) return true; // non-pathway volumes always included
-				if (!user?.pathwayVolumeId) return true; // no preference set -> include all
+				if (!user?.pathwayVolumeId) return true; // no preference set -> include all (shouldn't reach here with enforcement above)
 				return w.volumeId === user.pathwayVolumeId; // only include student's chosen pathway
 			});
 			if (weights.length === 0) return res.status(400).json({ error: 'No topic weights match your pathway selection.', advice: 'Please check your pathway setting in your profile.' });
@@ -2404,15 +2416,42 @@ export function examsRouter(prisma) {
 
 			let s1Ids = [], s2Ids = [], s1Minutes = 0, s2Minutes = 0;
 
-			if (defaults.sessions === 1) {
-				// L3: Single session — all weights combined, random topic placement
-				// For MIXED_VIGNETTE, totalQuestions = number of parent case studies (vignette + constructed)
-				s1Ids = await selectWeightedQuestions(weights, defaults.totalQuestions, defaults.questionType);
-				shuffleInPlace(s1Ids);
-				s1Minutes = defaults.totalMinutes;
-				s2Ids = [];
-				s2Minutes = 0;
-				console.log(`[mock-create] L3 single session: ${s1Ids.length} total IDs (target ${defaults.totalQuestions} parent case studies)`);
+			if (level === 'LEVEL3') {
+				// L3: Two sessions — 11 total item sets (case studies), split 6+5 or 5+6
+				// Each item set is a parent question (VIGNETTE_MCQ or CONSTRUCTED_RESPONSE) with children
+				// Mixed: some item sets are vignette MCQ bundles, some are constructed response (essay) bundles
+				const totalItemSets = defaults.totalItemSets || 11;
+				const allItemSetIds = await selectWeightedQuestions(weights, totalItemSets, defaults.questionType, new Set());
+
+				// allItemSetIds contains child question IDs — group by parentId
+				const allQs = await prisma.question.findMany({
+					where: { id: { in: allItemSetIds } },
+					select: { id: true, parentId: true }
+				});
+				const qMap = new Map(allQs.map(q => [q.id, q]));
+				const groupMap = new Map();
+				const groupOrder = [];
+				for (const id of allItemSetIds) {
+					const q = qMap.get(id);
+					const pid = q?.parentId;
+					if (!pid) continue;
+					if (!groupMap.has(pid)) { groupMap.set(pid, []); groupOrder.push(pid); }
+					groupMap.get(pid).push(id);
+				}
+				const itemSetGroups = groupOrder.map(pid => groupMap.get(pid));
+				shuffleInPlace(itemSetGroups);
+
+				// Split: session 1 gets 6 (or 5), session 2 gets 5 (or 6)
+				const s1ItemSets = Math.min(6, itemSetGroups.length);
+				const s1Groups = itemSetGroups.slice(0, s1ItemSets);
+				const s2Groups = itemSetGroups.slice(s1ItemSets);
+
+				s1Ids = s1Groups.flat();
+				s2Ids = s2Groups.flat();
+				s1Minutes = defaults.session1Minutes;
+				s2Minutes = defaults.session2Minutes;
+
+				console.log(`[mock-create] L3: ${itemSetGroups.length} item sets total — S1=${s1Groups.length} (${s1Ids.length} Qs), S2=${s2Groups.length} (${s2Ids.length} Qs)`);
 			} else if (level === 'LEVEL2') {
 				// L2: Two sessions of 11 vignette item sets each (22 total), 132 min each
 				// All topics can appear in either or both sessions
@@ -2579,7 +2618,7 @@ export function examsRouter(prisma) {
 			// Create session 1 exam
 			const exam1 = s1Ids.length > 0 ? await prisma.exam.create({
 				data: {
-					name: defaults.sessions === 1 ? `${course.name} Mock Exam` : `${course.name} Mock - Session 1`,
+					name: `${course.name} Mock - Session 1`,
 					level: course.level,
 					timeLimitMinutes: s1Minutes,
 					type: 'MOCK',
@@ -2593,7 +2632,7 @@ export function examsRouter(prisma) {
 				});
 			}
 
-			// Create session 2 exam (only for L1)
+			// Create session 2 exam
 			const exam2 = s2Ids.length > 0 ? await prisma.exam.create({
 				data: {
 					name: `${course.name} Mock - Session 2`,
@@ -2614,7 +2653,7 @@ export function examsRouter(prisma) {
 			const mockExamData = {
 				user: { connect: { id: req.user.id } },
 				course: { connect: { id: courseId } },
-				breakMinutes: defaults.sessions === 1 ? 0 : (defaults.breakMinutes || 30),
+				breakMinutes: defaults.breakMinutes || 30,
 				session1Minutes: s1Minutes,
 				session2Minutes: s2Minutes || 0,
 				status: 'PENDING'
@@ -2689,13 +2728,73 @@ export function examsRouter(prisma) {
 				volumeTopicMap[w.volumeId] = topicIds;
 			}
 
+			// Weighted question selector (same logic as student create)
+			async function selectWeightedQuestions(weightRows, totalQuestions, questionType, excludeIds = new Set(), { childrenPerItem = null } = {}) {
+				if (weightRows.length === 0) return [];
+				const totalWeight = weightRows.reduce((sum, sw) => sum + (sw.weightMin + sw.weightMax) / 2, 0);
+				const weightTargets = weightRows.map(sw => {
+					const midWeight = (sw.weightMin + sw.weightMax) / 2;
+					const proportion = totalWeight > 0 ? midWeight / totalWeight : 1 / weightRows.length;
+					return { ...sw, target: Math.max(1, Math.round(totalQuestions * proportion)) };
+				});
+				const usedIds = new Set(excludeIds);
+				const selectedParents = [];
+				for (const sw of weightTargets) {
+					const topicIds = volumeTopicMap[sw.volumeId] || [];
+					if (topicIds.length === 0) continue;
+					let where = { topicId: { in: topicIds }, parentId: null, id: { notIn: [...usedIds] } };
+					if (questionType === 'MCQ') where.type = 'MCQ';
+					else if (questionType === 'VIGNETTE_MCQ') where.type = 'VIGNETTE_MCQ';
+					else if (questionType === 'CONSTRUCTED_RESPONSE') where.type = 'CONSTRUCTED_RESPONSE';
+					else if (questionType === 'MIXED_VIGNETTE') where.type = { in: ['VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE'] };
+					const includeChildren = childrenPerItem ? { _count: { select: { children: true } } } : {};
+					const available = await prisma.question.findMany({ where, select: { id: true, type: true, ...includeChildren } });
+					const filtered = childrenPerItem ? available.filter(q => (q._count?.children || 0) >= childrenPerItem) : available;
+					shuffleInPlace(filtered);
+					const picked = filtered.slice(0, sw.target);
+					for (const q of picked) { usedIds.add(q.id); selectedParents.push(q); }
+				}
+				shuffleInPlace(selectedParents);
+				const finalParents = selectedParents.slice(0, totalQuestions);
+				const allQuestionIds = [];
+				for (const q of finalParents) {
+					if (q.type === 'VIGNETTE_MCQ' || q.type === 'CONSTRUCTED_RESPONSE') {
+						const children = await prisma.question.findMany({ where: { parentId: q.id }, select: { id: true }, orderBy: { orderIndex: 'asc' } });
+						const childSlice = childrenPerItem ? children.slice(0, childrenPerItem) : children;
+						for (const c of childSlice) allQuestionIds.push(c.id);
+					} else {
+						allQuestionIds.push(q.id);
+					}
+				}
+				return allQuestionIds;
+			}
+
 			// Select questions once — all students get the same exam
 			let s1Ids = [], s2Ids = [], s1Minutes = 0, s2Minutes = 0;
 
-			if (defaults.sessions === 1) {
-				s1Ids = await selectWeightedQuestions(weights, defaults.totalQuestions, defaults.questionType);
-				shuffleInPlace(s1Ids);
-				s1Minutes = defaults.totalMinutes;
+			if (level === 'LEVEL3') {
+				// L3: Two sessions — 11 total item sets (case studies), split 6+5 or 5+6
+				const totalItemSets = defaults.totalItemSets || 11;
+				const allItemSetIds = await selectWeightedQuestions(weights, totalItemSets, defaults.questionType, new Set());
+				const allQs = await prisma.question.findMany({ where: { id: { in: allItemSetIds } }, select: { id: true, parentId: true } });
+				const qMap = new Map(allQs.map(q => [q.id, q]));
+				const groupMap = new Map();
+				const groupOrder = [];
+				for (const id of allItemSetIds) {
+					const q = qMap.get(id);
+					const pid = q?.parentId;
+					if (!pid) continue;
+					if (!groupMap.has(pid)) { groupMap.set(pid, []); groupOrder.push(pid); }
+					groupMap.get(pid).push(id);
+				}
+				const itemSetGroups = groupOrder.map(pid => groupMap.get(pid));
+				shuffleInPlace(itemSetGroups);
+				const s1ItemSets = Math.min(6, itemSetGroups.length);
+				s1Ids = itemSetGroups.slice(0, s1ItemSets).flat();
+				s2Ids = itemSetGroups.slice(s1ItemSets).flat();
+				s1Minutes = defaults.session1Minutes;
+				s2Minutes = defaults.session2Minutes;
+				console.log(`[mock-schedule] L3: ${itemSetGroups.length} item sets — S1=${s1ItemSets}, S2=${itemSetGroups.length - s1ItemSets}`);
 			} else if (level === 'LEVEL2') {
 				const totalItemSets = (defaults.itemSetsPerSession || 11) * 2;
 				const allItemSetIds = await selectWeightedQuestions(weights, totalItemSets, defaults.questionType, new Set(), { childrenPerItem: 4 });
@@ -2798,7 +2897,7 @@ export function examsRouter(prisma) {
 				const mockData = {
 					user: { connect: { id: studentId } },
 					course: { connect: { id: courseId } },
-					breakMinutes: defaults.sessions === 1 ? 0 : (defaults.breakMinutes || 30),
+					breakMinutes: defaults.breakMinutes || 30,
 					session1Minutes: s1Minutes,
 					session2Minutes: s2Minutes || 0,
 					status: 'PENDING',

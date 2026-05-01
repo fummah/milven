@@ -69,6 +69,19 @@ export default function StudentMockExams() {
     } catch (err) {
       if (err.response?.data?.mockExamId) {
         message.info('You already have an active mock exam for this course. Please complete or cancel it first.');
+      } else if (err.response?.data?.code === 'PATHWAY_REQUIRED') {
+        Modal.confirm({
+          title: 'Pathway Selection Required',
+          content: (
+            <div>
+              <p style={{ marginBottom: 8 }}>{err.response?.data?.error}</p>
+              <p style={{ color: '#666', fontSize: 13 }}><strong>What to do:</strong> {err.response?.data?.advice}</p>
+            </div>
+          ),
+          okText: 'Go to Profile',
+          cancelText: 'Cancel',
+          onOk: () => navigate('/student/profile'),
+        });
       } else {
         const errorMsg = err.response?.data?.error || 'Failed to create mock exam';
         const advice = err.response?.data?.advice || 'Please try again. If the problem persists, contact your course administrator.';
@@ -222,7 +235,7 @@ export default function StudentMockExams() {
               const s2Count = isVignetteExam
                 ? countItemSets(mock.session2Exam?.examQuestions)
                 : (mock.session2Exam?.examQuestions?.length || 0);
-              const countLabel = isVignetteExam ? 'Item Sets' : 'Qs';
+              const countLabel = lvl === 'LEVEL3' ? 'Case Studies' : (isVignetteExam ? 'Item Sets' : 'Qs');
               const isSingleSession = !mock.session2ExamId && (mock.breakMinutes === 0 || !mock.breakMinutes);
               const currentStep = getSessionStep(mock.status, isSingleSession);
 

@@ -929,10 +929,9 @@ export function ExamTake() {
 									<div>
 										<Typography.Text strong className="text-yellow-800 block mb-1">CFA Level III Exam Format</Typography.Text>
 										<Typography.Text className="text-slate-700">
-											The Level III exam consists of item sets and constructed response (essay) sets. Both question types combine vignettes with accompanying multiple-choice items for item sets and constructed response items for essay sets.
+											The Level III exam consists of 2 sessions with a mix of vignette-based multiple-choice item sets and constructed response (essay) case studies.
+											Each session will have either 6 or 5 case studies, for a total of 11 across both sessions. Each case study is worth 12 marks.
 											All questions must be answered in English based on the information in the vignette.
-											Each session will have either 6 item sets and 5 essay sets or 5 item sets and 6 essay sets.
-											Overall, the Level III exam contains 11 item sets and 11 essay sets for 12 points each.
 											The CFA Program curriculum topic areas for Level III will be randomly placed on the exam.
 										</Typography.Text>
 									</div>
@@ -961,6 +960,32 @@ export function ExamTake() {
 										<li>{s2Count} multiple-choice questions</li>
 										<li>{mock?.session2Minutes || 135} minutes time limit</li>
 										<li>~90 seconds per question</li>
+									</ul>
+								</Card>
+							</div>
+						)}
+
+						{/* L3 Current Session Info */}
+						{level === 'LEVEL3' && s2Count > 0 && (
+							<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<Card size="small" style={{ borderRadius: 16, borderColor: currentSessionNum === 1 ? '#f59e0b' : '#e2e8f0', borderWidth: currentSessionNum === 1 ? 2 : 1, background: currentSessionNum === 1 ? '#fffbeb' : '#fafafa' }}>
+									<Typography.Text strong className={currentSessionNum === 1 ? 'text-yellow-700 block mb-2' : 'text-slate-500 block mb-2'}>
+										Session 1 {currentSessionNum === 1 ? '(Current)' : ''}
+									</Typography.Text>
+									<ul className="text-sm text-slate-700 space-y-1 list-disc pl-4 mb-0">
+										<li>{s1Count} case studies (item sets / essays)</li>
+										<li>12 marks per case study</li>
+										<li>{mock?.session1Minutes || 132} minutes time limit</li>
+									</ul>
+								</Card>
+								<Card size="small" style={{ borderRadius: 16, borderColor: currentSessionNum === 2 ? '#f59e0b' : '#e2e8f0', borderWidth: currentSessionNum === 2 ? 2 : 1, background: currentSessionNum === 2 ? '#fffbeb' : '#fafafa' }}>
+									<Typography.Text strong className={currentSessionNum === 2 ? 'text-yellow-700 block mb-2' : 'text-slate-500 block mb-2'}>
+										Session 2 {currentSessionNum === 2 ? '(Current)' : ''}
+									</Typography.Text>
+									<ul className="text-sm text-slate-700 space-y-1 list-disc pl-4 mb-0">
+										<li>{s2Count} case studies (item sets / essays)</li>
+										<li>12 marks per case study</li>
+										<li>{mock?.session2Minutes || 132} minutes time limit</li>
 									</ul>
 								</Card>
 							</div>
