@@ -2204,14 +2204,35 @@ export function examsRouter(prisma) {
 				const s1Norm = normalizeSession(sessions[1], perSession);
 				const s2Norm = normalizeSession(sessions[2], perSession);
 
-				breakdown = [...s1Norm, ...s2Norm].map(w => ({
-					volumeId: w.volumeId,
-					volumeName: w.volume?.description ? `${w.volume.description} (${w.volume.name})` : (w.volume?.name || 'Unknown'),
-					session: w.session,
-					weightMin: w.weightMin,
-					weightMax: w.weightMax,
-					estimatedQuestions: w.estQuestions
-				}));
+				// For L1: return per-session breakdown (frontend shows separate session tables)
+				// For L2/L3: aggregate by volume to avoid duplicates (frontend shows single table)
+				if (level === 'LEVEL1') {
+					breakdown = [...s1Norm, ...s2Norm].map(w => ({
+						volumeId: w.volumeId,
+						volumeName: w.volume?.description ? `${w.volume.description} (${w.volume.name})` : (w.volume?.name || 'Unknown'),
+						session: w.session,
+						weightMin: w.weightMin,
+						weightMax: w.weightMax,
+						estimatedQuestions: w.estQuestions
+					}));
+				} else {
+					// Aggregate by volumeId for L2/L3
+					const volumeMap = new Map();
+					for (const w of [...s1Norm, ...s2Norm]) {
+						const vid = w.volumeId;
+						if (!volumeMap.has(vid)) {
+							volumeMap.set(vid, {
+								volumeId: vid,
+								volumeName: w.volume?.description ? `${w.volume.description} (${w.volume.name})` : (w.volume?.name || 'Unknown'),
+								weightMin: w.weightMin,
+								weightMax: w.weightMax,
+								estimatedQuestions: 0
+							});
+						}
+						volumeMap.get(vid).estimatedQuestions += w.estQuestions;
+					}
+					breakdown = Array.from(volumeMap.values());
+				}
 			} else {
 				// L3 or single-session: simple calculation
 				const totalQuestions = defaults.totalQuestions || 55;
