@@ -930,7 +930,7 @@ export function ExamTake() {
 										<Typography.Text strong className="text-yellow-800 block mb-1">CFA Level III Exam Format</Typography.Text>
 										<Typography.Text className="text-slate-700">
 											The Level III exam consists of 2 sessions with a mix of vignette-based multiple-choice item sets and constructed response (essay) case studies.
-											Each session will have either 6 or 5 case studies, for a total of 11 across both sessions. Each case study is worth 12 marks.
+											Each session has 11 case studies (22 total across both sessions). Each case study is worth 12 marks. Two case studies (one per session) are not scored.
 											All questions must be answered in English based on the information in the vignette.
 											The CFA Program curriculum topic areas for Level III will be randomly placed on the exam.
 										</Typography.Text>

@@ -236,6 +236,7 @@ model Exam {
   createdAt        DateTime   @default(now())
   createdById      String?
   createdBy        User?      @relation("ExamCreatedBy", fields: [createdById], references: [id])
+  excludedQuestionIds String? // JSON array of question IDs excluded from marking (L3)
   attempts         ExamAttempt[]
   examQuestions    ExamQuestion[]
   mockSession1     MockExam?  @relation("MockSession1")
@@ -286,6 +287,7 @@ model ExamAnswer {
   marksAwarded     Int?        // Admin-awarded mark for constructed response questions
   flagged          Boolean     @default(false)
   timeSpentSec     Int         @default(0)
+  excludedFromMarking Boolean  @default(false)
   @@unique([attemptId, questionId])
 }
 

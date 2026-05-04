@@ -46,6 +46,7 @@ import StudentMistakes from './pages/student/StudentMistakes.jsx';
 import StudentRevision from './pages/student/StudentRevision.jsx';
 import StudentComparison from './pages/student/StudentComparison.jsx';
 import StudentMockExams from './pages/student/StudentMockExams.jsx';
+import StudentMilvenMocks from './pages/student/StudentMilvenMocks.jsx';
 import { Placeholder } from './pages/admin/Placeholder.jsx';
 import { AdminRoles } from './pages/admin/AdminRoles.jsx';
 import { AdminLevels } from './pages/admin/AdminLevels.jsx';
@@ -833,6 +834,7 @@ export default function App() {
 						<Route path="revision" element={<StudentRevision />} />
 						<Route path="comparison" element={<StudentComparison />} />
 						<Route path="mock-exams" element={<StudentMockExams />} />
+						<Route path="milven-mocks" element={<StudentMilvenMocks />} />
 						<Route path="formula-book" element={<FormulaBook />} />
 						<Route path="summary-sheets" element={<StudentSummarySheets />} />
 						<Route path="module-notes" element={<StudentModuleNotes />} />

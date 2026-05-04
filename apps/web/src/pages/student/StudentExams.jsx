@@ -312,10 +312,10 @@ export function StudentExams() {
       <div className="page-header">
         <div>
           <Typography.Title level={2} className="page-header-title">
-            My Exams
+            Practice Questions
           </Typography.Title>
           <div className="page-header-subtitle">
-            Take exams and track your progress
+            Generate and take practice exams to test your knowledge
           </div>
         </div>
         {!hasOpenCustomExam ? (
@@ -359,100 +359,7 @@ export function StudentExams() {
         )}
       </div>
       <Space direction="vertical" size={16} style={{ width: '100%' }}>
-        {/* Admin Exams Section */}
-        <Card 
-          className="modern-card"
-          title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div className="icon-badge-sm icon-badge-blue">
-                <FileTextOutlined />
-              </div>
-              <span style={{ fontWeight: 600 }}>Official Exams</span>
-            </div>
-          }
-          loading={loading}
-        >
-          {adminExamItems.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state-icon">
-                <FileTextOutlined />
-              </div>
-              <Typography.Text type="secondary">No official exams available</Typography.Text>
-            </div>
-          ) : (
-            <List
-              dataSource={adminExamItems}
-              renderItem={(row) => {
-                const firstExam = (row.exams || [])[0];
-                const submitted = row.course?.examResult?.attemptId;
-                return (
-                  <List.Item>
-                    <List.Item.Meta
-                      title={row.course?.name}
-                      description={<span>Level: {row.course?.level}</span>}
-                    />
-                    <Space direction="vertical" align="end">
-                      <Space wrap>
-                        {(row.exams || []).map(ex => {
-                          const now = new Date();
-                          const startDate = ex.startAt ? new Date(ex.startAt) : null;
-                          const endDate = ex.endAt ? new Date(ex.endAt) : null;
-                          // Determine exam status
-                          let status = null;
-                          let statusColor = 'default';
-                          if (endDate && now > endDate) {
-                            // Check if student missed the exam (end date passed and no submission)
-                            if (!submitted) {
-                              status = 'Missed';
-                              statusColor = 'red';
-                            } else {
-                              status = 'Completed';
-                              statusColor = 'green';
-                            }
-                          } else if (startDate && now < startDate) {
-                            status = 'Pending';
-                            statusColor = 'orange';
-                          } else if (startDate || endDate) {
-                            status = 'Open';
-                            statusColor = 'blue';
-                          }
-                          return (
-                            <Space key={ex.id} direction="vertical" align="end" size={4}>
-                              <Tag color="blue" icon={<FileTextOutlined />}>{ex.name}</Tag>
-                              {status && <Tag color={statusColor} icon={status === 'Open' ? <PlayCircleOutlined /> : status === 'Completed' ? <CheckCircleOutlined /> : status === 'Missed' ? <CloseCircleOutlined /> : <ClockCircleOutlined />}>{status}</Tag>}
-                            </Space>
-                          );
-                        })}
-                      </Space>
-                      {submitted ? (
-                        <Space>
-                          <Tag color="green" icon={<CheckCircleOutlined />}>Complete</Tag>
-                          <Button
-                            type="primary"
-                            onClick={() => navigate(`/student/exams/result/${submitted}`)}
-                          >
-                            View results
-                          </Button>
-                        </Space>
-                      ) : (
-                        <Button
-                          type="primary"
-                          loading={firstExam && startingExamId === firstExam.id}
-                          disabled={!firstExam || (firstExam.startAt && new Date() < new Date(firstExam.startAt)) || (firstExam.endAt && new Date() > new Date(firstExam.endAt))}
-                          onClick={() => firstExam && startExam(firstExam.id)}
-                        >
-                          Take exam
-                        </Button>
-                      )}
-                    </Space>
-                  </List.Item>
-                );
-              }}
-            />
-          )}
-        </Card>
-
-        {/* My Custom Exams Section */}
+        {/* My Practice Exams Section */}
         <Card 
           className="modern-card"
           title={

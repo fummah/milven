@@ -19,6 +19,7 @@ export function examsRouter(prisma) {
 		let totalPossible = 0;
 		let earned = 0;
 		for (const a of attempt.answers) {
+			if (a.excludedFromMarking) continue; // Skip excluded questions (L3 secret exclusion)
 			const q = a.question;
 			const marks = q?.marks ?? 1;
 			totalPossible += marks;
@@ -30,6 +31,23 @@ export function examsRouter(prisma) {
 		}
 		if (totalPossible <= 0) return 0;
 		return Math.min(100, Math.round((earned / totalPossible) * 1000) / 10);
+	}
+
+	// Mark excluded answers for L3 mock exams (called after submission)
+	async function applyL3MarkingExclusions(attemptId) {
+		const attempt = await prisma.examAttempt.findUnique({
+			where: { id: attemptId },
+			include: { exam: { select: { excludedQuestionIds: true } } }
+		});
+		if (!attempt?.exam?.excludedQuestionIds) return;
+		try {
+			const excludedIds = JSON.parse(attempt.exam.excludedQuestionIds);
+			if (!Array.isArray(excludedIds) || excludedIds.length === 0) return;
+			await prisma.examAnswer.updateMany({
+				where: { attemptId, questionId: { in: excludedIds } },
+				data: { excludedFromMarking: true }
+			});
+		} catch { /* silent if parse fails */ }
 	}
 
 	function shuffleInPlace(arr) {
@@ -923,6 +941,8 @@ export function examsRouter(prisma) {
 			include: { answers: { include: { question: { select: { marks: true, type: true } } } }, exam: { select: { type: true, courseId: true } } }
 		});
 		if (!attempt || attempt.userId !== req.user.id) return res.status(404).json({ error: 'Attempt not found' });
+		// Apply L3 marking exclusions before computing score
+		await applyL3MarkingExclusions(attemptId);
 		const scorePercent = await computeAttemptScorePercent(attemptId);
 		const updated = await prisma.examAttempt.update({
 			where: { id: attemptId },
@@ -2087,7 +2107,7 @@ export function examsRouter(prisma) {
 	const MOCK_DEFAULTS = {
 		LEVEL1: { sessions: 2, session1Minutes: 135, session2Minutes: 135, breakMinutes: 30, questionsPerSession: 90, questionType: 'MCQ' },
 		LEVEL2: { sessions: 2, session1Minutes: 132, session2Minutes: 132, breakMinutes: 30, itemSetsPerSession: 11, questionType: 'VIGNETTE_MCQ' },
-		LEVEL3: { sessions: 2, session1Minutes: 132, session2Minutes: 132, breakMinutes: 30, totalItemSets: 11, marksPerItemSet: 12, questionType: 'MIXED_VIGNETTE' }
+		LEVEL3: { sessions: 2, session1Minutes: 132, session2Minutes: 132, breakMinutes: 30, itemSetsPerSession: 11, totalItemSets: 22, marksPerItemSet: 12, questionType: 'MIXED_VIGNETTE', s1Vignette: 6, s1Constructed: 5, s2Vignette: 5, s2Constructed: 6, excludePerSession: 1 }
 	};
 
 	// Admin: Get topic weights for a course
@@ -2163,7 +2183,7 @@ export function examsRouter(prisma) {
 			let breakdown;
 			if (defaults.sessions === 2 && (defaults.questionsPerSession || defaults.itemSetsPerSession || defaults.totalItemSets)) {
 				// L1/L2/L3: weights are % of total. Compute per-session targets.
-				// L1: 90 per session (180 total), L2: 11 per session (22 total), L3: 11 total (5+6 split)
+				// L1: 90 per session (180 total), L2: 11 per session (22 total), L3: 11 per session (22 total)
 				const totalTarget = defaults.questionsPerSession ? defaults.questionsPerSession * 2
 					: defaults.itemSetsPerSession ? defaults.itemSetsPerSession * 2
 					: defaults.totalItemSets || 11;
@@ -2438,41 +2458,74 @@ export function examsRouter(prisma) {
 			let s1Ids = [], s2Ids = [], s1Minutes = 0, s2Minutes = 0;
 
 			if (level === 'LEVEL3') {
-				// L3: Two sessions — 11 total item sets (case studies), split 6+5 or 5+6
-				// Each item set is a parent question (VIGNETTE_MCQ or CONSTRUCTED_RESPONSE) with children
-				// Mixed: some item sets are vignette MCQ bundles, some are constructed response (essay) bundles
-				const totalItemSets = defaults.totalItemSets || 11;
-				const allItemSetIds = await selectWeightedQuestions(weights, totalItemSets, defaults.questionType, new Set());
+				// L3: Two sessions of 11 item sets each (22 total)
+				// Session 1: 6 VIGNETTE_MCQ + 5 CONSTRUCTED_RESPONSE
+				// Session 2: 5 VIGNETTE_MCQ + 6 CONSTRUCTED_RESPONSE
+				// 1 item set per session is secretly excluded from marking after submission
+				const s1V = defaults.s1Vignette || 6;
+				const s1C = defaults.s1Constructed || 5;
+				const s2V = defaults.s2Vignette || 5;
+				const s2C = defaults.s2Constructed || 6;
 
-				// allItemSetIds contains child question IDs — group by parentId
-				const allQs = await prisma.question.findMany({
-					where: { id: { in: allItemSetIds } },
-					select: { id: true, parentId: true }
-				});
-				const qMap = new Map(allQs.map(q => [q.id, q]));
-				const groupMap = new Map();
-				const groupOrder = [];
-				for (const id of allItemSetIds) {
-					const q = qMap.get(id);
-					const pid = q?.parentId;
-					if (!pid) continue;
-					if (!groupMap.has(pid)) { groupMap.set(pid, []); groupOrder.push(pid); }
-					groupMap.get(pid).push(id);
-				}
-				const itemSetGroups = groupOrder.map(pid => groupMap.get(pid));
-				shuffleInPlace(itemSetGroups);
+				// Select vignette MCQ parents and constructed response parents separately
+				const vignetteIds = await selectWeightedQuestions(weights, s1V + s2V, 'VIGNETTE_MCQ', new Set());
+				const usedParentIds = new Set();
+				// Track which parent IDs were used so constructed response doesn't duplicate
+				const vigQs = await prisma.question.findMany({ where: { id: { in: vignetteIds } }, select: { id: true, parentId: true } });
+				for (const q of vigQs) if (q.parentId) usedParentIds.add(q.parentId);
 
-				// Split: session 1 gets 6 (or 5), session 2 gets 5 (or 6)
-				const s1ItemSets = Math.min(6, itemSetGroups.length);
-				const s1Groups = itemSetGroups.slice(0, s1ItemSets);
-				const s2Groups = itemSetGroups.slice(s1ItemSets);
+				const constructedIds = await selectWeightedQuestions(weights, s1C + s2C, 'CONSTRUCTED_RESPONSE', usedParentIds);
 
-				s1Ids = s1Groups.flat();
-				s2Ids = s2Groups.flat();
+				// Group child IDs by parentId
+				const groupByParent = async (childIds) => {
+					const allQs = await prisma.question.findMany({ where: { id: { in: childIds } }, select: { id: true, parentId: true } });
+					const qMap = new Map(allQs.map(q => [q.id, q]));
+					const groupMap = new Map();
+					const groupOrder = [];
+					for (const id of childIds) {
+						const q = qMap.get(id);
+						const pid = q?.parentId;
+						if (!pid) continue;
+						if (!groupMap.has(pid)) { groupMap.set(pid, []); groupOrder.push(pid); }
+						groupMap.get(pid).push(id);
+					}
+					return groupOrder.map(pid => ({ parentId: pid, childIds: groupMap.get(pid) }));
+				};
+
+				const vignetteGroups = await groupByParent(vignetteIds);
+				const constructedGroups = await groupByParent(constructedIds);
+				shuffleInPlace(vignetteGroups);
+				shuffleInPlace(constructedGroups);
+
+				// Split: S1 gets s1V vignettes + s1C constructed, S2 gets the rest
+				const s1VigGroups = vignetteGroups.slice(0, s1V);
+				const s2VigGroups = vignetteGroups.slice(s1V, s1V + s2V);
+				const s1ConGroups = constructedGroups.slice(0, s1C);
+				const s2ConGroups = constructedGroups.slice(s1C, s1C + s2C);
+
+				const s1AllGroups = [...s1VigGroups, ...s1ConGroups];
+				const s2AllGroups = [...s2VigGroups, ...s2ConGroups];
+				shuffleInPlace(s1AllGroups);
+				shuffleInPlace(s2AllGroups);
+
+				s1Ids = s1AllGroups.flatMap(g => g.childIds);
+				s2Ids = s2AllGroups.flatMap(g => g.childIds);
 				s1Minutes = defaults.session1Minutes;
 				s2Minutes = defaults.session2Minutes;
 
-				console.log(`[mock-create] L3: ${itemSetGroups.length} item sets total — S1=${s1Groups.length} (${s1Ids.length} Qs), S2=${s2Groups.length} (${s2Ids.length} Qs)`);
+				// Pick 1 random item set per session to exclude from marking
+				const s1ExcludeGroup = s1AllGroups.length > 0 ? s1AllGroups[Math.floor(Math.random() * s1AllGroups.length)] : null;
+				const s2ExcludeGroup = s2AllGroups.length > 0 ? s2AllGroups[Math.floor(Math.random() * s2AllGroups.length)] : null;
+				// Store excluded parent IDs for later use in exam creation
+				req._l3ExcludedParentIds = {
+					s1: s1ExcludeGroup ? s1ExcludeGroup.parentId : null,
+					s2: s2ExcludeGroup ? s2ExcludeGroup.parentId : null,
+					s1ChildIds: s1ExcludeGroup ? s1ExcludeGroup.childIds : [],
+					s2ChildIds: s2ExcludeGroup ? s2ExcludeGroup.childIds : []
+				};
+
+				console.log(`[mock-create] L3: S1=${s1AllGroups.length} item sets (${s1V}V+${s1C}C, ${s1Ids.length} Qs), S2=${s2AllGroups.length} item sets (${s2V}V+${s2C}C, ${s2Ids.length} Qs)`);
+				console.log(`[mock-create] L3 excluded from marking: S1 parent=${s1ExcludeGroup?.parentId}, S2 parent=${s2ExcludeGroup?.parentId}`);
 			} else if (level === 'LEVEL2') {
 				// L2: Two sessions of 11 vignette item sets each (22 total), 132 min each
 				// All topics can appear in either or both sessions
@@ -2636,6 +2689,9 @@ export function examsRouter(prisma) {
 			const actualTotal = s1Ids.length + s2Ids.length;
 			console.log(`[mock-create] Selected ${actualTotal} question IDs total for ${course.name} (${level}). S1=${s1Ids.length}, S2=${s2Ids.length}`);
 
+			// For L3, store excluded question IDs (children of excluded item sets) on each session exam
+			const l3Excluded = req._l3ExcludedParentIds || {};
+
 			// Create session 1 exam
 			const exam1 = s1Ids.length > 0 ? await prisma.exam.create({
 				data: {
@@ -2644,7 +2700,8 @@ export function examsRouter(prisma) {
 					timeLimitMinutes: s1Minutes,
 					type: 'MOCK',
 					active: true,
-					createdById: req.user.id
+					createdById: req.user.id,
+					...(l3Excluded.s1ChildIds?.length > 0 ? { excludedQuestionIds: JSON.stringify(l3Excluded.s1ChildIds) } : {})
 				}
 			}) : null;
 			if (exam1 && s1Ids.length > 0) {
@@ -2661,7 +2718,8 @@ export function examsRouter(prisma) {
 					timeLimitMinutes: s2Minutes,
 					type: 'MOCK',
 					active: true,
-					createdById: req.user.id
+					createdById: req.user.id,
+					...(l3Excluded.s2ChildIds?.length > 0 ? { excludedQuestionIds: JSON.stringify(l3Excluded.s2ChildIds) } : {})
 				}
 			}) : null;
 			if (exam2 && s2Ids.length > 0) {
@@ -2794,28 +2852,51 @@ export function examsRouter(prisma) {
 			let s1Ids = [], s2Ids = [], s1Minutes = 0, s2Minutes = 0;
 
 			if (level === 'LEVEL3') {
-				// L3: Two sessions — 11 total item sets (case studies), split 6+5 or 5+6
-				const totalItemSets = defaults.totalItemSets || 11;
-				const allItemSetIds = await selectWeightedQuestions(weights, totalItemSets, defaults.questionType, new Set());
-				const allQs = await prisma.question.findMany({ where: { id: { in: allItemSetIds } }, select: { id: true, parentId: true } });
-				const qMap = new Map(allQs.map(q => [q.id, q]));
-				const groupMap = new Map();
-				const groupOrder = [];
-				for (const id of allItemSetIds) {
-					const q = qMap.get(id);
-					const pid = q?.parentId;
-					if (!pid) continue;
-					if (!groupMap.has(pid)) { groupMap.set(pid, []); groupOrder.push(pid); }
-					groupMap.get(pid).push(id);
-				}
-				const itemSetGroups = groupOrder.map(pid => groupMap.get(pid));
-				shuffleInPlace(itemSetGroups);
-				const s1ItemSets = Math.min(6, itemSetGroups.length);
-				s1Ids = itemSetGroups.slice(0, s1ItemSets).flat();
-				s2Ids = itemSetGroups.slice(s1ItemSets).flat();
+				// L3: Two sessions of 11 item sets each (22 total)
+				// Session 1: 6 VIGNETTE_MCQ + 5 CONSTRUCTED_RESPONSE
+				// Session 2: 5 VIGNETTE_MCQ + 6 CONSTRUCTED_RESPONSE
+				const s1V = defaults.s1Vignette || 6;
+				const s1C = defaults.s1Constructed || 5;
+				const s2V = defaults.s2Vignette || 5;
+				const s2C = defaults.s2Constructed || 6;
+
+				const groupByParent = async (childIds) => {
+					const allQs = await prisma.question.findMany({ where: { id: { in: childIds } }, select: { id: true, parentId: true } });
+					const qMap = new Map(allQs.map(q => [q.id, q]));
+					const gMap = new Map(); const gOrder = [];
+					for (const id of childIds) { const q = qMap.get(id); const pid = q?.parentId; if (!pid) continue; if (!gMap.has(pid)) { gMap.set(pid, []); gOrder.push(pid); } gMap.get(pid).push(id); }
+					return gOrder.map(pid => ({ parentId: pid, childIds: gMap.get(pid) }));
+				};
+
+				const vignetteIds = await selectWeightedQuestions(weights, s1V + s2V, 'VIGNETTE_MCQ', new Set());
+				const usedParentIds = new Set();
+				const vigQs = await prisma.question.findMany({ where: { id: { in: vignetteIds } }, select: { id: true, parentId: true } });
+				for (const q of vigQs) if (q.parentId) usedParentIds.add(q.parentId);
+				const constructedIds = await selectWeightedQuestions(weights, s1C + s2C, 'CONSTRUCTED_RESPONSE', usedParentIds);
+
+				const vignetteGroups = await groupByParent(vignetteIds);
+				const constructedGroups = await groupByParent(constructedIds);
+				shuffleInPlace(vignetteGroups);
+				shuffleInPlace(constructedGroups);
+
+				const s1AllGroups = [...vignetteGroups.slice(0, s1V), ...constructedGroups.slice(0, s1C)];
+				const s2AllGroups = [...vignetteGroups.slice(s1V, s1V + s2V), ...constructedGroups.slice(s1C, s1C + s2C)];
+				shuffleInPlace(s1AllGroups);
+				shuffleInPlace(s2AllGroups);
+
+				s1Ids = s1AllGroups.flatMap(g => g.childIds);
+				s2Ids = s2AllGroups.flatMap(g => g.childIds);
 				s1Minutes = defaults.session1Minutes;
 				s2Minutes = defaults.session2Minutes;
-				console.log(`[mock-schedule] L3: ${itemSetGroups.length} item sets — S1=${s1ItemSets}, S2=${itemSetGroups.length - s1ItemSets}`);
+
+				// Pick 1 random item set per session to exclude from marking
+				const s1ExcludeGroup = s1AllGroups.length > 0 ? s1AllGroups[Math.floor(Math.random() * s1AllGroups.length)] : null;
+				const s2ExcludeGroup = s2AllGroups.length > 0 ? s2AllGroups[Math.floor(Math.random() * s2AllGroups.length)] : null;
+				req._l3ExcludedParentIds = {
+					s1ChildIds: s1ExcludeGroup ? s1ExcludeGroup.childIds : [],
+					s2ChildIds: s2ExcludeGroup ? s2ExcludeGroup.childIds : []
+				};
+				console.log(`[mock-schedule] L3: S1=${s1AllGroups.length} (${s1V}V+${s1C}C), S2=${s2AllGroups.length} (${s2V}V+${s2C}C)`);
 			} else if (level === 'LEVEL2') {
 				const totalItemSets = (defaults.itemSetsPerSession || 11) * 2;
 				const allItemSetIds = await selectWeightedQuestions(weights, totalItemSets, defaults.questionType, new Set(), { childrenPerItem: 4 });
@@ -2902,10 +2983,11 @@ export function examsRouter(prisma) {
 			}
 
 			// Create shared exam shells (all students share the same exam questions)
-			const exam1 = s1Ids.length > 0 ? await prisma.exam.create({ data: { name: `${title} - Session 1`, level: course.level, timeLimitMinutes: s1Minutes, type: 'MOCK', active: true, createdById: req.user.id } }) : null;
+			const l3Excluded = req._l3ExcludedParentIds || {};
+			const exam1 = s1Ids.length > 0 ? await prisma.exam.create({ data: { name: `${title} - Session 1`, level: course.level, timeLimitMinutes: s1Minutes, type: 'MOCK', active: true, createdById: req.user.id, ...(l3Excluded.s1ChildIds?.length > 0 ? { excludedQuestionIds: JSON.stringify(l3Excluded.s1ChildIds) } : {}) } }) : null;
 			if (exam1) await prisma.examQuestion.createMany({ data: s1Ids.map((qid, idx) => ({ examId: exam1.id, questionId: qid, order: idx + 1 })) });
 
-			const exam2 = s2Ids.length > 0 ? await prisma.exam.create({ data: { name: `${title} - Session 2`, level: course.level, timeLimitMinutes: s2Minutes, type: 'MOCK', active: true, createdById: req.user.id } }) : null;
+			const exam2 = s2Ids.length > 0 ? await prisma.exam.create({ data: { name: `${title} - Session 2`, level: course.level, timeLimitMinutes: s2Minutes, type: 'MOCK', active: true, createdById: req.user.id, ...(l3Excluded.s2ChildIds?.length > 0 ? { excludedQuestionIds: JSON.stringify(l3Excluded.s2ChildIds) } : {}) } }) : null;
 			if (exam2) await prisma.examQuestion.createMany({ data: s2Ids.map((qid, idx) => ({ examId: exam2.id, questionId: qid, order: idx + 1 })) });
 
 			// Create one MockExam per student
@@ -2984,11 +3066,11 @@ export function examsRouter(prisma) {
 		}
 	});
 
-	// Student: Get my mock exams
+	// Student: Get my mock exams (student-created only)
 	router.get('/mock/me', requireAuth(), async (req, res) => {
 		try {
 			const mockExams = await prisma.mockExam.findMany({
-				where: { userId: req.user.id },
+				where: { userId: req.user.id, isScheduled: false },
 				include: {
 					course: { select: { id: true, name: true, level: true, examConditions: true } },
 					session1Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true, question: { select: { parentId: true, type: true } } } }, attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 } } },
@@ -3000,6 +3082,26 @@ export function examsRouter(prisma) {
 		} catch (err) {
 			console.error('Fetch my mock exams error:', err);
 			return res.status(500).json({ error: 'Failed to fetch mock exams' });
+		}
+	});
+
+	// Student: Get admin-scheduled (Milven) mock exams
+	router.get('/mock/me/scheduled', requireAuth(), async (req, res) => {
+		try {
+			const mockExams = await prisma.mockExam.findMany({
+				where: { userId: req.user.id, isScheduled: true },
+				include: {
+					course: { select: { id: true, name: true, level: true, examConditions: true } },
+					scheduledBy: { select: { name: true } },
+					session1Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true, question: { select: { parentId: true, type: true } } } }, attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 } } },
+					session2Exam: { select: { id: true, name: true, timeLimitMinutes: true, examQuestions: { select: { questionId: true, question: { select: { parentId: true, type: true } } } }, attempts: { where: { userId: req.user.id }, select: { id: true, status: true, scorePercent: true, submittedAt: true }, orderBy: { startedAt: 'desc' }, take: 1 } } }
+				},
+				orderBy: { createdAt: 'desc' }
+			});
+			return res.json({ mockExams });
+		} catch (err) {
+			console.error('Fetch scheduled mock exams error:', err);
+			return res.status(500).json({ error: 'Failed to fetch scheduled mock exams' });
 		}
 	});
 

@@ -53,7 +53,7 @@ const subMenuBadge = (iconNode, color = '#102540') => (
 const childToParentKey = {
   'student-courses': 'learning', 'student-module-notes': 'learning',
   'student-formula-book': 'study-tools', 'student-summary-sheets': 'study-tools', 'student-revision': 'study-tools',
-  'student-exams': 'exams-group', 'student-mock-exams': 'exams-group', 'student-mistakes': 'exams-group', 'student-comparison': 'exams-group',
+  'student-exams': 'exams-group', 'student-mock-exams': 'exams-group', 'student-milven-mocks': 'exams-group', 'student-mistakes': 'exams-group', 'student-comparison': 'exams-group',
   'student-billing': 'account-group', 'student-invoices': 'account-group', 'student-account': 'account-group'
 };
 
@@ -83,8 +83,9 @@ const menuItems = [
     icon: modernBadge(<ReadOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'),
     label: 'Exams & Practice',
     children: [
-      { key: 'student-exams', icon: subMenuBadge(<ReadOutlined />, '#f97316'), label: <Link to="/student/exams">Exams</Link> },
-      { key: 'student-mock-exams', icon: subMenuBadge(<ExperimentOutlined />, '#6366f1'), label: <Link to="/student/mock-exams">Mock Exams</Link> },
+      { key: 'student-exams', icon: subMenuBadge(<ReadOutlined />, '#f97316'), label: <Link to="/student/exams">Practice Questions</Link> },
+      { key: 'student-mock-exams', icon: subMenuBadge(<ExperimentOutlined />, '#6366f1'), label: <Link to="/student/mock-exams">Mock Exam</Link> },
+      { key: 'student-milven-mocks', icon: subMenuBadge(<SolutionOutlined />, '#102540'), label: <Link to="/student/milven-mocks">Milven Mock Exams</Link> },
       { key: 'student-mistakes', icon: subMenuBadge(<ExclamationCircleOutlined />, '#ef4444'), label: <Link to="/student/mistakes">My Mistakes</Link> },
       { key: 'student-comparison', icon: subMenuBadge(<TeamOutlined />, '#0ea5e9'), label: <Link to="/student/comparison">Compare With Peers</Link> },
     ]
