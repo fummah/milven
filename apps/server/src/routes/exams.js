@@ -3100,8 +3100,8 @@ export function examsRouter(prisma) {
 			});
 			return res.json({ mockExams });
 		} catch (err) {
-			console.error('Fetch scheduled mock exams error:', err);
-			return res.status(500).json({ error: 'Failed to fetch scheduled mock exams' });
+			console.error('Fetch scheduled mock exams error:', err?.message, err);
+			return res.status(500).json({ error: 'Failed to fetch scheduled mock exams', detail: err?.message });
 		}
 	});
 

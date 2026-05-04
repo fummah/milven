@@ -100,9 +100,9 @@ export function StudentExams() {
       const examsByCourseMap = {};
       const studentExams = [];
       allExams.forEach(exam => {
-        if (exam.createdById) {
+        if (exam.createdById && exam.type !== 'MOCK') {
           studentExams.push(exam);
-        } else if (exam.courseId && enrolledCourseIds.includes(exam.courseId)) {
+        } else if (exam.courseId && enrolledCourseIds.includes(exam.courseId) && exam.type !== 'MOCK') {
           if (!examsByCourseMap[exam.courseId]) examsByCourseMap[exam.courseId] = [];
           examsByCourseMap[exam.courseId].push(exam);
         }

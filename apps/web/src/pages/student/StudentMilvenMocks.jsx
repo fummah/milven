@@ -26,8 +26,9 @@ export default function StudentMilvenMocks() {
     try {
       const { data } = await api.get('/api/exams/mock/me/scheduled');
       setMockExams(data.mockExams || []);
-    } catch {
-      message.error('Failed to load Milven mock exams');
+    } catch (err) {
+      console.error('Failed to load Milven mock exams:', err);
+      message.error(err?.response?.data?.error || err?.response?.data?.detail || 'Failed to load Milven mock exams');
     }
     setLoading(false);
   };
