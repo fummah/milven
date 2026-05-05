@@ -2174,10 +2174,18 @@ export function examsRouter(prisma) {
 			const level = course.level || 'LEVEL1';
 			const defaults = MOCK_DEFAULTS[level] || MOCK_DEFAULTS.LEVEL1;
 
-			const weights = await prisma.mockExamTopicWeight.findMany({
+			const allWeights = await prisma.mockExamTopicWeight.findMany({
 				where: { courseId },
-				include: { volume: { select: { id: true, name: true, description: true } } },
+				include: { volume: { select: { id: true, name: true, description: true, isPathway: true } } },
 				orderBy: [{ session: 'asc' }, { createdAt: 'asc' }]
+			});
+
+			// Pathway filtering: only include student's chosen pathway, exclude others
+			const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { pathwayVolumeId: true } });
+			const weights = allWeights.filter(w => {
+				if (!w.volume?.isPathway) return true;
+				if (!user?.pathwayVolumeId) return true;
+				return w.volumeId === user.pathwayVolumeId;
 			});
 
 			let breakdown;
@@ -2794,11 +2802,16 @@ export function examsRouter(prisma) {
 			const defaults = MOCK_DEFAULTS[level] || MOCK_DEFAULTS.LEVEL1;
 
 			// Get topic weights
-			const weights = await prisma.mockExamTopicWeight.findMany({
+			const allWeights = await prisma.mockExamTopicWeight.findMany({
 				where: { courseId },
 				include: { volume: { include: { modules: { include: { topics: true } } } } }
 			});
-			if (weights.length === 0) return res.status(400).json({ error: 'Mock exam topic weights have not been configured for this course.' });
+			if (allWeights.length === 0) return res.status(400).json({ error: 'Mock exam topic weights have not been configured for this course.' });
+
+			// For admin-scheduled mocks, pathway filtering is not applied at this stage.
+			// Admin mocks use a shared question set; per-student pathway filtering happens 
+			// at the student-create level. For scheduled mocks we use all weights.
+			const weights = allWeights;
 
 			// Build topic pool
 			const volumeTopicMap = {};

@@ -1556,7 +1556,7 @@ export function ExamTake() {
 							const renderedItems = [];
 							for (let idx = 0; idx < flatPageItems.length; idx += 1) {
 								const item = flatPageItems[idx];
-								const { ans, q, globalIdx, showVignette, vignetteText, subIdx, groupType } = item;
+								const { ans, q, globalIdx, showVignette, vignetteText, subIdx, groupType, vignetteGroupNumber } = item;
 
 								if (groupType === 'vignette' && showVignette) {
 									const vignetteItems = [item];
@@ -1601,10 +1601,10 @@ export function ExamTake() {
 												>
 													<div className="flex items-center gap-3">
 														<div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-															<span className="text-white font-bold">{globalIdx + 1}</span>
+															<span className="text-white font-bold">{vignetteGroupNumber}</span>
 														</div>
 														<Typography.Text className="text-white/90 font-semibold">
-															Case Study
+															Case Study {vignetteGroupNumber}
 														</Typography.Text>
 														{caseStudyAnswered && (
 															<Tag className="bg-white/20 text-white border-0 rounded-full">
