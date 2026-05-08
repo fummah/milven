@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useState, useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Card, Typography, Button, Space, Collapse, Tag, Spin, Tree, Progress } from 'antd';
+import { Card, Typography, Button, Space, Collapse, Tag, Spin, Tree, Progress, InputNumber, Radio, message } from 'antd';
 import { AIHelpPanel } from '../components/AIHelpPanel.jsx';
 import {
 	CheckCircleOutlined,
@@ -14,7 +14,9 @@ import {
 	RocketOutlined,
 	RobotOutlined,
 	SnippetsOutlined,
-	FileTextOutlined
+	FileTextOutlined,
+	EditOutlined,
+	SendOutlined
 } from '@ant-design/icons';
 import { ModuleNotesDrawer } from '../components/ModuleNotesDrawer.jsx';
 import { safeHtml, formatFormulaHtml } from '../lib/formatFormula';
@@ -28,6 +30,10 @@ export function ExamResult() {
 	const [loading, setLoading] = useState(true);
 	const [aiHints, setAiHints] = useState({});
 	const [hintsLoading, setHintsLoading] = useState(false);
+	const [searchParams] = useSearchParams();
+	const isSelfMarkMode = searchParams.get('selfMark') === '1';
+	const [selfGrades, setSelfGrades] = useState({}); // answerId -> { choice: 'Y'|'N'|'PARTIAL', marks: number }
+	const [submittingGrades, setSubmittingGrades] = useState(false);
 	const [notesDrawerOpen, setNotesDrawerOpen] = useState(false);
 	const [notesDrawerTopicId, setNotesDrawerTopicId] = useState(null);
 	const [notesDrawerTopicName, setNotesDrawerTopicName] = useState(null);
@@ -57,6 +63,83 @@ export function ExamResult() {
 	const yourOptionText = (a) => a?.selectedOption?.text ?? '—';
 	const correctOptionText = (a) => (correctOption(a?.question?.options)?.text) ?? '—';
 	const isConstructed = (a) => a?.question?.type === 'CONSTRUCTED_RESPONSE';
+
+	// Group answers by case study (parent question) for vignette display
+	const answerGroups = useMemo(() => {
+		if (!attempt?.answers) return [];
+		const ans = attempt.answers;
+		const groups = [];
+		let i = 0;
+		let caseStudyNum = 0;
+		while (i < ans.length) {
+			const a = ans[i];
+			const pid = a?.question?.parentId;
+			if (pid && a?.question?.parent) {
+				caseStudyNum++;
+				const group = {
+					type: 'vignette',
+					parentId: pid,
+					vignetteText: a.question.parent.vignetteText || '',
+					parentType: a.question.parent.type,
+					caseStudyNum,
+					answers: []
+				};
+				while (i < ans.length && ans[i]?.question?.parentId === pid) {
+					group.answers.push(ans[i]);
+					i++;
+				}
+				groups.push(group);
+			} else {
+				caseStudyNum++;
+				groups.push({ type: 'single', caseStudyNum, answers: [ans[i]] });
+				i++;
+			}
+		}
+		return groups;
+	}, [attempt?.answers]);
+
+	// Self-grade helpers
+	const setGrade = (answerId, choice, maxMarks) => {
+		setSelfGrades(prev => ({
+			...prev,
+			[answerId]: {
+				choice,
+				marks: choice === 'Y' ? maxMarks : choice === 'N' ? 0 : (prev[answerId]?.marks ?? 0)
+			}
+		}));
+	};
+	const setPartialMarks = (answerId, marks) => {
+		setSelfGrades(prev => ({
+			...prev,
+			[answerId]: { ...prev[answerId], choice: 'PARTIAL', marks }
+		}));
+	};
+
+	const submitSelfGrades = async () => {
+		const constructedAnswers = (attempt?.answers || []).filter(a => isConstructed(a) && a.marksAwarded == null);
+		const allGraded = constructedAnswers.every(a => selfGrades[a.id]?.choice);
+		if (!allGraded) {
+			message.warning('Please grade all constructed response questions before submitting.');
+			return;
+		}
+		setSubmittingGrades(true);
+		try {
+			const grades = constructedAnswers.map(a => ({
+				answerId: a.id,
+				marksAwarded: Math.max(0, selfGrades[a.id]?.marks ?? 0)
+			}));
+			const { data } = await api.post(`/api/exams/attempts/${attemptId}/self-grade`, { grades });
+			setAttempt(prev => ({ ...prev, ...data.attempt, answers: prev.answers.map(a => {
+				const g = grades.find(gr => gr.answerId === a.id);
+				return g ? { ...a, marksAwarded: g.marksAwarded } : a;
+			})}));
+			message.success('Marking submitted successfully!');
+			navigate(`/student/exams/result/${attemptId}`, { replace: true });
+		} catch (err) {
+			message.error(err?.response?.data?.error || 'Failed to submit grades');
+		}
+		setSubmittingGrades(false);
+	};
 
 	const fetchAiHints = async () => {
 		setHintsLoading(true);

@@ -782,7 +782,11 @@ export function ExamTake() {
 			const groupAnswers = g.answers;
 			const isAnswered = groupAnswers.every(a => {
 				const q = a?.question;
-				if (q?.type === 'CONSTRUCTED_RESPONSE') return a?.textAnswer != null && String(a.textAnswer).trim() !== '';
+				if (q?.type === 'CONSTRUCTED_RESPONSE') {
+					const draft = constructedDrafts[q?.id];
+					const text = draft !== undefined ? draft : (a?.textAnswer ?? '');
+					return text != null && String(text).trim() !== '';
+				}
 				return !!a?.selectedOptionId;
 			});
 			items.push({
@@ -797,7 +801,7 @@ export function ExamTake() {
 			ansIdx += groupAnswers.length;
 		}
 		return items;
-	}, [groups, allPages]);
+	}, [groups, allPages, constructedDrafts]);
 
 	// Total display items (vignettes count as 1, singles count as 1)
 	const displayTotalItems = navItems.length;
