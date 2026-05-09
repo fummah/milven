@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Card, Typography, Button, Space, Collapse, Tag, Spin, Tree, Progress, InputNumber, Radio, message } from 'antd';
@@ -16,7 +16,9 @@ import {
 	SnippetsOutlined,
 	FileTextOutlined,
 	EditOutlined,
-	SendOutlined
+	SendOutlined,
+	LeftOutlined,
+	RightOutlined
 } from '@ant-design/icons';
 import { ModuleNotesDrawer } from '../components/ModuleNotesDrawer.jsx';
 import { safeHtml, formatFormulaHtml } from '../lib/formatFormula';
@@ -34,6 +36,18 @@ export function ExamResult() {
 	const isSelfMarkMode = searchParams.get('selfMark') === '1';
 	const [selfGrades, setSelfGrades] = useState({}); // answerId -> { choice: 'Y'|'N'|'PARTIAL', marks: number }
 	const [submittingGrades, setSubmittingGrades] = useState(false);
+	const [selfMarkPage, setSelfMarkPage] = useState(0);
+	const topRef = useRef(null);
+
+	const toRoman = (num) => {
+		const romanNumerals = ['i','ii','iii','iv','v','vi','vii','viii','ix','x','xi','xii','xiii','xiv','xv','xvi','xvii','xviii','xix','xx'];
+		return romanNumerals[num - 1] || String(num);
+	};
+
+	const scrollToTop = () => {
+		if (topRef.current) topRef.current.scrollIntoView({ behavior: 'smooth' });
+		else window.scrollTo({ top: 0, behavior: 'smooth' });
+	};
 	const [notesDrawerOpen, setNotesDrawerOpen] = useState(false);
 	const [notesDrawerTopicId, setNotesDrawerTopicId] = useState(null);
 	const [notesDrawerTopicName, setNotesDrawerTopicName] = useState(null);
@@ -134,6 +148,7 @@ export function ExamResult() {
 				return g ? { ...a, marksAwarded: g.marksAwarded } : a;
 			})}));
 			message.success('Marking submitted successfully!');
+			window.scrollTo({ top: 0, behavior: 'smooth' });
 			navigate(`/student/exams/result/${attemptId}`, { replace: true });
 		} catch (err) {
 			message.error(err?.response?.data?.error || 'Failed to submit grades');
@@ -189,7 +204,7 @@ export function ExamResult() {
 	}).length;
 
 	return (
-		<div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
+		<div ref={topRef} className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50">
 			<div className="max-w-3xl mx-auto px-4 py-6 sm:py-8">
 				{/* Back */}
 				<Button
@@ -217,7 +232,7 @@ export function ExamResult() {
 							</Typography.Title>
 							<Typography.Paragraph className="!text-white/90 !mb-0 text-base max-w-md mx-auto">
 								{isSelfMarkMode
-									? 'Review your answers below and grade each constructed response. Use Y for full marks, N for zero, or enter partial marks.'
+									? 'Review your answers below and grade each constructed response (all sessions included). Use Y for full marks, N for zero, or enter partial marks.'
 									: 'Your responses have been submitted. You will be notified when marking is complete. No score is shown until then.'}
 							</Typography.Paragraph>
 						</div>
@@ -339,9 +354,42 @@ export function ExamResult() {
 						<Typography.Text type="secondary">No answers to review.</Typography.Text>
 					</Card>
 				) : isSelfMarkMode && hasPendingConstructed ? (
-					/* ========== SELF-MARKING MODE ========== */
-					<Space direction="vertical" size={20} style={{ width: '100%' }}>
-						{answerGroups.map((group) => {
+					/* ========== SELF-MARKING MODE (paginated) ========== */
+					<div>
+						{/* Navigation pills – sub-question level */}
+						<div className="mb-4 p-3 rounded-xl bg-white border border-slate-200 shadow-sm sticky top-0 z-10">
+							<div className="flex items-center gap-2 mb-2">
+								<Typography.Text strong className="text-slate-600 text-xs uppercase tracking-wide">Questions</Typography.Text>
+								<Typography.Text className="text-slate-400 text-xs">({answerGroups.reduce((sum, g) => sum + g.answers.length, 0)} total sub-questions)</Typography.Text>
+							</div>
+							<div className="flex flex-wrap gap-1.5">
+								{answerGroups.map((group, gIdx) => {
+									const allGraded = group.answers.every(a => !isConstructed(a) || selfGrades[a.id]?.choice);
+									const isCurrent = gIdx === selfMarkPage;
+									return (
+										<button
+											key={group.parentId || group.caseStudyNum}
+											onClick={() => { setSelfMarkPage(gIdx); scrollToTop(); }}
+											className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${isCurrent ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : allGraded ? 'bg-green-100 text-green-800 border-green-300' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+										>
+											<span>Q{group.caseStudyNum}</span>
+											{allGraded && !isCurrent && <CheckCircleOutlined className="text-green-600 text-[10px]" />}
+										</button>
+									);
+								})}
+							</div>
+							<div className="mt-2 flex items-center gap-2">
+								<div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+									<div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${Math.round((answerGroups.filter(g => g.answers.every(a => !isConstructed(a) || selfGrades[a.id]?.choice)).length / answerGroups.length) * 100)}%` }} />
+								</div>
+								<Typography.Text className="text-slate-500 text-xs">{answerGroups.filter(g => g.answers.every(a => !isConstructed(a) || selfGrades[a.id]?.choice)).length}/{answerGroups.length} marked</Typography.Text>
+							</div>
+						</div>
+
+						{/* Current case study page */}
+						{(() => {
+							const group = answerGroups[selfMarkPage];
+							if (!group) return null;
 							const isVignette = group.type === 'vignette';
 							return (
 								<Card
@@ -369,6 +417,17 @@ export function ExamResult() {
 											</div>
 										</>
 									)}
+									{!isVignette && (
+										<div className="px-6 py-3 border-b border-slate-200 bg-slate-50">
+											<div className="flex items-center gap-2">
+												<div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
+													<span className="text-white font-bold text-sm">{group.caseStudyNum}</span>
+												</div>
+												<Typography.Text strong className="text-slate-700">Question {group.caseStudyNum}</Typography.Text>
+												<Tag className="bg-purple-100 text-purple-700 border-0 rounded-full ml-auto"><EditOutlined className="mr-1" /> Self-Marking</Tag>
+											</div>
+										</div>
+									)}
 									<div className="divide-y divide-slate-200">
 										{group.answers.map((a, subIdx) => {
 											const constructed = isConstructed(a);
@@ -386,7 +445,7 @@ export function ExamResult() {
 												return (
 													<div key={a.id} className="p-6">
 														<div className="flex items-start gap-3 mb-2">
-															<div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-white font-semibold text-sm bg-slate-500">{subIdx + 1}</div>
+															<div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-white font-semibold text-sm bg-slate-500">{toRoman(subIdx + 1)}</div>
 															<div className="flex-1">
 																<div className="prose prose-sm text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(a?.question?.stem) || '' }} />
 																<div className="mt-2">{correct ? <Tag color="green"><CheckCircleOutlined /> Correct</Tag> : <Tag color="red"><CloseCircleOutlined /> Incorrect</Tag>}</div>
@@ -399,7 +458,7 @@ export function ExamResult() {
 											return (
 												<div key={a.id} className="p-6">
 													<div className="flex items-start gap-3 mb-4">
-														<div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-white font-semibold text-sm bg-indigo-600">{subIdx + 1}</div>
+														<div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-white font-semibold text-sm bg-indigo-600">{toRoman(subIdx + 1)}</div>
 														<div className="flex-1">
 															<div className="prose prose-sm text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(a?.question?.stem) || '' }} />
 															<Tag color="blue" className="mt-1">{maxMarks} mark{maxMarks !== 1 ? 's' : ''}</Tag>
@@ -464,12 +523,44 @@ export function ExamResult() {
 									</div>
 								</Card>
 							);
-						})}
+						})()}
 
-						<div className="flex justify-center pt-4">
-							<Button type="primary" size="large" icon={<SendOutlined />} onClick={submitSelfGrades} loading={submittingGrades} className="rounded-xl px-10 h-12 font-semibold" style={{ background: 'linear-gradient(135deg, #059669, #10b981)', borderColor: '#059669' }}>Submit All Marks</Button>
+						{/* Pagination controls */}
+						<div className="flex items-center justify-between mt-6">
+							<Button
+								icon={<LeftOutlined />}
+								onClick={() => { setSelfMarkPage(p => Math.max(0, p - 1)); scrollToTop(); }}
+								disabled={selfMarkPage === 0}
+								className="rounded-lg"
+							>
+								Previous
+							</Button>
+							<Typography.Text className="text-slate-500 text-sm font-medium">
+								{selfMarkPage + 1} / {answerGroups.length}
+							</Typography.Text>
+							{selfMarkPage < answerGroups.length - 1 ? (
+								<Button
+									type="primary"
+									onClick={() => { setSelfMarkPage(p => Math.min(answerGroups.length - 1, p + 1)); scrollToTop(); }}
+									className="rounded-lg"
+									style={{ background: '#4f46e5', borderColor: '#4f46e5' }}
+								>
+									Next <RightOutlined />
+								</Button>
+							) : (
+								<Button
+									type="primary"
+									icon={<SendOutlined />}
+									onClick={submitSelfGrades}
+									loading={submittingGrades}
+									className="rounded-lg font-semibold"
+									style={{ background: 'linear-gradient(135deg, #059669, #10b981)', borderColor: '#059669' }}
+								>
+									Submit All Marks
+								</Button>
+							)}
 						</div>
-					</Space>
+					</div>
 				) : (
 					/* ========== NORMAL RESULTS VIEW (grouped by case study) ========== */
 					<Space direction="vertical" size={20} style={{ width: '100%' }}>

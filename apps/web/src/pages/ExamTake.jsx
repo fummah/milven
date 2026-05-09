@@ -1084,7 +1084,7 @@ export function ExamTake() {
 							<Button
 								type="primary"
 								size="large"
-								onClick={() => setShowInstructions(false)}
+								onClick={() => { setShowInstructions(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
 								className="rounded-xl px-12"
 								style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)', height: 52, fontSize: 16 }}
 							>
