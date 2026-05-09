@@ -209,14 +209,16 @@ export function ExamResult() {
 					{hasPendingConstructed ? (
 						<div
 							className="p-8 sm:p-10 text-center"
-							style={{ background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%)' }}
+							style={{ background: isSelfMarkMode ? 'linear-gradient(135deg, #7c3aed 0%, #8b5cf6 50%, #a78bfa 100%)' : 'linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%)' }}
 						>
-							<TrophyOutlined className="text-5xl text-white/90 mb-4" />
+							{isSelfMarkMode ? <EditOutlined className="text-5xl text-white/90 mb-4" /> : <TrophyOutlined className="text-5xl text-white/90 mb-4" />}
 							<Typography.Title level={2} className="!text-white !mb-2">
-								Responses submitted for marking
+								{isSelfMarkMode ? 'Self-Marking Mode' : 'Responses submitted for marking'}
 							</Typography.Title>
 							<Typography.Paragraph className="!text-white/90 !mb-0 text-base max-w-md mx-auto">
-								Your responses have been submitted. You will be notified when marking is complete. No score is shown until then.
+								{isSelfMarkMode
+									? 'Review your answers below and grade each constructed response. Use Y for full marks, N for zero, or enter partial marks.'
+									: 'Your responses have been submitted. You will be notified when marking is complete. No score is shown until then.'}
 							</Typography.Paragraph>
 						</div>
 					) : (
@@ -336,231 +338,246 @@ export function ExamResult() {
 					<Card className="rounded-xl border-slate-200 shadow-sm">
 						<Typography.Text type="secondary">No answers to review.</Typography.Text>
 					</Card>
-				) : (
+				) : isSelfMarkMode && hasPendingConstructed ? (
+					/* ========== SELF-MARKING MODE ========== */
 					<Space direction="vertical" size={20} style={{ width: '100%' }}>
-						{answers.map((a, idx) => {
-							const constructed = isConstructed(a);
-							const maxMarks = a?.question?.marks ?? 1;
-							const correct = constructed ? (a.marksAwarded != null && a.marksAwarded >= maxMarks) : (a.isCorrect === true);
-							const failed = !constructed ? !a.isCorrect : (a.marksAwarded != null && a.marksAwarded < maxMarks);
-							const correctText = correctOptionText(a);
-							const yourText = constructed ? (a?.textAnswer ?? '—') : yourOptionText(a);
-							const keyFormulas = a?.question?.keyFormulas;
-							const workedSolution = a?.question?.workedSolution;
-							const traceSection = a?.question?.traceSection;
-							const tracePage = a?.question?.tracePage;
-							const hasExplanation = keyFormulas || workedSolution || traceSection || tracePage;
-							const marksAwarded = a?.marksAwarded;
-
+						{answerGroups.map((group) => {
+							const isVignette = group.type === 'vignette';
 							return (
 								<Card
-									key={a.id || idx}
-									className="overflow-hidden rounded-xl border shadow-sm transition-shadow hover:shadow-md"
-									style={{
-										borderLeftWidth: 4,
-										borderLeftColor: correct ? '#22c55e' : (constructed && marksAwarded == null ? '#eab308' : '#ef4444')
-									}}
+									key={group.parentId || group.caseStudyNum}
+									className="overflow-hidden rounded-xl border-0 shadow-lg"
+									styles={{ body: { padding: 0 }, wrapper: { borderRadius: 20 } }}
 								>
-									<div className="flex items-start gap-3 mb-3">
-										<div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-white font-semibold bg-slate-600">
-											{idx + 1}
-										</div>
-										<div className="flex-1 min-w-0">
-											<div
-												className="prose prose-sm question-preview-content text-slate-700 max-w-none"
-												dangerouslySetInnerHTML={{ __html: safeHtml(a?.question?.stem) || '' }}
-											/>
-										</div>
-									</div>
-
-									{/* Your answer */}
-									<div className="mt-4 p-4 rounded-lg bg-slate-50 border border-slate-200">
-										<div className="flex items-start gap-2">
-											{constructed ? (
-												marksAwarded != null ? (
-													<CheckCircleOutlined className="text-green-600 mt-0.5 text-lg flex-shrink-0" />
-												) : (
-													<Tag color="gold" className="flex-shrink-0">Pending</Tag>
-												)
-											) : correct ? (
-												<CheckCircleOutlined className="text-green-600 mt-0.5 text-lg flex-shrink-0" />
-											) : (
-												<CloseCircleOutlined className="text-red-500 mt-0.5 text-lg flex-shrink-0" />
-											)}
-											<div className="flex-1 min-w-0">
-												<Typography.Text type="secondary" className="text-xs uppercase tracking-wide">Your answer</Typography.Text>
-												{constructed ? (
-													<div className="mt-1 text-slate-800 whitespace-pre-wrap">{yourText}</div>
-												) : (
-													<div className="mt-1 prose prose-sm question-preview-content max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(yourText) || '—' }} />
-												)}
-											</div>
-										</div>
-									</div>
-
-									{constructed && marksAwarded != null && (
-										<div className="mt-3 flex items-center gap-2">
-											<Tag color="green">Mark: {marksAwarded} / {maxMarks}</Tag>
-										</div>
-									)}
-
-									{!constructed && !correct && correctText && (
-										<div className="mt-3 p-4 rounded-lg bg-emerald-50 border border-emerald-200">
-											<Typography.Text strong className="text-emerald-800 text-sm">Correct answer</Typography.Text>
-											<div className="mt-1 prose prose-sm question-preview-content text-emerald-900 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(correctText) }} />
-										</div>
-									)}
-
-									{failed && a?.question?.los && (
-										<div className="mt-3 p-3 rounded-lg bg-blue-50 border border-blue-200">
-											<div className="flex items-center gap-2 mb-1">
-												<FileTextOutlined className="text-blue-600" />
-												<Typography.Text strong className="text-blue-800 text-sm">Learning Outcome Statement (LOS)</Typography.Text>
-											</div>
-											<Typography.Text className="text-slate-700 text-sm">{a.question.los}</Typography.Text>
-										</div>
-									)}
-
-									{failed && a?.question?.topic?.id && (
-										<div className="mt-3">
-											<Button
-												icon={<SnippetsOutlined />}
-												onClick={() => openNotesDrawer(a.question.topic.id, a.question.topic.name)}
-												className="rounded-xl"
-												style={{ background: '#f0f4f8', borderColor: '#cbd5e1', color: '#102540' }}
-											>
-												View Module Notes – {a.question.topic.name}
-											</Button>
-										</div>
-									)}
-
-									{failed && (
-										<AIHelpPanel
-											questionId={a?.question?.id}
-											selectedOptionId={a?.selectedOptionId}
-											selectedOptionText={a?.selectedOption?.text}
-											textAnswer={constructed ? a?.textAnswer : undefined}
-											mode="result_review"
-										/>
-									)}
-
-									{/* AI hint when failed and no full explanation block */}
-									{failed && aiHints[a.id]?.hint && !hasExplanation && (
-										<div className="mt-4 p-4 rounded-xl border border-violet-200 bg-violet-50/80">
-											<div className="flex items-center gap-2 mb-2">
-												<RobotOutlined className="text-violet-600" />
-												<Typography.Text strong className="text-violet-800">AI hint</Typography.Text>
-											</div>
-											<div className="text-slate-800 text-sm">{aiHints[a.id].hint}</div>
-										</div>
-									)}
-
-									{/* Key Formula(s) & Worked Solution: expanded for failed questions, collapse for correct */}
-									{hasExplanation && (
-										<div className="mt-4">
-											{failed ? (
-												<div className="rounded-xl border-2 border-amber-200 bg-amber-50/80 overflow-hidden">
-													<div className="px-4 py-2 bg-amber-100 border-b border-amber-200 flex items-center gap-2">
-														<RocketOutlined className="text-amber-700" />
-														<Typography.Text strong className="text-amber-900">Learn from this question</Typography.Text>
+									{isVignette && (
+										<>
+											<div className="px-6 py-4" style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)' }}>
+												<div className="flex items-center gap-3">
+													<div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+														<span className="text-white font-bold">{group.caseStudyNum}</span>
 													</div>
-													<div className="p-4 space-y-4">
-														{(traceSection || tracePage) && (
-															<div>
-																<Typography.Text strong className="text-purple-700 text-sm">Reference</Typography.Text>
-																<div className="text-slate-700 mt-1">
-																	{traceSection && <span>{traceSection}</span>}
-																	{traceSection && tracePage && <span>, </span>}
-																	{tracePage && <span>Page {tracePage}</span>}
-																</div>
+													<Typography.Text className="text-white/90 font-semibold">
+														Case Study {group.caseStudyNum}
+													</Typography.Text>
+													<Tag className="bg-white/20 text-white border-0 rounded-full ml-auto">
+														<EditOutlined className="mr-1" /> Self-Marking
+													</Tag>
+												</div>
+											</div>
+											<div className="p-6 bg-slate-50 border-b border-slate-200">
+												<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: safeHtml(group.vignetteText) }} />
+											</div>
+										</>
+									)}
+									<div className="divide-y divide-slate-200">
+										{group.answers.map((a, subIdx) => {
+											const constructed = isConstructed(a);
+											const maxMarks = a?.question?.marks ?? 1;
+											const yourText = constructed ? (a?.textAnswer ?? '—') : yourOptionText(a);
+											const grade = selfGrades[a.id];
+											const los = a?.question?.los;
+											const kf = a?.question?.keyFormulas;
+											const ws = a?.question?.workedSolution;
+											const guidelines = a?.question?.questionGuidelines;
+											const modelAnswer = a?.question?.output;
+
+											if (!constructed) {
+												const correct = a.isCorrect === true;
+												return (
+													<div key={a.id} className="p-6">
+														<div className="flex items-start gap-3 mb-2">
+															<div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-white font-semibold text-sm bg-slate-500">{subIdx + 1}</div>
+															<div className="flex-1">
+																<div className="prose prose-sm text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(a?.question?.stem) || '' }} />
+																<div className="mt-2">{correct ? <Tag color="green"><CheckCircleOutlined /> Correct</Tag> : <Tag color="red"><CloseCircleOutlined /> Incorrect</Tag>}</div>
+															</div>
+														</div>
+													</div>
+												);
+											}
+
+											return (
+												<div key={a.id} className="p-6">
+													<div className="flex items-start gap-3 mb-4">
+														<div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-white font-semibold text-sm bg-indigo-600">{subIdx + 1}</div>
+														<div className="flex-1">
+															<div className="prose prose-sm text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(a?.question?.stem) || '' }} />
+															<Tag color="blue" className="mt-1">{maxMarks} mark{maxMarks !== 1 ? 's' : ''}</Tag>
+														</div>
+													</div>
+													<div className="p-4 rounded-lg bg-blue-50 border border-blue-200 mb-4">
+														<Typography.Text strong className="text-blue-800 text-xs uppercase tracking-wide block mb-1">Your Answer</Typography.Text>
+														<div className="text-slate-800 whitespace-pre-wrap prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(yourText) || '—' }} />
+													</div>
+													<div className="space-y-3 mb-4">
+														{los && (
+															<div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200">
+																<div className="flex items-center gap-2 mb-1"><FileTextOutlined className="text-indigo-600" /><Typography.Text strong className="text-indigo-800 text-sm">Learning Outcome (LOS)</Typography.Text></div>
+																<Typography.Text className="text-slate-700 text-sm">{los}</Typography.Text>
 															</div>
 														)}
-														{keyFormulas && (
-															<div>
-																<div className="flex items-center gap-2 mb-2">
-																	<CalculatorOutlined className="text-blue-600" />
-																	<Typography.Text strong className="text-blue-800">Key Formula(s)</Typography.Text>
-																</div>
-																<div
-																	className="prose prose-sm question-preview-content p-4 rounded-lg bg-blue-50/80 border border-blue-200 text-slate-800 max-w-none"
-																	dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }}
-																/>
+														{modelAnswer && (
+															<div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+																<div className="flex items-center gap-2 mb-1"><BulbOutlined className="text-emerald-600" /><Typography.Text strong className="text-emerald-800 text-sm">Model Answer / Expected Output</Typography.Text></div>
+																<div className="text-slate-700 text-sm prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(modelAnswer) }} />
 															</div>
 														)}
-														{workedSolution && (
-															<div>
-																<div className="flex items-center gap-2 mb-2">
-																	<BulbOutlined className="text-green-600" />
-																	<Typography.Text strong className="text-green-800">Worked Solution</Typography.Text>
-																</div>
-																<div
-																	className="prose prose-sm question-preview-content p-4 rounded-lg bg-green-50/80 border border-green-200 text-slate-800 max-w-none"
-																	dangerouslySetInnerHTML={{ __html: formatFormulaHtml(workedSolution) }}
-																/>
+														{guidelines && (
+															<div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+																<div className="flex items-center gap-2 mb-1"><RocketOutlined className="text-amber-600" /><Typography.Text strong className="text-amber-800 text-sm">Marking Guidelines</Typography.Text></div>
+																<div className="text-slate-700 text-sm prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(guidelines) }} />
 															</div>
 														)}
-														{aiHints[a.id]?.hint && (
-															<div>
-																<div className="flex items-center gap-2 mb-2">
-																	<RobotOutlined className="text-violet-600" />
-																	<Typography.Text strong className="text-violet-800">AI hint</Typography.Text>
-																</div>
-																<div className="p-4 rounded-lg bg-violet-50/80 border border-violet-200 text-slate-800 text-sm">
-																	{aiHints[a.id].hint}
-																</div>
+														{kf && (
+															<div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+																<div className="flex items-center gap-2 mb-1"><CalculatorOutlined className="text-blue-600" /><Typography.Text strong className="text-blue-800 text-sm">Key Formula(s)</Typography.Text></div>
+																<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(kf) }} />
 															</div>
 														)}
-														{aiHints[a.id]?.error && (
-															<Typography.Text type="secondary" className="text-sm">AI hint unavailable</Typography.Text>
+														{ws && (
+															<div className="p-3 rounded-lg bg-green-50 border border-green-200">
+																<div className="flex items-center gap-2 mb-1"><BulbOutlined className="text-green-600" /><Typography.Text strong className="text-green-800 text-sm">Worked Solution</Typography.Text></div>
+																<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(ws) }} />
+															</div>
+														)}
+													</div>
+													<div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+														<Typography.Text strong className="text-slate-700 block mb-3">Score this answer:</Typography.Text>
+														<div className="flex items-center gap-3 flex-wrap">
+															<Button type={grade?.choice === 'Y' ? 'primary' : 'default'} onClick={() => setGrade(a.id, 'Y', maxMarks)} style={grade?.choice === 'Y' ? { background: '#16a34a', borderColor: '#16a34a' } : {}} className="rounded-lg font-semibold min-w-[80px]">Y ({maxMarks}/{maxMarks})</Button>
+															<Button type={grade?.choice === 'N' ? 'primary' : 'default'} danger={grade?.choice === 'N'} onClick={() => setGrade(a.id, 'N', maxMarks)} className="rounded-lg font-semibold min-w-[80px]">N (0/{maxMarks})</Button>
+															<div className="flex items-center gap-2">
+																<Typography.Text className="text-slate-500 text-sm">Partial:</Typography.Text>
+																<InputNumber min={0} max={maxMarks} value={grade?.choice === 'PARTIAL' ? grade.marks : undefined} placeholder="marks" onChange={(v) => v != null && setPartialMarks(a.id, v)} className="rounded-lg" style={{ width: 80 }} />
+																<Typography.Text className="text-slate-400 text-sm">/ {maxMarks}</Typography.Text>
+															</div>
+														</div>
+														{grade && (
+															<div className="mt-2">
+																<Tag color={grade.marks >= maxMarks ? 'green' : grade.marks > 0 ? 'orange' : 'red'}>Awarded: {grade.marks} / {maxMarks}</Tag>
+															</div>
 														)}
 													</div>
 												</div>
-											) : (
-												<Collapse
-													size="small"
-													className="bg-slate-50 rounded-lg border border-slate-200"
-													items={[{
-														key: 'explanation',
-														label: (
-															<span className="flex items-center gap-2">
-																<BulbOutlined className="text-slate-500" />
-																<Typography.Text>View explanation</Typography.Text>
-															</span>
-														),
-														children: (
-															<Space direction="vertical" size={12} style={{ width: '100%' }}>
-																{(traceSection || tracePage) && (
-																	<div>
-																		<Typography.Text strong className="text-purple-700 text-sm">Reference</Typography.Text>
-																		<div className="text-slate-600 mt-1">
-																			{traceSection && <span>{traceSection}</span>}
-																			{traceSection && tracePage && <span>, </span>}
-																			{tracePage && <span>Page {tracePage}</span>}
-																		</div>
-																	</div>
-																)}
-																{keyFormulas && (
-																	<div>
-																		<Typography.Text strong className="text-blue-700 text-sm">Key Formula(s)</Typography.Text>
-																		<div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-blue-50/50 border border-blue-100" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }} />
-																	</div>
-																)}
-																{workedSolution && (
-																	<div>
-																		<Typography.Text strong className="text-green-700 text-sm">Worked Solution</Typography.Text>
-																		<div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-green-50/50 border border-green-100" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(workedSolution) }} />
-																	</div>
-																)}
-															</Space>
-														)
-													}]}
-												/>
-											)}
-										</div>
-									)}
+											);
+										})}
+									</div>
 								</Card>
 							);
 						})}
+
+						<div className="flex justify-center pt-4">
+							<Button type="primary" size="large" icon={<SendOutlined />} onClick={submitSelfGrades} loading={submittingGrades} className="rounded-xl px-10 h-12 font-semibold" style={{ background: 'linear-gradient(135deg, #059669, #10b981)', borderColor: '#059669' }}>Submit All Marks</Button>
+						</div>
+					</Space>
+				) : (
+					/* ========== NORMAL RESULTS VIEW (grouped by case study) ========== */
+					<Space direction="vertical" size={20} style={{ width: '100%' }}>
+						{answerGroups.map((group) => {
+							const isVignette = group.type === 'vignette';
+							return (
+								<Card
+									key={group.parentId || group.caseStudyNum}
+									className="overflow-hidden rounded-xl border-0 shadow-lg"
+									styles={{ body: { padding: 0 }, wrapper: { borderRadius: 20 } }}
+								>
+									{isVignette && (
+										<>
+											<div className="px-6 py-4" style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)' }}>
+												<div className="flex items-center gap-3">
+													<div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+														<span className="text-white font-bold">{group.caseStudyNum}</span>
+													</div>
+													<Typography.Text className="text-white/90 font-semibold">Case Study {group.caseStudyNum}</Typography.Text>
+												</div>
+											</div>
+											<div className="p-6 bg-slate-50 border-b border-slate-200">
+												<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: safeHtml(group.vignetteText) }} />
+											</div>
+										</>
+									)}
+									<div className="divide-y divide-slate-200">
+										{group.answers.map((a, subIdx) => {
+											const constructed = isConstructed(a);
+											const maxMarks = a?.question?.marks ?? 1;
+											const correct = constructed ? (a.marksAwarded != null && a.marksAwarded >= maxMarks) : (a.isCorrect === true);
+											const failed = !constructed ? !a.isCorrect : (a.marksAwarded != null && a.marksAwarded < maxMarks);
+											const correctText = correctOptionText(a);
+											const yourText = constructed ? (a?.textAnswer ?? '—') : yourOptionText(a);
+											const keyFormulas = a?.question?.keyFormulas;
+											const workedSolution = a?.question?.workedSolution;
+											const traceSection = a?.question?.traceSection;
+											const tracePage = a?.question?.tracePage;
+											const hasExplanation = keyFormulas || workedSolution || traceSection || tracePage;
+											const marksAwarded = a?.marksAwarded;
+
+											return (
+												<div key={a.id || subIdx} className="p-6" style={{ borderLeftWidth: 4, borderLeftColor: correct ? '#22c55e' : (constructed && marksAwarded == null ? '#eab308' : '#ef4444') }}>
+													<div className="flex items-start gap-3 mb-3">
+														<div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-white font-semibold bg-slate-600">{subIdx + 1}</div>
+														<div className="flex-1 min-w-0">
+															<div className="prose prose-sm question-preview-content text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(a?.question?.stem) || '' }} />
+														</div>
+													</div>
+													<div className="mt-4 p-4 rounded-lg bg-slate-50 border border-slate-200">
+														<div className="flex items-start gap-2">
+															{constructed ? (marksAwarded != null ? <CheckCircleOutlined className="text-green-600 mt-0.5 text-lg flex-shrink-0" /> : <Tag color="gold" className="flex-shrink-0">Pending</Tag>) : correct ? <CheckCircleOutlined className="text-green-600 mt-0.5 text-lg flex-shrink-0" /> : <CloseCircleOutlined className="text-red-500 mt-0.5 text-lg flex-shrink-0" />}
+															<div className="flex-1 min-w-0">
+																<Typography.Text type="secondary" className="text-xs uppercase tracking-wide">Your answer</Typography.Text>
+																{constructed ? <div className="mt-1 text-slate-800 whitespace-pre-wrap">{yourText}</div> : <div className="mt-1 prose prose-sm question-preview-content max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(yourText) || '—' }} />}
+															</div>
+														</div>
+													</div>
+													{constructed && marksAwarded != null && (<div className="mt-3 flex items-center gap-2"><Tag color="green">Mark: {marksAwarded} / {maxMarks}</Tag></div>)}
+													{!constructed && !correct && correctText && (
+														<div className="mt-3 p-4 rounded-lg bg-emerald-50 border border-emerald-200">
+															<Typography.Text strong className="text-emerald-800 text-sm">Correct answer</Typography.Text>
+															<div className="mt-1 prose prose-sm question-preview-content text-emerald-900 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(correctText) }} />
+														</div>
+													)}
+													{failed && a?.question?.los && (
+														<div className="mt-3 p-3 rounded-lg bg-blue-50 border border-blue-200">
+															<div className="flex items-center gap-2 mb-1"><FileTextOutlined className="text-blue-600" /><Typography.Text strong className="text-blue-800 text-sm">Learning Outcome Statement (LOS)</Typography.Text></div>
+															<Typography.Text className="text-slate-700 text-sm">{a.question.los}</Typography.Text>
+														</div>
+													)}
+													{failed && a?.question?.topic?.id && (
+														<div className="mt-3">
+															<Button icon={<SnippetsOutlined />} onClick={() => openNotesDrawer(a.question.topic.id, a.question.topic.name)} className="rounded-xl" style={{ background: '#f0f4f8', borderColor: '#cbd5e1', color: '#102540' }}>View Module Notes – {a.question.topic.name}</Button>
+														</div>
+													)}
+													{failed && (<AIHelpPanel questionId={a?.question?.id} selectedOptionId={a?.selectedOptionId} selectedOptionText={a?.selectedOption?.text} textAnswer={constructed ? a?.textAnswer : undefined} mode="result_review" />)}
+													{failed && aiHints[a.id]?.hint && !hasExplanation && (
+														<div className="mt-4 p-4 rounded-xl border border-violet-200 bg-violet-50/80">
+															<div className="flex items-center gap-2 mb-2"><RobotOutlined className="text-violet-600" /><Typography.Text strong className="text-violet-800">AI hint</Typography.Text></div>
+															<div className="text-slate-800 text-sm">{aiHints[a.id].hint}</div>
+														</div>
+													)}
+													{hasExplanation && (
+														<div className="mt-4">
+															{failed ? (
+																<div className="rounded-xl border-2 border-amber-200 bg-amber-50/80 overflow-hidden">
+																	<div className="px-4 py-2 bg-amber-100 border-b border-amber-200 flex items-center gap-2"><RocketOutlined className="text-amber-700" /><Typography.Text strong className="text-amber-900">Learn from this question</Typography.Text></div>
+																	<div className="p-4 space-y-4">
+																		{(traceSection || tracePage) && (<div><Typography.Text strong className="text-purple-700 text-sm">Reference</Typography.Text><div className="text-slate-700 mt-1">{traceSection && <span>{traceSection}</span>}{traceSection && tracePage && <span>, </span>}{tracePage && <span>Page {tracePage}</span>}</div></div>)}
+																		{keyFormulas && (<div><div className="flex items-center gap-2 mb-2"><CalculatorOutlined className="text-blue-600" /><Typography.Text strong className="text-blue-800">Key Formula(s)</Typography.Text></div><div className="prose prose-sm question-preview-content p-4 rounded-lg bg-blue-50/80 border border-blue-200 text-slate-800 max-w-none" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }} /></div>)}
+																		{workedSolution && (<div><div className="flex items-center gap-2 mb-2"><BulbOutlined className="text-green-600" /><Typography.Text strong className="text-green-800">Worked Solution</Typography.Text></div><div className="prose prose-sm question-preview-content p-4 rounded-lg bg-green-50/80 border border-green-200 text-slate-800 max-w-none" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(workedSolution) }} /></div>)}
+																		{aiHints[a.id]?.hint && (<div><div className="flex items-center gap-2 mb-2"><RobotOutlined className="text-violet-600" /><Typography.Text strong className="text-violet-800">AI hint</Typography.Text></div><div className="p-4 rounded-lg bg-violet-50/80 border border-violet-200 text-slate-800 text-sm">{aiHints[a.id].hint}</div></div>)}
+																	</div>
+																</div>
+															) : (
+																<Collapse size="small" className="bg-slate-50 rounded-lg border border-slate-200" items={[{ key: 'explanation', label: (<span className="flex items-center gap-2"><BulbOutlined className="text-slate-500" /><Typography.Text>View explanation</Typography.Text></span>), children: (<Space direction="vertical" size={12} style={{ width: '100%' }}>{(traceSection || tracePage) && (<div><Typography.Text strong className="text-purple-700 text-sm">Reference</Typography.Text><div className="text-slate-600 mt-1">{traceSection && <span>{traceSection}</span>}{traceSection && tracePage && <span>, </span>}{tracePage && <span>Page {tracePage}</span>}</div></div>)}{keyFormulas && (<div><Typography.Text strong className="text-blue-700 text-sm">Key Formula(s)</Typography.Text><div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-blue-50/50 border border-blue-100" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }} /></div>)}{workedSolution && (<div><Typography.Text strong className="text-green-700 text-sm">Worked Solution</Typography.Text><div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-green-50/50 border border-green-100" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(workedSolution) }} /></div>)}</Space>) }]} />
+															)}
+														</div>
+													)}
+												</div>
+											);
+										})}
+									</div>
+								</Card>
+							);
+						})}
+
 					</Space>
 				)}
 
