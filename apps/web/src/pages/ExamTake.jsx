@@ -934,7 +934,7 @@ export function ExamTake() {
 										<Typography.Text strong className="text-yellow-800 block mb-1">CFA Level III Exam Format</Typography.Text>
 										<Typography.Text className="text-slate-700">
 											The Level III exam consists of 2 sessions with a mix of vignette-based multiple-choice item sets and constructed response (essay) case studies.
-											Each session has 11 case studies (22 total across both sessions). Each case study is worth 12 marks. Two case studies (one per session) are not scored.
+											Each session has 11 case studies (22 total across both sessions). Each case study is worth 12 points. Two case studies (one per session) are not scored.
 											All questions must be answered in English based on the information in the vignette.
 											The CFA Program curriculum topic areas for Level III will be randomly placed on the exam.
 										</Typography.Text>
@@ -978,7 +978,7 @@ export function ExamTake() {
 									</Typography.Text>
 									<ul className="text-sm text-slate-700 space-y-1 list-disc pl-4 mb-0">
 										<li>{s1Count} case studies (item sets / essays)</li>
-										<li>12 marks per case study</li>
+										<li>12 points per case study</li>
 										<li>{mock?.session1Minutes || 132} minutes time limit</li>
 									</ul>
 								</Card>
@@ -988,7 +988,7 @@ export function ExamTake() {
 									</Typography.Text>
 									<ul className="text-sm text-slate-700 space-y-1 list-disc pl-4 mb-0">
 										<li>{s2Count} case studies (item sets / essays)</li>
-										<li>12 marks per case study</li>
+										<li>12 points per case study</li>
 										<li>{mock?.session2Minutes || 132} minutes time limit</li>
 									</ul>
 								</Card>
@@ -1025,19 +1025,19 @@ export function ExamTake() {
 						{breakdown.length > 0 && (
 							<Card style={{ borderRadius: 16 }}>
 								<Typography.Text strong className="text-slate-800 block mb-3">Question Distribution by Volume</Typography.Text>
-								{level === 'LEVEL1' && session1Breakdown.length > 0 && session2Breakdown.length > 0 ? (
+								{(level === 'LEVEL1' || level === 'LEVEL3') && session1Breakdown.length > 0 && session2Breakdown.length > 0 ? (
 									<div className="space-y-4">
 										{currentSessionNum === 1 || !currentSessionNum ? (
 											<div>
-												<Typography.Text className="text-blue-700 text-sm font-semibold block mb-2">Session 1</Typography.Text>
+												<Typography.Text className={level === 'LEVEL3' ? 'text-yellow-700 text-sm font-semibold block mb-2' : 'text-blue-700 text-sm font-semibold block mb-2'}>Session 1</Typography.Text>
 												<table className="w-full text-sm">
-													<thead><tr className="border-b border-slate-200"><th className="text-left py-2 text-slate-500 font-medium">Volume</th><th className="text-left py-2 text-slate-500 font-medium w-28">Weight</th><th className="text-left py-2 text-slate-500 font-medium w-28">Est. Questions</th></tr></thead>
+													<thead><tr className="border-b border-slate-200"><th className="text-left py-2 text-slate-500 font-medium">Volume</th><th className="text-left py-2 text-slate-500 font-medium w-28">Weight</th><th className="text-left py-2 text-slate-500 font-medium w-28">{level === 'LEVEL3' ? 'Est. Case Studies' : 'Est. Questions'}</th></tr></thead>
 													<tbody>
 														{session1Breakdown.map(r => (
 															<tr key={r.volumeId} className="border-b border-slate-100">
 																<td className="py-2 text-slate-700">{r.volumeName}</td>
 																<td className="py-2 text-slate-600">{r.weightMin}%–{r.weightMax}%</td>
-																<td className="py-2"><Tag color="blue">{r.estimatedQuestions}</Tag></td>
+																<td className="py-2"><Tag color={level === 'LEVEL3' ? 'gold' : 'blue'}>{r.estimatedQuestions}</Tag></td>
 															</tr>
 														))}
 													</tbody>
@@ -1046,15 +1046,15 @@ export function ExamTake() {
 										) : null}
 										{currentSessionNum === 2 ? (
 											<div>
-												<Typography.Text className="text-purple-700 text-sm font-semibold block mb-2">Session 2</Typography.Text>
+												<Typography.Text className={level === 'LEVEL3' ? 'text-yellow-700 text-sm font-semibold block mb-2' : 'text-purple-700 text-sm font-semibold block mb-2'}>Session 2</Typography.Text>
 												<table className="w-full text-sm">
-													<thead><tr className="border-b border-slate-200"><th className="text-left py-2 text-slate-500 font-medium">Volume</th><th className="text-left py-2 text-slate-500 font-medium w-28">Weight</th><th className="text-left py-2 text-slate-500 font-medium w-28">Est. Questions</th></tr></thead>
+													<thead><tr className="border-b border-slate-200"><th className="text-left py-2 text-slate-500 font-medium">Volume</th><th className="text-left py-2 text-slate-500 font-medium w-28">Weight</th><th className="text-left py-2 text-slate-500 font-medium w-28">{level === 'LEVEL3' ? 'Est. Case Studies' : 'Est. Questions'}</th></tr></thead>
 													<tbody>
 														{session2Breakdown.map(r => (
 															<tr key={r.volumeId} className="border-b border-slate-100">
 																<td className="py-2 text-slate-700">{r.volumeName}</td>
 																<td className="py-2 text-slate-600">{r.weightMin}%–{r.weightMax}%</td>
-																<td className="py-2"><Tag color="purple">{r.estimatedQuestions}</Tag></td>
+																<td className="py-2"><Tag color={level === 'LEVEL3' ? 'gold' : 'purple'}>{r.estimatedQuestions}</Tag></td>
 															</tr>
 														))}
 													</tbody>
@@ -2192,11 +2192,11 @@ export function ExamTake() {
 												<>
 													{awarded != null ? (
 														<Tag className="bg-white/20 text-white border-0 rounded-full text-xs">
-															Mark: {awarded} / {maxMarks}
+															Points: {awarded} / {maxMarks}
 														</Tag>
 													) : (
 														<Tag className="bg-white/20 text-white border-0 rounded-full text-xs">
-															Pending marking
+															Pending grading
 														</Tag>
 													)}
 												</>
@@ -2219,7 +2219,7 @@ export function ExamTake() {
 												</div>
 												{isConstructed && awarded != null && (
 													<div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
-														<Typography.Text className="text-blue-600 text-xs block mb-1">Marks awarded</Typography.Text>
+														<Typography.Text className="text-blue-600 text-xs block mb-1">Points awarded</Typography.Text>
 														<Typography.Text className="text-blue-800 font-semibold">{awarded} / {maxMarks}</Typography.Text>
 													</div>
 												)}

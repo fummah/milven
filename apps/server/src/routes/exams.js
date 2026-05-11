@@ -966,6 +966,27 @@ export function examsRouter(prisma) {
 			where: { id: req.params.attemptId },
 			data: { markingPreference: parse.data.preference }
 		});
+
+		// Also set marking preference for sibling mock exam session attempt
+		const mockAsS1 = await prisma.mockExam.findFirst({ where: { session1ExamId: attempt.examId } });
+		const mockAsS2 = mockAsS1 ? null : await prisma.mockExam.findFirst({ where: { session2ExamId: attempt.examId } });
+		const parentMock = mockAsS1 || mockAsS2;
+		if (parentMock) {
+			const siblingExamId = mockAsS1 ? parentMock.session2ExamId : parentMock.session1ExamId;
+			if (siblingExamId) {
+				const sibAttempt = await prisma.examAttempt.findFirst({
+					where: { examId: siblingExamId, userId: attempt.userId, status: 'SUBMITTED' },
+					orderBy: { submittedAt: 'desc' }
+				});
+				if (sibAttempt) {
+					await prisma.examAttempt.update({
+						where: { id: sibAttempt.id },
+						data: { markingPreference: parse.data.preference }
+					});
+				}
+			}
+		}
+
 		return res.json({ attempt: updated });
 	});
 
@@ -1134,7 +1155,26 @@ export function examsRouter(prisma) {
 			...attempt.user,
 			name: [attempt.user.firstName, attempt.user.lastName].filter(Boolean).join(' ').trim() || attempt.user.email || attempt.user.id
 		} : null;
-		return res.json({ attempt: { ...attempt, user: userWithName, answers: sortedAnswers, courseName } });
+		// For self-marking: find the sibling session attempt if this exam belongs to a mock exam
+		let siblingAttempt = null;
+		const mockAsS1 = await prisma.mockExam.findFirst({ where: { session1ExamId: attempt.examId } });
+		const mockAsS2 = mockAsS1 ? null : await prisma.mockExam.findFirst({ where: { session2ExamId: attempt.examId } });
+		const parentMock = mockAsS1 || mockAsS2;
+		if (parentMock) {
+			const siblingExamId = mockAsS1 ? parentMock.session2ExamId : parentMock.session1ExamId;
+			if (siblingExamId) {
+				const sibAttempt = await prisma.examAttempt.findFirst({
+					where: { examId: siblingExamId, userId: attempt.userId, status: 'SUBMITTED' },
+					orderBy: { submittedAt: 'desc' },
+					select: { id: true, examId: true, status: true, scorePercent: true }
+				});
+				if (sibAttempt) {
+					siblingAttempt = { ...sibAttempt, session: mockAsS1 ? 2 : 1 };
+				}
+			}
+		}
+		const currentSession = parentMock ? (mockAsS1 ? 1 : 2) : null;
+		return res.json({ attempt: { ...attempt, user: userWithName, answers: sortedAnswers, courseName, mockExamId: parentMock?.id || null, currentSession, siblingAttempt } });
 	});
 
 	// Attempt analytics (hierarchical Volume → Module → Topic breakdown)
@@ -2232,9 +2272,10 @@ export function examsRouter(prisma) {
 				const s1Norm = normalizeSession(sessions[1], perSession);
 				const s2Norm = normalizeSession(sessions[2], perSession);
 
-				// For L1: return per-session breakdown (frontend shows separate session tables)
-				// For L2/L3: aggregate by volume to avoid duplicates (frontend shows single table)
-				if (level === 'LEVEL1') {
+				// For L1 and L3: return per-session breakdown (frontend shows separate session tables)
+				// For L2: aggregate by volume to avoid duplicates (frontend shows single table)
+				if (level === 'LEVEL1' || level === 'LEVEL3') {
+					// Return per-session breakdown so frontend shows separate session tables
 					breakdown = [...s1Norm, ...s2Norm].map(w => ({
 						volumeId: w.volumeId,
 						volumeName: w.volume?.description ? `${w.volume.description} (${w.volume.name})` : (w.volume?.name || 'Unknown'),
@@ -2244,7 +2285,7 @@ export function examsRouter(prisma) {
 						estimatedQuestions: w.estQuestions
 					}));
 				} else {
-					// Aggregate by volumeId for L2/L3
+					// Aggregate by volumeId for L2
 					const volumeMap = new Map();
 					for (const w of [...s1Norm, ...s2Norm]) {
 						const vid = w.volumeId;

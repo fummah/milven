@@ -37,6 +37,8 @@ export function ExamResult() {
 	const [selfGrades, setSelfGrades] = useState({}); // answerId -> { choice: 'Y'|'N'|'PARTIAL', marks: number }
 	const [submittingGrades, setSubmittingGrades] = useState(false);
 	const [selfMarkPage, setSelfMarkPage] = useState(0);
+	const [siblingAttemptId, setSiblingAttemptId] = useState(null);
+	const [mainAnswerIds, setMainAnswerIds] = useState(new Set());
 	const topRef = useRef(null);
 
 	const toRoman = (num) => {
@@ -62,7 +64,26 @@ export function ExamResult() {
 					api.get(`/api/exams/attempts/${attemptId}/analytics`).catch(() => ({ data: { byTopic: [] } }))
 				]);
 				if (mounted) {
-					setAttempt(a.data.attempt);
+					let mainAttempt = a.data.attempt;
+					// Track which answer IDs belong to the main attempt
+					const mainAIds = new Set((mainAttempt.answers || []).map(ans => ans.id));
+					setMainAnswerIds(mainAIds);
+					// For self-marking: if there's a sibling session, load and merge its answers
+					if (isSelfMarkMode && mainAttempt.siblingAttempt?.id) {
+						try {
+							const sibRes = await api.get(`/api/exams/attempts/${mainAttempt.siblingAttempt.id}`);
+							const sibAttempt = sibRes.data.attempt;
+							if (sibAttempt?.answers?.length) {
+								setSiblingAttemptId(mainAttempt.siblingAttempt.id);
+								// Determine order: session 1 first, session 2 second
+								const currentSession = mainAttempt.currentSession || 1;
+								const s1Answers = currentSession === 1 ? mainAttempt.answers : sibAttempt.answers;
+								const s2Answers = currentSession === 1 ? sibAttempt.answers : mainAttempt.answers;
+								mainAttempt = { ...mainAttempt, answers: [...s1Answers, ...s2Answers] };
+							}
+						} catch { /* sibling load failed, proceed with single session */ }
+					}
+					setAttempt(mainAttempt);
 					setTopics(analytics?.data?.byTopic ?? []);
 					setAnalyticsTree(analytics?.data?.tree ?? []);
 				}
@@ -71,7 +92,7 @@ export function ExamResult() {
 			}
 		})();
 		return () => { mounted = false; };
-	}, [attemptId]);
+	}, [attemptId, isSelfMarkMode]);
 
 	const correctOption = (opts) => (opts || []).find((o) => o.isCorrect);
 	const yourOptionText = (a) => a?.selectedOption?.text ?? '—';
@@ -138,16 +159,28 @@ export function ExamResult() {
 		}
 		setSubmittingGrades(true);
 		try {
-			const grades = constructedAnswers.map(a => ({
+			const allGrades = constructedAnswers.map(a => ({
 				answerId: a.id,
 				marksAwarded: Math.max(0, selfGrades[a.id]?.marks ?? 0)
 			}));
-			const { data } = await api.post(`/api/exams/attempts/${attemptId}/self-grade`, { grades });
-			setAttempt(prev => ({ ...prev, ...data.attempt, answers: prev.answers.map(a => {
-				const g = grades.find(gr => gr.answerId === a.id);
+			// Split grades by attempt (main vs sibling)
+			const mainGrades = allGrades.filter(g => mainAnswerIds.has(g.answerId));
+			const sibGrades = allGrades.filter(g => !mainAnswerIds.has(g.answerId));
+
+			const promises = [];
+			if (mainGrades.length > 0) {
+				promises.push(api.post(`/api/exams/attempts/${attemptId}/self-grade`, { grades: mainGrades }));
+			}
+			if (sibGrades.length > 0 && siblingAttemptId) {
+				promises.push(api.post(`/api/exams/attempts/${siblingAttemptId}/self-grade`, { grades: sibGrades }));
+			}
+			await Promise.all(promises);
+
+			setAttempt(prev => ({ ...prev, answers: prev.answers.map(a => {
+				const g = allGrades.find(gr => gr.answerId === a.id);
 				return g ? { ...a, marksAwarded: g.marksAwarded } : a;
 			})}));
-			message.success('Marking submitted successfully!');
+			message.success('Grading submitted successfully!');
 			window.scrollTo({ top: 0, behavior: 'smooth' });
 			navigate(`/student/exams/result/${attemptId}`, { replace: true });
 		} catch (err) {
@@ -232,7 +265,7 @@ export function ExamResult() {
 							</Typography.Title>
 							<Typography.Paragraph className="!text-white/90 !mb-0 text-base max-w-md mx-auto">
 								{isSelfMarkMode
-									? 'Review your answers below and grade each constructed response (all sessions included). Use Y for full marks, N for zero, or enter partial marks.'
+									? 'Review your answers below and grade each constructed response (all sessions included). Use Y for full points, N for zero, or enter partial points.'
 									: 'Your responses have been submitted. You will be notified when marking is complete. No score is shown until then.'}
 							</Typography.Paragraph>
 						</div>
@@ -461,7 +494,7 @@ export function ExamResult() {
 														<div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-white font-semibold text-sm bg-indigo-600">{toRoman(subIdx + 1)}</div>
 														<div className="flex-1">
 															<div className="prose prose-sm text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(a?.question?.stem) || '' }} />
-															<Tag color="blue" className="mt-1">{maxMarks} mark{maxMarks !== 1 ? 's' : ''}</Tag>
+															<Tag color="blue" className="mt-1">{maxMarks} point{maxMarks !== 1 ? 's' : ''}</Tag>
 														</div>
 													</div>
 													<div className="p-4 rounded-lg bg-blue-50 border border-blue-200 mb-4">
@@ -507,7 +540,7 @@ export function ExamResult() {
 															<Button type={grade?.choice === 'N' ? 'primary' : 'default'} danger={grade?.choice === 'N'} onClick={() => setGrade(a.id, 'N', maxMarks)} className="rounded-lg font-semibold min-w-[80px]">N (0/{maxMarks})</Button>
 															<div className="flex items-center gap-2">
 																<Typography.Text className="text-slate-500 text-sm">Partial:</Typography.Text>
-																<InputNumber min={0} max={maxMarks} value={grade?.choice === 'PARTIAL' ? grade.marks : undefined} placeholder="marks" onChange={(v) => v != null && setPartialMarks(a.id, v)} className="rounded-lg" style={{ width: 80 }} />
+																<InputNumber min={0} max={maxMarks} value={grade?.choice === 'PARTIAL' ? grade.marks : undefined} placeholder="pts" onChange={(v) => v != null && setPartialMarks(a.id, v)} className="rounded-lg" style={{ width: 80 }} />
 																<Typography.Text className="text-slate-400 text-sm">/ {maxMarks}</Typography.Text>
 															</div>
 														</div>
@@ -556,7 +589,7 @@ export function ExamResult() {
 									className="rounded-lg font-semibold"
 									style={{ background: 'linear-gradient(135deg, #059669, #10b981)', borderColor: '#059669' }}
 								>
-									Submit All Marks
+									Submit All Points
 								</Button>
 							)}
 						</div>
@@ -605,7 +638,7 @@ export function ExamResult() {
 											return (
 												<div key={a.id || subIdx} className="p-6" style={{ borderLeftWidth: 4, borderLeftColor: correct ? '#22c55e' : (constructed && marksAwarded == null ? '#eab308' : '#ef4444') }}>
 													<div className="flex items-start gap-3 mb-3">
-														<div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-white font-semibold bg-slate-600">{subIdx + 1}</div>
+														<div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-white font-semibold bg-slate-600">{toRoman(subIdx + 1)}</div>
 														<div className="flex-1 min-w-0">
 															<div className="prose prose-sm question-preview-content text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(a?.question?.stem) || '' }} />
 														</div>
@@ -619,7 +652,7 @@ export function ExamResult() {
 															</div>
 														</div>
 													</div>
-													{constructed && marksAwarded != null && (<div className="mt-3 flex items-center gap-2"><Tag color="green">Mark: {marksAwarded} / {maxMarks}</Tag></div>)}
+													{constructed && marksAwarded != null && (<div className="mt-3 flex items-center gap-2"><Tag color="green">Points: {marksAwarded} / {maxMarks}</Tag></div>)}
 													{!constructed && !correct && correctText && (
 														<div className="mt-3 p-4 rounded-lg bg-emerald-50 border border-emerald-200">
 															<Typography.Text strong className="text-emerald-800 text-sm">Correct answer</Typography.Text>
