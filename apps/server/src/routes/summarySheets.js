@@ -155,12 +155,13 @@ export function summarySheetsRouter(prisma) {
 			topicId: z.string().optional().nullable(),
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 			year: z.coerce.number().int().optional().default(2026),
-			count: z.coerce.number().int().min(1).max(10).optional().default(1),
+			count: z.coerce.number().int().min(1).max(20).optional().nullable(),
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: 'Validation failed', details: parse.error.flatten() });
 
-		const { courseId, volumeId, moduleId, topicId, level, year, count } = parse.data;
+		const { courseId, volumeId, moduleId, topicId, level, year } = parse.data;
+		let count = parse.data.count || null;
 
 		const apiKey = await getOpenAIApiKey(prisma);
 		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured.' });
@@ -188,8 +189,20 @@ export function summarySheetsRouter(prisma) {
 				const topicWhere = { courseId };
 				if (moduleId) topicWhere.moduleId = moduleId;
 				else if (volumeId) topicWhere.module = { volumeId };
-				const resolvedTopics = await prisma.topic.findMany({ where: topicWhere, select: { id: true, name: true }, orderBy: { order: 'asc' }, take: 20 });
+				const resolvedTopics = await prisma.topic.findMany({ where: topicWhere, select: { id: true, name: true }, orderBy: { order: 'asc' }, take: 50 });
 				topicNames = resolvedTopics.map(t => t.name);
+			}
+
+			// Auto-detect count: if moduleId given, 1 sheet for that module; if volumeId, count modules in volume; else count modules in course
+			if (!count) {
+				if (moduleId) {
+					count = 1;
+				} else {
+					const modWhere = { courseId };
+					if (volumeId) modWhere.volumeId = volumeId;
+					const modCount = await prisma.module.count({ where: modWhere });
+					count = Math.max(1, Math.min(20, modCount));
+				}
 			}
 
 			let curriculumExcerpt = '';
@@ -259,7 +272,9 @@ export function summarySheetsRouter(prisma) {
 
 			const prompt = `You are a senior CFA curriculum expert at Milven Finance School. Generate ${count} CFA Summary Sheet(s) in JSON format following the Milven Summary Sheet Master standard.
 
-Each summary sheet is a high-impact, exam-focused revision sheet that compresses curriculum into a scannable, memorable format. It should work as a printable handout, quick digital revision sheet, and visual companion.
+Each summary sheet is a SHORT-FORM, high-impact revision document equivalent to 2-3 printed pages per learning module. It compresses the entire learning module into a scannable, memorable format covering all key issues. It should work as a printable handout, quick digital revision sheet, and visual companion.
+
+The ENTIRE learning module must be included in the summary — every key topic, formula, and concept should be represented, but in concise summary form.
 
 ${hierarchyContext}
 Year: ${year}
@@ -269,26 +284,32 @@ For each summary sheet, generate ALL of these sections:
 1. "title" — descriptive title for the learning module/topic
 2. "snapshot" — what this sheet covers in 2-4 lines (what it helps you remember, why it matters)
 3. "useCase" — primary use cases (e.g. "final review, tutor recap, formula refresh")
-4. "coreDefinitions" — array of 5-10 key definitions in exam language: [{"term": "...", "definition": "..."}]
-5. "formulas" — array of essential formulas: [{"formula": "...", "variables": "...", "whenToUse": "..."}]
+4. "coreDefinitions" — array of 8-15 key definitions in exam language: [{"term": "...", "definition": "..."}]
+5. "formulas" — array of ALL essential formulas from the module: [{"formula": "...", "variables": "...", "whenToUse": "..."}]
    * Use rich notation: subscripts (_), superscripts (^), Greek letters (sigma, beta, etc.)
+   * Include EVERY formula from the curriculum for this module
 6. "distinctions" — array comparing look-alike concepts: [{"left": "...", "right": "...", "difference": "..."}]
    * e.g. money-weighted vs time-weighted return; Type I vs Type II error
-7. "examTraps" — array of common exam traps: [{"trap": "..."}]
+7. "diagrams" — array of text-based visual aids or conceptual diagrams: [{"title": "...", "description": "text description of a diagram, flowchart, or visual relationship"}]
+   * e.g. flowcharts, comparison tables, process flows, relationship maps
+8. "examTraps" — array of common exam traps: [{"trap": "..."}]
    * What candidates confuse, omit, or misread
-8. "memoryHooks" — array of short memory cues: [{"hook": "..."}]
+9. "memoryHooks" — array of short memory cues: [{"hook": "..."}]
    * e.g. "manager skill = TWRR" or "spot + rate differential → forward"
-9. "quickDrills" — array of 2-5 fast recall/calculation questions: [{"question": "..."}]
-10. "revisionCheck" — array of self-check items: [{"item": "..."}]
+10. "quickDrills" — array of 3-6 fast recall/calculation questions: [{"question": "..."}]
+11. "revisionCheck" — array of self-check items: [{"item": "..."}]
     * e.g. "I know the core formulas", "I can explain each metric"
 
 IMPORTANT:
-- Every section must be populated with accurate, exam-relevant CFA content
+- This is a 2-3 page CONCISE summary — focus on key issues, not full explanations
+- Every section must be populated with accurate, exam-relevant CFA content from the curriculum
+- The entire learning module must be covered — all topics represented
 - Definitions should be precise and exam-language ready
-- Formulas must be real CFA curriculum formulas
+- Formulas must be real CFA curriculum formulas with correct notation from the curriculum document
+- Include visual/diagram descriptions where they aid understanding
 - Distinctions should cover commonly confused concepts
 - Traps should reflect actual exam mistakes
-- Keep everything concise — this is for speed and retention, not full explanation
+- Keep everything concise — this is for speed and retention
 
 Return a JSON object:
 {
@@ -300,6 +321,7 @@ Return a JSON object:
       "coreDefinitions": [{"term": "string", "definition": "string"}],
       "formulas": [{"formula": "string", "variables": "string", "whenToUse": "string"}],
       "distinctions": [{"left": "string", "right": "string", "difference": "string"}],
+      "diagrams": [{"title": "string", "description": "string"}],
       "examTraps": [{"trap": "string"}],
       "memoryHooks": [{"hook": "string"}],
       "quickDrills": [{"question": "string"}],
@@ -377,6 +399,7 @@ Generate exactly ${count} summary sheet(s). Return ONLY valid JSON.`;
 							coreDefinitions: item.coreDefinitions || null,
 							formulas: item.formulas || null,
 							distinctions: item.distinctions || null,
+							diagrams: item.diagrams || null,
 							examTraps: item.examTraps || null,
 							memoryHooks: item.memoryHooks || null,
 							quickDrills: item.quickDrills || null,

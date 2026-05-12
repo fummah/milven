@@ -32,8 +32,7 @@ export function AdminFormulas() {
 	const [aiVolumeId, setAiVolumeId] = useState(null);
 	const [aiModuleId, setAiModuleId] = useState(null);
 	const [aiTopicId, setAiTopicId] = useState(null);
-	const [aiLevel, setAiLevel] = useState('LEVEL1');
-	const [aiCount, setAiCount] = useState(5);
+	const [aiCount, setAiCount] = useState(null);
 	const [aiYear, setAiYear] = useState(2026);
 
 	// AI Preview
@@ -243,6 +242,8 @@ export function AdminFormulas() {
 
 	const handleAiGenerate = async () => {
 		if (!aiCourseId) return message.warning('Please select a course');
+		const selectedCourse = courses.find(c => c.id === aiCourseId);
+		if (!selectedCourse) return message.warning('Course not found');
 		setAiGenerating(true);
 		try {
 			const payload = {
@@ -250,9 +251,9 @@ export function AdminFormulas() {
 				volumeId: aiVolumeId || undefined,
 				moduleId: aiModuleId || undefined,
 				topicId: aiTopicId || undefined,
-				level: aiLevel,
+				level: selectedCourse.level,
 				year: aiYear,
-				count: aiCount,
+				count: aiCount || undefined,
 			};
 			Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 
@@ -714,7 +715,7 @@ export function AdminFormulas() {
 					<div style={{ textAlign: 'center', padding: '40px 0' }}>
 						<Spin size="large" />
 						<div style={{ marginTop: 16, color: '#64748b', fontSize: 14 }}>
-							AI is generating {aiCount} formula{aiCount !== 1 ? 's' : ''}…
+							AI is generating {aiCount ? `${aiCount} formula${aiCount !== 1 ? 's' : ''}` : 'all formulas'}…
 						</div>
 						<div style={{ marginTop: 8, color: '#94a3b8', fontSize: 12 }}>
 							This may take 15–30 seconds. Please do not close this window.
@@ -726,26 +727,18 @@ export function AdminFormulas() {
 							<Typography.Text style={{ fontSize: 13, color: '#475569' }}>
 								Select the curriculum hierarchy below. AI will generate formula cards with all mandatory fields
 								(formula, variables, interpretation, when to use, watch-out) populated from CFA curriculum knowledge.
+								Leave Count empty to generate all formulas for the selected scope.
 							</Typography.Text>
 						</div>
 
 						<Row gutter={[12, 16]}>
-							<Col span={12}>
-								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>CFA Level *</Typography.Text>
-								<Select
-									value={aiLevel}
-									onChange={setAiLevel}
-									options={LEVELS}
-									style={{ width: '100%', marginTop: 4 }}
-								/>
-							</Col>
-							<Col span={12}>
+							<Col span={24}>
 								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>Course *</Typography.Text>
 								<Select
 									placeholder="Select course"
 									value={aiCourseId}
 									onChange={v => { setAiCourseId(v); setAiVolumeId(null); setAiModuleId(null); setAiTopicId(null); }}
-									options={courses.map(c => ({ value: c.id, label: c.name }))}
+									options={courses.map(c => ({ value: c.id, label: `${c.name} (${LEVEL_LABELS[c.level] || c.level})` }))}
 									style={{ width: '100%', marginTop: 4 }}
 									allowClear
 									showSearch
@@ -795,9 +788,10 @@ export function AdminFormulas() {
 								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>Count</Typography.Text>
 								<InputNumber
 									min={1}
-									max={20}
+									max={100}
 									value={aiCount}
 									onChange={setAiCount}
+									placeholder="All"
 									style={{ width: '100%', marginTop: 4 }}
 								/>
 							</Col>

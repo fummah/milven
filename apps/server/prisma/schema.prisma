@@ -738,6 +738,7 @@ model SummarySheet {
   formulas        Json?                 // [{formula, variables, whenToUse}]
   // Section 4 — Distinctions / Traps
   distinctions    Json?                 // [{left, right, difference}]
+  diagrams        Json?                 // [{title, description}]
   examTraps       Json?                 // [{trap}]
   // Section 5 — Memory Hooks
   memoryHooks     Json?                 // [{hook}]

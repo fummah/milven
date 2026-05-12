@@ -142,12 +142,13 @@ export function moduleNotesRouter(prisma) {
 			topicId: z.string().optional().nullable(),
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 			year: z.coerce.number().int().optional().default(2026),
-			count: z.coerce.number().int().min(1).max(5).optional().default(1),
+			count: z.coerce.number().int().min(1).max(20).optional().nullable(),
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: 'Validation failed', details: parse.error.flatten() });
 
-		const { courseId, volumeId, moduleId, topicId, level, year, count } = parse.data;
+		const { courseId, volumeId, moduleId, topicId, level, year } = parse.data;
+		let count = parse.data.count || null;
 
 		const apiKey = await getOpenAIApiKey(prisma);
 		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured.' });
@@ -157,9 +158,29 @@ export function moduleNotesRouter(prisma) {
 			if (!course) return res.status(400).json({ error: 'Course not found' });
 
 			let volumeName = null, moduleName = null, topicName = null;
+			let topicNames = [];
 			if (volumeId) { const v = await prisma.volume.findUnique({ where: { id: volumeId }, select: { name: true } }); if (v) volumeName = v.name; }
 			if (moduleId) { const m = await prisma.module.findUnique({ where: { id: moduleId }, select: { name: true } }); if (m) moduleName = m.name; }
-			if (topicId) { const t = await prisma.topic.findUnique({ where: { id: topicId }, select: { name: true } }); if (t) topicName = t.name; }
+			if (topicId) { const t = await prisma.topic.findUnique({ where: { id: topicId }, select: { name: true } }); if (t) topicName = t.name; topicNames = [topicName]; }
+			else {
+				const topicWhere = { courseId };
+				if (moduleId) topicWhere.moduleId = moduleId;
+				else if (volumeId) topicWhere.module = { volumeId };
+				const resolvedTopics = await prisma.topic.findMany({ where: topicWhere, select: { name: true }, orderBy: { order: 'asc' }, take: 50 });
+				topicNames = resolvedTopics.map(t => t.name);
+			}
+
+			// Auto-detect count: if moduleId given, 1 note for that module; if volumeId, count modules in volume; else count modules in course
+			if (!count) {
+				if (moduleId) {
+					count = 1;
+				} else {
+					const modWhere = { courseId };
+					if (volumeId) modWhere.volumeId = volumeId;
+					const modCount = await prisma.module.count({ where: modWhere });
+					count = Math.max(1, Math.min(20, modCount));
+				}
+			}
 
 			let curriculumExcerpt = '';
 			if (volumeId) {
@@ -226,13 +247,22 @@ export function moduleNotesRouter(prisma) {
 				? `\n\nCURRICULUM REFERENCE MATERIAL (use this as the primary source — reference exact LOS, formulas, and page numbers from the document):\n---\n${curriculumExcerpt}\n---\n`
 				: '';
 
+			const topicContext = topicNames.length > 0 ? `\nTopics to cover: ${topicNames.join(', ')}` : '';
+
 			const prompt = `You are a senior CFA curriculum expert at Milven Finance School. Generate ${count} complete CFA Learning Module Note(s) in JSON format following the Milven Design Guide.
 
-Each module note is a premium, exam-focused learning document that covers a full Learning Module with concept explanations, formulas, worked examples, exam tips, and practice.
+Each module note is a premium, exam-focused learning document equivalent to 10-15 printed pages per learning module. It must provide COMPREHENSIVE coverage of ALL topics within the module, including every formula, key concept, definition, and worked example.
 
 ${hierarchyContext}
-Year: ${year}
+Year: ${year}${topicContext}
 ${curriculumSection}
+CRITICAL REQUIREMENTS:
+- Each module note MUST be equivalent to 10-15 printed pages of content
+- Cover ALL topics within the learning module — do not skip or summarize away any topic
+- Include EVERY formula that appears in the module with correct superscript/subscript notation
+- Ensure all key concepts, definitions, and relationships are thoroughly explained
+- Use the uploaded curriculum document as the PRIMARY source for accuracy
+
 For each module note, generate ALL sections:
 
 1. "title" — Learning Module title
@@ -240,24 +270,25 @@ For each module note, generate ALL sections:
 3. "difficulty" — "Foundational", "Intermediate", or "Advanced"
 4. "calculatorUse" — "Minimal", "Moderate", or "Heavy"
 5. "overview" — 2-4 sentences on why this module matters and what success looks like
-6. "losStatements" — array of Learning Outcome Statements:
+6. "losStatements" — array of ALL Learning Outcome Statements for this module:
    [{"ref": "LOS 1", "statement": "...", "commandWord": "Calculate / Interpret"}]
-7. "concepts" — array of concept pages (3-6 per module):
-   [{"title": "...", "meaning": "plain-English meaning", "explanation": "core explanation", "formula": "exact equation with rich notation", "formulaVariables": "variable definitions", "interpretation": "link to valuation/performance", "workedExample": {"given": "...", "required": "...", "solution": "...", "conclusion": "..."}, "examTip": "...", "commonMistake": "..."}]
+7. "concepts" — array of concept pages (6-12 per module for comprehensive coverage):
+   [{"title": "...", "meaning": "plain-English meaning", "explanation": "detailed core explanation covering all nuances", "formula": "exact equation with rich notation", "formulaVariables": "variable definitions", "interpretation": "link to valuation/performance", "workedExample": {"given": "...", "required": "...", "solution": "step-by-step solution", "conclusion": "..."}, "examTip": "...", "commonMistake": "..."}]
    * Use _ for subscripts, ^ for superscripts, Greek letter names
    * If a concept has no formula, set formula and formulaVariables to null
-8. "moduleSummary" — key ideas, must-know distinctions, exam traps, memory triggers (2-4 paragraphs)
-9. "formulaRecap" — compact list of all formulas: [{"name": "...", "formula": "...", "variables": "..."}]
-10. "practiceSet" — 3-5 exam-style questions: [{"question": "...", "losRef": "LOS 1"}]
+   * EVERY topic within the module must have at least one concept page
+8. "moduleSummary" — key ideas, must-know distinctions, exam traps, memory triggers (3-5 paragraphs)
+9. "formulaRecap" — compact list of ALL formulas in the module: [{"name": "...", "formula": "...", "variables": "..."}]
+10. "practiceSet" — 5-8 exam-style questions covering different topics: [{"question": "...", "losRef": "LOS 1"}]
 11. "workedSolutions" — solutions for practice set: [{"question": "...", "answer": "...", "method": "...", "interpretation": "...", "trap": "..."}]
-12. "revisionCheck" — self-check items: [{"item": "..."}]
+12. "revisionCheck" — self-check items covering every key concept: [{"item": "..."}]
 
 IMPORTANT:
-- All content must be accurate CFA curriculum material
+- All content must be accurate CFA curriculum material sourced from the curriculum document
 - Every concept page follows the same rhythm: title, meaning, explanation, formula, interpretation, worked example, exam tip, common mistake
-- Formulas use rich notation (subscripts, superscripts, Greek letters)
-- Worked examples must be complete with given, required, solution, and conclusion
-- Keep content exam-focused and concise
+- Formulas MUST use rich notation preserving exact subscripts (_), superscripts (^), and Greek letters from the curriculum
+- Worked examples must be complete with given, required, step-by-step solution, and conclusion
+- Maximize quality and completeness — this is premium study material
 
 Return JSON:
 {
@@ -285,11 +316,11 @@ Generate exactly ${count} module note(s). Return ONLY valid JSON.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: 'You are an expert CFA curriculum author. Always return valid JSON only.' },
+					{ role: 'system', content: 'You are an expert CFA curriculum author. Always return valid JSON only. Generate comprehensive, detailed content.' },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,
-				max_tokens: 16000,
+				max_tokens: 32000,
 				response_format: { type: 'json_object' }
 			});
 

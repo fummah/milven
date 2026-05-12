@@ -32,8 +32,7 @@ export function AdminModuleNotes() {
 	const [aiVolumeId, setAiVolumeId] = useState(null);
 	const [aiModuleId, setAiModuleId] = useState(null);
 	const [aiTopicId, setAiTopicId] = useState(null);
-	const [aiLevel, setAiLevel] = useState('LEVEL1');
-	const [aiCount, setAiCount] = useState(1);
+	const [aiCount, setAiCount] = useState(null);
 	const [aiYear, setAiYear] = useState(2026);
 
 	// AI Preview
@@ -116,7 +115,9 @@ export function AdminModuleNotes() {
 		if (!aiCourseId) return message.warning('Please select a course');
 		setAiGenerating(true);
 		try {
-			const payload = { courseId: aiCourseId, volumeId: aiVolumeId || undefined, moduleId: aiModuleId || undefined, topicId: aiTopicId || undefined, level: aiLevel, year: aiYear, count: aiCount };
+			const selectedCourse = courses.find(c => c.id === aiCourseId);
+			if (!selectedCourse) return message.warning('Course not found');
+			const payload = { courseId: aiCourseId, volumeId: aiVolumeId || undefined, moduleId: aiModuleId || undefined, topicId: aiTopicId || undefined, level: selectedCourse.level, year: aiYear, count: aiCount || undefined };
 			Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 			const res = await api.post('/api/module-notes/generate-ai/preview', payload);
 			const gen = res.data?.generated || null;
@@ -232,12 +233,11 @@ export function AdminModuleNotes() {
 					<div>
 						<div style={{ marginBottom: 20, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}><Typography.Text style={{ fontSize: 13, color: '#475569' }}>AI will generate complete module notes with LOS, concept pages, formulas, worked examples, practice questions, and revision checklists.</Typography.Text></div>
 						<Row gutter={[12, 16]}>
-							<Col span={12}><Typography.Text strong style={{ fontSize: 12 }}>CFA Level *</Typography.Text><Select value={aiLevel} onChange={setAiLevel} options={LEVELS} style={{ width: '100%', marginTop: 4 }} /></Col>
-							<Col span={12}><Typography.Text strong style={{ fontSize: 12 }}>Course *</Typography.Text><Select placeholder="Select course" value={aiCourseId} onChange={v => { setAiCourseId(v); setAiVolumeId(null); setAiModuleId(null); setAiTopicId(null); }} options={courses.map(c => ({ value: c.id, label: c.name }))} style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label" /></Col>
+							<Col span={24}><Typography.Text strong style={{ fontSize: 12 }}>Course *</Typography.Text><Select placeholder="Select course" value={aiCourseId} onChange={v => { setAiCourseId(v); setAiVolumeId(null); setAiModuleId(null); setAiTopicId(null); }} options={courses.map(c => ({ value: c.id, label: `${c.name} (${LEVEL_LABELS[c.level] || c.level})` }))} style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label" /></Col>
 							<Col span={12}><Typography.Text strong style={{ fontSize: 12 }}>Volume</Typography.Text><Select placeholder="All volumes" value={aiVolumeId} onChange={v => { setAiVolumeId(v); setAiModuleId(null); setAiTopicId(null); }} options={aiVolumes.map(v => ({ value: v.id, label: v.name }))} style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label" /></Col>
 							<Col span={12}><Typography.Text strong style={{ fontSize: 12 }}>Learning Module</Typography.Text><Select placeholder="All modules" value={aiModuleId} onChange={v => { setAiModuleId(v); setAiTopicId(null); }} options={aiModules.map(m => ({ value: m.id, label: m.name }))} style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label" /></Col>
 							<Col span={12}><Typography.Text strong style={{ fontSize: 12 }}>Topic</Typography.Text><Select placeholder="All topics" value={aiTopicId} onChange={setAiTopicId} options={aiTopics.map(t => ({ value: t.id, label: t.name }))} style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label" /></Col>
-							<Col span={6}><Typography.Text strong style={{ fontSize: 12 }}>Count</Typography.Text><InputNumber min={1} max={3} value={aiCount} onChange={setAiCount} style={{ width: '100%', marginTop: 4 }} /></Col>
+							<Col span={6}><Typography.Text strong style={{ fontSize: 12 }}>Count</Typography.Text><InputNumber min={1} max={20} value={aiCount} onChange={setAiCount} placeholder="All" style={{ width: '100%', marginTop: 4 }} /></Col>
 							<Col span={6}><Typography.Text strong style={{ fontSize: 12 }}>Year</Typography.Text><InputNumber min={2020} max={2040} value={aiYear} onChange={setAiYear} style={{ width: '100%', marginTop: 4 }} /></Col>
 						</Row>
 					</div>
