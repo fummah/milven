@@ -333,23 +333,39 @@ Return a JSON object:
 Generate exactly ${count} summary sheet(s). Return ONLY valid JSON.`;
 
 			const openai = new OpenAI({ apiKey });
-			const completion = await openai.chat.completions.create({
-				model: 'gpt-4o-mini',
-				messages: [
-					{ role: 'system', content: 'You are an expert CFA curriculum author. Always return valid JSON only.' },
-					{ role: 'user', content: prompt }
-				],
-				temperature: 0.7,
-				response_format: { type: 'json_object' }
-			});
 
-			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+			// gpt-4o-mini supports max 16384 completion tokens
+			// Generate one sheet at a time to ensure 2-3 pages of content per sheet
 			let items = [];
-			try {
-				const parsed = JSON.parse(raw);
-				items = Array.isArray(parsed.sheets) ? parsed.sheets : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : []));
-			} catch {
-				return res.status(502).json({ error: 'AI returned invalid JSON' });
+			const sheetsToGenerate = Math.min(count, 20);
+
+			for (let i = 0; i < sheetsToGenerate; i++) {
+				const singlePrompt = sheetsToGenerate === 1 ? prompt : prompt.replace(
+					`Generate exactly ${count} summary sheet(s).`,
+					`Generate exactly 1 summary sheet (sheet ${i + 1} of ${sheetsToGenerate} — cover a DIFFERENT module/topic than previous ones).`
+				);
+
+				const completion = await openai.chat.completions.create({
+					model: 'gpt-4o-mini',
+					messages: [
+						{ role: 'system', content: 'You are an expert CFA curriculum author. Always return valid JSON only. Generate comprehensive content equivalent to 2-3 printed pages per summary sheet.' },
+						{ role: 'user', content: sheetsToGenerate === 1 ? prompt : singlePrompt }
+					],
+					temperature: 0.7,
+					max_tokens: 16384,
+					response_format: { type: 'json_object' }
+				});
+
+				const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+				try {
+					const parsed = JSON.parse(raw);
+					const sheetItems = Array.isArray(parsed.sheets) ? parsed.sheets : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : [parsed]));
+					items.push(...sheetItems);
+				} catch {
+					if (items.length === 0) return res.status(502).json({ error: 'AI returned invalid JSON' });
+				}
+
+				if (sheetsToGenerate === 1) break;
 			}
 
 			if (!items.length) return res.status(502).json({ error: 'AI returned no summary sheets' });

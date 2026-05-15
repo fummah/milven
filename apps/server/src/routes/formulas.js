@@ -349,17 +349,21 @@ ${hierarchyContext}
 Year: ${year}
 ${curriculumSection}
 IMPORTANT RULES:
-${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You MUST extract formulas EXACTLY as they appear in the document — preserve all notation, subscripts, superscripts, Greek letters, and variable names. Do NOT rewrite or simplify formulas from the document.${isComprehensive ? ' Extract EVERY formula from every page of the provided document for this module.' : ''}
+${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You MUST extract formulas EXACTLY as they appear in the document — preserve all notation, subscripts, superscripts, Greek letters, and variable names PRECISELY as written. Do NOT rewrite, simplify, or paraphrase formulas from the document.${isComprehensive ? ' Extract EVERY formula from every page of the provided document for this module.' : ''}
+- Match the EXACT subscript and superscript patterns from the curriculum. For example, if the curriculum writes "R_s" do NOT change it to "R_stock" or "r_s".
 - The "losTag" MUST be the EXACT Learning Outcome Statement from the document (starts with verbs like "describe", "explain", "calculate").
 - Page references in the document appear as [PAGE N] markers — use these for accurate "losTag" references.
 ` : ''}- Each formula must be a REAL, commonly tested formula for this topic area in the CFA curriculum
-- The "formula" field must be the exact mathematical equation using RICH NOTATION:
-  * Use _ for subscripts: P_0, r_d, w_{equity}, CF_t
-  * Use ^ for superscripts/exponents: (1+r)^n, x^2, e^{-rT}
+- The "formula" field must be the EXACT mathematical equation using RICH NOTATION that preserves curriculum formatting:
+  * Use _ for subscripts: P_0, r_d, w_{equity}, CF_t, R_{nominal}, HPR_{t}
+  * Use ^ for superscripts/exponents: (1+r)^n, x^2, e^{-rT}, (1+g)^{T}
   * Use (numerator) / (denominator) for fractions: (P_1 - P_0 + D_1) / (P_0)
-  * Use Greek letter names: sigma, beta, alpha, mu, rho, delta, lambda, pi, theta, epsilon, tau
+  * Use Greek letter names spelled out: sigma, beta, alpha, mu, rho, delta, lambda, pi, theta, epsilon, tau
   * Use sqrt(x) for square roots
   * Use * for multiplication where explicit multiply sign is needed
+  * Use sum_{i=1}^{n} for summation notation
+  * PRESERVE compound subscripts/superscripts with curly braces: R_{geometric}, sigma^{2}_{portfolio}
+- NEVER flatten subscripts or superscripts into plain text — if the curriculum has E(R_p) write it as E(R_p), not "Expected return of portfolio"
 - "variables" must define EVERY symbol in the formula clearly
 - "interpretation" must explain what the formula measures or means in plain English
 - "whenToUse" must describe the specific exam scenario where this formula applies

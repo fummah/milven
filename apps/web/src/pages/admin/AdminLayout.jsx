@@ -160,32 +160,42 @@ export default function AdminLayout() {
   const selected = (() => {
     const path = location.pathname.replace(/^\/admin\/?/, '');
     if (!path) return ['dashboard'];
-    const parts = path.split('/');
-    const key = ['admin', ...parts].join('-').replace(/^admin-/, '');
-    const flatKeys = [
-      'dashboard',
-      'users-list',
-      'roles',
-      'levels',
-      'courses-list',
-      'volumes',
-      'topics',
-      'questions',
-      'materials',
-      'formulas',
-      'summary-sheets',
-      'module-notes',
-      'exams',
-      'exams-list',
-      'exam-builder',
-      'reports',
-      'reports-overview',
-      'invoices',
-      'subscriptions',
-      'settings'
-    ];
-    const match = flatKeys.find(k => key.includes(k.split('-')[0])) ?? 'dashboard';
-    return [match];
+
+    // Map URL path segments to menu item keys
+    const pathToKey = {
+      'users': 'users-list',
+      'students': 'students',
+      'roles': 'roles',
+      'courses': 'courses-list',
+      'volumes': 'volumes',
+      'topics': 'topics',
+      'questions': 'questions',
+      'materials': 'materials',
+      'documents': 'documents',
+      'formulas': 'formulas',
+      'summary-sheets': 'summary-sheets',
+      'module-notes': 'module-notes',
+      'levels': 'levels',
+      'exams': 'exams-list',
+      'exams/builder': 'exam-builder',
+      'mock-exams': 'mock-exams',
+      'reports': 'reports-overview',
+      'products': 'products',
+      'purchases': 'purchases',
+      'invoices': 'invoices',
+      'subscriptions': 'subscriptions',
+      'taxes': 'taxes',
+      'settings': 'settings',
+    };
+
+    // Try longest match first (e.g. 'exams/builder' before 'exams')
+    const sortedPaths = Object.keys(pathToKey).sort((a, b) => b.length - a.length);
+    for (const p of sortedPaths) {
+      if (path === p || path.startsWith(p + '/')) {
+        return [pathToKey[p]];
+      }
+    }
+    return ['dashboard'];
   })();
 
   // Keep parent submenu open when navigating to a child (e.g. Users stays open when clicking Roles)

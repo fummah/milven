@@ -313,24 +313,40 @@ Return JSON:
 Generate exactly ${count} module note(s). Return ONLY valid JSON.`;
 
 			const openai = new OpenAI({ apiKey });
-			const completion = await openai.chat.completions.create({
-				model: 'gpt-4o-mini',
-				messages: [
-					{ role: 'system', content: 'You are an expert CFA curriculum author. Always return valid JSON only. Generate comprehensive, detailed content.' },
-					{ role: 'user', content: prompt }
-				],
-				temperature: 0.7,
-				max_tokens: 32000,
-				response_format: { type: 'json_object' }
-			});
 
-			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+			// gpt-4o-mini supports max 16384 completion tokens
+			// For multiple notes, generate one at a time for best quality
 			let items = [];
-			try {
-				const parsed = JSON.parse(raw);
-				items = Array.isArray(parsed.notes) ? parsed.notes : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : []));
-			} catch {
-				return res.status(502).json({ error: 'AI returned invalid JSON' });
+			const notesToGenerate = Math.min(count, 20);
+
+			for (let i = 0; i < notesToGenerate; i++) {
+				const singlePrompt = notesToGenerate === 1 ? prompt : prompt.replace(
+					`Generate exactly ${count} module note(s).`,
+					`Generate exactly 1 module note (note ${i + 1} of ${notesToGenerate} — cover a DIFFERENT module/topic than previous ones).`
+				);
+
+				const completion = await openai.chat.completions.create({
+					model: 'gpt-4o-mini',
+					messages: [
+						{ role: 'system', content: 'You are an expert CFA curriculum author. Always return valid JSON only. Generate comprehensive, detailed content.' },
+						{ role: 'user', content: notesToGenerate === 1 ? prompt : singlePrompt }
+					],
+					temperature: 0.7,
+					max_tokens: 16384,
+					response_format: { type: 'json_object' }
+				});
+
+				const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+				try {
+					const parsed = JSON.parse(raw);
+					const noteItems = Array.isArray(parsed.notes) ? parsed.notes : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : [parsed]));
+					items.push(...noteItems);
+				} catch {
+					if (items.length === 0) return res.status(502).json({ error: 'AI returned invalid JSON' });
+				}
+
+				// If generating just 1, no need to loop
+				if (notesToGenerate === 1) break;
 			}
 			if (!items.length) return res.status(502).json({ error: 'AI returned no module notes' });
 
