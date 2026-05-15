@@ -249,87 +249,74 @@ export function moduleNotesRouter(prisma) {
 
 			const topicContext = topicNames.length > 0 ? `\nTopics to cover: ${topicNames.join(', ')}` : '';
 
-			const prompt = `You are a senior CFA curriculum expert at Milven Finance School. Generate ${count} complete CFA Learning Module Note(s) in JSON format following the Milven Design Guide.
+			const prompt = `You are a senior CFA curriculum expert at Milven Finance School. Generate 1 complete CFA Learning Module Note in JSON format.
 
-Each module note is a premium, exam-focused learning document equivalent to 10-15 printed pages per learning module. It must provide COMPREHENSIVE coverage of ALL topics within the module, including every formula, key concept, definition, and worked example.
+This module note is a PREMIUM, LONG-FORM, exam-focused learning document. It MUST be extremely detailed and comprehensive — equivalent to 10-15 printed pages. Do NOT summarize or abbreviate. Write FULL explanations for every concept.
 
 ${hierarchyContext}
 Year: ${year}${topicContext}
 ${curriculumSection}
-CRITICAL REQUIREMENTS:
-- Each module note MUST be equivalent to 10-15 printed pages of content
-- Cover ALL topics within the learning module — do not skip or summarize away any topic
-- Include EVERY formula that appears in the module with correct superscript/subscript notation
-- Ensure all key concepts, definitions, and relationships are thoroughly explained
-- Use the uploaded curriculum document as the PRIMARY source for accuracy
+LENGTH REQUIREMENTS (CRITICAL — the note MUST be long and detailed):
+- "overview": Write 5-8 sentences covering why this module matters, what the candidate will learn, how it connects to other topics, and what exam success looks like
+- "losStatements": Include ALL Learning Outcome Statements (typically 5-12 per module)
+- "concepts": Generate 10-20 concept pages. EVERY topic and sub-topic within the module MUST have its own concept page. This is the main body of the note — make each concept page LONG:
+  * "meaning": 3-5 sentences plain-English explanation
+  * "explanation": 8-15 sentences covering the full theory, relationships, edge cases, and exam relevance. Do NOT write short 1-2 sentence explanations.
+  * "workedExample": FULL numerical example with detailed step-by-step solution (at least 5 steps)
+  * "examTip": 2-3 sentences of specific exam advice
+  * "commonMistake": 2-3 sentences describing exactly what students get wrong and why
+- "moduleSummary": Write 5-8 paragraphs covering key ideas, must-know distinctions, exam traps, memory triggers, and how topics interconnect
+- "formulaRecap": List EVERY formula from the module (typically 8-20 formulas)
+- "practiceSet": Generate 8-12 exam-style questions covering ALL topics in the module
+- "workedSolutions": Detailed solutions for EVERY practice question with full method, interpretation, and trap explanation
+- "revisionCheck": 10-15 self-check items covering every key concept
 
-For each module note, generate ALL sections:
+FORMULA NOTATION (use rich notation with subscripts and superscripts):
+- Use _ for subscripts: P_0, r_d, w_{equity}, CF_t
+- Use ^ for superscripts: (1+r)^n, e^{-rT}
+- Use Greek letter names: sigma, beta, alpha, mu, rho, delta
+- Use sum_{i=1}^{n} for summation
+- PRESERVE exact notation from the curriculum document
 
-1. "title" — Learning Module title
-2. "studyTime" — estimated study time (e.g. "2.5 hours")
-3. "difficulty" — "Foundational", "Intermediate", or "Advanced"
-4. "calculatorUse" — "Minimal", "Moderate", or "Heavy"
-5. "overview" — 2-4 sentences on why this module matters and what success looks like
-6. "losStatements" — array of ALL Learning Outcome Statements for this module:
-   [{"ref": "LOS 1", "statement": "...", "commandWord": "Calculate / Interpret"}]
-7. "concepts" — array of concept pages (6-12 per module for comprehensive coverage):
-   [{"title": "...", "meaning": "plain-English meaning", "explanation": "detailed core explanation covering all nuances", "formula": "exact equation with rich notation", "formulaVariables": "variable definitions", "interpretation": "link to valuation/performance", "workedExample": {"given": "...", "required": "...", "solution": "step-by-step solution", "conclusion": "..."}, "examTip": "...", "commonMistake": "..."}]
-   * Use _ for subscripts, ^ for superscripts, Greek letter names
-   * If a concept has no formula, set formula and formulaVariables to null
-   * EVERY topic within the module must have at least one concept page
-8. "moduleSummary" — key ideas, must-know distinctions, exam traps, memory triggers (3-5 paragraphs)
-9. "formulaRecap" — compact list of ALL formulas in the module: [{"name": "...", "formula": "...", "variables": "..."}]
-10. "practiceSet" — 5-8 exam-style questions covering different topics: [{"question": "...", "losRef": "LOS 1"}]
-11. "workedSolutions" — solutions for practice set: [{"question": "...", "answer": "...", "method": "...", "interpretation": "...", "trap": "..."}]
-12. "revisionCheck" — self-check items covering every key concept: [{"item": "..."}]
-
-IMPORTANT:
-- All content must be accurate CFA curriculum material sourced from the curriculum document
-- Every concept page follows the same rhythm: title, meaning, explanation, formula, interpretation, worked example, exam tip, common mistake
-- Formulas MUST use rich notation preserving exact subscripts (_), superscripts (^), and Greek letters from the curriculum
-- Worked examples must be complete with given, required, step-by-step solution, and conclusion
-- Maximize quality and completeness — this is premium study material
+For each concept page, use this structure:
+{"title": "...", "meaning": "LONG plain-English meaning (3-5 sentences)", "explanation": "VERY DETAILED core explanation (8-15 sentences minimum)", "formula": "exact equation with rich notation or null", "formulaVariables": "define EVERY variable or null", "interpretation": "what it measures and why it matters (3-5 sentences)", "workedExample": {"given": "detailed givens", "required": "what to find", "solution": "FULL step-by-step solution with calculations", "conclusion": "interpretation of result"}, "examTip": "2-3 sentences", "commonMistake": "2-3 sentences"}
 
 Return JSON:
 {
   "notes": [
     {
       "title": "string",
-      "studyTime": "string",
-      "difficulty": "string",
-      "calculatorUse": "string",
-      "overview": "string",
-      "losStatements": [...],
-      "concepts": [...],
-      "moduleSummary": "string",
-      "formulaRecap": [...],
-      "practiceSet": [...],
-      "workedSolutions": [...],
-      "revisionCheck": [...]
+      "studyTime": "string (e.g. 2.5 hours)",
+      "difficulty": "Foundational|Intermediate|Advanced",
+      "calculatorUse": "Minimal|Moderate|Heavy",
+      "overview": "LONG string (5-8 sentences)",
+      "losStatements": [{"ref": "LOS 1", "statement": "...", "commandWord": "..."}],
+      "concepts": [{...concept pages, 10-20 of them...}],
+      "moduleSummary": "LONG string (5-8 paragraphs)",
+      "formulaRecap": [{"name": "...", "formula": "...", "variables": "..."}],
+      "practiceSet": [{"question": "...", "losRef": "LOS 1"}, ...8-12 questions],
+      "workedSolutions": [{"question": "...", "answer": "...", "method": "DETAILED", "interpretation": "...", "trap": "..."}],
+      "revisionCheck": [{"item": "..."}, ...10-15 items]
     }
   ]
 }
 
-Generate exactly ${count} module note(s). Return ONLY valid JSON.`;
+IMPORTANT: MAXIMIZE the length and detail of your response. Use ALL available tokens. Every field should be as detailed as possible. This is premium study material that students pay for — short or superficial content is unacceptable.
+
+Generate exactly 1 module note. Return ONLY valid JSON.`;
 
 			const openai = new OpenAI({ apiKey });
 
-			// gpt-4o-mini supports max 16384 completion tokens
-			// For multiple notes, generate one at a time for best quality
+			// Generate one note at a time with max tokens for longest possible output
 			let items = [];
 			const notesToGenerate = Math.min(count, 20);
 
 			for (let i = 0; i < notesToGenerate; i++) {
-				const singlePrompt = notesToGenerate === 1 ? prompt : prompt.replace(
-					`Generate exactly ${count} module note(s).`,
-					`Generate exactly 1 module note (note ${i + 1} of ${notesToGenerate} — cover a DIFFERENT module/topic than previous ones).`
-				);
-
 				const completion = await openai.chat.completions.create({
 					model: 'gpt-4o-mini',
 					messages: [
-						{ role: 'system', content: 'You are an expert CFA curriculum author. Always return valid JSON only. Generate comprehensive, detailed content.' },
-						{ role: 'user', content: notesToGenerate === 1 ? prompt : singlePrompt }
+						{ role: 'system', content: 'You are an expert CFA curriculum author. Return valid JSON only. CRITICAL: Generate the LONGEST, most detailed response possible. Use ALL available tokens. Every text field must be multiple sentences. The concepts array must have 10-20 items. Do NOT abbreviate or summarize — write FULL detailed content for every field.' },
+						{ role: 'user', content: prompt }
 					],
 					temperature: 0.7,
 					max_tokens: 16384,
@@ -344,9 +331,6 @@ Generate exactly ${count} module note(s). Return ONLY valid JSON.`;
 				} catch {
 					if (items.length === 0) return res.status(502).json({ error: 'AI returned invalid JSON' });
 				}
-
-				// If generating just 1, no need to loop
-				if (notesToGenerate === 1) break;
 			}
 			if (!items.length) return res.status(502).json({ error: 'AI returned no module notes' });
 

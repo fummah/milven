@@ -270,67 +270,49 @@ export function summarySheetsRouter(prisma) {
 				? `\n\nCURRICULUM REFERENCE MATERIAL (use this as the primary source — reference exact LOS, formulas, and page numbers from the document):\n---\n${curriculumExcerpt}\n---\n`
 				: '';
 
-			const prompt = `You are a senior CFA curriculum expert at Milven Finance School. Generate ${count} CFA Summary Sheet(s) in JSON format following the Milven Summary Sheet Master standard.
+			const prompt = `You are a senior CFA curriculum expert at Milven Finance School. Generate 1 CFA Summary Sheet in JSON format.
 
-Each summary sheet is a SHORT-FORM, high-impact revision document equivalent to 2-3 printed pages per learning module. It compresses the entire learning module into a scannable, memorable format covering all key issues. It should work as a printable handout, quick digital revision sheet, and visual companion.
-
-The ENTIRE learning module must be included in the summary — every key topic, formula, and concept should be represented, but in concise summary form.
+This summary sheet MUST be equivalent to 2-3 FULL printed pages of content. It is a high-impact revision document that covers the ENTIRE learning module in detail. Every topic, formula, and key concept must be included. Do NOT produce a short summary — this is premium study material.
 
 ${hierarchyContext}
 Year: ${year}
 ${curriculumSection}
-For each summary sheet, generate ALL of these sections:
-
-1. "title" — descriptive title for the learning module/topic
-2. "snapshot" — what this sheet covers in 2-4 lines (what it helps you remember, why it matters)
-3. "useCase" — primary use cases (e.g. "final review, tutor recap, formula refresh")
-4. "coreDefinitions" — array of 8-15 key definitions in exam language: [{"term": "...", "definition": "..."}]
-5. "formulas" — array of ALL essential formulas from the module: [{"formula": "...", "variables": "...", "whenToUse": "..."}]
-   * Use rich notation: subscripts (_), superscripts (^), Greek letters (sigma, beta, etc.)
-   * Include EVERY formula from the curriculum for this module
-6. "distinctions" — array comparing look-alike concepts: [{"left": "...", "right": "...", "difference": "..."}]
-   * e.g. money-weighted vs time-weighted return; Type I vs Type II error
-7. "diagrams" — array of text-based visual aids or conceptual diagrams: [{"title": "...", "description": "text description of a diagram, flowchart, or visual relationship"}]
-   * e.g. flowcharts, comparison tables, process flows, relationship maps
-8. "examTraps" — array of common exam traps: [{"trap": "..."}]
-   * What candidates confuse, omit, or misread
-9. "memoryHooks" — array of short memory cues: [{"hook": "..."}]
-   * e.g. "manager skill = TWRR" or "spot + rate differential → forward"
-10. "quickDrills" — array of 3-6 fast recall/calculation questions: [{"question": "..."}]
-11. "revisionCheck" — array of self-check items: [{"item": "..."}]
-    * e.g. "I know the core formulas", "I can explain each metric"
-
-IMPORTANT:
-- This is a 2-3 page CONCISE summary — focus on key issues, not full explanations
-- Every section must be populated with accurate, exam-relevant CFA content from the curriculum
-- The entire learning module must be covered — all topics represented
-- Definitions should be precise and exam-language ready
-- Formulas must be real CFA curriculum formulas with correct notation from the curriculum document
-- Include visual/diagram descriptions where they aid understanding
-- Distinctions should cover commonly confused concepts
-- Traps should reflect actual exam mistakes
-- Keep everything concise — this is for speed and retention
+MINIMUM LENGTH REQUIREMENTS (generate AT LEAST these amounts — more is better):
+- "snapshot": 4-6 sentences describing what the sheet covers, why it matters, and how to use it
+- "useCase": 2-3 sentences on when to use this sheet
+- "coreDefinitions": 12-20 key definitions. Each definition must be 2-3 sentences in exam language. Cover EVERY important term in the module.
+- "formulas": 8-15 formulas. Include EVERY formula from the curriculum for this module. Each must have full variables explanation and when-to-use context (2-3 sentences each).
+  * Use rich notation: _ for subscripts (P_0, CF_t), ^ for superscripts ((1+r)^n), Greek letters (sigma, beta, alpha)
+  * PRESERVE exact notation from the curriculum document
+- "distinctions": 5-8 comparisons of look-alike concepts. Each "difference" field must be 3-5 sentences explaining the distinction clearly.
+- "diagrams": 3-5 text-based visual aids (flowcharts, comparison tables, process flows). Each "description" must be detailed (5-10 sentences describing the visual layout and relationships).
+- "examTraps": 6-10 common exam traps. Each "trap" must be 2-3 sentences explaining what candidates confuse and how to avoid it.
+- "memoryHooks": 8-12 memory cues. Each hook should be a memorable phrase or mnemonic.
+- "quickDrills": 6-10 fast recall/calculation questions. Each question should be specific and exam-relevant.
+- "revisionCheck": 10-15 self-check items covering every key concept in the module.
 
 Return a JSON object:
 {
   "sheets": [
     {
       "title": "string",
-      "snapshot": "string",
-      "useCase": "string",
-      "coreDefinitions": [{"term": "string", "definition": "string"}],
-      "formulas": [{"formula": "string", "variables": "string", "whenToUse": "string"}],
-      "distinctions": [{"left": "string", "right": "string", "difference": "string"}],
-      "diagrams": [{"title": "string", "description": "string"}],
-      "examTraps": [{"trap": "string"}],
-      "memoryHooks": [{"hook": "string"}],
-      "quickDrills": [{"question": "string"}],
-      "revisionCheck": [{"item": "string"}]
+      "snapshot": "LONG string (4-6 sentences)",
+      "useCase": "string (2-3 sentences)",
+      "coreDefinitions": [{"term": "string", "definition": "DETAILED string (2-3 sentences)"}, ...12-20 items],
+      "formulas": [{"formula": "rich notation string", "variables": "define ALL variables", "whenToUse": "2-3 sentences"}, ...8-15 items],
+      "distinctions": [{"left": "string", "right": "string", "difference": "DETAILED 3-5 sentences"}, ...5-8 items],
+      "diagrams": [{"title": "string", "description": "DETAILED 5-10 sentences"}, ...3-5 items],
+      "examTraps": [{"trap": "2-3 sentences"}, ...6-10 items],
+      "memoryHooks": [{"hook": "string"}, ...8-12 items],
+      "quickDrills": [{"question": "string"}, ...6-10 items],
+      "revisionCheck": [{"item": "string"}, ...10-15 items]
     }
   ]
 }
 
-Generate exactly ${count} summary sheet(s). Return ONLY valid JSON.`;
+IMPORTANT: MAXIMIZE the length and detail of your response. Use ALL available tokens. This is premium study material — short or thin content is unacceptable. Every section must be FULLY populated with the minimum number of items listed above.
+
+Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
 
 			const openai = new OpenAI({ apiKey });
 
@@ -340,16 +322,11 @@ Generate exactly ${count} summary sheet(s). Return ONLY valid JSON.`;
 			const sheetsToGenerate = Math.min(count, 20);
 
 			for (let i = 0; i < sheetsToGenerate; i++) {
-				const singlePrompt = sheetsToGenerate === 1 ? prompt : prompt.replace(
-					`Generate exactly ${count} summary sheet(s).`,
-					`Generate exactly 1 summary sheet (sheet ${i + 1} of ${sheetsToGenerate} — cover a DIFFERENT module/topic than previous ones).`
-				);
-
 				const completion = await openai.chat.completions.create({
 					model: 'gpt-4o-mini',
 					messages: [
-						{ role: 'system', content: 'You are an expert CFA curriculum author. Always return valid JSON only. Generate comprehensive content equivalent to 2-3 printed pages per summary sheet.' },
-						{ role: 'user', content: sheetsToGenerate === 1 ? prompt : singlePrompt }
+						{ role: 'system', content: 'You are an expert CFA curriculum author. Return valid JSON only. CRITICAL: Generate the LONGEST, most detailed response possible. Use ALL available tokens. Every array must meet the MINIMUM item counts specified. Every text field must be multiple sentences. Do NOT abbreviate — write FULL detailed content.' },
+						{ role: 'user', content: prompt }
 					],
 					temperature: 0.7,
 					max_tokens: 16384,
@@ -364,8 +341,6 @@ Generate exactly ${count} summary sheet(s). Return ONLY valid JSON.`;
 				} catch {
 					if (items.length === 0) return res.status(502).json({ error: 'AI returned invalid JSON' });
 				}
-
-				if (sheetsToGenerate === 1) break;
 			}
 
 			if (!items.length) return res.status(502).json({ error: 'AI returned no summary sheets' });

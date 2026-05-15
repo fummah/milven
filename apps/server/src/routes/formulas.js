@@ -310,9 +310,14 @@ export function formulasRouter(prisma) {
 				topicNames = resolvedTopics.map(t => t.name);
 			}
 
-			// Auto-detect count if not provided
+			// Auto-detect count if not provided — maximize formulas for the selected scope
 			if (!count) {
-				count = resolvedTopics.length > 0 ? Math.min(50, Math.max(5, resolvedTopics.length * 3)) : 10;
+				if (resolvedTopics.length > 0) {
+					// Generate ~5 formulas per topic to be comprehensive
+					count = Math.min(100, resolvedTopics.length * 5);
+				} else {
+					count = 30; // default to a generous number when no topics resolved
+				}
 			}
 
 			let curriculumExcerpt = '';
@@ -373,6 +378,7 @@ ${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You 
 - "highYield" should be true if this formula is very frequently tested on CFA exams
 - Do NOT duplicate formulas — each must be unique and cover a different concept within the topic area
 - Order formulas logically (foundational concepts first, then build complexity)
+- Use ONLY the latest ${year} CFA curriculum formulas. Do NOT use outdated or deprecated formula versions. If the curriculum document is provided, match its exact formulations.
 
 Return a JSON object:
 {
@@ -399,11 +405,11 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: 'You are an expert CFA curriculum author. Always return valid JSON only.' },
+					{ role: 'system', content: 'You are an expert CFA curriculum author. Return valid JSON only. CRITICAL: Every formula MUST use proper subscript (_) and superscript (^) notation. Use curly braces for multi-character sub/superscripts like R_{equity}, sigma^{2}. NEVER write formulas in plain text without notation. Use the LATEST CFA curriculum formulas only.' },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,
-				max_tokens: isComprehensive ? 16000 : 4096,
+				max_tokens: 16384,
 				response_format: { type: 'json_object' }
 			});
 
