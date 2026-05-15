@@ -311,12 +311,19 @@ export function formulasRouter(prisma) {
 			}
 
 			// Auto-detect count if not provided — maximize formulas for the selected scope
+			let autoDetected = false;
 			if (!count) {
-				if (resolvedTopics.length > 0) {
-					// Generate ~5 formulas per topic to be comprehensive
-					count = Math.min(100, resolvedTopics.length * 5);
+				autoDetected = true;
+				if (topicId) {
+					// Single topic selected — generate ALL formulas for that topic
+					count = 25;
+				} else if (moduleId) {
+					// Module selected — generate all formulas across its topics
+					count = Math.min(100, Math.max(30, resolvedTopics.length * 8));
+				} else if (resolvedTopics.length > 0) {
+					count = Math.min(100, Math.max(30, resolvedTopics.length * 5));
 				} else {
-					count = 30; // default to a generous number when no topics resolved
+					count = 40;
 				}
 			}
 
@@ -345,7 +352,7 @@ export function formulasRouter(prisma) {
 				? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — formulas MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
 				: '';
 
-			const isComprehensive = count >= 20;
+			const isComprehensive = autoDetected || count >= 20;
 			const prompt = `You are a senior CFA curriculum expert and formula book author at Milven Finance School. Generate ${isComprehensive ? 'ALL' : count} professional, exam-quality formula cards in JSON format.
 
 Each formula card is used in a premium CFA Formula Book. Every field must be populated with accurate, useful content. Draw from actual CFA curriculum material, financial theory, and exam patterns.
@@ -359,16 +366,19 @@ ${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You 
 - The "losTag" MUST be the EXACT Learning Outcome Statement from the document (starts with verbs like "describe", "explain", "calculate").
 - Page references in the document appear as [PAGE N] markers — use these for accurate "losTag" references.
 ` : ''}- Each formula must be a REAL, commonly tested formula for this topic area in the CFA curriculum
-- The "formula" field must be the EXACT mathematical equation using RICH NOTATION that preserves curriculum formatting:
-  * Use _ for subscripts: P_0, r_d, w_{equity}, CF_t, R_{nominal}, HPR_{t}
-  * Use ^ for superscripts/exponents: (1+r)^n, x^2, e^{-rT}, (1+g)^{T}
-  * Use (numerator) / (denominator) for fractions: (P_1 - P_0 + D_1) / (P_0)
-  * Use Greek letter names spelled out: sigma, beta, alpha, mu, rho, delta, lambda, pi, theta, epsilon, tau
-  * Use sqrt(x) for square roots
-  * Use * for multiplication where explicit multiply sign is needed
-  * Use sum_{i=1}^{n} for summation notation
-  * PRESERVE compound subscripts/superscripts with curly braces: R_{geometric}, sigma^{2}_{portfolio}
-- NEVER flatten subscripts or superscripts into plain text — if the curriculum has E(R_p) write it as E(R_p), not "Expected return of portfolio"
+- The "formula" field must be the EXACT mathematical equation using RICH NOTATION identical to how it appears in the CFA curriculum textbook:
+  * Subscripts with _: P_0, r_d, CF_t, R_{nominal}, HPR_{t}, w_{equity}, r_{f}, r_{ce}, BV_t, EPS_{t+1}
+  * Superscripts with ^: (1+r)^n, (1+g)^{T}, e^{-rT}, sigma^{2}, (1+r)^{-n}
+  * Fractions: (P_1 - P_0 + D_1) / P_0, (FV - PV) / PV, D_1 / (r - g)
+  * Greek letters spelled out: sigma, sigma^{2}, beta, alpha, mu, rho, delta, lambda, pi, theta, epsilon, tau, gamma, phi
+  * Summation: sum_{t=1}^{T} CF_t / (1+r)^t, sum_{i=1}^{n} w_i * R_i
+  * Products and roots: sqrt(sum_{i=1}^{n} (R_i - R_bar)^{2} / (n-1)), (FV/PV)^{1/n} - 1
+  * Conditional/piecewise: max(0, S_T - X), min(a, b)
+  * Integrals/continuous: e^{-r*T} * N(d_1), ln(S/X)
+  * ALWAYS use curly braces for multi-character subscripts/superscripts: R_{equity} not R_equity, sigma^{2}_{p} not sigma^2_p
+  * Parentheses for clarity: (1 + R_{nominal}) = (1 + R_{real}) * (1 + inflation)
+- NEVER flatten subscripts or superscripts into plain text — E(R_p) not "Expected return of portfolio", V_0 not "Value at time zero"
+- NEVER omit subscripts/superscripts that exist in the curriculum — if the textbook has R_{WACC}, do NOT write RWACC or R_wacc
 - "variables" must define EVERY symbol in the formula clearly
 - "interpretation" must explain what the formula measures or means in plain English
 - "whenToUse" must describe the specific exam scenario where this formula applies
