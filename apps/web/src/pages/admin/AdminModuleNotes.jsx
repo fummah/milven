@@ -119,7 +119,7 @@ export function AdminModuleNotes() {
 			if (!selectedCourse) return message.warning('Course not found');
 			const payload = { courseId: aiCourseId, volumeId: aiVolumeId || undefined, moduleId: aiModuleId || undefined, topicId: aiTopicId || undefined, level: selectedCourse.level, year: aiYear, count: aiCount || undefined };
 			Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
-			const res = await api.post('/api/module-notes/generate-ai/preview', payload);
+			const res = await api.post('/api/module-notes/generate-ai/preview', payload, { timeout: 180_000 });
 			const gen = res.data?.generated || null;
 			setAiPreview(gen); setAiPreviewMeta(res.data?.meta || payload);
 			setAiSelectedIndices(Array.from({ length: (gen?.items || []).length }, (_, i) => i));

@@ -305,32 +305,27 @@ IMPORTANT: MAXIMIZE the length and detail of your response. Use ALL available to
 
 Generate exactly 1 module note. Return ONLY valid JSON.`;
 
-			const openai = new OpenAI({ apiKey });
+			const openai = new OpenAI({ apiKey, timeout: 120_000 });
 
-			// Generate one note at a time with max tokens for longest possible output
+			// Generate exactly 1 note per preview request to avoid timeout
+			const completion = await openai.chat.completions.create({
+				model: 'gpt-4o-mini',
+				messages: [
+					{ role: 'system', content: 'You are an expert CFA curriculum author. Return valid JSON only. Generate detailed, comprehensive content. Every text field must be multiple sentences. The concepts array must have 8-15 items. Write full detailed content for every field.' },
+					{ role: 'user', content: prompt }
+				],
+				temperature: 0.7,
+				max_tokens: 16384,
+				response_format: { type: 'json_object' }
+			});
+
+			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
 			let items = [];
-			const notesToGenerate = Math.min(count, 20);
-
-			for (let i = 0; i < notesToGenerate; i++) {
-				const completion = await openai.chat.completions.create({
-					model: 'gpt-4o-mini',
-					messages: [
-						{ role: 'system', content: 'You are an expert CFA curriculum author. Return valid JSON only. CRITICAL: Generate the LONGEST, most detailed response possible. Use ALL available tokens. Every text field must be multiple sentences. The concepts array must have 10-20 items. Do NOT abbreviate or summarize — write FULL detailed content for every field.' },
-						{ role: 'user', content: prompt }
-					],
-					temperature: 0.7,
-					max_tokens: 16384,
-					response_format: { type: 'json_object' }
-				});
-
-				const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
-				try {
-					const parsed = JSON.parse(raw);
-					const noteItems = Array.isArray(parsed.notes) ? parsed.notes : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : [parsed]));
-					items.push(...noteItems);
-				} catch {
-					if (items.length === 0) return res.status(502).json({ error: 'AI returned invalid JSON' });
-				}
+			try {
+				const parsed = JSON.parse(raw);
+				items = Array.isArray(parsed.notes) ? parsed.notes : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : [parsed]));
+			} catch {
+				return res.status(502).json({ error: 'AI returned invalid JSON' });
 			}
 			if (!items.length) return res.status(502).json({ error: 'AI returned no module notes' });
 
