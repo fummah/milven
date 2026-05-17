@@ -119,12 +119,51 @@ export function AdminModuleNotes() {
 			if (!selectedCourse) return message.warning('Course not found');
 			const payload = { courseId: aiCourseId, volumeId: aiVolumeId || undefined, moduleId: aiModuleId || undefined, topicId: aiTopicId || undefined, level: selectedCourse.level, year: aiYear, count: aiCount || undefined };
 			Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
-			const res = await api.post('/api/module-notes/generate-ai/preview', payload, { timeout: 180_000 });
-			const gen = res.data?.generated || null;
-			setAiPreview(gen); setAiPreviewMeta(res.data?.meta || payload);
+			// Uses fetch+SSE so heartbeats keep the connection alive through Nginx
+			const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+			const response = await fetch(`${API_URL}/api/module-notes/generate-ai/preview`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+				},
+				body: JSON.stringify(payload),
+			});
+			if (!response.ok) {
+				const errBody = await response.json().catch(() => ({}));
+				throw new Error(errBody?.error || `Server error ${response.status}`);
+			}
+			// Read the SSE stream: ignore :heartbeat comments, handle result/error events
+			const reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+			let data = null;
+			let sseError = null;
+			outer: while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				buffer += decoder.decode(value, { stream: true });
+				const parts = buffer.split('\n\n');
+				buffer = parts.pop() ?? '';
+				for (const part of parts) {
+					if (part.startsWith('event: result\ndata: ')) {
+						data = JSON.parse(part.slice('event: result\ndata: '.length));
+						break outer;
+					} else if (part.startsWith('event: error\ndata: ')) {
+						const errObj = JSON.parse(part.slice('event: error\ndata: '.length));
+						sseError = errObj?.error || 'AI generation failed';
+						break outer;
+					}
+					// :heartbeat lines are ignored
+				}
+			}
+			if (sseError) throw new Error(sseError);
+			if (!data) throw new Error('No response received from server');
+			const gen = data?.generated || null;
+			setAiPreview(gen); setAiPreviewMeta(data?.meta || payload);
 			setAiSelectedIndices(Array.from({ length: (gen?.items || []).length }, (_, i) => i));
 			setAiPreviewOpen(true);
-		} catch (err) { message.error(err?.response?.data?.error || 'AI generation failed'); } finally { setAiGenerating(false); }
+		} catch (err) { message.error(err?.message || 'AI generation failed'); } finally { setAiGenerating(false); }
 	};
 
 	const acceptAiPreview = async (indices) => {
