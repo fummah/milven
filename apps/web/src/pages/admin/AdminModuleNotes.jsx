@@ -167,15 +167,23 @@ export function AdminModuleNotes() {
 	};
 
 	const acceptAiPreview = async (indices) => {
-		if (!aiPreview?.items) return;
+		if (!aiPreview?.items) { message.warning('No generated notes available — please generate first'); return; }
 		const toSend = indices || aiSelectedIndices;
 		if (!toSend?.length) { message.warning('Select at least one note'); return; }
 		try {
 			setAiAcceptLoading(true);
 			const { data } = await api.post('/api/module-notes/generate-ai/accept', { generated: aiPreview, meta: aiPreviewMeta, selectedIndices: toSend });
-			message.success(`Saved ${data?.created ?? 0} module note(s)`);
-			setAiPreviewOpen(false); setAiModalOpen(false); setAiSelectedIndices([]); fetchNotes();
-		} catch (err) { message.error(err?.response?.data?.error || 'Failed to save'); } finally { setAiAcceptLoading(false); }
+			if (data?.created > 0) {
+				message.success(`Saved ${data.created} module note(s)`);
+				setAiPreviewOpen(false); setAiModalOpen(false); setAiSelectedIndices([]); fetchNotes();
+			} else {
+				message.error(data?.error || 'Failed to save notes — server returned 0 created. Check server logs.');
+				console.error('[acceptAiPreview] Server returned 0 created:', data);
+			}
+		} catch (err) {
+			console.error('[acceptAiPreview] Error:', err);
+			message.error(err?.response?.data?.error || err?.message || 'Failed to save notes');
+		} finally { setAiAcceptLoading(false); }
 	};
 
 	const columns = [

@@ -369,9 +369,10 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 			if (!courseId || !level) return res.status(400).json({ error: 'Missing meta (courseId, level)' });
 
 			const created = [];
+			const errors = [];
 			for (const idx of selectedIndices) {
 				const item = generated.items[idx];
-				if (!item) continue;
+				if (!item) { errors.push(`Index ${idx}: item not found in generated.items`); continue; }
 				try {
 					const note = await prisma.moduleNote.create({
 						data: {
@@ -396,8 +397,13 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 					});
 					created.push(note);
 				} catch (saveErr) {
-					console.error(`[moduleNotes.generate-ai.accept] Failed to save note ${idx}:`, saveErr?.message);
+					const msg = saveErr?.message || String(saveErr);
+					console.error(`[moduleNotes.generate-ai.accept] Failed to save note ${idx}:`, msg);
+					errors.push(`Index ${idx}: ${msg}`);
 				}
+			}
+			if (created.length === 0 && errors.length > 0) {
+				return res.status(500).json({ created: 0, error: `Failed to save notes: ${errors[0]}`, errors });
 			}
 			return res.status(201).json({ created: created.length, notes: created });
 		} catch (err) {

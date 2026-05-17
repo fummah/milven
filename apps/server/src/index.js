@@ -143,9 +143,10 @@ app.use(
 );
 
 // Body limit protection (prevents large payload crash)
+// 5mb allows AI-generated content (module notes, questions) to be sent back for saving
 app.use(
   express.json({
-    limit: '1mb'
+    limit: '5mb'
   })
 );
 
