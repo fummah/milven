@@ -65,7 +65,7 @@ export function moduleNotesRouter(prisma) {
 				prisma.moduleNote.findMany({
 					where,
 					include: defaultInclude,
-					orderBy: [{ order: 'asc' }, { title: 'asc' }],
+					orderBy: [{ createdAt: 'desc' }, { order: 'asc' }],
 					skip,
 					take: pageSize,
 				}),
