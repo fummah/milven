@@ -44,9 +44,9 @@ export function FormulaBook() {
 				setCourses(all.filter(c => c.name?.toUpperCase().startsWith('CFA')));
 			})
 			.catch(() => {});
-		api.get('/api/cms/volumes').then(r => setVolumes(r.data?.volumes || [])).catch(() => {});
-		api.get('/api/cms/modules').then(r => setModules(r.data?.modules || [])).catch(() => {});
-		api.get('/api/cms/topics').then(r => setTopics(r.data?.topics || [])).catch(() => {});
+		api.get('/api/learning/volumes/public').then(r => setVolumes(r.data?.volumes || [])).catch(() => {});
+		api.get('/api/learning/modules/public').then(r => setModules(r.data?.modules || [])).catch(() => {});
+		api.get('/api/learning/topics/public').then(r => setTopics(r.data?.topics || [])).catch(() => {});
 	}, []);
 
 	// Load formulas

@@ -435,6 +435,71 @@ export function learningRouter(prisma) {
     return res.json({ courses: items });
   });
 
+  // ─── Public Volumes (no auth) ──────────────────────────────
+  router.get('/volumes/public', async (req, res) => {
+    try {
+      const courseId = (req.query.courseId ?? '').toString().trim();
+      let volumes;
+      if (courseId) {
+        const links = await prisma.courseVolume.findMany({
+          where: { courseId },
+          include: { volume: true },
+          orderBy: { order: 'asc' },
+        });
+        volumes = links.map(l => ({ ...l.volume, courseLinks: [{ courseId }], order: l.order }));
+      } else {
+        volumes = await prisma.volume.findMany({
+          orderBy: { name: 'asc' },
+          include: { courseLinks: { select: { courseId: true, order: true } } },
+        });
+      }
+      return res.json({ volumes });
+    } catch (err) {
+      console.error('[learning.volumes.public]', err);
+      return res.status(500).json({ error: 'Failed to fetch volumes' });
+    }
+  });
+
+  // ─── Public Modules (no auth) ─────────────────────────────
+  router.get('/modules/public', async (req, res) => {
+    try {
+      const courseId = (req.query.courseId ?? '').toString().trim();
+      const volumeId = (req.query.volumeId ?? '').toString().trim();
+      const where = {};
+      if (courseId) where.courseId = courseId;
+      if (volumeId) where.volumeId = volumeId;
+      const modules = await prisma.module.findMany({
+        where,
+        orderBy: [{ order: 'asc' }, { name: 'asc' }],
+        select: { id: true, name: true, courseId: true, volumeId: true, order: true },
+      });
+      return res.json({ modules });
+    } catch (err) {
+      console.error('[learning.modules.public]', err);
+      return res.status(500).json({ error: 'Failed to fetch modules' });
+    }
+  });
+
+  // ─── Public Topics (no auth) ──────────────────────────────
+  router.get('/topics/public', async (req, res) => {
+    try {
+      const courseId = (req.query.courseId ?? '').toString().trim();
+      const moduleId = (req.query.moduleId ?? '').toString().trim();
+      const where = {};
+      if (courseId) where.courseId = courseId;
+      if (moduleId) where.moduleId = moduleId;
+      const topics = await prisma.topic.findMany({
+        where,
+        orderBy: [{ order: 'asc' }, { name: 'asc' }],
+        select: { id: true, name: true, courseId: true, moduleId: true, order: true },
+      });
+      return res.json({ topics });
+    } catch (err) {
+      console.error('[learning.topics.public]', err);
+      return res.status(500).json({ error: 'Failed to fetch topics' });
+    }
+  });
+
   return router;
 }
 

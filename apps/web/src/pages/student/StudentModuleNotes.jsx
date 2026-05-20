@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Row, Col, Card, Modal, Grid } from 'antd';
 import { BookOutlined, SearchOutlined, ClockCircleOutlined, ThunderboltOutlined, CalculatorOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
@@ -10,6 +10,16 @@ const LEVELS = [
 ];
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 
+// ─── Safe render: stringify objects that React can't render ──
+function safeRender(val) {
+	if (val === null || val === undefined) return '';
+	if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return String(val);
+	if (typeof val === 'object') {
+		try { return JSON.stringify(val); } catch { return String(val); }
+	}
+	return String(val);
+}
+
 export function StudentModuleNotes() {
 	const screens = Grid.useBreakpoint();
 	const isMobile = !screens.md;
@@ -17,27 +27,60 @@ export function StudentModuleNotes() {
 	const [notes, setNotes] = useState([]);
 	const [total, setTotal] = useState(0);
 	const [courses, setCourses] = useState([]);
+	const [volumes, setVolumes] = useState([]);
+	const [modules, setModules] = useState([]);
+	const [topics, setTopics] = useState([]);
 	const [filterLevel, setFilterLevel] = useState(null);
 	const [filterCourseId, setFilterCourseId] = useState(null);
+	const [filterVolumeId, setFilterVolumeId] = useState(null);
+	const [filterModuleId, setFilterModuleId] = useState(null);
+	const [filterTopicId, setFilterTopicId] = useState(null);
 	const [searchText, setSearchText] = useState('');
 	const [page, setPage] = useState(1);
 	const [previewOpen, setPreviewOpen] = useState(false);
 	const [previewNote, setPreviewNote] = useState(null);
 
-	useEffect(() => { api.get('/api/cms/courses').then(r => setCourses(r.data?.courses || [])).catch(() => {}); }, []);
+	useEffect(() => {
+		api.get('/api/learning/courses/public').then(r => setCourses(r.data?.courses || [])).catch(() => {});
+		api.get('/api/learning/volumes/public').then(r => setVolumes(r.data?.volumes || [])).catch(() => {});
+		api.get('/api/learning/modules/public').then(r => setModules(r.data?.modules || [])).catch(() => {});
+		api.get('/api/learning/topics/public').then(r => setTopics(r.data?.topics || [])).catch(() => {});
+	}, []);
+
+	const filteredVolumes = useMemo(() => {
+		if (!filterCourseId) return volumes;
+		return volumes.filter(v => v.courseLinks?.some(cl => cl.courseId === filterCourseId));
+	}, [filterCourseId, volumes]);
+
+	const filteredModules = useMemo(() => {
+		let list = modules;
+		if (filterCourseId) list = list.filter(m => m.courseId === filterCourseId);
+		if (filterVolumeId) list = list.filter(m => m.volumeId === filterVolumeId);
+		return list;
+	}, [filterCourseId, filterVolumeId, modules]);
+
+	const filteredTopics = useMemo(() => {
+		let list = topics;
+		if (filterCourseId) list = list.filter(t => t.courseId === filterCourseId);
+		if (filterModuleId) list = list.filter(t => t.moduleId === filterModuleId);
+		return list;
+	}, [filterCourseId, filterModuleId, topics]);
 
 	const fetchNotes = useCallback(async () => {
 		setLoading(true);
 		try {
-			const params = { page, limit: 20, status: 'PUBLISHED' };
+			const params = { page, limit: 50, status: 'PUBLISHED' };
 			if (filterLevel) params.level = filterLevel;
 			if (filterCourseId) params.courseId = filterCourseId;
+			if (filterVolumeId) params.volumeId = filterVolumeId;
+			if (filterModuleId) params.moduleId = filterModuleId;
+			if (filterTopicId) params.topicId = filterTopicId;
 			if (searchText) params.search = searchText;
 			const res = await api.get('/api/module-notes', { params });
 			setNotes(res.data?.notes || []);
 			setTotal(res.data?.total || 0);
 		} catch { } finally { setLoading(false); }
-	}, [page, filterLevel, filterCourseId, searchText]);
+	}, [page, filterLevel, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, searchText]);
 
 	useEffect(() => { fetchNotes(); }, [fetchNotes]);
 
@@ -59,9 +102,12 @@ export function StudentModuleNotes() {
 			{/* Filters */}
 			<Card size="small" style={{ marginBottom: 16, borderRadius: 12, border: '1px solid #e2e8f0' }}>
 				<Row gutter={[12, 12]} align="middle">
-					<Col xs={24} sm={8} md={6}><Input prefix={<SearchOutlined />} placeholder="Search…" value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear /></Col>
-					<Col xs={12} sm={6} md={4}><Select placeholder="Level" value={filterLevel} onChange={v => { setFilterLevel(v); setPage(1); }} options={[{ value: null, label: 'All Levels' }, ...LEVELS]} style={{ width: '100%' }} allowClear /></Col>
-					<Col xs={12} sm={6} md={4}><Select placeholder="Course" value={filterCourseId} onChange={v => { setFilterCourseId(v); setPage(1); }} options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={24} sm={8} md={5}><Input prefix={<SearchOutlined />} placeholder="Search…" value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear /></Col>
+					<Col xs={12} sm={6} md={3}><Select placeholder="Level" value={filterLevel} onChange={v => { setFilterLevel(v); setPage(1); }} options={[{ value: null, label: 'All Levels' }, ...LEVELS]} style={{ width: '100%' }} allowClear /></Col>
+					<Col xs={12} sm={6} md={4}><Select placeholder="Course" value={filterCourseId} onChange={v => { setFilterCourseId(v); setFilterVolumeId(null); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={12} sm={6} md={4}><Select placeholder="Volume" value={filterVolumeId} onChange={v => { setFilterVolumeId(v); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Volumes' }, ...filteredVolumes.map(v => ({ value: v.id, label: v.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={12} sm={6} md={4}><Select placeholder="Module" value={filterModuleId} onChange={v => { setFilterModuleId(v); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Modules' }, ...filteredModules.map(m => ({ value: m.id, label: m.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={12} sm={6} md={4}><Select placeholder="Topic" value={filterTopicId} onChange={v => { setFilterTopicId(v); setPage(1); }} options={[{ value: null, label: 'All Topics' }, ...filteredTopics.map(t => ({ value: t.id, label: t.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
 				</Row>
 			</Card>
 
@@ -104,12 +150,12 @@ export function StudentModuleNotes() {
 							</Col>
 						))}
 					</Row>
-					{total > 20 && (
+					{total > 50 && (
 						<div style={{ textAlign: 'center', marginTop: 20 }}>
 							<Space>
 								<Button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
-								<Typography.Text type="secondary">Page {page}</Typography.Text>
-								<Button disabled={notes.length < 20} onClick={() => setPage(p => p + 1)}>Next</Button>
+								<Typography.Text type="secondary">Page {page} of {Math.ceil(total / 50)}</Typography.Text>
+								<Button disabled={notes.length < 50} onClick={() => setPage(p => p + 1)}>Next</Button>
 							</Space>
 						</div>
 					)}
@@ -158,7 +204,7 @@ function ModuleNoteView({ note }) {
 			</div>
 
 			{/* Overview */}
-			{n.overview && <div style={{ padding: '16px 32px', background: '#f0f4f8', borderBottom: '1px solid #e2e8f0' }}><div style={{ color: '#374151', fontSize: 14, lineHeight: 1.6 }}>{n.overview}</div></div>}
+			{n.overview && <div style={{ padding: '16px 32px', background: '#f0f4f8', borderBottom: '1px solid #e2e8f0' }}><div style={{ color: '#374151', fontSize: 14, lineHeight: 1.6 }}>{safeRender(n.overview)}</div></div>}
 
 			<div style={{ padding: '24px 32px' }}>
 				{/* LOS */}
@@ -167,7 +213,7 @@ function ModuleNoteView({ note }) {
 						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>Learning Outcome Statements</Typography.Text>
 						<table style={{ width: '100%', marginTop: 10, borderCollapse: 'collapse' }}>
 							<thead><tr style={{ borderBottom: '2px solid #cbd5e1' }}><th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>LOS</th><th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>Statement</th><th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>Command</th></tr></thead>
-							<tbody>{los.map((l, i) => (<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px', fontWeight: 600, color: '#102540', fontSize: 13 }}>{l.ref}</td><td style={{ padding: '8px', fontSize: 13, color: '#374151' }}>{l.statement}</td><td style={{ padding: '8px' }}><Tag color="blue" style={{ fontSize: 11 }}>{l.commandWord}</Tag></td></tr>))}</tbody>
+							<tbody>{los.map((l, i) => (<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px', fontWeight: 600, color: '#102540', fontSize: 13 }}>{safeRender(l.ref)}</td><td style={{ padding: '8px', fontSize: 13, color: '#374151' }}>{safeRender(l.statement)}</td><td style={{ padding: '8px' }}><Tag color="blue" style={{ fontSize: 11 }}>{safeRender(l.commandWord)}</Tag></td></tr>))}</tbody>
 						</table>
 					</div>
 				)}
@@ -175,43 +221,43 @@ function ModuleNoteView({ note }) {
 				{/* Concepts */}
 				{concepts.map((c, i) => (
 					<div key={i} style={{ marginBottom: 20, padding: '16px 20px', background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
-						<Typography.Text strong style={{ fontSize: 15, color: '#102540' }}>{i + 1}. {c.title}</Typography.Text>
+						<Typography.Text strong style={{ fontSize: 15, color: '#102540' }}>{i + 1}. {safeRender(c.title)}</Typography.Text>
 						<div style={{ marginTop: 8 }}>
-							<div style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}><strong>Plain-English meaning:</strong> {c.meaning}</div>
-							{c.explanation && <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>{c.explanation}</div>}
+							<div style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}><strong>Plain-English meaning:</strong> {safeRender(c.meaning)}</div>
+							{c.explanation && <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>{safeRender(c.explanation)}</div>}
 							{c.formula && (
 								<div style={{ background: '#f0f4f8', borderRadius: 8, padding: '12px 16px', marginBottom: 8, border: '1px solid #e2e8f0' }}>
 									<Typography.Text style={{ fontSize: 10, textTransform: 'uppercase', color: '#64748b', letterSpacing: 1 }}>FORMULA</Typography.Text>
-									<div style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 16, fontWeight: 600, color: '#102540', marginTop: 4 }}>{c.formula}</div>
-									{c.formulaVariables && <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{c.formulaVariables}</div>}
+									<div style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 16, fontWeight: 600, color: '#102540', marginTop: 4 }}>{safeRender(c.formula)}</div>
+									{c.formulaVariables && <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{safeRender(c.formulaVariables)}</div>}
 								</div>
 							)}
-							{c.interpretation && <div style={{ fontSize: 13, color: '#374151', marginBottom: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, borderLeft: '3px solid #3b82f6' }}><strong>Interpretation:</strong> {c.interpretation}</div>}
+							{c.interpretation && <div style={{ fontSize: 13, color: '#374151', marginBottom: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, borderLeft: '3px solid #3b82f6' }}><strong>Interpretation:</strong> {safeRender(c.interpretation)}</div>}
 							{c.workedExample && (
 								<div style={{ marginBottom: 8, padding: '10px 14px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
 									<Typography.Text strong style={{ fontSize: 12, color: '#1d4ed8' }}>Worked Example</Typography.Text>
-									<div style={{ fontSize: 13, marginTop: 4 }}><strong>Given:</strong> {c.workedExample.given}</div>
-									<div style={{ fontSize: 13 }}><strong>Required:</strong> {c.workedExample.required}</div>
-									<div style={{ fontSize: 13 }}><strong>Solution:</strong> {c.workedExample.solution}</div>
-									<div style={{ fontSize: 13 }}><strong>Conclusion:</strong> {c.workedExample.conclusion}</div>
+									<div style={{ fontSize: 13, marginTop: 4 }}><strong>Given:</strong> {safeRender(c.workedExample.given)}</div>
+									<div style={{ fontSize: 13 }}><strong>Required:</strong> {safeRender(c.workedExample.required)}</div>
+									<div style={{ fontSize: 13 }}><strong>Solution:</strong> {safeRender(c.workedExample.solution)}</div>
+									<div style={{ fontSize: 13 }}><strong>Conclusion:</strong> {safeRender(c.workedExample.conclusion)}</div>
 								</div>
 							)}
 							<Row gutter={12}>
-								{c.examTip && <Col span={12}><div style={{ padding: '8px 12px', background: '#f0fdf4', borderRadius: 6, borderLeft: '3px solid #22c55e' }}><Typography.Text strong style={{ fontSize: 11, color: '#166534' }}>EXAM TIP</Typography.Text><div style={{ fontSize: 12, color: '#166534', marginTop: 2 }}>{c.examTip}</div></div></Col>}
-								{c.commonMistake && <Col span={12}><div style={{ padding: '8px 12px', background: '#fef3c7', borderRadius: 6, borderLeft: '3px solid #f59e0b' }}><Typography.Text strong style={{ fontSize: 11, color: '#92400e' }}>COMMON MISTAKE</Typography.Text><div style={{ fontSize: 12, color: '#92400e', marginTop: 2 }}>{c.commonMistake}</div></div></Col>}
+								{c.examTip && <Col span={12}><div style={{ padding: '8px 12px', background: '#f0fdf4', borderRadius: 6, borderLeft: '3px solid #22c55e' }}><Typography.Text strong style={{ fontSize: 11, color: '#166534' }}>EXAM TIP</Typography.Text><div style={{ fontSize: 12, color: '#166534', marginTop: 2 }}>{safeRender(c.examTip)}</div></div></Col>}
+								{c.commonMistake && <Col span={12}><div style={{ padding: '8px 12px', background: '#fef3c7', borderRadius: 6, borderLeft: '3px solid #f59e0b' }}><Typography.Text strong style={{ fontSize: 11, color: '#92400e' }}>COMMON MISTAKE</Typography.Text><div style={{ fontSize: 12, color: '#92400e', marginTop: 2 }}>{safeRender(c.commonMistake)}</div></div></Col>}
 							</Row>
 						</div>
 					</div>
 				))}
 
 				{/* Module Summary */}
-				{n.moduleSummary && <div style={{ marginBottom: 20, padding: '16px 20px', background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0' }}><Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540' }}>Module Summary</Typography.Text><div style={{ fontSize: 13, color: '#374151', marginTop: 8, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{n.moduleSummary}</div></div>}
+				{n.moduleSummary && <div style={{ marginBottom: 20, padding: '16px 20px', background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0' }}><Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540' }}>Module Summary</Typography.Text><div style={{ fontSize: 13, color: '#374151', marginTop: 8, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{safeRender(n.moduleSummary)}</div></div>}
 
 				{/* Formula Recap */}
 				{formulas.length > 0 && (
 					<div style={{ marginBottom: 20, background: '#f0f4f8', borderRadius: 12, padding: '16px 20px', border: '1px solid #e2e8f0' }}>
 						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540' }}>Formula Recap</Typography.Text>
-						{formulas.map((f, i) => (<div key={i} style={{ padding: '8px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}><div style={{ fontWeight: 600, color: '#102540', fontSize: 13 }}>{f.name}</div><div style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', marginTop: 2 }}>{f.formula}</div><div style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>{f.variables}</div></div>))}
+						{formulas.map((f, i) => (<div key={i} style={{ padding: '8px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}><div style={{ fontWeight: 600, color: '#102540', fontSize: 13 }}>{safeRender(f.name)}</div><div style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', marginTop: 2 }}>{safeRender(f.formula)}</div><div style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>{safeRender(f.variables)}</div></div>))}
 					</div>
 				)}
 
@@ -219,7 +265,7 @@ function ModuleNoteView({ note }) {
 				{practiceSet.length > 0 && (
 					<div style={{ marginBottom: 20, padding: '14px 18px', background: '#eff6ff', borderRadius: 10, borderLeft: '4px solid #3b82f6' }}>
 						<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#1d4ed8' }}>Practice Set</Typography.Text>
-						{practiceSet.map((q, i) => (<div key={i} style={{ fontSize: 13, color: '#1e3a5a', marginTop: 6 }}><strong>{i + 1}.</strong> {q.question} {q.losRef && <Tag style={{ fontSize: 10 }}>{q.losRef}</Tag>}</div>))}
+						{practiceSet.map((q, i) => (<div key={i} style={{ fontSize: 13, color: '#1e3a5a', marginTop: 6 }}><strong>{i + 1}.</strong> {safeRender(q.question)} {q.losRef && <Tag style={{ fontSize: 10 }}>{safeRender(q.losRef)}</Tag>}</div>))}
 					</div>
 				)}
 
@@ -227,7 +273,7 @@ function ModuleNoteView({ note }) {
 				{solutions.length > 0 && (
 					<div style={{ marginBottom: 20 }}>
 						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540' }}>Worked Solutions</Typography.Text>
-						{solutions.map((s, i) => (<div key={i} style={{ marginTop: 8, padding: '10px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}><div style={{ fontWeight: 600, fontSize: 13, color: '#102540' }}>{i + 1}. {s.question}</div><div style={{ fontSize: 13, marginTop: 4 }}><strong>Answer:</strong> {s.answer}</div>{s.method && <div style={{ fontSize: 12, color: '#475569' }}><strong>Method:</strong> {s.method}</div>}{s.interpretation && <div style={{ fontSize: 12, color: '#3b82f6' }}><strong>Interpretation:</strong> {s.interpretation}</div>}{s.trap && <div style={{ fontSize: 12, color: '#92400e' }}><strong>Trap:</strong> {s.trap}</div>}</div>))}
+						{solutions.map((s, i) => (<div key={i} style={{ marginTop: 8, padding: '10px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}><div style={{ fontWeight: 600, fontSize: 13, color: '#102540' }}>{i + 1}. {safeRender(s.question)}</div><div style={{ fontSize: 13, marginTop: 4 }}><strong>Answer:</strong> {safeRender(s.answer)}</div>{s.method && <div style={{ fontSize: 12, color: '#475569' }}><strong>Method:</strong> {safeRender(s.method)}</div>}{s.interpretation && <div style={{ fontSize: 12, color: '#3b82f6' }}><strong>Interpretation:</strong> {safeRender(s.interpretation)}</div>}{s.trap && <div style={{ fontSize: 12, color: '#92400e' }}><strong>Trap:</strong> {safeRender(s.trap)}</div>}</div>))}
 					</div>
 				)}
 
@@ -235,7 +281,7 @@ function ModuleNoteView({ note }) {
 				{checks.length > 0 && (
 					<div style={{ padding: '14px 18px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
 						<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540' }}>Revision Checklist</Typography.Text>
-						<div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>{checks.map((c, i) => (<div key={i} style={{ padding: '6px 12px', background: '#fff', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>☐ {c.item}</div>))}</div>
+						<div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>{checks.map((c, i) => (<div key={i} style={{ padding: '6px 12px', background: '#fff', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>☐ {safeRender(c.item)}</div>))}</div>
 					</div>
 				)}
 			</div>
