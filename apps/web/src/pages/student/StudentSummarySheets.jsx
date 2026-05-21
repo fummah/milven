@@ -13,11 +13,6 @@ function safeRender(val) {
 	return String(val);
 }
 
-const LEVELS = [
-	{ value: 'LEVEL1', label: 'Level I' },
-	{ value: 'LEVEL2', label: 'Level II' },
-	{ value: 'LEVEL3', label: 'Level III' },
-];
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 
 export function StudentSummarySheets() {
@@ -30,7 +25,6 @@ export function StudentSummarySheets() {
 	const [volumes, setVolumes] = useState([]);
 	const [modules, setModules] = useState([]);
 	const [topics, setTopics] = useState([]);
-	const [filterLevel, setFilterLevel] = useState(null);
 	const [filterCourseId, setFilterCourseId] = useState(null);
 	const [filterVolumeId, setFilterVolumeId] = useState(null);
 	const [filterModuleId, setFilterModuleId] = useState(null);
@@ -41,7 +35,10 @@ export function StudentSummarySheets() {
 	const [previewSheet, setPreviewSheet] = useState(null);
 
 	useEffect(() => {
-		api.get('/api/learning/courses/public').then(r => setCourses(r.data?.courses || [])).catch(() => {});
+		api.get('/api/learning/me/courses').then(r => {
+			const enrollments = r.data?.courses || [];
+			setCourses(enrollments.map(e => ({ id: e.courseId, name: e.name, level: e.level })).filter(e => e.id));
+		}).catch(() => {});
 		api.get('/api/learning/volumes/public').then(r => setVolumes(r.data?.volumes || [])).catch(() => {});
 		api.get('/api/learning/modules/public').then(r => setModules(r.data?.modules || [])).catch(() => {});
 		api.get('/api/learning/topics/public').then(r => setTopics(r.data?.topics || [])).catch(() => {});
@@ -70,7 +67,6 @@ export function StudentSummarySheets() {
 		setLoading(true);
 		try {
 			const params = { page, limit: 50, status: 'PUBLISHED' };
-			if (filterLevel) params.level = filterLevel;
 			if (filterCourseId) params.courseId = filterCourseId;
 			if (filterVolumeId) params.volumeId = filterVolumeId;
 			if (filterModuleId) params.moduleId = filterModuleId;
@@ -80,7 +76,7 @@ export function StudentSummarySheets() {
 			setSheets(res.data?.sheets || []);
 			setTotal(res.data?.total || 0);
 		} catch { } finally { setLoading(false); }
-	}, [page, filterLevel, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, searchText]);
+	}, [page, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, searchText]);
 
 	useEffect(() => { fetchSheets(); }, [fetchSheets]);
 
@@ -102,9 +98,8 @@ export function StudentSummarySheets() {
 			{/* Filters */}
 			<Card size="small" style={{ marginBottom: 16, borderRadius: 12, border: '1px solid #e2e8f0' }}>
 				<Row gutter={[12, 12]} align="middle">
-					<Col xs={24} sm={8} md={5}><Input prefix={<SearchOutlined />} placeholder="Search…" value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear /></Col>
-					<Col xs={12} sm={6} md={3}><Select placeholder="Level" value={filterLevel} onChange={v => { setFilterLevel(v); setPage(1); }} options={[{ value: null, label: 'All Levels' }, ...LEVELS]} style={{ width: '100%' }} allowClear /></Col>
-					<Col xs={12} sm={6} md={4}><Select placeholder="Course" value={filterCourseId} onChange={v => { setFilterCourseId(v); setFilterVolumeId(null); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={24} sm={8} md={6}><Input prefix={<SearchOutlined />} placeholder="Search…" value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear /></Col>
+					<Col xs={12} sm={6} md={5}><Select placeholder="Course" value={filterCourseId} onChange={v => { setFilterCourseId(v); setFilterVolumeId(null); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
 					<Col xs={12} sm={6} md={4}><Select placeholder="Volume" value={filterVolumeId} onChange={v => { setFilterVolumeId(v); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Volumes' }, ...filteredVolumes.map(v => ({ value: v.id, label: v.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
 					<Col xs={12} sm={6} md={4}><Select placeholder="Module" value={filterModuleId} onChange={v => { setFilterModuleId(v); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Modules' }, ...filteredModules.map(m => ({ value: m.id, label: m.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
 					<Col xs={12} sm={6} md={4}><Select placeholder="Topic" value={filterTopicId} onChange={v => { setFilterTopicId(v); setPage(1); }} options={[{ value: null, label: 'All Topics' }, ...filteredTopics.map(t => ({ value: t.id, label: t.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>

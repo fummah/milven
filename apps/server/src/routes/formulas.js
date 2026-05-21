@@ -315,15 +315,15 @@ export function formulasRouter(prisma) {
 			if (!count) {
 				autoDetected = true;
 				if (topicId) {
-					// Single topic selected — generate ALL formulas for that topic
-					count = 25;
+					// Single topic selected — keep count small to avoid timeout
+					count = 12;
 				} else if (moduleId) {
-					// Module selected — generate all formulas across its topics
-					count = Math.min(100, Math.max(30, resolvedTopics.length * 8));
+					// Module selected — generate formulas across its topics
+					count = Math.min(60, Math.max(20, resolvedTopics.length * 6));
 				} else if (resolvedTopics.length > 0) {
-					count = Math.min(100, Math.max(30, resolvedTopics.length * 5));
+					count = Math.min(60, Math.max(20, resolvedTopics.length * 4));
 				} else {
-					count = 40;
+					count = 30;
 				}
 			}
 
@@ -335,7 +335,9 @@ export function formulasRouter(prisma) {
 					select: { extractedText: true }
 				});
 				if (currDoc?.extractedText) {
-					curriculumExcerpt = buildFormulaCurriculumExcerpt(currDoc.extractedText, topicNames, 15000);
+					// Use smaller excerpt for narrower scope to avoid gateway timeout
+					const maxChars = topicId ? 6000 : (moduleId ? 10000 : 15000);
+					curriculumExcerpt = buildFormulaCurriculumExcerpt(currDoc.extractedText, topicNames, maxChars);
 				}
 			}
 
@@ -352,7 +354,7 @@ export function formulasRouter(prisma) {
 				? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — formulas MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
 				: '';
 
-			const isComprehensive = autoDetected || count >= 20;
+			const isComprehensive = autoDetected && !topicId && count >= 20;
 			const prompt = `You are a senior CFA curriculum expert and formula book author at Milven Finance School. Generate ${isComprehensive ? 'ALL' : count} professional, exam-quality formula cards in JSON format.
 
 Each formula card is used in a premium CFA Formula Book. Every field must be populated with accurate, useful content. Draw from actual CFA curriculum material, financial theory, and exam patterns.

@@ -4,11 +4,6 @@ import { BookOutlined, SearchOutlined, StarFilled, PrinterOutlined, FilterOutlin
 import { api } from '../lib/api';
 import { renderFormulaHtml } from '../lib/formatFormula';
 
-const LEVELS = [
-	{ value: 'LEVEL1', label: 'Level I' },
-	{ value: 'LEVEL2', label: 'Level II' },
-	{ value: 'LEVEL3', label: 'Level III' },
-];
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 const LEVEL_COLORS = { LEVEL1: '#3b82f6', LEVEL2: '#8b5cf6', LEVEL3: '#f59e0b' };
 
@@ -26,7 +21,6 @@ export function FormulaBook() {
 	const [topics, setTopics] = useState([]);
 
 	// Filters
-	const [level, setLevel] = useState('LEVEL1');
 	const [courseId, setCourseId] = useState(null);
 	const [volumeId, setVolumeId] = useState(null);
 	const [moduleId, setModuleId] = useState(null);
@@ -38,12 +32,10 @@ export function FormulaBook() {
 	// Load courses + lookup data
 	useEffect(() => {
 		api.get('/api/formulas/book/stats').catch(() => {});
-		api.get('/api/learning/courses/public')
-			.then(r => {
-				const all = r.data?.courses || [];
-				setCourses(all.filter(c => c.name?.toUpperCase().startsWith('CFA')));
-			})
-			.catch(() => {});
+		api.get('/api/learning/me/courses').then(r => {
+			const enrollments = r.data?.courses || [];
+			setCourses(enrollments.map(e => ({ id: e.courseId, name: e.name, level: e.level })).filter(e => e.id));
+		}).catch(() => {});
 		api.get('/api/learning/volumes/public').then(r => setVolumes(r.data?.volumes || [])).catch(() => {});
 		api.get('/api/learning/modules/public').then(r => setModules(r.data?.modules || [])).catch(() => {});
 		api.get('/api/learning/topics/public').then(r => setTopics(r.data?.topics || [])).catch(() => {});
@@ -52,7 +44,7 @@ export function FormulaBook() {
 	// Load formulas
 	useEffect(() => {
 		setLoading(true);
-		const params = { level, limit: 200 };
+		const params = { limit: 200 };
 		if (courseId) params.courseId = courseId;
 		if (volumeId) params.volumeId = volumeId;
 		if (moduleId) params.moduleId = moduleId;
@@ -66,7 +58,7 @@ export function FormulaBook() {
 			})
 			.catch(() => setFormulas([]))
 			.finally(() => setLoading(false));
-	}, [level, courseId, volumeId, moduleId, topicId, search, highYieldOnly]);
+	}, [courseId, volumeId, moduleId, topicId, search, highYieldOnly]);
 
 	// Cascading filter options
 	const filteredVolumes = useMemo(() => {
@@ -139,21 +131,6 @@ export function FormulaBook() {
 					<Typography.Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 15 }}>
 						Simplified. Exam-focused. Built to help you pass.
 					</Typography.Text>
-					<div style={{ display: 'flex', gap: 12, marginTop: 20, flexWrap: 'wrap' }}>
-						{LEVELS.map(l => (
-							<Button
-								key={l.value}
-								type={level === l.value ? 'primary' : 'default'}
-								onClick={() => setLevel(l.value)}
-								style={level === l.value
-									? { background: LEVEL_COLORS[l.value], borderColor: LEVEL_COLORS[l.value], color: '#fff', fontWeight: 600 }
-									: { background: 'rgba(255,255,255,0.1)', borderColor: 'rgba(255,255,255,0.2)', color: '#fff' }
-								}
-							>
-								{l.label}
-							</Button>
-						))}
-					</div>
 					<div style={{ display: 'flex', gap: 24, marginTop: 16, flexWrap: 'wrap' }}>
 						<div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>
 							<strong style={{ color: '#fff' }}>{total}</strong> formulas
@@ -260,7 +237,7 @@ export function FormulaBook() {
 					image={Empty.PRESENTED_IMAGE_SIMPLE}
 					description={
 						<span style={{ color: '#64748b' }}>
-							No formulas found for {LEVEL_LABELS[level]}.{search ? ` Search: "${search}"` : ''}
+							No formulas found.{search ? ` Search: "${search}"` : ''}
 						</span>
 					}
 				/>
@@ -271,7 +248,7 @@ export function FormulaBook() {
 			) : (
 				<div ref={bookRef} id="formula-book-print">
 					{grouped.map((vol, vi) => (
-						<VolumeSection key={vol.id} volume={vol} level={level} volumeIndex={vi} isMobile={isMobile} />
+						<VolumeSection key={vol.id} volume={vol} volumeIndex={vi} isMobile={isMobile} />
 					))}
 
 					{/* ── High-Yield Recap ──────────────── */}
@@ -313,7 +290,7 @@ export function FormulaBook() {
 						borderTop: '1px solid #e2e8f0',
 					}}>
 						<Typography.Text style={{ color: '#94a3b8', fontSize: 12 }}>
-							Milven Finance School | CFA Formula Book {new Date().getFullYear()} | {LEVEL_LABELS[level]}
+							Milven Finance School | CFA Formula Book {new Date().getFullYear()}
 						</Typography.Text>
 						<br />
 						<Typography.Text style={{ color: '#cbd5e1', fontSize: 11 }}>
@@ -378,7 +355,7 @@ export function FormulaBook() {
 
 			{/* Fixed footer on every printed page */}
 			<div className="print-page-footer">
-				<div>Milven Finance School | CFA Formula Book {new Date().getFullYear()} | {LEVEL_LABELS[level]}</div>
+				<div>Milven Finance School | CFA Formula Book {new Date().getFullYear()}</div>
 				<div style={{ fontSize: 9, color: '#94a3b8', marginTop: 2 }}>Precise. Calm. Premium. Exam-focused.</div>
 			</div>
 		</div>
@@ -386,7 +363,7 @@ export function FormulaBook() {
 }
 
 // ─── Volume Section ─────────────────────────────────────────
-function VolumeSection({ volume, level, volumeIndex, isMobile }) {
+function VolumeSection({ volume, volumeIndex, isMobile }) {
 	return (
 		<div style={{ marginBottom: 32 }}>
 			{/* Volume Divider */}
@@ -397,7 +374,7 @@ function VolumeSection({ volume, level, volumeIndex, isMobile }) {
 			}}>
 				<div>
 					<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5 }}>
-						CFA {LEVEL_LABELS[level]}
+						CFA Formula Book
 					</Typography.Text>
 					<Typography.Title level={4} style={{ color: '#fff', margin: '2px 0 0' }}>
 						{volume.name}
@@ -417,7 +394,7 @@ function VolumeSection({ volume, level, volumeIndex, isMobile }) {
 					<div style={{
 						padding: '10px 18px', marginBottom: 12,
 						background: '#f8fafc', borderRadius: 10,
-						borderLeft: `3px solid ${LEVEL_COLORS[level]}`,
+						borderLeft: `3px solid ${LEVEL_COLORS[mod.topics?.[0]?.formulas?.[0]?.level] || '#3b82f6'}`,
 					}}>
 						<Typography.Text strong style={{ color: '#102540', fontSize: 14 }}>
 							Learning Module: {mod.name}
@@ -438,7 +415,7 @@ function VolumeSection({ volume, level, volumeIndex, isMobile }) {
 								gap: 14,
 							}}>
 								{topic.formulas.map(f => (
-									<FormulaCard key={f.id} formula={f} level={level} />
+									<FormulaCard key={f.id} formula={f} />
 								))}
 							</div>
 						</div>
@@ -450,7 +427,8 @@ function VolumeSection({ volume, level, volumeIndex, isMobile }) {
 }
 
 // ─── Formula Card (Book View) ───────────────────────────────
-function FormulaCard({ formula, level }) {
+function FormulaCard({ formula }) {
+	const level = formula.level;
 	return (
 		<div style={{
 			background: '#fff', borderRadius: 14, overflow: 'hidden',
@@ -463,7 +441,7 @@ function FormulaCard({ formula, level }) {
 			{/* Card header */}
 			<div style={{
 				padding: '12px 16px',
-				background: `linear-gradient(135deg, ${LEVEL_COLORS[level]}15, ${LEVEL_COLORS[level]}08)`,
+				background: `linear-gradient(135deg, ${(LEVEL_COLORS[level] || '#3b82f6')}15, ${(LEVEL_COLORS[level] || '#3b82f6')}08)`,
 				borderBottom: '1px solid #e2e8f0',
 				display: 'flex', justifyContent: 'space-between', alignItems: 'center',
 			}}>
