@@ -46,7 +46,7 @@ export function StudentExams() {
   const navigate = useNavigate();
 
   const selectedVolumeIds = Form.useWatch('volumeIds', customExamForm);
-  const selectedModuleId = Form.useWatch('moduleId', customExamForm);
+  const selectedModuleIds = Form.useWatch('moduleIds', customExamForm);
   const questionTypeOptions = useMemo(
     () => getQuestionTypeOptions(selectedCourseLevel),
     [selectedCourseLevel]
@@ -69,11 +69,11 @@ export function StudentExams() {
     if (selectedVolumeIds?.length > 0) {
       filtered = filtered.filter((topic) => selectedVolumeIds.map(String).includes(String(topic.volumeId || '')));
     }
-    if (selectedModuleId) {
-      filtered = filtered.filter((topic) => String(topic.moduleId || '') === String(selectedModuleId));
+    if (selectedModuleIds?.length > 0) {
+      filtered = filtered.filter((topic) => selectedModuleIds.map(String).includes(String(topic.moduleId || '')));
     }
     return filtered;
-  }, [topics, selectedVolumeIds, selectedModuleId]);
+  }, [topics, selectedVolumeIds, selectedModuleIds]);
 
   useEffect(() => {
     (async () => {
@@ -331,7 +331,7 @@ export function StudentExams() {
                 courseId: undefined, 
                 topicIds: undefined,
                 volumeIds: [],
-                moduleId: undefined,
+                moduleIds: [],
                 difficulty: undefined, 
                 difficulties: [],
                 questionCount: 20, 
@@ -606,6 +606,11 @@ export function StudentExams() {
               let topicIds;
               if (Array.isArray(values.topicIds) && values.topicIds.length > 0) {
                 topicIds = values.topicIds;
+              } else if (Array.isArray(values.moduleIds) && values.moduleIds.length > 0) {
+                const derived = topics
+                  .filter(t => values.moduleIds.map(String).includes(String(t.moduleId || '')))
+                  .map(t => t.id);
+                topicIds = derived.length > 0 ? derived : undefined;
               } else if (Array.isArray(values.volumeIds) && values.volumeIds.length > 0) {
                 const derived = topics
                   .filter(t => values.volumeIds.map(String).includes(String(t.volumeId || '')))
@@ -670,7 +675,7 @@ export function StudentExams() {
                   showSearch
                   optionFilterProp="label"
                   onChange={async (courseId) => {
-                    customExamForm.setFieldsValue({ topicIds: undefined, volumeIds: [], moduleId: undefined });
+                    customExamForm.setFieldsValue({ topicIds: undefined, volumeIds: [], moduleIds: [] });
                     const course = (enrolled || []).find(c => c.courseId === courseId);
                     const level = course?.level;
                     const defaultType = getDefaultQuestionType(level);
@@ -733,16 +738,17 @@ export function StudentExams() {
                   options={volumes.map((volume) => ({ value: volume.id, label: volume.description ? `${volume.name} - ${volume.description}` : volume.name }))}
                   disabled={volumes.length === 0}
                   onChange={() => {
-                    customExamForm.setFieldsValue({ topicIds: undefined, moduleId: undefined });
+                    customExamForm.setFieldsValue({ topicIds: undefined, moduleIds: [] });
                   }}
                 />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
-              <Form.Item name="moduleId" label="Learning Module">
+              <Form.Item name="moduleIds" label="Learning Module(s)">
                 <Select
+                  mode="multiple"
                   allowClear
-                  placeholder="Select learning module (optional)"
+                  placeholder="Select one or more modules"
                   options={moduleOptions}
                   showSearch
                   optionFilterProp="label"
