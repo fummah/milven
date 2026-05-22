@@ -45,7 +45,7 @@ export function StudentExams() {
   const [selectedCourseLevel, setSelectedCourseLevel] = useState(null);
   const navigate = useNavigate();
 
-  const selectedVolumeId = Form.useWatch('volumeId', customExamForm);
+  const selectedVolumeIds = Form.useWatch('volumeIds', customExamForm);
   const selectedModuleId = Form.useWatch('moduleId', customExamForm);
   const questionTypeOptions = useMemo(
     () => getQuestionTypeOptions(selectedCourseLevel),
@@ -53,8 +53,8 @@ export function StudentExams() {
   );
   const moduleOptions = useMemo(() => {
     let filtered = topics;
-    if (selectedVolumeId) {
-      filtered = filtered.filter((t) => String(t.volumeId || '') === String(selectedVolumeId));
+    if (selectedVolumeIds?.length > 0) {
+      filtered = filtered.filter((t) => selectedVolumeIds.map(String).includes(String(t.volumeId || '')));
     }
     const moduleMap = new Map();
     filtered.forEach(t => {
@@ -63,17 +63,17 @@ export function StudentExams() {
       }
     });
     return Array.from(moduleMap.values());
-  }, [topics, selectedVolumeId]);
+  }, [topics, selectedVolumeIds]);
   const filteredTopics = useMemo(() => {
     let filtered = topics;
-    if (selectedVolumeId) {
-      filtered = filtered.filter((topic) => String(topic.volumeId || '') === String(selectedVolumeId));
+    if (selectedVolumeIds?.length > 0) {
+      filtered = filtered.filter((topic) => selectedVolumeIds.map(String).includes(String(topic.volumeId || '')));
     }
     if (selectedModuleId) {
       filtered = filtered.filter((topic) => String(topic.moduleId || '') === String(selectedModuleId));
     }
     return filtered;
-  }, [topics, selectedVolumeId, selectedModuleId]);
+  }, [topics, selectedVolumeIds, selectedModuleId]);
 
   useEffect(() => {
     (async () => {
@@ -330,14 +330,14 @@ export function StudentExams() {
                 name: '', 
                 courseId: undefined, 
                 topicIds: undefined,
-                volumeId: undefined,
+                volumeIds: [],
                 moduleId: undefined,
                 difficulty: undefined, 
                 difficulties: [],
                 questionCount: 20, 
                 timeLimitMinutes: 60,
-                startAt: dayjs().add(1, 'hour'),
-                endAt: dayjs().add(2, 'hours')
+                startAt: undefined,
+                endAt: undefined
               });
               setTopics([]);
             }}
@@ -603,7 +603,17 @@ export function StudentExams() {
                 return;
               }
               setCustomExamSubmitting(true);
-              const topicIds = Array.isArray(values.topicIds) && values.topicIds.length > 0 ? values.topicIds : undefined;
+              let topicIds;
+              if (Array.isArray(values.topicIds) && values.topicIds.length > 0) {
+                topicIds = values.topicIds;
+              } else if (Array.isArray(values.volumeIds) && values.volumeIds.length > 0) {
+                const derived = topics
+                  .filter(t => values.volumeIds.map(String).includes(String(t.volumeId || '')))
+                  .map(t => t.id);
+                topicIds = derived.length > 0 ? derived : undefined;
+              } else {
+                topicIds = undefined;
+              }
               // Student-created exams should always be COURSE type, topicIds are just filters
               const res = await api.post('/api/exams/custom', {
                 name: values.name,
@@ -640,9 +650,7 @@ export function StudentExams() {
             questionCount: 20, 
             timeLimitMinutes: 60, 
             difficulties: [],
-            questionType: 'MCQ',
-            startAt: dayjs().add(1, 'hour'),
-            endAt: dayjs().add(2, 'hours')
+            questionType: 'MCQ'
           }}
         >
           <Row gutter={16}>
@@ -662,7 +670,7 @@ export function StudentExams() {
                   showSearch
                   optionFilterProp="label"
                   onChange={async (courseId) => {
-                    customExamForm.setFieldsValue({ topicIds: undefined, volumeId: undefined, moduleId: undefined });
+                    customExamForm.setFieldsValue({ topicIds: undefined, volumeIds: [], moduleId: undefined });
                     const course = (enrolled || []).find(c => c.courseId === courseId);
                     const level = course?.level;
                     const defaultType = getDefaultQuestionType(level);
@@ -717,10 +725,11 @@ export function StudentExams() {
           </Row>
           <Row gutter={16}>
             <Col xs={24} sm={12}>
-              <Form.Item name="volumeId" label="Volume">
+              <Form.Item name="volumeIds" label="Volume(s)">
                 <Select
+                  mode="multiple"
                   allowClear
-                  placeholder="Select volume"
+                  placeholder="Select one or more volumes"
                   options={volumes.map((volume) => ({ value: volume.id, label: volume.description ? `${volume.name} - ${volume.description}` : volume.name }))}
                   disabled={volumes.length === 0}
                   onChange={() => {
@@ -800,8 +809,7 @@ export function StudentExams() {
               <Form.Item 
                 name="startAt" 
                 label="Exam Start Time" 
-                rules={[{ required: true, message: 'Select exam start time' }]}
-                help="When you want to start taking this exam"
+                help="Optional: when you want to start taking this exam"
               >
                 <DatePicker 
                   showTime 
@@ -816,7 +824,6 @@ export function StudentExams() {
                 name="endAt" 
                 label="Exam End Time" 
                 rules={[
-                  { required: true, message: 'Select exam end time' },
                   ({ getFieldValue }) => ({
                     validator(_, value) {
                       const startAt = getFieldValue('startAt');
@@ -828,7 +835,7 @@ export function StudentExams() {
                     }
                   })
                 ]}
-                help="When this exam will expire (you must complete it before this time)"
+                help="Optional: when this exam expires"
               >
                 <DatePicker 
                   showTime 
