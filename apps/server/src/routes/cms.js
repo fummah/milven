@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey } from '../lib/openai.js';
+import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
 
 export function cmsRouter(prisma) {
 	const router = Router();
@@ -2301,16 +2301,13 @@ A curriculum reference document has been provided below. You MUST:
 2. For "los": Copy the EXACT Learning Outcome Statement (LOS) from the document — these are statements starting with verbs like "describe", "explain", "calculate", etc. that appear just below each topic heading. Do NOT paraphrase or invent LOS — use the exact wording from the document.
 3. For "tracePage": Use the EXACT page numbers from the [PAGE N] markers in the document. Format as "p. X" or "p. X-Y" for ranges.
 4. For "traceSection": Use the EXACT section/reading/topic heading as it appears in the document.
-5. For "keyFormulas" and "workedSolution": ALWAYS use this exact notation for mathematical formatting:
-   - Superscripts: use ^ e.g. (1+r)^n, X^2, e^{-rt}
-   - Subscripts: use _ e.g. P_0, CF_{t}, r_{equity}
-   - Greek letters: spell out as words e.g. alpha, beta, sigma, delta, mu, rho, lambda, pi, theta, epsilon, tau
-   - Fractions: use (numerator) / (denominator) e.g. (CF_1) / (1+r)^1
-   - Square root: use sqrt(x) e.g. sqrt(variance)
-   - Summation: use sum
-   - Multiply: use * between terms
-   - Plus-minus: use +/-
-   Copy formulas from the document but ALWAYS convert them to this notation. Do NOT use Unicode superscript/subscript characters. Do NOT use LaTeX. Do NOT use HTML tags.
+5. For "keyFormulas" and "workedSolution": ALWAYS use valid LaTeX notation:
+   - Inline formulas: \\( ... \\)   Block formulas: \\[ ... \\]
+   - Fractions: \\frac{a}{b}   Exponents: x^{2}, k^{\\alpha}
+   - Subscripts: P_{0}, CF_{t}, R_{equity}   Greek: \\alpha, \\beta, \\sigma, \\mu, \\rho, \\delta, \\lambda
+   - Roots: \\sqrt{x}   Sums: \\sum_{i=1}^{n}   Multiply: \\cdot
+   - ALL braces must be balanced. NEVER output broken LaTeX or mix markdown with LaTeX.
+   Copy formulas from the document but ALWAYS convert them to valid LaTeX notation.
 6. Questions that involve calculations MUST use the exact formulas from the document with correct variable names.` : ''}
 
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles):
@@ -2350,8 +2347,8 @@ Return a JSON object with an "items" key. EVERY question/sub-question MUST inclu
 - "los": string (the EXACT learning outcome statement from the curriculum document — copy it verbatim)
 - "traceSection": string (EXACT section/reading heading from the document, e.g. "Reading 33: Cost of Capital")
 - "tracePage": string (EXACT page from the document [PAGE N] markers, e.g. "p. 145" or "p. 145-148")
-- "keyFormulas": string (key formula(s) using ^ for superscripts, _ for subscripts, spelled-out Greek letters — e.g. "PV = (CF_1) / (1+r)^1 + (CF_2) / (1+r)^2". NEVER use Unicode super/subscript chars or LaTeX.)
-- "workedSolution": string (step-by-step worked solution using the same ^/_ notation for all math — be thorough)
+- "keyFormulas": string (key formula(s) using VALID LaTeX — e.g. "\\( PV = \\frac{CF_1}{(1+r)^{1}} + \\frac{CF_2}{(1+r)^{2}} \\)", "\\( WACC = w_{d} \\cdot r_{d} \\cdot (1-t) + w_{e} \\cdot r_{e} \\)". Use \\frac, \\sigma, \\beta, \\alpha etc. ALL braces must be balanced. Include variable definitions.)
+- "workedSolution": string (step-by-step worked solution using valid LaTeX for all math — be thorough)
 
 For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of 4-5 MCQ sub-questions with same fields }.
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
@@ -2361,7 +2358,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: 'You are an expert CFA curriculum and exam question writer. Always return valid JSON only.' },
+					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. Always return valid JSON only.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.75,
@@ -2650,8 +2647,8 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 - "los": string (the EXACT Learning Outcome Statement from the curriculum document — copy it VERBATIM, e.g. "describe the features of a fixed-income security". These appear just below topic headings and start with verbs like describe, explain, calculate, etc.)
 - "traceSection": string (the EXACT section/reading/topic heading from the curriculum document, e.g. "Reading 33: Cost of Capital" — do NOT invent section names)
 - "tracePage": string (the EXACT page number from the [PAGE N] markers in the curriculum document, e.g. "p. 145" or "p. 145-148" — do NOT guess page numbers)
-- "keyFormulas": string (key formula(s) using ^ for superscripts, _ for subscripts, spelled-out Greek letters — e.g. "PV = (CF_1) / (1+r)^1 + (CF_2) / (1+r)^2", "WACC = w_d * r_d * (1 - t) + w_e * r_e". NEVER use Unicode super/subscript chars or LaTeX. Include variable definitions.)
-- "workedSolution": string (step-by-step worked solution using the same ^/_ notation for all math — be thorough so students can learn from it)
+- "keyFormulas": string (key formula(s) using VALID LaTeX — e.g. "\\( PV = \\frac{CF_1}{(1+r)^{1}} + \\frac{CF_2}{(1+r)^{2}} \\)", "\\( WACC = w_{d} \\cdot r_{d} \\cdot (1-t) + w_{e} \\cdot r_{e} \\)". Use \\frac, \\sigma, \\beta, \\alpha etc. ALL braces must be balanced. Include variable definitions.)
+- "workedSolution": string (step-by-step worked solution using valid LaTeX for all math — be thorough so students can learn from it)
 - "explanation": string (concise explanation of why the answer is correct and common mistakes to avoid)`;
 
 		let formatBlock;
@@ -2765,13 +2762,13 @@ A curriculum reference document has been provided below. You MUST:
 2. For "los": Copy the EXACT Learning Outcome Statement (LOS) from the document — these are statements starting with verbs like "describe", "explain", "calculate", etc. that appear just below each topic heading. Do NOT paraphrase or invent LOS — use the exact wording from the document.
 3. For "tracePage": Use the EXACT page numbers from the [PAGE N] markers in the document. Format as "p. X" or "p. X-Y" for ranges.
 4. For "traceSection": Use the EXACT section/reading/topic heading as it appears in the document.
-5. For "keyFormulas" and "workedSolution": ALWAYS use this exact notation for mathematical formatting:
-   - Superscripts: use ^ e.g. (1+r)^n, X^2, e^{-rt}
-   - Subscripts: use _ e.g. P_0, CF_{t}, r_{equity}
-   - Greek letters: spell out as words e.g. alpha, beta, sigma, delta, mu, rho, lambda, pi, theta, epsilon, tau
-   - Fractions: use (numerator) / (denominator) e.g. (CF_1) / (1+r)^1
-   - Square root: use sqrt(x), Summation: use sum, Multiply: use *, Plus-minus: use +/-
-   Copy formulas from the document but ALWAYS convert them to this notation. Do NOT use Unicode super/subscript chars or LaTeX or HTML tags.
+5. For "keyFormulas" and "workedSolution": ALWAYS use valid LaTeX notation:
+   - Inline formulas: \\\\( ... \\\\)   Block formulas: \\\\[ ... \\\\]
+   - Fractions: \\\\frac{a}{b}   Exponents: x^{2}, k^{\\\\alpha}
+   - Subscripts: P_{0}, CF_{t}, R_{equity}   Greek: \\\\alpha, \\\\beta, \\\\sigma, \\\\mu, \\\\rho, \\\\delta, \\\\lambda
+   - Roots: \\\\sqrt{x}   Sums: \\\\sum_{i=1}^{n}   Multiply: \\\\cdot
+   - ALL braces must be balanced. NEVER output broken LaTeX or mix markdown with LaTeX.
+   Copy formulas from the document but ALWAYS convert them to valid LaTeX notation.
 6. Questions that involve calculations MUST use the exact formulas from the document with correct variable names.` : ''}
 
 Context:
@@ -2793,7 +2790,7 @@ ${formatBlock}`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: 'You are an expert CFA curriculum and exam question writer. You produce high-quality, exam-standard questions. Always return valid JSON only.' },
+					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. You produce high-quality, exam-standard questions. Always return valid JSON only.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.75,

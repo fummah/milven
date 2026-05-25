@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Spin, Checkbox, Tabs } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, FileTextOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, CopyOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
+import MathText from '../../components/MathText';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -771,7 +772,7 @@ function SummarySheetPreviewContent({ sheet, compact }) {
 					<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>Formula Zone</Typography.Text>
 					{formulas.map((f, i) => (
 						<div key={i} style={{ padding: '6px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
-							<div style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540' }}>{f.formula}</div>
+							<MathText text={f.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540' }} />
 							<div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{f.variables}</div>
 							{f.whenToUse && <div style={{ fontSize: 12, color: '#3b82f6', marginTop: 1 }}>{f.whenToUse}</div>}
 						</div>
@@ -922,7 +923,7 @@ function SummarySheetPreviewCard({ sheet }) {
 							<tbody>
 								{formulas.map((f, i) => (
 									<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
-										<td style={{ padding: '8px', fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', whiteSpace: 'pre-wrap' }}>{f.formula}</td>
+										<td style={{ padding: '8px', fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', whiteSpace: 'pre-wrap' }}><MathText text={f.formula} /></td>
 										<td style={{ padding: '8px', fontSize: 12, color: '#475569' }}>{f.variables}</td>
 										<td style={{ padding: '8px', fontSize: 12, color: '#3b82f6' }}>{f.whenToUse}</td>
 									</tr>

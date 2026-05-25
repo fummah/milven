@@ -3,7 +3,7 @@ import { z } from 'zod';
 import OpenAI from 'openai';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey } from '../lib/openai.js';
+import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
 
 export function moduleNotesRouter(prisma) {
 	const router = Router();
@@ -270,12 +270,8 @@ LENGTH REQUIREMENTS (CRITICAL — the note MUST be long and detailed):
 - "workedSolutions": Detailed solutions for EVERY practice question with full method, interpretation, and trap explanation
 - "revisionCheck": 10-15 self-check items covering every key concept
 
-FORMULA NOTATION (use rich notation with subscripts and superscripts):
-- Use _ for subscripts: P_0, r_d, w_{equity}, CF_t
-- Use ^ for superscripts: (1+r)^n, e^{-rT}
-- Use Greek letter names: sigma, beta, alpha, mu, rho, delta
-- Use sum_{i=1}^{n} for summation
-- PRESERVE exact notation from the curriculum document
+${LATEX_PROMPT_SECTION}
+- PRESERVE exact notation from the curriculum document but convert to valid LaTeX
 
 For each concept page, use this structure:
 {"title": "...", "meaning": "LONG plain-English meaning (3-5 sentences)", "explanation": "VERY DETAILED core explanation (8-15 sentences minimum)", "formula": "exact equation with rich notation or null", "formulaVariables": "define EVERY variable or null", "interpretation": "what it measures and why it matters (3-5 sentences)", "workedExample": {"given": "detailed givens", "required": "what to find", "solution": "FULL step-by-step solution with calculations", "conclusion": "interpretation of result"}, "examTip": "2-3 sentences", "commonMistake": "2-3 sentences"}
@@ -324,7 +320,7 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: 'You are an expert CFA curriculum author. Return valid JSON only. Generate detailed, comprehensive content. Every text field must be multiple sentences. The concepts array must have 8-15 items. Write full detailed content for every field.' },
+					{ role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. Generate detailed, comprehensive content. Every text field must be multiple sentences. The concepts array must have 8-15 items. Write full detailed content for every field.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,

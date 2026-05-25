@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Tooltip, Collapse, Anchor, Grid, Tabs, Switch, Divider, Modal } from 'antd';
 import { BookOutlined, SearchOutlined, StarFilled, PrinterOutlined, FilterOutlined, UnorderedListOutlined, AppstoreOutlined, DownloadOutlined, EyeOutlined } from '@ant-design/icons';
 import { api } from '../lib/api';
-import { renderFormulaHtml } from '../lib/formatFormula';
+import { formatFormulaHtml } from '../lib/formatFormula';
 
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 const LEVEL_COLORS = { LEVEL1: '#3b82f6', LEVEL2: '#8b5cf6', LEVEL3: '#f59e0b' };
@@ -274,7 +274,7 @@ export function FormulaBook() {
 												fontFamily: "'Cambria Math', Georgia, serif",
 												fontSize: 14, color: '#1e3a5f',
 											}}>
-												<span dangerouslySetInnerHTML={{ __html: renderFormulaHtml(f.formula) }} />
+												<span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.formula) }} />
 											</div>
 											<div style={{ fontSize: 11, color: '#64748b' }}>{f.whenToUse}</div>
 										</div>
@@ -463,7 +463,7 @@ function FormulaCard({ formula }) {
 					fontSize: 16, fontWeight: 600, color: '#102540',
 					lineHeight: 1.5, whiteSpace: 'pre-wrap',
 				}}>
-					<span dangerouslySetInnerHTML={{ __html: renderFormulaHtml(formula.formula) }} />
+					<span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.formula) }} />
 				</div>
 			</div>
 
@@ -563,7 +563,7 @@ function FormulaListView({ formulas }) {
 							</Space>
 						</div>
 						<div style={{ fontFamily: "'Cambria Math', Georgia, serif", color: '#1e3a5f' }}>
-							<span dangerouslySetInnerHTML={{ __html: renderFormulaHtml(f.formula?.length > 50 ? f.formula.slice(0, 50) + '…' : f.formula) }} />
+							<span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.formula?.length > 50 ? f.formula.slice(0, 50) + '…' : f.formula) }} />
 						</div>
 						<div style={{ color: '#64748b', fontSize: 12 }}>{f.volume?.name || '—'}</div>
 						<div style={{ color: '#64748b', fontSize: 12 }}>{f.module?.name || '—'}</div>
@@ -642,7 +642,7 @@ function ListPreviewCard({ formula }) {
 				<div style={{ background: '#f0f4f8', borderRadius: 10, padding: '14px 18px', marginBottom: 16, border: '1px solid #e2e8f0' }}>
 					<Typography.Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>FORMULA</Typography.Text>
 					<div style={{ fontFamily: "'Cambria Math', 'Latin Modern Math', Georgia, serif", fontSize: 18, fontWeight: 600, color: '#102540', marginTop: 4, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-						<span dangerouslySetInnerHTML={{ __html: renderFormulaHtml(formula.formula) }} />
+						<span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.formula) }} />
 					</div>
 				</div>
 				{/* Variables */}

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Row, Col, Card, Modal, Grid } from 'antd';
 import { BookOutlined, SearchOutlined, ClockCircleOutlined, ThunderboltOutlined, CalculatorOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
+import MathText from '../../components/MathText';
 
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 
@@ -223,7 +224,7 @@ function ModuleNoteView({ note }) {
 							{c.formula && (
 								<div style={{ background: '#f0f4f8', borderRadius: 8, padding: '12px 16px', marginBottom: 8, border: '1px solid #e2e8f0' }}>
 									<Typography.Text style={{ fontSize: 10, textTransform: 'uppercase', color: '#64748b', letterSpacing: 1 }}>FORMULA</Typography.Text>
-									<div style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 16, fontWeight: 600, color: '#102540', marginTop: 4 }}>{safeRender(c.formula)}</div>
+									<MathText text={c.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 16, fontWeight: 600, color: '#102540', marginTop: 4 }} />
 									{c.formulaVariables && <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{safeRender(c.formulaVariables)}</div>}
 								</div>
 							)}
@@ -252,7 +253,7 @@ function ModuleNoteView({ note }) {
 				{formulas.length > 0 && (
 					<div style={{ marginBottom: 20, background: '#f0f4f8', borderRadius: 12, padding: '16px 20px', border: '1px solid #e2e8f0' }}>
 						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540' }}>Formula Recap</Typography.Text>
-						{formulas.map((f, i) => (<div key={i} style={{ padding: '8px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}><div style={{ fontWeight: 600, color: '#102540', fontSize: 13 }}>{safeRender(f.name)}</div><div style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', marginTop: 2 }}>{safeRender(f.formula)}</div><div style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>{safeRender(f.variables)}</div></div>))}
+						{formulas.map((f, i) => (<div key={i} style={{ padding: '8px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}><div style={{ fontWeight: 600, color: '#102540', fontSize: 13 }}>{safeRender(f.name)}</div><MathText text={f.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', marginTop: 2 }} /><div style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>{safeRender(f.variables)}</div></div>))}
 					</div>
 				)}
 

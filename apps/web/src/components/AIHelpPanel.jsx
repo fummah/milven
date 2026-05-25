@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button, Typography, Alert, Spin } from 'antd';
 import { RobotOutlined } from '@ant-design/icons';
 import { api } from '../lib/api';
+import { formatFormulaHtml } from '../lib/formatFormula';
 
 function getErrorMessage(error) {
 	const raw = error?.response?.data?.error;
@@ -77,9 +78,7 @@ export function AIHelpPanel({ questionId, selectedOptionId, selectedOptionText, 
 					) : error ? (
 						<Alert type="warning" showIcon message={error} />
 					) : (
-						<Typography.Paragraph className="!mb-0 text-slate-800 whitespace-pre-wrap text-sm">
-							{content}
-						</Typography.Paragraph>
+						<div className="!mb-0 text-slate-800 whitespace-pre-wrap text-sm" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(content) }} />
 					)}
 				</div>
 			)}

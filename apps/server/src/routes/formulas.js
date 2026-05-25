@@ -3,7 +3,7 @@ import { z } from 'zod';
 import OpenAI from 'openai';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey } from '../lib/openai.js';
+import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
 
 /**
  * Build a formula-focused curriculum excerpt that prioritises formula sections
@@ -368,19 +368,20 @@ ${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You 
 - The "losTag" MUST be the EXACT Learning Outcome Statement from the document (starts with verbs like "describe", "explain", "calculate").
 - Page references in the document appear as [PAGE N] markers — use these for accurate "losTag" references.
 ` : ''}- Each formula must be a REAL, commonly tested formula for this topic area in the CFA curriculum
-- The "formula" field must be the EXACT mathematical equation using RICH NOTATION identical to how it appears in the CFA curriculum textbook:
-  * Subscripts with _: P_0, r_d, CF_t, R_{nominal}, HPR_{t}, w_{equity}, r_{f}, r_{ce}, BV_t, EPS_{t+1}
-  * Superscripts with ^: (1+r)^n, (1+g)^{T}, e^{-rT}, sigma^{2}, (1+r)^{-n}
-  * Fractions: (P_1 - P_0 + D_1) / P_0, (FV - PV) / PV, D_1 / (r - g)
-  * Greek letters spelled out: sigma, sigma^{2}, beta, alpha, mu, rho, delta, lambda, pi, theta, epsilon, tau, gamma, phi
-  * Summation: sum_{t=1}^{T} CF_t / (1+r)^t, sum_{i=1}^{n} w_i * R_i
-  * Products and roots: sqrt(sum_{i=1}^{n} (R_i - R_bar)^{2} / (n-1)), (FV/PV)^{1/n} - 1
-  * Conditional/piecewise: max(0, S_T - X), min(a, b)
-  * Integrals/continuous: e^{-r*T} * N(d_1), ln(S/X)
-  * ALWAYS use curly braces for multi-character subscripts/superscripts: R_{equity} not R_equity, sigma^{2}_{p} not sigma^2_p
-  * Parentheses for clarity: (1 + R_{nominal}) = (1 + R_{real}) * (1 + inflation)
-- NEVER flatten subscripts or superscripts into plain text — E(R_p) not "Expected return of portfolio", V_0 not "Value at time zero"
-- NEVER omit subscripts/superscripts that exist in the curriculum — if the textbook has R_{WACC}, do NOT write RWACC or R_wacc
+- The "formula" field must be the EXACT mathematical equation using VALID LaTeX notation:
+  * Subscripts: P_{0}, r_{d}, CF_{t}, R_{nominal}, w_{equity}
+  * Superscripts: (1+r)^{n}, e^{-rT}, \sigma^{2}, (1+r)^{-n}
+  * Fractions: \frac{P_1 - P_0 + D_1}{P_0}, \frac{D_1}{r - g}
+  * Greek letters: \sigma, \beta, \alpha, \mu, \rho, \delta, \lambda, \pi, \theta, \epsilon, \tau, \gamma, \phi
+  * Summation: \sum_{t=1}^{T} \frac{CF_t}{(1+r)^{t}}
+  * Roots: \sqrt{\frac{\sum_{i=1}^{n}(R_i - \bar{R})^{2}}{n-1}}
+  * Inline formulas: wrap in \( ... \)
+  * Block formulas: wrap in \[ ... \]
+  * Multiply: use \cdot instead of *
+  * ALWAYS use curly braces for multi-character sub/superscripts: R_{equity} not R_equity, \sigma^{2}_{p} not sigma^2_p
+- NEVER flatten subscripts or superscripts into plain text — E(R_p) not "Expected return of portfolio"
+- NEVER omit subscripts/superscripts that exist in the curriculum
+- ALL LaTeX must be valid, render-ready for KaTeX/MathJax, with balanced braces
 - "variables" must define EVERY symbol in the formula clearly
 - "interpretation" must explain what the formula measures or means in plain English
 - "whenToUse" must describe the specific exam scenario where this formula applies
@@ -417,7 +418,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: 'You are an expert CFA curriculum author. Return valid JSON only. CRITICAL: Every formula MUST use proper subscript (_) and superscript (^) notation. Use curly braces for multi-character sub/superscripts like R_{equity}, sigma^{2}. NEVER write formulas in plain text without notation. Use the LATEST CFA curriculum formulas only.' },
+					{ role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. Use the LATEST CFA curriculum formulas only.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,
@@ -629,16 +630,19 @@ ${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You 
 - The "losTag" MUST be the EXACT Learning Outcome Statement from the document (starts with verbs like "describe", "explain", "calculate").
 - Page references in the document appear as [PAGE N] markers — use these for accurate "losTag" references.
 ` : ''}- Each formula must be a REAL, commonly tested formula for this topic area in the CFA curriculum
-- The "formula" field must be the exact mathematical equation using RICH NOTATION:
-  * Use _ for subscripts: P_0, r_d, w_{equity}, CF_t
-  * Use ^ for superscripts/exponents: (1+r)^n, x^2, e^{-rT}
-  * Use (numerator) / (denominator) for fractions: (P_1 - P_0 + D_1) / (P_0)
-  * Use Greek letter names: sigma, beta, alpha, mu, rho, delta, lambda, pi, theta, epsilon, tau
-  * Use sqrt(x) for square roots
-  * Use * for multiplication where explicit multiply sign is needed
-  * Example: WACC = w_d * r_d * (1 - t) + w_e * r_e
-  * Example: PV = (CF_1) / ((1 + r)^1) + (CF_2) / ((1 + r)^2)
-  * Example: sigma_p = sqrt(w_1^2 * sigma_1^2 + w_2^2 * sigma_2^2 + 2 * w_1 * w_2 * rho_{12} * sigma_1 * sigma_2)
+- The "formula" field must be the exact mathematical equation using VALID LaTeX notation:
+  * Subscripts: P_{0}, r_{d}, w_{equity}, CF_{t}
+  * Superscripts: (1+r)^{n}, x^{2}, e^{-rT}
+  * Fractions: \frac{P_1 - P_0 + D_1}{P_0}
+  * Greek letters: \sigma, \beta, \alpha, \mu, \rho, \delta, \lambda, \pi, \theta, \epsilon, \tau
+  * Roots: \sqrt{x}
+  * Multiply: \cdot
+  * Inline formulas: wrap in \( ... \)
+  * Block formulas: wrap in \[ ... \]
+  * Example: \( WACC = w_{d} \cdot r_{d} \cdot (1 - t) + w_{e} \cdot r_{e} \)
+  * Example: \( PV = \frac{CF_1}{(1+r)^{1}} + \frac{CF_2}{(1+r)^{2}} \)
+  * Example: \( \sigma_{p} = \sqrt{w_1^{2} \sigma_1^{2} + w_2^{2} \sigma_2^{2} + 2 w_1 w_2 \rho_{12} \sigma_1 \sigma_2} \)
+  * ALL LaTeX must be render-ready for KaTeX/MathJax with balanced braces
 - "variables" must define EVERY symbol in the formula clearly
 - "interpretation" must explain what the formula measures or means in plain English
 - "whenToUse" must describe the specific exam scenario where this formula applies
@@ -674,7 +678,7 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: 'You are an expert CFA curriculum author. Always return valid JSON only.' },
+					{ role: 'system', content: `You are an expert CFA curriculum author. Always return valid JSON only.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,

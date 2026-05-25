@@ -3,7 +3,7 @@ import { z } from 'zod';
 import OpenAI from 'openai';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey } from '../lib/openai.js';
+import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
 
 export function summarySheetsRouter(prisma) {
 	const router = Router();
@@ -282,8 +282,9 @@ MINIMUM LENGTH REQUIREMENTS (generate AT LEAST these amounts — more is better)
 - "useCase": 2-3 sentences on when to use this sheet
 - "coreDefinitions": 12-20 key definitions. Each definition must be 2-3 sentences in exam language. Cover EVERY important term in the module.
 - "formulas": 8-15 formulas. Include EVERY formula from the curriculum for this module. Each must have full variables explanation and when-to-use context (2-3 sentences each).
-  * Use rich notation: _ for subscripts (P_0, CF_t), ^ for superscripts ((1+r)^n), Greek letters (sigma, beta, alpha)
-  * PRESERVE exact notation from the curriculum document
+  * Use valid LaTeX: \frac{a}{b} for fractions, P_{0}, CF_{t} for subscripts, (1+r)^{n} for superscripts, \sigma, \beta, \alpha for Greek
+  * Inline: \( ... \)  Block: \[ ... \]  ALL braces must be balanced
+  * PRESERVE exact notation from the curriculum document but convert to valid LaTeX
 - "distinctions": 5-8 comparisons of look-alike concepts. Each "difference" field must be 3-5 sentences explaining the distinction clearly.
 - "diagrams": 3-5 text-based visual aids (flowcharts, comparison tables, process flows). Each "description" must be detailed (5-10 sentences describing the visual layout and relationships).
 - "examTraps": 6-10 common exam traps. Each "trap" must be 2-3 sentences explaining what candidates confuse and how to avoid it.
@@ -325,7 +326,7 @@ Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
 				const completion = await openai.chat.completions.create({
 					model: 'gpt-4o-mini',
 					messages: [
-						{ role: 'system', content: 'You are an expert CFA curriculum author. Return valid JSON only. CRITICAL: Generate the LONGEST, most detailed response possible. Use ALL available tokens. Every array must meet the MINIMUM item counts specified. Every text field must be multiple sentences. Do NOT abbreviate — write FULL detailed content.' },
+						{ role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. CRITICAL: Generate the LONGEST, most detailed response possible. Use ALL available tokens. Every array must meet the MINIMUM item counts specified. Every text field must be multiple sentences. Do NOT abbreviate — write FULL detailed content.\n\n${LATEX_SYSTEM_RULES}` },
 						{ role: 'user', content: prompt }
 					],
 					temperature: 0.7,

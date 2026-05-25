@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireActiveSubscription } from '../middleware/requireActiveSubscription.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey } from '../lib/openai.js';
+import { getOpenAIApiKey, LATEX_SYSTEM_RULES } from '../lib/openai.js';
 
 export function examsRouter(prisma) {
 	const router = Router();
@@ -1326,7 +1326,10 @@ export function examsRouter(prisma) {
 			try {
 				const comp = await openai.chat.completions.create({
 					model: 'gpt-4o-mini',
-					messages: [{ role: 'user', content: prompt }],
+					messages: [
+						{ role: 'system', content: `You are a concise CFA study coach. When mentioning formulas, use valid LaTeX: inline \\( ... \\), fractions \\frac{a}{b}, Greek \\alpha \\beta \\sigma, subscripts P_{0}, superscripts x^{2}. Never output broken LaTeX.` },
+						{ role: 'user', content: prompt }
+					],
 					temperature: 0.5,
 					max_tokens: 150
 				});
@@ -1408,7 +1411,10 @@ export function examsRouter(prisma) {
 			const openai = new OpenAI({ apiKey });
 			const comp = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
-				messages: [{ role: 'user', content: prompt }],
+				messages: [
+					{ role: 'system', content: `You are a concise CFA study coach. When mentioning formulas, use valid LaTeX: inline \\( ... \\), fractions \\frac{a}{b}, Greek \\alpha \\beta \\sigma, subscripts P_{0}, superscripts x^{2}. Never output broken LaTeX.` },
+					{ role: 'user', content: prompt }
+				],
 				temperature: 0.4,
 				max_tokens: 500
 			});

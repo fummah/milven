@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Tabs, Spin, Progress, Checkbox } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, FilterOutlined, StarOutlined, StarFilled, CopyOutlined, OrderedListOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
+import { formatFormulaHtml } from '../../lib/formatFormula';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -866,9 +867,7 @@ export function AdminFormulas() {
 											{/* Formula */}
 											<div style={{ background: '#f0f4f8', borderRadius: 8, padding: '10px 14px', marginBottom: 10, border: '1px solid #e2e8f0' }}>
 												<Typography.Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>FORMULA</Typography.Text>
-												<div style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 16, fontWeight: 600, color: '#102540', marginTop: 2, whiteSpace: 'pre-wrap' }}>
-													{f.formula}
-												</div>
+												<div style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 16, fontWeight: 600, color: '#102540', marginTop: 2, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.formula) }} />
 											</div>
 											{/* Variables */}
 											<div style={{ marginBottom: 8 }}>
@@ -988,9 +987,7 @@ function FormulaCardPreview({ formula }) {
 						fontFamily: "'Cambria Math', 'Latin Modern Math', 'STIX Two Math', Georgia, serif",
 						fontSize: 18, fontWeight: 600, color: '#102540',
 						marginTop: 4, lineHeight: 1.5, whiteSpace: 'pre-wrap',
-					}}>
-						{formula.formula}
-					</div>
+					}} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.formula) }} />
 				</div>
 
 				{/* Variables */}

@@ -4,8 +4,16 @@
  * safeHtml          – unescape HTML entities that may have been stored escaped
  * renderFormulaHtml – convert plain-text math notation (^, _, Greek letters …)
  *                     into rich HTML with <sup>, <sub>, fractions, etc.
- * formatFormulaHtml – convenience combo: safeHtml first, then renderFormulaHtml
+ * renderLatex       – detect LaTeX delimiters \( … \) and \[ … \] and render
+ *                     them to HTML via KaTeX, leaving surrounding text intact.
+ * formatFormulaHtml – convenience combo: detects LaTeX first; falls back to
+ *                     legacy plain-text rendering for older content.
  */
+
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+
+/* ─── helpers ────────────────────────────────────────────────────────────── */
 
 /**
  * Unescape HTML entities that may have been double-escaped when stored in the DB.
@@ -19,6 +27,55 @@ export function safeHtml(html) {
 		.replace(/&quot;/g, '"')
 		.replace(/&#39;/g, "'");
 }
+
+/**
+ * Return true when the string contains LaTeX delimiters \( … \) or \[ … \].
+ */
+export function containsLatex(text) {
+	if (!text) return false;
+	return /\\\([\s\S]*?\\\)/.test(text) || /\\\[[\s\S]*?\\\]/.test(text);
+}
+
+/* ─── KaTeX renderer ─────────────────────────────────────────────────────── */
+
+/**
+ * Render a single LaTeX expression to HTML via KaTeX.
+ * Returns the original string on failure so the page never breaks.
+ */
+function katexToHtml(latex, displayMode = false) {
+	try {
+		return katex.renderToString(latex, {
+			displayMode,
+			throwOnError: false,
+			trust: true,
+			strict: false,
+		});
+	} catch {
+		return latex;
+	}
+}
+
+/**
+ * Find every \( … \) (inline) and \[ … \] (block) in *text* and replace
+ * them with KaTeX-rendered HTML.  Non-LaTeX text passes through unchanged.
+ */
+export function renderLatex(text) {
+	if (!text) return '';
+
+	// Process block math first  \[ … \]
+	let result = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, expr) =>
+		katexToHtml(expr.trim(), true)
+	);
+
+	// Then inline math  \( … \)
+	result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_, expr) =>
+		katexToHtml(expr.trim(), false)
+	);
+
+	return result;
+}
+
+/* ─── legacy plain-text renderer (for old content without LaTeX) ─────────── */
 
 /**
  * Convert plain-text formula notation into rich HTML with subscripts,
@@ -93,20 +150,26 @@ export function renderFormulaHtml(text) {
 	return html;
 }
 
+/* ─── main public API ────────────────────────────────────────────────────── */
+
 /**
  * Convenience: unescape stored HTML entities, then render formula notation.
  * Use this for fields like keyFormulas, workedSolution, explanation, etc.
  * that may contain a mix of HTML and plain-text formula notation.
+ *
+ * Automatically detects LaTeX (\( … \), \[ … \]) and renders via KaTeX.
+ * Falls back to the legacy renderFormulaHtml for older plain-text content.
  */
 export function formatFormulaHtml(html) {
 	if (!html) return '';
-	// First unescape, then apply formula rendering only to text nodes
-	// (i.e. don't accidentally re-escape existing <sup>/<sub> tags)
 	const unescaped = safeHtml(html);
 
-	// If the content already contains <sup> or <sub> tags, it was already
-	// formatted (e.g. AI returned HTML directly). Only apply renderFormulaHtml
-	// to the plain-text segments between existing tags.
+	// ── New path: KaTeX rendering for content with LaTeX delimiters ──
+	if (containsLatex(unescaped)) {
+		return renderLatex(unescaped);
+	}
+
+	// ── Legacy path: plain-text notation (for old content) ──
 	if (/<su[bp]>/i.test(unescaped)) {
 		// Process only text outside of HTML tags
 		return unescaped.replace(/(>)([^<]+)(<)/g, (_, open, text, close) => {
