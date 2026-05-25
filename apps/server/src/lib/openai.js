@@ -234,15 +234,26 @@ function regexValidation(input) {
 		};
 	}
 
-	// pseudo math variables
+	// pseudo math variables — use word boundaries to avoid matching inside LaTeX commands like \sqrt
 	if (
-		/Weightingdebt|Costt|CFt|rt/.test(input)
+		/Weightingdebt|Costt(?!\\)|(?<![\\a-zA-Z])CFt(?![_{}])|(?<![\\a-zA-Z])rt(?![_{}\\a-zA-Z])/.test(input)
 	) {
 
 		return {
 			valid: false,
 			reason:
 				'Detected pseudo-math variable naming'
+		};
+	}
+
+	// plain-text detection: if no LaTeX syntax chars and formula is non-trivial
+	const hasLatexSyntax = /[\\{}_^]/.test(input);
+	if (!hasLatexSyntax && input.length > 12) {
+
+		return {
+			valid: false,
+			reason:
+				'Plain-text formula without any LaTeX syntax'
 		};
 	}
 
@@ -390,13 +401,27 @@ export function validateLatexFormula(input) {
 	 * -----------------------------------------
 	 */
 
+	// Strip math delimiters before passing to KaTeX
+	// KaTeX expects bare math content, not \[...\] or \(...\) wrappers
+	let mathContent = s.trim();
+	if (mathContent.startsWith('\\[') && mathContent.endsWith('\\]')) {
+		mathContent = mathContent.slice(2, -2).trim();
+	} else if (mathContent.startsWith('\\(') && mathContent.endsWith('\\)')) {
+		mathContent = mathContent.slice(2, -2).trim();
+	}
+
+	// If after stripping delimiters there's no content, skip KaTeX check
+	if (!mathContent) {
+		return { valid: false, reason: 'Empty formula after stripping delimiters' };
+	}
+
 	try {
 
-		katex.renderToString(s, {
+		katex.renderToString(mathContent, {
 
 			throwOnError: true,
 
-			strict: 'error',
+			strict: 'warn',
 
 			displayMode: true
 		});
