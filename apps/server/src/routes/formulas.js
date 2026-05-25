@@ -3,7 +3,7 @@ import { z } from 'zod';
 import OpenAI from 'openai';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
+import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, validateFormulaItems } from '../lib/openai.js';
 
 /**
  * Build a formula-focused curriculum excerpt that prioritises formula sections
@@ -416,12 +416,12 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 
 			const openai = new OpenAI({ apiKey, timeout: 180_000 });
 			const maxTokens = Math.min(16384, Math.max(4096, count * 500));
+			const systemMsg = { role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. Use the LATEST CFA curriculum formulas only.\n\n${LATEX_SYSTEM_RULES}` };
+			const userMsg = { role: 'user', content: prompt };
+
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
-				messages: [
-					{ role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. Use the LATEST CFA curriculum formulas only.\n\n${LATEX_SYSTEM_RULES}` },
-					{ role: 'user', content: prompt }
-				],
+				messages: [systemMsg, userMsg],
 				temperature: 0.7,
 				max_tokens: maxTokens,
 				response_format: { type: 'json_object' }
@@ -437,6 +437,52 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 			}
 
 			if (!items.length) return res.status(502).json({ error: 'AI returned no formulas' });
+
+			// ── LaTeX validation pass: regenerate any malformed formulas ────────
+			let invalid = validateFormulaItems(items);
+			if (invalid.length > 0) {
+				console.warn(`[formulas.generate-ai.preview] ${invalid.length}/${items.length} formula(s) failed LaTeX validation, requesting regeneration`);
+				const invalidList = invalid.slice(0, 20).map(v => `- index ${v.index} ("${v.name || 'unnamed'}"): ${v.reason}`).join('\n');
+				const fixPrompt = `Some formulas you returned had INVALID LaTeX and would fail to render in KaTeX. Regenerate ONLY these items with VALID, KaTeX-compileable LaTeX, returning the SAME JSON shape { "formulas": [...] } with ONLY the fixed entries (preserve the original "order" field so I can match them back):\n\n${invalidList}\n\nFor each fix, ensure:\n- Every \\frac has TWO brace groups: \\frac{...}{...}\n- All { } pairs balance\n- All \\left have matching \\right\n- Multi-char superscripts/subscripts use braces: x^{2}, R_{equity}\n- No malformed escapes inside sub/superscripts\n- No empty math delimiters\n\nReturn ONLY valid JSON containing the corrected formulas array.`;
+
+				try {
+					const fixCompletion = await openai.chat.completions.create({
+						model: 'gpt-4o-mini',
+						messages: [systemMsg, userMsg, { role: 'assistant', content: raw }, { role: 'user', content: fixPrompt }],
+						temperature: 0.3,
+						max_tokens: Math.min(8192, Math.max(2048, invalid.length * 600)),
+						response_format: { type: 'json_object' }
+					});
+					const fixRaw = fixCompletion.choices?.[0]?.message?.content?.trim() || '{}';
+					const fixParsed = JSON.parse(fixRaw);
+					const fixes = Array.isArray(fixParsed.formulas) ? fixParsed.formulas : (Array.isArray(fixParsed.items) ? fixParsed.items : []);
+					// Replace invalid items by matching on order or by index in invalid list
+					for (let i = 0; i < fixes.length; i++) {
+						const fix = fixes[i];
+						const target = invalid[i];
+						if (!target) break;
+						// Prefer matching by order if present
+						let replaceIdx = target.index;
+						if (typeof fix.order === 'number') {
+							const byOrder = items.findIndex(it => it.order === fix.order);
+							if (byOrder !== -1) replaceIdx = byOrder;
+						}
+						items[replaceIdx] = { ...items[replaceIdx], ...fix };
+					}
+					invalid = validateFormulaItems(items);
+				} catch (fixErr) {
+					console.warn('[formulas.generate-ai.preview] Regeneration pass failed:', fixErr?.message);
+				}
+
+				// Drop any still-invalid formulas — never return broken LaTeX
+				if (invalid.length > 0) {
+					const dropSet = new Set(invalid.map(v => v.index));
+					items = items.filter((_, i) => !dropSet.has(i));
+					console.warn(`[formulas.generate-ai.preview] Dropped ${dropSet.size} formula(s) that remained invalid after regeneration`);
+				}
+			}
+
+			if (!items.length) return res.status(502).json({ error: 'AI returned no valid formulas (all failed LaTeX validation)' });
 
 			// Build topic lookup for matching AI topicName to DB topic IDs
 			const topicLookup = new Map();
