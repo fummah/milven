@@ -260,7 +260,7 @@ export function AdminFormulas() {
 
 			// Use preview flow: generate but don't save
 			try {
-				const res = await api.post('/api/formulas/generate-ai/preview', payload);
+				const res = await api.post('/api/formulas/generate-ai/preview', payload, { timeout: 180_000 });
 				const gen = res.data?.generated || null;
 				const meta = res.data?.meta || payload;
 				setAiPreview(gen);

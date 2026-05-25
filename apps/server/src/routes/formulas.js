@@ -316,14 +316,14 @@ export function formulasRouter(prisma) {
 				autoDetected = true;
 				if (topicId) {
 					// Single topic selected — keep count small to avoid timeout
-					count = 12;
+					count = 10;
 				} else if (moduleId) {
 					// Module selected — generate formulas across its topics
-					count = Math.min(60, Math.max(20, resolvedTopics.length * 6));
+					count = Math.min(30, Math.max(10, resolvedTopics.length * 4));
 				} else if (resolvedTopics.length > 0) {
-					count = Math.min(60, Math.max(20, resolvedTopics.length * 4));
+					count = Math.min(25, Math.max(10, resolvedTopics.length * 3));
 				} else {
-					count = 30;
+					count = 15;
 				}
 			}
 
@@ -336,7 +336,7 @@ export function formulasRouter(prisma) {
 				});
 				if (currDoc?.extractedText) {
 					// Use smaller excerpt for narrower scope to avoid gateway timeout
-					const maxChars = topicId ? 6000 : (moduleId ? 10000 : 15000);
+					const maxChars = topicId ? 4000 : (moduleId ? 7000 : 10000);
 					curriculumExcerpt = buildFormulaCurriculumExcerpt(currDoc.extractedText, topicNames, maxChars);
 				}
 			}
@@ -414,7 +414,8 @@ Return a JSON object:
 
 Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula cards. Return ONLY valid JSON.`;
 
-			const openai = new OpenAI({ apiKey });
+			const openai = new OpenAI({ apiKey, timeout: 180_000 });
+			const maxTokens = Math.min(16384, Math.max(4096, count * 500));
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
@@ -422,7 +423,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,
-				max_tokens: 16384,
+				max_tokens: maxTokens,
 				response_format: { type: 'json_object' }
 			});
 
