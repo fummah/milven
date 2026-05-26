@@ -421,7 +421,7 @@ function ModuleNotePreviewCard({ note }) {
 								<div style={{ background: '#f0f4f8', borderRadius: 8, padding: '12px 16px', marginBottom: 8, border: '1px solid #e2e8f0' }}>
 									<Typography.Text style={{ fontSize: 10, textTransform: 'uppercase', color: '#64748b', letterSpacing: 1 }}>FORMULA</Typography.Text>
 									<MathText text={c.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 16, fontWeight: 600, color: '#102540', marginTop: 4 }} />
-									{c.formulaVariables && <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{safeRender(c.formulaVariables)}</div>}
+									{c.formulaVariables && <MathText text={safeRender(c.formulaVariables)} tag="div" style={{ fontSize: 12, color: '#64748b', marginTop: 4 }} />}
 								</div>
 							)}
 							{c.interpretation && <div style={{ fontSize: 13, color: '#374151', marginBottom: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, borderLeft: '3px solid #3b82f6' }}><strong>Interpretation:</strong> {safeRender(c.interpretation)}</div>}
@@ -449,7 +449,7 @@ function ModuleNotePreviewCard({ note }) {
 				{formulas.length > 0 && (
 					<div style={{ marginBottom: 20, background: '#f0f4f8', borderRadius: 12, padding: '16px 20px', border: '1px solid #e2e8f0' }}>
 						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540' }}>Formula Recap</Typography.Text>
-						{formulas.map((f, i) => (<div key={i} style={{ padding: '8px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}><div style={{ fontWeight: 600, color: '#102540', fontSize: 13 }}>{safeRender(f.name)}</div><MathText text={f.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', marginTop: 2 }} /><div style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>{safeRender(f.variables)}</div></div>))}
+						{formulas.map((f, i) => (<div key={i} style={{ padding: '8px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}><div style={{ fontWeight: 600, color: '#102540', fontSize: 13 }}>{safeRender(f.name)}</div><MathText text={f.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', marginTop: 2 }} /><MathText text={safeRender(f.variables)} tag="div" style={{ fontSize: 12, color: '#64748b', marginTop: 1 }} /></div>))}
 					</div>
 				)}
 

@@ -263,6 +263,7 @@ export function formulasRouter(prisma) {
 
 	// ─── AI GENERATE PREVIEW (Admin only) ────────────────────
 	// Returns generated formulas WITHOUT saving — for admin review
+	// Uses SSE (Server-Sent Events) to prevent 504 gateway timeouts
 	router.post('/generate-ai/preview', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const schema = z.object({
 			courseId: z.string(),
@@ -282,9 +283,32 @@ export function formulasRouter(prisma) {
 		const apiKey = await getOpenAIApiKey(prisma);
 		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured. Set OPENAI_API_KEY in .env or in Admin Settings.' });
 
+		// ── Set up SSE to keep connection alive ──
+		res.setHeader('Content-Type', 'text/event-stream');
+		res.setHeader('Cache-Control', 'no-cache');
+		res.setHeader('Connection', 'keep-alive');
+		res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+		res.flushHeaders();
+
+		const sendEvent = (event, data) => {
+			res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+		};
+
+		// Send keepalive pings every 10s to prevent proxy timeout
+		const keepAlive = setInterval(() => {
+			res.write(`: keepalive\n\n`);
+		}, 10_000);
+
+		const cleanup = () => { clearInterval(keepAlive); };
+
+		// Handle client disconnect
+		req.on('close', () => { cleanup(); });
+
 		try {
+			sendEvent('progress', { step: 'init', message: 'Preparing generation...' });
+
 			const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true } });
-			if (!course) return res.status(400).json({ error: 'Course not found' });
+			if (!course) { cleanup(); sendEvent('error', { error: 'Course not found' }); res.end(); return; }
 
 			let volumeName = null, moduleName = null, topicName = null;
 			let topicNames = [];
@@ -315,10 +339,8 @@ export function formulasRouter(prisma) {
 			if (!count) {
 				autoDetected = true;
 				if (topicId) {
-					// Single topic selected — keep count small to avoid timeout
 					count = 10;
 				} else if (moduleId) {
-					// Module selected — generate formulas across its topics
 					count = Math.min(30, Math.max(10, resolvedTopics.length * 4));
 				} else if (resolvedTopics.length > 0) {
 					count = Math.min(25, Math.max(10, resolvedTopics.length * 3));
@@ -335,8 +357,7 @@ export function formulasRouter(prisma) {
 					select: { extractedText: true }
 				});
 				if (currDoc?.extractedText) {
-					// Use smaller excerpt for narrower scope to avoid gateway timeout
-					const maxChars = topicId ? 4000 : (moduleId ? 7000 : 10000);
+					const maxChars = topicId ? 4000 : (moduleId ? 6000 : 8000);
 					curriculumExcerpt = buildFormulaCurriculumExcerpt(currDoc.extractedText, topicNames, maxChars);
 				}
 			}
@@ -414,6 +435,8 @@ Return a JSON object:
 
 Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula cards. Return ONLY valid JSON.`;
 
+			sendEvent('progress', { step: 'generating', message: `Generating ${count} formulas via AI...` });
+
 			const openai = new OpenAI({ apiKey, timeout: 180_000 });
 			const maxTokens = Math.min(16384, Math.max(4096, count * 500));
 			const systemMsg = { role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. Use the LATEST CFA curriculum formulas only.\n\n${LATEX_SYSTEM_RULES}` };
@@ -433,16 +456,22 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 				const parsed = JSON.parse(raw);
 				items = Array.isArray(parsed.formulas) ? parsed.formulas : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : []));
 			} catch {
-				return res.status(502).json({ error: 'AI returned invalid JSON' });
+				cleanup();
+				sendEvent('error', { error: 'AI returned invalid JSON' });
+				res.end();
+				return;
 			}
 
-			if (!items.length) return res.status(502).json({ error: 'AI returned no formulas' });
+			if (!items.length) { cleanup(); sendEvent('error', { error: 'AI returned no formulas' }); res.end(); return; }
+
+			sendEvent('progress', { step: 'validating', message: `Validating ${items.length} formulas...` });
 
 			// ── LaTeX validation pass: regenerate any malformed formulas ────────
 			let invalid = validateFormulaItems(items);
 			if (invalid.length > 0) {
 				console.warn(`[formulas.generate-ai.preview] ${invalid.length}/${items.length} formula(s) failed LaTeX validation, requesting regeneration`);
-				const invalidList = invalid.slice(0, 20).map(v => `- index ${v.index} ("${v.name || 'unnamed'}"): ${v.reason}`).join('\n');
+				sendEvent('progress', { step: 'fixing', message: `Fixing ${invalid.length} invalid formulas...` });
+				const invalidList = invalid.slice(0, 15).map(v => `- index ${v.index} ("${v.name || 'unnamed'}"): ${v.reason}`).join('\n');
 				const fixPrompt = `Some formulas you returned had INVALID LaTeX and would fail to render in KaTeX. Regenerate ONLY these items with VALID, KaTeX-compileable LaTeX, returning the SAME JSON shape { "formulas": [...] } with ONLY the fixed entries (preserve the original "order" field so I can match them back):\n\n${invalidList}\n\nFor each fix, ensure:\n- Every \\frac has TWO brace groups: \\frac{...}{...}\n- All { } pairs balance\n- All \\left have matching \\right\n- Multi-char superscripts/subscripts use braces: x^{2}, R_{equity}\n- No malformed escapes inside sub/superscripts\n- No empty math delimiters\n\nReturn ONLY valid JSON containing the corrected formulas array.`;
 
 				try {
@@ -456,12 +485,10 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 					const fixRaw = fixCompletion.choices?.[0]?.message?.content?.trim() || '{}';
 					const fixParsed = JSON.parse(fixRaw);
 					const fixes = Array.isArray(fixParsed.formulas) ? fixParsed.formulas : (Array.isArray(fixParsed.items) ? fixParsed.items : []);
-					// Replace invalid items by matching on order or by index in invalid list
 					for (let i = 0; i < fixes.length; i++) {
 						const fix = fixes[i];
 						const target = invalid[i];
 						if (!target) break;
-						// Prefer matching by order if present
 						let replaceIdx = target.index;
 						if (typeof fix.order === 'number') {
 							const byOrder = items.findIndex(it => it.order === fix.order);
@@ -482,7 +509,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 				}
 			}
 
-			if (!items.length) return res.status(502).json({ error: 'AI returned no valid formulas (all failed LaTeX validation)' });
+			if (!items.length) { cleanup(); sendEvent('error', { error: 'AI returned no valid formulas (all failed LaTeX validation)' }); res.end(); return; }
 
 			// Build topic lookup for matching AI topicName to DB topic IDs
 			const topicLookup = new Map();
@@ -516,14 +543,18 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 				matchedTopicId: matchTopicId(item.topicName),
 			}));
 
-			return res.json({
+			cleanup();
+			sendEvent('result', {
 				generated: { items: previewItems },
 				meta: { courseId, volumeId, moduleId, topicId, level, year }
 			});
+			res.end();
 		} catch (err) {
+			cleanup();
 			const msg = err?.error?.message || err?.message || 'OpenAI request failed';
 			console.error('[formulas.generate-ai.preview]', msg);
-			return res.status(502).json({ error: msg });
+			sendEvent('error', { error: msg });
+			res.end();
 		}
 	});
 

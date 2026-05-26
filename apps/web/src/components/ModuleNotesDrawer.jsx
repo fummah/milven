@@ -158,7 +158,7 @@ function ModuleNoteContent({ note }) {
 								<div style={{ background: '#f0f4f8', borderRadius: 6, padding: '10px 12px', marginBottom: 6, border: '1px solid #e2e8f0' }}>
 									<div style={{ fontSize: 9, textTransform: 'uppercase', color: '#64748b', letterSpacing: 1 }}>FORMULA</div>
 									<div className="formula-content" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 14, fontWeight: 600, color: '#102540', marginTop: 2 }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(c.formula) }} />
-									{c.formulaVariables && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{safeRender(c.formulaVariables)}</div>}
+									{c.formulaVariables && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(safeRender(c.formulaVariables)) }} />}
 								</div>
 							)}
 							{c.interpretation && <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, padding: '6px 10px', background: '#f8fafc', borderRadius: 4, borderLeft: '3px solid #3b82f6' }}><strong>Interpretation:</strong> {safeRender(c.interpretation)}</div>}
@@ -186,7 +186,7 @@ function ModuleNoteContent({ note }) {
 				{formulas.length > 0 && (
 					<div style={{ marginBottom: 16, background: '#f0f4f8', borderRadius: 10, padding: '14px 16px', border: '1px solid #e2e8f0' }}>
 						<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540' }}>Formula Recap</Typography.Text>
-						{formulas.map((f, i) => (<div key={i} style={{ padding: '6px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}><div style={{ fontWeight: 600, color: '#102540', fontSize: 12 }}>{safeRender(f.name)}</div><div className="formula-content" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 14, fontWeight: 600, color: '#102540', marginTop: 1 }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(safeRender(f.formula)) }} /><div style={{ fontSize: 11, color: '#64748b' }}>{safeRender(f.variables)}</div></div>))}
+						{formulas.map((f, i) => (<div key={i} style={{ padding: '6px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}><div style={{ fontWeight: 600, color: '#102540', fontSize: 12 }}>{safeRender(f.name)}</div><div className="formula-content" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 14, fontWeight: 600, color: '#102540', marginTop: 1 }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(safeRender(f.formula)) }} /><div style={{ fontSize: 11, color: '#64748b' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(safeRender(f.variables)) }} /></div>))}
 					</div>
 				)}
 

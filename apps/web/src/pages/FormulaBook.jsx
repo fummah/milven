@@ -471,7 +471,7 @@ function FormulaCard({ formula }) {
 			<div style={{ padding: '12px 16px', fontSize: 12, color: '#374151', lineHeight: 1.6 }}>
 				<div style={{ marginBottom: 8 }}>
 					<span style={{ fontWeight: 600, color: '#102540', textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}>Variables: </span>
-					{formula.variables}
+					<span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.variables) }} />
 				</div>
 				<div style={{
 					marginBottom: 8, padding: '6px 10px',
@@ -648,7 +648,7 @@ function ListPreviewCard({ formula }) {
 				{/* Variables */}
 				<div style={{ marginBottom: 14 }}>
 					<Typography.Text strong style={{ color: '#102540', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Variables</Typography.Text>
-					<div style={{ color: '#374151', fontSize: 13, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{formula.variables}</div>
+					<div style={{ color: '#374151', fontSize: 13, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.variables) }} />
 				</div>
 				{/* Interpretation */}
 				<div style={{ marginBottom: 14, padding: '10px 14px', background: '#f8fafc', borderRadius: 8, borderLeft: '3px solid #3b82f6' }}>

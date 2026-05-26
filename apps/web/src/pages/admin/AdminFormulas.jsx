@@ -258,11 +258,67 @@ export function AdminFormulas() {
 			};
 			Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 
-			// Use preview flow: generate but don't save
+			// Use SSE-based preview flow to avoid 504 gateway timeouts
 			try {
-				const res = await api.post('/api/formulas/generate-ai/preview', payload, { timeout: 180_000 });
-				const gen = res.data?.generated || null;
-				const meta = res.data?.meta || payload;
+				const token = localStorage.getItem('token');
+				const baseUrl = api.defaults.baseURL || '';
+				const response = await fetch(`${baseUrl}/api/formulas/generate-ai/preview`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						...(token ? { Authorization: `Bearer ${token}` } : {}),
+					},
+					body: JSON.stringify(payload),
+				});
+
+				if (!response.ok) {
+					// Non-SSE error response (validation errors, etc.)
+					const errBody = await response.json().catch(() => ({}));
+					throw new Error(errBody.error || `Server error ${response.status}`);
+				}
+
+				// Parse SSE stream
+				const reader = response.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = '';
+				let result = null;
+				let sseError = null;
+
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					buffer += decoder.decode(value, { stream: true });
+
+					// Process complete SSE messages from buffer
+					const lines = buffer.split('\n');
+					buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+					let currentEvent = null;
+					for (const line of lines) {
+						if (line.startsWith('event: ')) {
+							currentEvent = line.slice(7).trim();
+						} else if (line.startsWith('data: ')) {
+							const dataStr = line.slice(6);
+							try {
+								const data = JSON.parse(dataStr);
+								if (currentEvent === 'result') {
+									result = data;
+								} else if (currentEvent === 'error') {
+									sseError = data.error || 'Unknown error';
+								}
+							} catch { /* ignore parse errors on progress events */ }
+							currentEvent = null;
+						} else if (line.startsWith(':') || line === '') {
+							// Comment (keepalive) or empty line — ignore
+						}
+					}
+				}
+
+				if (sseError) throw new Error(sseError);
+				if (!result) throw new Error('No result received from AI generation');
+
+				const gen = result.generated || null;
+				const meta = result.meta || payload;
 				setAiPreview(gen);
 				setAiPreviewMeta(meta);
 				const itemCount = (gen?.items || []).length;
@@ -270,8 +326,10 @@ export function AdminFormulas() {
 				setAiPreviewOpen(true);
 				return;
 			} catch (previewErr) {
-				// Fallback: if preview endpoint fails, use legacy direct-save
-				if (previewErr?.response?.status && previewErr.response.status !== 404) {
+				// If fetch itself fails (network error, not found), try legacy
+				if (previewErr?.message?.includes('404') || previewErr?.name === 'TypeError') {
+					// Fall through to legacy
+				} else {
 					throw previewErr;
 				}
 			}
@@ -872,7 +930,7 @@ export function AdminFormulas() {
 											{/* Variables */}
 											<div style={{ marginBottom: 8 }}>
 												<Typography.Text strong style={{ fontSize: 11, textTransform: 'uppercase', color: '#64748b' }}>Variables</Typography.Text>
-												<div style={{ fontSize: 13, color: '#374151', marginTop: 2, whiteSpace: 'pre-wrap' }}>{f.variables}</div>
+												<div style={{ fontSize: 13, color: '#374151', marginTop: 2, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.variables) }} />
 											</div>
 											{/* Interpretation */}
 											<div style={{ marginBottom: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, borderLeft: '3px solid #3b82f6' }}>
@@ -995,9 +1053,7 @@ function FormulaCardPreview({ formula }) {
 					<Typography.Text strong style={{ color: '#102540', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
 						Variables
 					</Typography.Text>
-					<div style={{ color: '#374151', fontSize: 13, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-						{formula.variables}
-					</div>
+					<div style={{ color: '#374151', fontSize: 13, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.variables) }} />
 				</div>
 
 				{/* Interpretation */}

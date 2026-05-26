@@ -773,7 +773,7 @@ function SummarySheetPreviewContent({ sheet, compact }) {
 					{formulas.map((f, i) => (
 						<div key={i} style={{ padding: '6px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
 							<MathText text={f.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540' }} />
-							<div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{f.variables}</div>
+							<MathText text={f.variables} tag="div" style={{ fontSize: 12, color: '#64748b', marginTop: 2 }} />
 							{f.whenToUse && <div style={{ fontSize: 12, color: '#3b82f6', marginTop: 1 }}>{f.whenToUse}</div>}
 						</div>
 					))}
@@ -924,7 +924,7 @@ function SummarySheetPreviewCard({ sheet }) {
 								{formulas.map((f, i) => (
 									<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
 										<td style={{ padding: '8px', fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', whiteSpace: 'pre-wrap' }}><MathText text={f.formula} /></td>
-										<td style={{ padding: '8px', fontSize: 12, color: '#475569' }}>{f.variables}</td>
+										<td style={{ padding: '8px', fontSize: 12, color: '#475569' }}><MathText text={f.variables} /></td>
 										<td style={{ padding: '8px', fontSize: 12, color: '#3b82f6' }}>{f.whenToUse}</td>
 									</tr>
 								))}
