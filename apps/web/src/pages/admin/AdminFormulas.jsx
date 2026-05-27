@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Tabs, Spin, Progress, Checkbox, Collapse } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, FilterOutlined, StarOutlined, StarFilled, CopyOutlined, OrderedListOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
-import { formatFormulaHtml } from '../../lib/formatFormula';
+import { formatFormulaHtml, formatVariablesHtml } from '../../lib/formatFormula';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -930,7 +930,7 @@ export function AdminFormulas() {
 											{/* Variables */}
 											<div style={{ marginBottom: 8 }}>
 												<Typography.Text strong style={{ fontSize: 11, textTransform: 'uppercase', color: '#64748b' }}>Variables</Typography.Text>
-												<div style={{ fontSize: 13, color: '#374151', marginTop: 2, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.variables) }} />
+												<div style={{ fontSize: 13, color: '#374151', marginTop: 2, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatVariablesHtml(f.variables) }} />
 											</div>
 											{/* Interpretation */}
 											<div style={{ marginBottom: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, borderLeft: '3px solid #3b82f6' }}>
@@ -953,7 +953,7 @@ export function AdminFormulas() {
 											</Row>
 											{f.calculatorCue && (
 												<div style={{ marginBottom: 6, padding: '6px 10px', background: '#f0fdf4', borderRadius: 6, borderLeft: '3px solid #22c55e', fontSize: 13 }}>
-													<Typography.Text strong style={{ fontSize: 11, color: '#166534' }}>Calculator Cue: </Typography.Text>{f.calculatorCue}
+													<Typography.Text strong style={{ fontSize: 11, color: '#166534' }}>Calculator Cue: </Typography.Text><span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.calculatorCue) }} />
 												</div>
 											)}
 											{f.workedExample && (
@@ -1067,7 +1067,7 @@ function FormulaCardPreview({ formula }) {
 					<Typography.Text strong style={{ color: '#102540', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
 						Variables
 					</Typography.Text>
-					<div style={{ color: '#374151', fontSize: 13, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.variables) }} />
+					<div style={{ color: '#374151', fontSize: 13, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatVariablesHtml(formula.variables) }} />
 				</div>
 
 				{/* Interpretation */}
@@ -1110,9 +1110,7 @@ function FormulaCardPreview({ formula }) {
 						<Typography.Text strong style={{ color: '#166534', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
 							Calculator Cue
 						</Typography.Text>
-						<div style={{ color: '#166534', fontSize: 13, marginTop: 2 }}>
-							{formula.calculatorCue}
-						</div>
+						<div style={{ color: '#166534', fontSize: 13, marginTop: 2 }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.calculatorCue) }} />
 					</div>
 				)}
 

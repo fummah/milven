@@ -1,5 +1,5 @@
 import React from 'react';
-import { formatFormulaHtml } from '../lib/formatFormula';
+import { formatFormulaHtml, formatVariablesHtml } from '../lib/formatFormula';
 
 /**
  * Renders text that may contain LaTeX formulas (\( … \), \[ … \])
@@ -15,4 +15,14 @@ export default function MathText({ text, tag: Tag = 'span', ...rest }) {
 	if (!text) return null;
 	const str = typeof text === 'object' ? JSON.stringify(text) : String(text);
 	return <Tag {...rest} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(str) }} />;
+}
+
+/**
+ * Renders formula variables with description normalization.
+ * Fixes merged words like "expectedreturnofthemarket" → "expected return of the market".
+ */
+export function MathVariables({ text, tag: Tag = 'span', ...rest }) {
+	if (!text) return null;
+	const str = typeof text === 'object' ? JSON.stringify(text) : String(text);
+	return <Tag {...rest} dangerouslySetInnerHTML={{ __html: formatVariablesHtml(str) }} />;
 }

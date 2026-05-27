@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Spin, Checkbox, Tabs } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, FileTextOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, CopyOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
-import MathText from '../../components/MathText';
+import MathText, { MathVariables } from '../../components/MathText';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -773,7 +773,7 @@ function SummarySheetPreviewContent({ sheet, compact }) {
 					{formulas.map((f, i) => (
 						<div key={i} style={{ padding: '6px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
 							<MathText text={f.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540' }} />
-							<MathText text={f.variables} tag="div" style={{ fontSize: 12, color: '#64748b', marginTop: 2 }} />
+							<MathVariables text={f.variables} tag="div" style={{ fontSize: 12, color: '#64748b', marginTop: 2 }} />
 							{f.whenToUse && <div style={{ fontSize: 12, color: '#3b82f6', marginTop: 1 }}>{f.whenToUse}</div>}
 						</div>
 					))}
@@ -924,7 +924,7 @@ function SummarySheetPreviewCard({ sheet }) {
 								{formulas.map((f, i) => (
 									<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
 										<td style={{ padding: '8px', fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', whiteSpace: 'pre-wrap' }}><MathText text={f.formula} /></td>
-										<td style={{ padding: '8px', fontSize: 12, color: '#475569' }}><MathText text={f.variables} /></td>
+										<td style={{ padding: '8px', fontSize: 12, color: '#475569' }}><MathVariables text={f.variables} /></td>
 										<td style={{ padding: '8px', fontSize: 12, color: '#3b82f6' }}>{f.whenToUse}</td>
 									</tr>
 								))}
