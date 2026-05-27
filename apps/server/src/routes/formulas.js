@@ -85,6 +85,7 @@ export function formulasRouter(prisma) {
 		watchOut: z.string().min(1),
 		calculatorCue: z.string().optional().nullable(),
 		losTag: z.string().optional().nullable(),
+		workedExample: z.any().optional().nullable(),
 		level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 		courseId: z.string().optional().nullable(),
 		volumeId: z.string().optional().nullable(),
@@ -403,13 +404,14 @@ ${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You 
 - NEVER flatten subscripts or superscripts into plain text — E(R_p) not "Expected return of portfolio"
 - NEVER omit subscripts/superscripts that exist in the curriculum
 - ALL LaTeX must be valid, render-ready for KaTeX/MathJax, with balanced braces
-- "variables" must define EVERY symbol in the formula clearly
+- "variables" must define EVERY symbol in the formula clearly. Use plain text with subscript/superscript notation (e.g., "r_f: risk-free rate; R_p: portfolio return; sigma: standard deviation"). Do NOT wrap descriptions in \text{} — just use plain words after the colon.
 - "interpretation" must explain what the formula measures or means in plain English
 - "whenToUse" must describe the specific exam scenario where this formula applies
 - "watchOut" must highlight a common mistake or trap that students fall into
 - "calculatorCue" should provide TI BA II Plus keystrokes or calculator tips (if applicable, otherwise null)
 - "losTag" should reference the specific CFA Learning Outcome Statement
 - "highYield" should be true if this formula is very frequently tested on CFA exams
+- "workedExample" must be a JSON object with a step-by-step numeric example showing how to use the formula. Include: given values, substitution, intermediate calculations, final answer, and interpretation.
 - Do NOT duplicate formulas — each must be unique and cover a different concept within the topic area
 - Order formulas logically (foundational concepts first, then build complexity)
 - Use ONLY the latest ${year} CFA curriculum formulas. Do NOT use outdated or deprecated formula versions. If the curriculum document is provided, match its exact formulations.
@@ -428,7 +430,14 @@ Return a JSON object:
       "losTag": "string",
       "highYield": boolean,
       "order": number,
-      "topicName": "string (the exact topic name from the list above that this formula belongs to, or null if no match)"
+      "topicName": "string (the exact topic name from the list above that this formula belongs to, or null if no match)",
+      "workedExample": {
+        "given": "string (list of given values, e.g. 'z_2 = 4%, z_5 = 6%')",
+        "formula": "string (the formula with variables shown)",
+        "steps": ["string (step 1)", "string (step 2)", "..."],
+        "answer": "string (final numeric answer)",
+        "interpretation": "string (what the answer means in context)"
+      }
     }
   ]
 }
@@ -438,7 +447,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 			sendEvent('progress', { step: 'generating', message: `Generating ${count} formulas via AI...` });
 
 			const openai = new OpenAI({ apiKey, timeout: 180_000 });
-			const maxTokens = Math.min(16384, Math.max(4096, count * 500));
+			const maxTokens = Math.min(16384, Math.max(4096, count * 700));
 			const systemMsg = { role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. Use the LATEST CFA curriculum formulas only.\n\n${LATEX_SYSTEM_RULES}` };
 			const userMsg = { role: 'user', content: prompt };
 
@@ -541,6 +550,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 				order: item.order || (i + 1),
 				topicName: item.topicName || null,
 				matchedTopicId: matchTopicId(item.topicName),
+				workedExample: item.workedExample || null,
 			}));
 
 			cleanup();
@@ -589,6 +599,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 							watchOut: String(item.watchOut || ''),
 							calculatorCue: item.calculatorCue || null,
 							losTag: item.losTag || null,
+							workedExample: item.workedExample || undefined,
 							level,
 							courseId,
 							volumeId: volumeId || null,
@@ -807,6 +818,7 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 							watchOut: String(item.watchOut || ''),
 							calculatorCue: item.calculatorCue || null,
 							losTag: item.losTag || null,
+							workedExample: item.workedExample || undefined,
 							level,
 							courseId,
 							volumeId: volumeId || null,

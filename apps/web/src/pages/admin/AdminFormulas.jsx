@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Tabs, Spin, Progress, Checkbox } from 'antd';
+import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Tabs, Spin, Progress, Checkbox, Collapse } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, FilterOutlined, StarOutlined, StarFilled, CopyOutlined, OrderedListOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { formatFormulaHtml } from '../../lib/formatFormula';
@@ -956,6 +956,20 @@ export function AdminFormulas() {
 													<Typography.Text strong style={{ fontSize: 11, color: '#166534' }}>Calculator Cue: </Typography.Text>{f.calculatorCue}
 												</div>
 											)}
+											{f.workedExample && (
+												<Collapse size="small" style={{ marginBottom: 6, background: '#fefce8', border: '1px solid #fde68a', borderRadius: 6 }} items={[{
+													key: 'we',
+													label: <span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: '#92400e' }}>Worked Example</span>,
+													children: (
+														<div style={{ fontSize: 12, lineHeight: 1.6 }}>
+															{f.workedExample.given && <div style={{ marginBottom: 6 }}><strong>Given:</strong> <span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.workedExample.given) }} /></div>}
+															{f.workedExample.steps && f.workedExample.steps.map((s, si) => <div key={si} style={{ marginBottom: 3 }}><span style={{ color: '#3b82f6', fontWeight: 600 }}>Step {si + 1}:</span> <span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(s) }} /></div>)}
+															{f.workedExample.answer && <div style={{ marginTop: 6, padding: '6px 10px', background: '#ecfdf5', borderRadius: 6, fontWeight: 700, color: '#065f46' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.workedExample.answer) }} />}
+															{f.workedExample.interpretation && <div style={{ marginTop: 4, fontSize: 11, color: '#64748b', fontStyle: 'italic' }}>{f.workedExample.interpretation}</div>}
+														</div>
+													),
+												}]} />
+											)}
 											{f.losTag && (
 												<div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
 													<strong>LOS:</strong> {f.losTag}
@@ -1099,6 +1113,57 @@ function FormulaCardPreview({ formula }) {
 						<div style={{ color: '#166534', fontSize: 13, marginTop: 2 }}>
 							{formula.calculatorCue}
 						</div>
+					</div>
+				)}
+
+				{/* Worked Example */}
+				{formula.workedExample && (
+					<div style={{ marginBottom: 14 }}>
+						<Collapse size="small" style={{ background: '#fefce8', borderRadius: 8, border: '1px solid #fde68a' }} items={[{
+							key: 'we',
+							label: <span style={{ fontWeight: 600, color: '#102540', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Worked Example</span>,
+							children: (
+								<div style={{ fontSize: 13, lineHeight: 1.7 }}>
+									{formula.workedExample.given && (
+										<div style={{ marginBottom: 10 }}>
+											<div style={{ fontWeight: 600, color: '#102540', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Given</div>
+											<div style={{ padding: '8px 12px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.workedExample.given) }} />
+										</div>
+									)}
+									{formula.workedExample.formula && (
+										<div style={{ marginBottom: 10 }}>
+											<div style={{ fontWeight: 600, color: '#102540', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Formula</div>
+											<div style={{ padding: '8px 12px', background: '#f0f4f8', borderRadius: 6, border: '1px solid #e2e8f0', fontFamily: "'Cambria Math', Georgia, serif", fontWeight: 600 }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.workedExample.formula) }} />
+										</div>
+									)}
+									{formula.workedExample.steps && formula.workedExample.steps.length > 0 && (
+										<div style={{ marginBottom: 10 }}>
+											<div style={{ fontWeight: 600, color: '#102540', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Steps</div>
+											<div style={{ padding: '8px 12px', background: '#fff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+												{formula.workedExample.steps.map((step, si) => (
+													<div key={si} style={{ marginBottom: 4, paddingLeft: 4 }}>
+														<span style={{ fontWeight: 600, color: '#3b82f6', marginRight: 6 }}>Step {si + 1}:</span>
+														<span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(step) }} />
+													</div>
+												))}
+											</div>
+										</div>
+									)}
+									{formula.workedExample.answer && (
+										<div style={{ marginBottom: 10, padding: '10px 14px', background: '#ecfdf5', borderRadius: 8, borderLeft: '3px solid #10b981' }}>
+											<div style={{ fontWeight: 600, color: '#065f46', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Final Answer</div>
+											<div style={{ fontWeight: 700, color: '#065f46', fontSize: 15 }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.workedExample.answer) }} />
+										</div>
+									)}
+									{formula.workedExample.interpretation && (
+										<div style={{ padding: '8px 12px', background: '#f0f7ff', borderRadius: 6, borderLeft: '3px solid #3b82f6' }}>
+											<div style={{ fontWeight: 600, color: '#1e40af', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Interpretation</div>
+											<div style={{ color: '#1e3a5a', fontSize: 13 }}>{formula.workedExample.interpretation}</div>
+										</div>
+									)}
+								</div>
+							),
+						}]} />
 					</div>
 				)}
 

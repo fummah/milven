@@ -706,6 +706,7 @@ model Formula {
   module          Module?   @relation(fields: [moduleId], references: [id], onDelete: SetNull)
   topicId         String?
   topic           Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  workedExample   Json?               // Optional worked example (given, steps, answer, interpretation)
   order           Int       @default(0) // Display order within topic
   highYield       Boolean   @default(false) // Flagged for recap pages
   year            Int       @default(2026) // Version year

@@ -672,6 +672,60 @@ function ListPreviewCard({ formula }) {
 						<div style={{ color: '#166534', fontSize: 13, marginTop: 2 }}>{formula.calculatorCue}</div>
 					</div>
 				)}
+				{/* Worked Example */}
+				{formula.workedExample && (
+					<div style={{ marginBottom: 14 }}>
+						<Collapse
+							size="small"
+							items={[{
+								key: 'worked-example',
+								label: <span style={{ fontWeight: 600, color: '#102540', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Worked Example</span>,
+								children: (
+									<div style={{ fontSize: 13, lineHeight: 1.7 }}>
+										{formula.workedExample.given && (
+											<div style={{ marginBottom: 10 }}>
+												<div style={{ fontWeight: 600, color: '#102540', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Given</div>
+												<div style={{ padding: '8px 12px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.workedExample.given) }} />
+											</div>
+										)}
+										{formula.workedExample.formula && (
+											<div style={{ marginBottom: 10 }}>
+												<div style={{ fontWeight: 600, color: '#102540', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Formula</div>
+												<div style={{ padding: '8px 12px', background: '#f0f4f8', borderRadius: 6, border: '1px solid #e2e8f0', fontFamily: "'Cambria Math', Georgia, serif", fontWeight: 600 }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.workedExample.formula) }} />
+											</div>
+										)}
+										{formula.workedExample.steps && formula.workedExample.steps.length > 0 && (
+											<div style={{ marginBottom: 10 }}>
+												<div style={{ fontWeight: 600, color: '#102540', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Steps</div>
+												<div style={{ padding: '8px 12px', background: '#fff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+													{formula.workedExample.steps.map((step, si) => (
+														<div key={si} style={{ marginBottom: 4, paddingLeft: 4 }}>
+															<span style={{ fontWeight: 600, color: '#3b82f6', marginRight: 6 }}>Step {si + 1}:</span>
+															<span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(step) }} />
+														</div>
+													))}
+												</div>
+											</div>
+										)}
+										{formula.workedExample.answer && (
+											<div style={{ marginBottom: 10, padding: '10px 14px', background: '#ecfdf5', borderRadius: 8, borderLeft: '3px solid #10b981' }}>
+												<div style={{ fontWeight: 600, color: '#065f46', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Final Answer</div>
+												<div style={{ fontWeight: 700, color: '#065f46', fontSize: 15 }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.workedExample.answer) }} />
+											</div>
+										)}
+										{formula.workedExample.interpretation && (
+											<div style={{ padding: '8px 12px', background: '#f0f7ff', borderRadius: 6, borderLeft: '3px solid #3b82f6' }}>
+												<div style={{ fontWeight: 600, color: '#1e40af', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Interpretation</div>
+												<div style={{ color: '#1e3a5a', fontSize: 13 }}>{formula.workedExample.interpretation}</div>
+											</div>
+										)}
+									</div>
+								),
+							}]}
+							style={{ background: '#fefce8', borderRadius: 8, border: '1px solid #fde68a' }}
+						/>
+					</div>
+				)}
 				{/* LOS */}
 				{formula.losTag && (
 					<div style={{ marginTop: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, border: '1px dashed #cbd5e1' }}>

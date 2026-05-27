@@ -36,6 +36,130 @@ export function containsLatex(text) {
 	return /\\\([\s\S]*?\\\)/.test(text) || /\\\[[\s\S]*?\\\]/.test(text);
 }
 
+/**
+ * Return true when the string contains raw LaTeX commands WITHOUT delimiters.
+ * Detects: \text{}, \frac{}, \sqrt{}, \cdot, \times, and backslash-prefixed Greek letters.
+ */
+function containsLatexCommands(text) {
+	if (!text) return false;
+	return /\\(text|frac|sqrt|cdot|times|left|right|sum|prod|int|lim|ln|log|overline|bar|hat|tilde|vec|mathbf|mathrm|alpha|beta|gamma|delta|sigma|mu|rho|lambda|pi|theta|epsilon|tau|phi|omega|Delta|Sigma|Omega|Phi|Theta|Lambda|Gamma)\b/.test(text);
+}
+
+/**
+ * Strip LaTeX commands to plain text for fallback rendering.
+ */
+function stripLatexCommands(text) {
+	if (!text) return '';
+	return text
+		.replace(/\\text\{([^}]*)\}/g, '$1')
+		.replace(/\\overline\{([^}]*)\}/g, '$1')
+		.replace(/\\bar\{([^}]*)\}/g, '$1')
+		.replace(/\\hat\{([^}]*)\}/g, '$1')
+		.replace(/\\mathbf\{([^}]*)\}/g, '$1')
+		.replace(/\\mathrm\{([^}]*)\}/g, '$1')
+		.replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1)/($2)')
+		.replace(/\\sqrt\{([^}]*)\}/g, 'sqrt($1)')
+		.replace(/\\cdot/g, ' · ')
+		.replace(/\\times/g, ' × ')
+		.replace(/\\left/g, '')
+		.replace(/\\right/g, '')
+		.replace(/\\geq/g, '≥')
+		.replace(/\\leq/g, '≤')
+		.replace(/\\neq/g, '≠')
+		.replace(/\\approx/g, '≈')
+		.replace(/\\infty/g, '∞')
+		.replace(/\\pm/g, '±')
+		.replace(/\\alpha/g, 'alpha')
+		.replace(/\\beta/g, 'beta')
+		.replace(/\\gamma/g, 'gamma')
+		.replace(/\\delta/g, 'delta')
+		.replace(/\\sigma/g, 'sigma')
+		.replace(/\\mu/g, 'mu')
+		.replace(/\\rho/g, 'rho')
+		.replace(/\\lambda/g, 'lambda')
+		.replace(/\\pi/g, 'pi')
+		.replace(/\\theta/g, 'theta')
+		.replace(/\\epsilon/g, 'epsilon')
+		.replace(/\\tau/g, 'tau')
+		.replace(/\\phi/g, 'phi')
+		.replace(/\\omega/g, 'omega')
+		.replace(/\\Delta/g, 'Delta')
+		.replace(/\\Sigma/g, 'Sigma')
+		.replace(/\\Omega/g, 'Omega')
+		.replace(/\\Phi/g, 'Phi')
+		.replace(/\\Theta/g, 'Theta')
+		.replace(/\\Lambda/g, 'Lambda')
+		.replace(/\\Gamma/g, 'Gamma')
+		.replace(/\\\\/g, '');
+}
+
+/**
+ * Render a string that contains raw LaTeX commands (without \( \) or \[ \] delimiters).
+ * Splits by newlines/semicolons, renders each variable segment via KaTeX,
+ * falls back to stripping LaTeX + HTML rendering on failure.
+ */
+function renderRawLatex(text) {
+	if (!text) return '';
+
+	// Split by newlines first; each line may contain semicolons separating variables
+	const lines = text.split('\n').filter(l => l.trim());
+	const renderedLines = lines.map(line => {
+		// Try rendering the whole line as KaTeX first (most efficient)
+		try {
+			return katex.renderToString(line.trim(), {
+				displayMode: false,
+				throwOnError: true,
+				trust: true,
+				strict: false,
+			});
+		} catch {
+			// Whole line failed — split by semicolons (brace-aware) and try each segment
+		}
+
+		const segments = splitOutsideBraces(line, ';');
+		const renderedSegments = segments.map(segment => {
+			const trimmed = segment.trim();
+			if (!trimmed) return '';
+			try {
+				return katex.renderToString(trimmed, {
+					displayMode: false,
+					throwOnError: true,
+					trust: true,
+					strict: false,
+				});
+			} catch {
+				// KaTeX failed — fall back to stripping commands + HTML rendering
+				return renderFormulaHtml(stripLatexCommands(trimmed));
+			}
+		});
+		return renderedSegments.join('; ');
+	});
+
+	return renderedLines.join('<br>');
+}
+
+/**
+ * Split a string by a delimiter, but only when the delimiter is NOT inside curly braces.
+ */
+function splitOutsideBraces(str, delimiter) {
+	const result = [];
+	let current = '';
+	let depth = 0;
+	for (let i = 0; i < str.length; i++) {
+		const ch = str[i];
+		if (ch === '{') { depth++; current += ch; }
+		else if (ch === '}') { depth = Math.max(0, depth - 1); current += ch; }
+		else if (ch === delimiter && depth === 0) {
+			result.push(current);
+			current = '';
+		} else {
+			current += ch;
+		}
+	}
+	if (current) result.push(current);
+	return result.filter(s => s.trim());
+}
+
 /* ─── KaTeX renderer ─────────────────────────────────────────────────────── */
 
 /**
@@ -167,6 +291,12 @@ export function formatFormulaHtml(html) {
 	// ── New path: KaTeX rendering for content with LaTeX delimiters ──
 	if (containsLatex(unescaped)) {
 		return renderLatex(unescaped);
+	}
+
+	// ── Raw LaTeX commands without delimiters (e.g., AI-generated variables) ──
+	// Handles: "f_{2,3}: \text{forward rate}; z_5: \text{5-year spot rate}"
+	if (containsLatexCommands(unescaped)) {
+		return renderRawLatex(unescaped);
 	}
 
 	// ── Legacy path: plain-text notation (for old content) ──
