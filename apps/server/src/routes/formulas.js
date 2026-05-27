@@ -3,30 +3,7 @@ import { z } from 'zod';
 import OpenAI from 'openai';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, validateFormulaItems } from '../lib/openai.js';
-
-/**
- * Server-side formula sanitizer — repairs corrupted LaTeX from JSON parsing.
- * When OpenAI returns \times in JSON, JSON.parse interprets \t as tab → "<TAB>imes".
- * Similarly \beta → \b = backspace + "eta", \frac → \f = formfeed + "rac".
- * This MUST run on formula text before saving to database.
- */
-function sanitizeLatex(text) {
-	if (!text || typeof text !== 'string') return text || '';
-	let s = text;
-	// Fix JSON escape corruption
-	s = s.replace(/\times/g, '\\times');
-	s = s.replace(/\beta/g, '\\beta');
-	s = s.replace(/\bar/g, '\\bar');
-	s = s.replace(/\frac/g, '\\frac');
-	s = s.replace(/\nu(?=[^a-zA-Z]|$)/g, '\\nu');
-	s = s.replace(/\nabla/g, '\\nabla');
-	// Fix standalone "imes"
-	s = s.replace(/(?<![a-zA-Z\\])imes\b/g, '\\times');
-	// Clean stray control characters
-	s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
-	return s;
-}
+import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, validateFormulaItems, autoRepairLatex } from '../lib/openai.js';
 
 /**
  * Build a formula-focused curriculum excerpt that prioritises formula sections
@@ -562,12 +539,12 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 			// Return formulas for preview — do NOT save yet
 			const previewItems = items.map((item, i) => ({
 				name: String(item.name || `Formula ${i + 1}`).slice(0, 255),
-				formula: sanitizeLatex(String(item.formula || '')),
-				variables: sanitizeLatex(String(item.variables || '')),
+				formula: autoRepairLatex(String(item.formula || '')),
+				variables: autoRepairLatex(String(item.variables || '')),
 				interpretation: String(item.interpretation || ''),
 				whenToUse: String(item.whenToUse || ''),
 				watchOut: String(item.watchOut || ''),
-				calculatorCue: item.calculatorCue ? sanitizeLatex(String(item.calculatorCue)) : null,
+				calculatorCue: item.calculatorCue ? autoRepairLatex(String(item.calculatorCue)) : null,
 				losTag: item.losTag || null,
 				highYield: !!item.highYield,
 				order: item.order || (i + 1),
@@ -615,12 +592,12 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 					const formula = await prisma.formula.create({
 						data: {
 							name: String(item.name || `Formula ${idx + 1}`).slice(0, 255),
-							formula: String(item.formula || ''),
-							variables: String(item.variables || ''),
+							formula: autoRepairLatex(String(item.formula || '')),
+							variables: autoRepairLatex(String(item.variables || '')),
 							interpretation: String(item.interpretation || ''),
 							whenToUse: String(item.whenToUse || ''),
 							watchOut: String(item.watchOut || ''),
-							calculatorCue: item.calculatorCue || null,
+							calculatorCue: item.calculatorCue ? autoRepairLatex(String(item.calculatorCue)) : null,
 							losTag: item.losTag || null,
 							workedExample: item.workedExample || undefined,
 							level,
@@ -834,12 +811,12 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 					const formula = await prisma.formula.create({
 						data: {
 							name: String(item.name || `Formula ${i + 1}`).slice(0, 255),
-							formula: String(item.formula || ''),
-							variables: String(item.variables || ''),
+							formula: autoRepairLatex(String(item.formula || '')),
+							variables: autoRepairLatex(String(item.variables || '')),
 							interpretation: String(item.interpretation || ''),
 							whenToUse: String(item.whenToUse || ''),
 							watchOut: String(item.watchOut || ''),
-							calculatorCue: item.calculatorCue || null,
+							calculatorCue: item.calculatorCue ? autoRepairLatex(String(item.calculatorCue)) : null,
 							losTag: item.losTag || null,
 							workedExample: item.workedExample || undefined,
 							level,
