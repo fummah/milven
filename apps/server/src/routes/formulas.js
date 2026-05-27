@@ -404,11 +404,11 @@ ${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You 
 - NEVER flatten subscripts or superscripts into plain text — E(R_p) not "Expected return of portfolio"
 - NEVER omit subscripts/superscripts that exist in the curriculum
 - ALL LaTeX must be valid, render-ready for KaTeX/MathJax, with balanced braces
-- "variables" must define EVERY symbol in the formula clearly. Use plain text with subscript/superscript notation (e.g., "r_f: risk-free rate; R_p: portfolio return; sigma: standard deviation"). Do NOT wrap descriptions in \text{} — just use plain words after the colon.
+- "variables" must define EVERY symbol in the formula clearly. Format: one variable per line, "symbol: description". Example: "E(R_i): expected return of asset i\nR_f: risk-free rate\n\\beta_i: beta of asset i\nE(R_m): expected return of the market". CRITICAL: descriptions MUST be plain readable English with SPACES between every word — NEVER merge words (WRONG: expectedreturnofasseti, CORRECT: expected return of asset i). Do NOT wrap descriptions in \text{}.
 - "interpretation" must explain what the formula measures or means in plain English
 - "whenToUse" must describe the specific exam scenario where this formula applies
 - "watchOut" must highlight a common mistake or trap that students fall into
-- "calculatorCue" should provide TI BA II Plus keystrokes or calculator tips (if applicable, otherwise null)
+- "calculatorCue" MUST be plain readable English sentences with SPACES between every word. Example: "Calculate expected market return and beta, then apply the formula." NEVER merge words (WRONG: Calculateexpectedmarketreturnandβ, CORRECT: Calculate expected market return and beta). Greek letters may use Unicode (β, σ, α) but all prose must have proper word spacing.
 - "losTag" should reference the specific CFA Learning Outcome Statement
 - "highYield" should be true if this formula is very frequently tested on CFA exams
 - "workedExample" must be a JSON object with a step-by-step numeric example showing how to use the formula. Include: given values, substitution, intermediate calculations, final answer, and interpretation.
@@ -732,11 +732,11 @@ ${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You 
   * Example: \( PV = \frac{CF_1}{(1+r)^{1}} + \frac{CF_2}{(1+r)^{2}} \)
   * Example: \( \sigma_{p} = \sqrt{w_1^{2} \sigma_1^{2} + w_2^{2} \sigma_2^{2} + 2 w_1 w_2 \rho_{12} \sigma_1 \sigma_2} \)
   * ALL LaTeX must be render-ready for KaTeX/MathJax with balanced braces
-- "variables" must define EVERY symbol in the formula clearly
+- "variables" must define EVERY symbol in the formula clearly. Format: one per line "symbol: description". CRITICAL: descriptions MUST have SPACES between every word (WRONG: expectedreturnofasseti, CORRECT: expected return of asset i). Never merge words.
 - "interpretation" must explain what the formula measures or means in plain English
 - "whenToUse" must describe the specific exam scenario where this formula applies
 - "watchOut" must highlight a common mistake or trap that students fall into
-- "calculatorCue" should provide TI BA II Plus keystrokes or calculator tips (if applicable, otherwise null)
+- "calculatorCue" MUST be plain readable English with SPACES between every word (WRONG: Calculateexpectedmarketreturnandβ, CORRECT: Calculate expected market return and beta). Greek letters may use Unicode (β, σ).
 - "losTag" should reference the specific CFA Learning Outcome Statement (e.g. "Calculate and interpret holding period return")
 - "highYield" should be true if this formula is very frequently tested on CFA exams
 - Do NOT duplicate formulas — each must be unique and cover a different concept within the topic area

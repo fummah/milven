@@ -969,3 +969,23 @@ h1, h2, h3, h4, h5, h6 {
   line-height: 0;
 }
 
+/* ── Variable list produced by formatVariablesHtml ─────────── */
+ul.formula-variables-list {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+}
+ul.formula-variables-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0;
+  line-height: 1.6;
+  font-size: 13px;
+  color: #374151;
+}
+ul.formula-variables-list li strong {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+

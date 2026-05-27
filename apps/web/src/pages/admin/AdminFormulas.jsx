@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Tabs, Spin, Progress, Checkbox, Collapse } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, FilterOutlined, StarOutlined, StarFilled, CopyOutlined, OrderedListOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
-import { formatFormulaHtml, formatVariablesHtml } from '../../lib/formatFormula';
+import { formatFormulaHtml, formatVariablesHtml, formatProseWithMath } from '../../lib/formatFormula';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -930,7 +930,7 @@ export function AdminFormulas() {
 											{/* Variables */}
 											<div style={{ marginBottom: 8 }}>
 												<Typography.Text strong style={{ fontSize: 11, textTransform: 'uppercase', color: '#64748b' }}>Variables</Typography.Text>
-												<div style={{ fontSize: 13, color: '#374151', marginTop: 2, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatVariablesHtml(f.variables) }} />
+												<div style={{ fontSize: 13, color: '#374151', marginTop: 2 }} dangerouslySetInnerHTML={{ __html: formatVariablesHtml(f.variables) }} />
 											</div>
 											{/* Interpretation */}
 											<div style={{ marginBottom: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, borderLeft: '3px solid #3b82f6' }}>
@@ -953,7 +953,7 @@ export function AdminFormulas() {
 											</Row>
 											{f.calculatorCue && (
 												<div style={{ marginBottom: 6, padding: '6px 10px', background: '#f0fdf4', borderRadius: 6, borderLeft: '3px solid #22c55e', fontSize: 13 }}>
-													<Typography.Text strong style={{ fontSize: 11, color: '#166534' }}>Calculator Cue: </Typography.Text><span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.calculatorCue) }} />
+													<Typography.Text strong style={{ fontSize: 11, color: '#166534' }}>Calculator Cue: </Typography.Text><span dangerouslySetInnerHTML={{ __html: formatProseWithMath(f.calculatorCue) }} />
 												</div>
 											)}
 											{f.workedExample && (
@@ -962,8 +962,8 @@ export function AdminFormulas() {
 													label: <span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: '#92400e' }}>Worked Example</span>,
 													children: (
 														<div style={{ fontSize: 12, lineHeight: 1.6 }}>
-															{f.workedExample.given && <div style={{ marginBottom: 6 }}><strong>Given:</strong> <span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.workedExample.given) }} /></div>}
-															{f.workedExample.steps && f.workedExample.steps.map((s, si) => <div key={si} style={{ marginBottom: 3 }}><span style={{ color: '#3b82f6', fontWeight: 600 }}>Step {si + 1}:</span> <span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(s) }} /></div>)}
+															{f.workedExample.given && <div style={{ marginBottom: 6 }}><strong>Given:</strong> <span dangerouslySetInnerHTML={{ __html: formatProseWithMath(f.workedExample.given) }} /></div>}
+															{f.workedExample.steps && f.workedExample.steps.map((s, si) => <div key={si} style={{ marginBottom: 3 }}><span style={{ color: '#3b82f6', fontWeight: 600 }}>Step {si + 1}:</span> <span dangerouslySetInnerHTML={{ __html: formatProseWithMath(s) }} /></div>)}
 															{f.workedExample.answer && <div style={{ marginTop: 6, padding: '6px 10px', background: '#ecfdf5', borderRadius: 6, fontWeight: 700, color: '#065f46' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.workedExample.answer) }} />}
 															{f.workedExample.interpretation && <div style={{ marginTop: 4, fontSize: 11, color: '#64748b', fontStyle: 'italic' }}>{f.workedExample.interpretation}</div>}
 														</div>
@@ -1067,7 +1067,7 @@ function FormulaCardPreview({ formula }) {
 					<Typography.Text strong style={{ color: '#102540', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
 						Variables
 					</Typography.Text>
-					<div style={{ color: '#374151', fontSize: 13, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatVariablesHtml(formula.variables) }} />
+					<div style={{ color: '#374151', fontSize: 13, marginTop: 4, lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: formatVariablesHtml(formula.variables) }} />
 				</div>
 
 				{/* Interpretation */}
@@ -1125,7 +1125,7 @@ function FormulaCardPreview({ formula }) {
 									{formula.workedExample.given && (
 										<div style={{ marginBottom: 10 }}>
 											<div style={{ fontWeight: 600, color: '#102540', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Given</div>
-											<div style={{ padding: '8px 12px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.workedExample.given) }} />
+											<div style={{ padding: '8px 12px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(formula.workedExample.given) }} />
 										</div>
 									)}
 									{formula.workedExample.formula && (
@@ -1141,7 +1141,7 @@ function FormulaCardPreview({ formula }) {
 												{formula.workedExample.steps.map((step, si) => (
 													<div key={si} style={{ marginBottom: 4, paddingLeft: 4 }}>
 														<span style={{ fontWeight: 600, color: '#3b82f6', marginRight: 6 }}>Step {si + 1}:</span>
-														<span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(step) }} />
+														<span dangerouslySetInnerHTML={{ __html: formatProseWithMath(step) }} />
 													</div>
 												))}
 											</div>

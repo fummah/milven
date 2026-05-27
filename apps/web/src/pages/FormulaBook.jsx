@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Tooltip, Collapse, Anchor, Grid, Tabs, Switch, Divider, Modal } from 'antd';
 import { BookOutlined, SearchOutlined, StarFilled, PrinterOutlined, FilterOutlined, UnorderedListOutlined, AppstoreOutlined, DownloadOutlined, EyeOutlined } from '@ant-design/icons';
 import { api } from '../lib/api';
-import { formatFormulaHtml, formatVariablesHtml } from '../lib/formatFormula';
+import { formatFormulaHtml, formatVariablesHtml, formatProseWithMath } from '../lib/formatFormula';
 
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 const LEVEL_COLORS = { LEVEL1: '#3b82f6', LEVEL2: '#8b5cf6', LEVEL3: '#f59e0b' };
@@ -498,7 +498,7 @@ function FormulaCard({ formula }) {
 						borderRadius: 6, borderLeft: '2px solid #22c55e',
 					}}>
 						<span style={{ fontWeight: 600, color: '#166534', textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}>Calculator: </span>
-						<span style={{ color: '#166534' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.calculatorCue) }} />
+						<span style={{ color: '#166534' }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(formula.calculatorCue) }} />
 					</div>
 				)}
 			</div>
@@ -648,7 +648,7 @@ function ListPreviewCard({ formula }) {
 				{/* Variables */}
 				<div style={{ marginBottom: 14 }}>
 					<Typography.Text strong style={{ color: '#102540', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Variables</Typography.Text>
-					<div style={{ color: '#374151', fontSize: 13, marginTop: 4, lineHeight: 1.6, whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatVariablesHtml(formula.variables) }} />
+					<div style={{ color: '#374151', fontSize: 13, marginTop: 4, lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: formatVariablesHtml(formula.variables) }} />
 				</div>
 				{/* Interpretation */}
 				<div style={{ marginBottom: 14, padding: '10px 14px', background: '#f8fafc', borderRadius: 8, borderLeft: '3px solid #3b82f6' }}>
@@ -669,7 +669,7 @@ function ListPreviewCard({ formula }) {
 				{formula.calculatorCue && (
 					<div style={{ marginBottom: 14, padding: '10px 14px', background: '#f0fdf4', borderRadius: 8, borderLeft: '3px solid #22c55e' }}>
 						<Typography.Text strong style={{ color: '#166534', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Calculator Cue</Typography.Text>
-						<div style={{ color: '#166534', fontSize: 13, marginTop: 2 }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.calculatorCue) }} />
+						<div style={{ color: '#166534', fontSize: 13, marginTop: 2 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(formula.calculatorCue) }} />
 					</div>
 				)}
 				{/* Worked Example */}
@@ -685,7 +685,7 @@ function ListPreviewCard({ formula }) {
 										{formula.workedExample.given && (
 											<div style={{ marginBottom: 10 }}>
 												<div style={{ fontWeight: 600, color: '#102540', fontSize: 11, textTransform: 'uppercase', marginBottom: 2 }}>Given</div>
-												<div style={{ padding: '8px 12px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.workedExample.given) }} />
+												<div style={{ padding: '8px 12px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(formula.workedExample.given) }} />
 											</div>
 										)}
 										{formula.workedExample.formula && (
@@ -701,7 +701,7 @@ function ListPreviewCard({ formula }) {
 													{formula.workedExample.steps.map((step, si) => (
 														<div key={si} style={{ marginBottom: 4, paddingLeft: 4 }}>
 															<span style={{ fontWeight: 600, color: '#3b82f6', marginRight: 6 }}>Step {si + 1}:</span>
-															<span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(step) }} />
+															<span dangerouslySetInnerHTML={{ __html: formatProseWithMath(step) }} />
 														</div>
 													))}
 												</div>

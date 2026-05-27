@@ -476,11 +476,158 @@ export function renderFormulaHtml(text) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   §6  MAIN PUBLIC API — formatFormulaHtml
+   §6  MAIN PUBLIC API
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /**
- * Main rendering pipeline for formula/math content.
+ * Convert bare LaTeX commands in plain prose to Unicode.
+ * Used so calculator cues / descriptions with \beta stay readable
+ * without passing the whole sentence through KaTeX (which collapses spaces).
+ */
+function latexCommandsToUnicode(text) {
+	if (!text) return '';
+	return text
+		.replace(/\\times\b/g, '×')
+		.replace(/\\cdot\b/g, '·')
+		.replace(/\\pm\b/g, '±')
+		.replace(/\\leq\b/g, '≤')
+		.replace(/\\geq\b/g, '≥')
+		.replace(/\\neq\b/g, '≠')
+		.replace(/\\approx\b/g, '≈')
+		.replace(/\\infty\b/g, '∞')
+		.replace(/\\alpha\b/g, 'α')
+		.replace(/\\beta\b/g, 'β')
+		.replace(/\\gamma\b/g, 'γ')
+		.replace(/\\delta\b/g, 'δ')
+		.replace(/\\sigma\b/g, 'σ')
+		.replace(/\\mu\b/g, 'μ')
+		.replace(/\\rho\b/g, 'ρ')
+		.replace(/\\lambda\b/g, 'λ')
+		.replace(/\\pi\b/g, 'π')
+		.replace(/\\theta\b/g, 'θ')
+		.replace(/\\epsilon\b/g, 'ε')
+		.replace(/\\tau\b/g, 'τ')
+		.replace(/\\phi\b/g, 'φ')
+		.replace(/\\omega\b/g, 'ω')
+		.replace(/\\nu\b/g, 'ν')
+		.replace(/\\eta\b/g, 'η')
+		.replace(/\\kappa\b/g, 'κ')
+		.replace(/\\chi\b/g, 'χ')
+		.replace(/\\psi\b/g, 'ψ')
+		.replace(/\\zeta\b/g, 'ζ')
+		.replace(/\\xi\b/g, 'ξ')
+		.replace(/\\Delta\b/g, 'Δ')
+		.replace(/\\Sigma\b/g, 'Σ')
+		.replace(/\\Omega\b/g, 'Ω')
+		.replace(/\\Phi\b/g, 'Φ')
+		.replace(/\\Theta\b/g, 'Θ')
+		.replace(/\\Lambda\b/g, 'Λ')
+		.replace(/\\Gamma\b/g, 'Γ')
+		.replace(/\\Pi\b/g, 'Π')
+		.replace(/\\text\{([^}]*)\}/g, '$1')
+		.replace(/\\mathrm\{([^}]*)\}/g, '$1')
+		.replace(/\\mathbf\{([^}]*)\}/g, '$1')
+		.replace(/\\left\b/g, '')
+		.replace(/\\right\b/g, '')
+		// subscripts/superscripts outside KaTeX — render as HTML
+		.replace(/_\{([^}]+)\}/g, '<sub>$1</sub>')
+		.replace(/_([A-Za-z0-9])/g, '<sub>$1</sub>')
+		.replace(/\^\{([^}]+)\}/g, '<sup>$1</sup>')
+		.replace(/\^([A-Za-z0-9])/g, '<sup>$1</sup>');
+}
+
+/**
+ * Render symbol part of a variable definition via KaTeX inline.
+ * The symbol may be bare LaTeX (E(R_i), \beta_i) or delimited (\(E(R_i)\)).
+ */
+function renderVariableSymbol(symbol) {
+	if (!symbol) return '';
+	// Already wrapped in \( ... \)
+	if (/^\\\([\s\S]*\\\)$/.test(symbol.trim())) {
+		return katexToHtml(symbol.trim().slice(2, -2), false);
+	}
+	// Try rendering as inline KaTeX
+	try {
+		return katex.renderToString(symbol.trim(), {
+			displayMode: false,
+			throwOnError: true,
+			trust: true,
+			strict: false,
+		});
+	} catch {
+		// Fall back to Unicode conversion + HTML subscripts
+		return latexCommandsToUnicode(symbol
+			.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+	}
+}
+
+/**
+ * Parse a variables string into individual entries.
+ * Handles multiple formats:
+ *   - Semicolon-separated:  "E(R_i): desc; R_f: desc"
+ *   - Newline-separated:    "E(R_i): desc\nR_f: desc"
+ *   - Bullet list:          "- E(R_i): desc\n- R_f: desc"
+ *   - \( \) delimited:      "\(E(R_i)\): desc; \(R_f\): desc"
+ */
+function parseVariableEntries(text) {
+	// Normalise: replace bullet markers, split by newline or semicolon (outside braces)
+	const cleaned = text.replace(/^[\s\-\*•]+/gm, '');
+	const byNewline = cleaned.split('\n').map(l => l.trim()).filter(Boolean);
+
+	// If each line already looks like a complete entry, use newline split
+	const entries = [];
+	for (const line of byNewline) {
+		// A line may still have multiple semicolon-separated entries
+		const parts = splitOutsideBraces(line, ';');
+		for (const p of parts) {
+			if (p.trim()) entries.push(p.trim());
+		}
+	}
+	return entries;
+}
+
+/**
+ * Format a single variable entry "symbol: description" as an HTML list item.
+ */
+function formatVariableEntry(entry) {
+	// Find the first colon that is NOT inside braces or \( \)
+	// Strategy: find the outermost colon not inside math or braces
+	let depth = 0;
+	let inInlineMath = false;
+	let colonIdx = -1;
+
+	for (let i = 0; i < entry.length; i++) {
+		const ch = entry[i];
+		const prev = i > 0 ? entry[i - 1] : '';
+
+		if (ch === '(' && prev === '\\') { inInlineMath = true; continue; }
+		if (ch === ')' && prev === '\\') { inInlineMath = false; continue; }
+		if (inInlineMath) continue;
+		if (ch === '{') { depth++; continue; }
+		if (ch === '}') { depth = Math.max(0, depth - 1); continue; }
+		if (ch === ':' && depth === 0) { colonIdx = i; break; }
+	}
+
+	if (colonIdx > 0) {
+		const symbol = entry.slice(0, colonIdx).trim();
+		let description = entry.slice(colonIdx + 1).trim();
+		// Normalize merged description words
+		description = normalizeVariableDescription(description);
+		// Escape any remaining HTML in description
+		description = description
+			.replace(/&(?!amp;|lt;|gt;|quot;|#)/g, '&amp;')
+			.replace(/(?<!&lt;)(?<!&gt;)</g, '&lt;')
+			.replace(/(?<!&lt;)(?<!&gt;)>/g, '&gt;');
+		const renderedSymbol = renderVariableSymbol(symbol);
+		return `<li><strong>${renderedSymbol}</strong> — ${description}</li>`;
+	}
+
+	// No colon — just render as a plain item
+	return `<li>${latexCommandsToUnicode(entry.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'))}</li>`;
+}
+
+/**
+ * Main rendering pipeline for formula/math content (pure math fields: formula).
  *
  * Pipeline:
  *   1. Sanitize (repair corrupted LaTeX, restore backslashes)
@@ -489,32 +636,22 @@ export function renderFormulaHtml(text) {
  *      a. LaTeX with delimiters → KaTeX
  *      b. Raw LaTeX commands → KaTeX per-segment
  *      c. Legacy plain-text notation → HTML renderer
- *
- * Use this for ALL formula-related fields: formula, variables, calculatorCue,
- * workedExample steps, interpretation (when it contains math), etc.
  */
 export function formatFormulaHtml(html) {
 	if (!html) return '';
 
-	// §1 — Sanitize: repair corrupted LaTeX
 	const sanitized = formulaSanitizer(String(html));
-
-	// §2 — Unescape HTML entities
 	const unescaped = safeHtml(sanitized);
 
-	// §3a — KaTeX rendering for content with LaTeX delimiters
 	if (containsLatex(unescaped)) {
 		return renderLatex(unescaped);
 	}
 
-	// §3b — Raw LaTeX commands without delimiters (e.g., AI-generated variables)
 	if (containsLatexCommands(unescaped)) {
 		return renderRawLatex(unescaped);
 	}
 
-	// §3c — Legacy path: plain-text notation (for old content)
 	if (/<su[bp]>/i.test(unescaped)) {
-		// Process only text outside of HTML tags
 		return unescaped.replace(/(>)([^<]+)(<)/g, (_, open, text, close) => {
 			return open + renderFormulaHtml(text) + close;
 		});
@@ -524,50 +661,66 @@ export function formatFormulaHtml(html) {
 }
 
 /**
- * Render formula variables with description normalization.
- * Use this specifically for the "variables" field which may have merged words.
+ * Render prose fields that may contain INCIDENTAL math (calculator cues,
+ * interpretation, worked example steps, watch-outs).
+ *
+ * Rules:
+ *   - Only renders \( … \) and \[ … \] blocks via KaTeX
+ *   - ALL surrounding prose stays as readable plain text with spaces preserved
+ *   - Raw LaTeX commands (\beta, \times …) outside delimiters → Unicode symbols
+ *   - NEVER passes the whole string through KaTeX (no space collapsing)
+ */
+export function formatProseWithMath(text) {
+	if (!text) return '';
+
+	let s = formulaSanitizer(String(text));
+	s = safeHtml(s);
+
+	// Convert bare LaTeX commands in prose to Unicode (before KaTeX rendering)
+	// We do this ONLY on the parts that are NOT inside \( … \) or \[ … \]
+	const parts = [];
+	let lastIndex = 0;
+	const mathPattern = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
+	let match;
+
+	while ((match = mathPattern.exec(s)) !== null) {
+		// Prose before this math block — convert bare commands to Unicode
+		const prose = s.slice(lastIndex, match.index);
+		if (prose) parts.push(normalizeVariableDescription(latexCommandsToUnicode(prose)));
+
+		// Math block — render via KaTeX
+		const block = match[1];
+		const isDisplay = block.startsWith('\\[');
+		const inner = isDisplay ? block.slice(2, -2).trim() : block.slice(2, -2).trim();
+		parts.push(katexToHtml(inner, isDisplay));
+		lastIndex = match.index + match[0].length;
+	}
+
+	// Remaining prose after the last math block
+	const tail = s.slice(lastIndex);
+	if (tail) parts.push(normalizeVariableDescription(latexCommandsToUnicode(tail)));
+
+	return parts.join('');
+}
+
+/**
+ * Render the variables field as a clean HTML list.
+ * - Symbol part rendered via KaTeX inline
+ * - Description part kept as plain normalized text
+ * - Output is an HTML <ul> list
  */
 export function formatVariablesHtml(html) {
 	if (!html) return '';
 
-	// Sanitize first
 	let text = formulaSanitizer(String(html));
 	text = safeHtml(text);
 
-	// If it has LaTeX delimiters, render via KaTeX (descriptions are in \text{})
-	if (containsLatex(text)) {
-		return renderLatex(text);
-	}
+	// If already a proper HTML list, pass through sanitized
+	if (/^<[uo]l/i.test(text.trim())) return text;
 
-	// If it has raw LaTeX commands, render via KaTeX per-segment
-	if (containsLatexCommands(text)) {
-		return renderRawLatex(text);
-	}
+	const entries = parseVariableEntries(text);
+	if (!entries.length) return text;
 
-	// Legacy path: split into variable definitions and normalize descriptions
-	// Format: "symbol: description; symbol2: description2"
-	const lines = text.split('\n').filter(l => l.trim());
-	const renderedLines = lines.map(line => {
-		const parts = splitOutsideBraces(line, ';');
-		const rendered = parts.map(part => {
-			const trimmed = part.trim();
-			// Split "symbol: description" or "symbol = description"
-			const colonIdx = trimmed.indexOf(':');
-			const eqIdx = trimmed.indexOf('=');
-			let sepIdx = -1;
-			let sep = '';
-			if (colonIdx > 0 && (eqIdx < 0 || colonIdx < eqIdx)) { sepIdx = colonIdx; sep = ':'; }
-			else if (eqIdx > 0) { sepIdx = eqIdx; sep = '='; }
-
-			if (sepIdx > 0) {
-				const symbol = trimmed.slice(0, sepIdx).trim();
-				let description = trimmed.slice(sepIdx + 1).trim();
-				description = normalizeVariableDescription(description);
-				return renderFormulaHtml(symbol) + ' ' + sep + ' ' + description;
-			}
-			return renderFormulaHtml(trimmed);
-		});
-		return rendered.join('; ');
-	});
-	return renderedLines.join('<br>');
+	const items = entries.map(formatVariableEntry);
+	return `<ul class="formula-variables-list">${items.join('')}</ul>`;
 }

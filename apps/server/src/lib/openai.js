@@ -170,6 +170,40 @@ r_e = r_0 + (r_0 - r_d)(1-t) \\frac{D}{E}
 E(R_i) = R_f + \\beta_i \\left[ E(R_m) - R_f \\right]
 \\]
 
+═══════════════════════════════════════════════════════
+CONTENT SEPARATION RULES (CRITICAL)
+═══════════════════════════════════════════════════════
+
+Variables, calculator cues, worked example steps, interpretation,
+and all other prose fields MUST remain NORMAL READABLE TEXT.
+
+DO NOT render normal sentences as KaTeX character-by-character math.
+ONLY mathematical expressions should use LaTeX delimiters.
+
+VARIABLES FORMAT — one per line, symbol then colon then description:
+E(R_i): expected return of asset i
+R_f: risk-free rate
+\\beta_i: beta of asset i
+E(R_m): expected return of the market
+
+WRONG variable format (NEVER DO THIS):
+E(Ri):expectedreturnofasseti;Rf:riskfreerate
+
+CALCULATOR CUE — plain English prose with spaces:
+CORRECT: Calculate expected market return and beta, then apply the formula.
+WRONG:   Calculateexpectedmarketreturnandβthenapplythisformula
+
+NEVER collapse words together in ANY prose field:
+WRONG:  expectedreturnofthemarket
+CORRECT: expected return of the market
+
+WORKED EXAMPLE STEPS — mix of prose and delimited math:
+CORRECT:
+Step 1: Calculate market premium: \\[ 0.07 - 0.02 = 0.05 \\]
+Step 2: Calculate expected return: \\[ E(R_i) = 0.02 + 1.5 \\times 0.05 = 0.095 \\]
+WRONG:
+Calculateexpectedreturn:E(Ri)=0.02+1.5×0.05=0.095
+
 Output ONLY production-ready KaTeX formulas.
 `;
 
