@@ -533,6 +533,46 @@ export function ExamResult() {
 															</div>
 														)}
 													</div>
+													{/* Additional Info for self-marking */}
+													<div className="p-4 rounded-lg bg-slate-50 border border-slate-200 mb-4">
+														<Typography.Text strong className="text-slate-700 text-xs uppercase tracking-wide block mb-3">Additional Info</Typography.Text>
+														<Space direction="vertical" size={12} style={{ width: '100%' }}>
+															{los && (
+																<div>
+																	<Typography.Text type="secondary" className="text-xs">LOS</Typography.Text>
+																	<div className="text-slate-800 text-sm mt-0.5">{los}</div>
+																</div>
+															)}
+															{a?.question?.topic?.name && (
+																<div>
+																	<Typography.Text type="secondary" className="text-xs">Topic</Typography.Text>
+																	<div className="text-slate-800 text-sm mt-0.5">{a.question.topic.name}</div>
+																</div>
+															)}
+															{a?.question?.topic?.moduleName && (
+																<div>
+																	<Typography.Text type="secondary" className="text-xs">Learning Module</Typography.Text>
+																	<div className="text-slate-800 text-sm mt-0.5">{a.question.topic.moduleName}</div>
+																</div>
+															)}
+															{tracePage && (
+																<div>
+																	<Typography.Text type="secondary" className="text-xs">Page in Curriculum</Typography.Text>
+																	<div className="text-slate-800 text-sm mt-0.5">Page {tracePage}</div>
+																</div>
+															)}
+															{a?.question?.topic?.id && (
+																<Button 
+																	icon={<SnippetsOutlined />} 
+																	onClick={() => openNotesDrawer(a.question.topic.id, a.question.topic.name)} 
+																	className="rounded-xl mt-2" 
+																	style={{ background: '#f0f4f8', borderColor: '#cbd5e1', color: '#102540' }}
+																>
+																	View Module Notes
+																</Button>
+															)}
+														</Space>
+													</div>
 													<div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
 														<Typography.Text strong className="text-slate-700 block mb-3">Score this answer:</Typography.Text>
 														<div className="flex items-center gap-3 flex-wrap">
@@ -659,15 +699,45 @@ export function ExamResult() {
 															<div className="mt-1 prose prose-sm question-preview-content text-emerald-900 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(correctText) }} />
 														</div>
 													)}
-													{failed && a?.question?.los && (
-														<div className="mt-3 p-3 rounded-lg bg-blue-50 border border-blue-200">
-															<div className="flex items-center gap-2 mb-1"><FileTextOutlined className="text-blue-600" /><Typography.Text strong className="text-blue-800 text-sm">Learning Outcome Statement (LOS)</Typography.Text></div>
-															<Typography.Text className="text-slate-700 text-sm">{a.question.los}</Typography.Text>
-														</div>
-													)}
-													{failed && a?.question?.topic?.id && (
-														<div className="mt-3">
-															<Button icon={<SnippetsOutlined />} onClick={() => openNotesDrawer(a.question.topic.id, a.question.topic.name)} className="rounded-xl" style={{ background: '#f0f4f8', borderColor: '#cbd5e1', color: '#102540' }}>View Module Notes – {a.question.topic.name}</Button>
+													{failed && (
+														<div className="mt-3 p-4 rounded-lg bg-slate-50 border border-slate-200">
+															<Typography.Text strong className="text-slate-700 text-xs uppercase tracking-wide block mb-3">Additional Info</Typography.Text>
+															<Space direction="vertical" size={12} style={{ width: '100%' }}>
+																{a?.question?.los && (
+																	<div>
+																		<Typography.Text type="secondary" className="text-xs">LOS</Typography.Text>
+																		<div className="text-slate-800 text-sm mt-0.5">{a.question.los}</div>
+																	</div>
+																)}
+																{a?.question?.topic?.name && (
+																	<div>
+																		<Typography.Text type="secondary" className="text-xs">Topic</Typography.Text>
+																		<div className="text-slate-800 text-sm mt-0.5">{a.question.topic.name}</div>
+																	</div>
+																)}
+																{a?.question?.topic?.moduleName && (
+																	<div>
+																		<Typography.Text type="secondary" className="text-xs">Learning Module</Typography.Text>
+																		<div className="text-slate-800 text-sm mt-0.5">{a.question.topic.moduleName}</div>
+																	</div>
+																)}
+																{tracePage && (
+																	<div>
+																		<Typography.Text type="secondary" className="text-xs">Page in Curriculum</Typography.Text>
+																		<div className="text-slate-800 text-sm mt-0.5">Page {tracePage}</div>
+																	</div>
+																)}
+																{a?.question?.topic?.id && (
+																	<Button 
+																		icon={<SnippetsOutlined />} 
+																		onClick={() => openNotesDrawer(a.question.topic.id, a.question.topic.name)} 
+																		className="rounded-xl mt-2" 
+																		style={{ background: '#f0f4f8', borderColor: '#cbd5e1', color: '#102540' }}
+																	>
+																		View Module Notes
+																	</Button>
+																)}
+															</Space>
 														</div>
 													)}
 													{failed && (<AIHelpPanel questionId={a?.question?.id} selectedOptionId={a?.selectedOptionId} selectedOptionText={a?.selectedOption?.text} textAnswer={constructed ? a?.textAnswer : undefined} mode="result_review" />)}

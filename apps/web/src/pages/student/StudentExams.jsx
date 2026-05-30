@@ -43,6 +43,7 @@ export function StudentExams() {
   const [topics, setTopics] = useState([]);
   const [volumes, setVolumes] = useState([]);
   const [selectedCourseLevel, setSelectedCourseLevel] = useState(null);
+  const [practiceExamCount, setPracticeExamCount] = useState(0);
   const navigate = useNavigate();
 
   const selectedVolumeIds = Form.useWatch('volumeIds', customExamForm);
@@ -81,6 +82,10 @@ export function StudentExams() {
       try {
         const en = await api.get('/api/learning/me/courses');
         setEnrolled(en.data.courses || []);
+        // Count student's practice exams for auto-generated name
+        const { data: examsData } = await api.get('/api/exams/public');
+        const studentExams = (examsData?.exams || []).filter(e => e.createdById);
+        setPracticeExamCount(studentExams.length);
       } finally {
         setLoading(false);
       }
@@ -325,21 +330,73 @@ export function StudentExams() {
             icon={<PlusOutlined />}
             onClick={() => {
               setCustomExamOpen(true);
+              const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+              const studentName = currentUser?.name || currentUser?.firstName || 'Student';
+              const nextExamNum = practiceExamCount + 1;
+              const autoName = `${studentName} Practice Exam #${nextExamNum}`;
+              const firstCourse = enrolled?.[0]?.courseId;
+              const firstCourseLevel = enrolled?.[0]?.level;
+              const defaultType = getDefaultQuestionType(firstCourseLevel);
               customExamForm.resetFields();
-              customExamForm.setFieldsValue({ 
-                name: '', 
-                courseId: undefined, 
+              customExamForm.setFieldsValue({
+                name: autoName,
+                courseId: firstCourse,
+                questionType: defaultType,
                 topicIds: undefined,
                 volumeIds: [],
                 moduleIds: [],
-                difficulty: undefined, 
+                difficulty: undefined,
                 difficulties: [],
-                questionCount: 20, 
+                questionCount: 20,
                 timeLimitMinutes: 60,
                 startAt: undefined,
                 endAt: undefined
               });
+              setSelectedCourseLevel(firstCourseLevel || null);
               setTopics([]);
+              // Load topics for the default course
+              if (firstCourse) {
+                (async () => {
+                  try {
+                    const { data } = await api.get(`/api/learning/courses/${firstCourse}/detail`);
+                    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+                    const studentPathwayId = currentUser?.pathwayVolumeId;
+                    const nextVolumes = (data?.volumes || [])
+                      .filter(volume => {
+                        if (!volume.isPathway) return true;
+                        if (!studentPathwayId) return true;
+                        return volume.id === studentPathwayId;
+                      })
+                      .map((volume) => ({
+                        id: volume.id,
+                        name: volume.name,
+                        isPathway: volume.isPathway || false,
+                        order: volume.order ?? volume.orderNo ?? null
+                      }));
+                    const allowedVolumeIds = new Set(nextVolumes.map(v => v.id));
+                    const nextTopics = (data?.modules || [])
+                      .filter(module => !module.volumeId || allowedVolumeIds.has(module.volumeId))
+                      .flatMap((module) =>
+                        (module.topics || []).map((topic) => ({
+                          id: topic.id,
+                          name: topic.name,
+                          moduleId: module.id || topic.moduleId,
+                          moduleName: module.name || null,
+                          moduleNumber: topic.moduleNumber,
+                          volumeId: module.volumeId || null
+                        }))
+                      );
+                    setVolumes(nextVolumes);
+                    setTopics(nextTopics);
+                  } catch {
+                    setVolumes([]);
+                    setTopics([]);
+                  }
+                })();
+              } else {
+                setVolumes([]);
+                setTopics([]);
+              }
             }}
             style={{ 
               background: 'linear-gradient(135deg, #f97316, #ea580c)',
@@ -620,6 +677,11 @@ export function StudentExams() {
                 topicIds = undefined;
               }
               // Student-created exams should always be COURSE type, topicIds are just filters
+              // Calculate end time from start time + time limit
+              let endAt;
+              if (values.startAt && values.timeLimitMinutes) {
+                endAt = dayjs(values.startAt).add(Number(values.timeLimitMinutes), 'minute').toISOString();
+              }
               const res = await api.post('/api/exams/custom', {
                 name: values.name,
                 timeLimitMinutes: Number(values.timeLimitMinutes),
@@ -628,7 +690,7 @@ export function StudentExams() {
                 courseId: values.courseId,
                 topicIds: topicIds,
                 startAt: values.startAt ? values.startAt.toISOString() : undefined,
-                endAt: values.endAt ? values.endAt.toISOString() : undefined
+                endAt: endAt
               });
               const examId = res?.data?.exam?.id;
               if (!examId) throw new Error('Exam not created');
@@ -658,76 +720,66 @@ export function StudentExams() {
             questionType: 'MCQ'
           }}
         >
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
-              <Form.Item name="name" label="Exam Name" rules={[{ required: true, min: 3 }]}>
-                <Input placeholder="Enter exam name" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item name="courseId" label="Course" rules={[{ required: true }]}>
-                <Select
-                  placeholder="Select course"
-                  options={(enrolled || [])
-                    .slice()
-                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                    .map(c => ({ value: c.courseId, label: c.name }))}
-                  showSearch
-                  optionFilterProp="label"
-                  onChange={async (courseId) => {
-                    customExamForm.setFieldsValue({ topicIds: undefined, volumeIds: [], moduleIds: [] });
-                    const course = (enrolled || []).find(c => c.courseId === courseId);
-                    const level = course?.level;
-                    const defaultType = getDefaultQuestionType(level);
-                    setSelectedCourseLevel(level || null);
-                    customExamForm.setFieldsValue({ questionType: defaultType });
-                    if (courseId) {
-                      try {
-                        const { data } = await api.get(`/api/learning/courses/${courseId}/detail`);
-                        // Filter pathway volumes: only show student's chosen pathway
-                        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-                        const studentPathwayId = currentUser?.pathwayVolumeId;
-                        const nextVolumes = (data?.volumes || [])
-                          .filter(volume => {
-                            if (!volume.isPathway) return true; // non-pathway always included
-                            if (!studentPathwayId) return true; // no preference -> include all
-                            return volume.id === studentPathwayId; // only student's chosen pathway
-                          })
-                          .map((volume) => ({
-                            id: volume.id,
-                            name: volume.name,
-                            isPathway: volume.isPathway || false,
-                            order: volume.order ?? volume.orderNo ?? null
-                          }));
-                        const allowedVolumeIds = new Set(nextVolumes.map(v => v.id));
-                        const nextTopics = (data?.modules || [])
-                          .filter(module => !module.volumeId || allowedVolumeIds.has(module.volumeId))
-                          .flatMap((module) =>
-                            (module.topics || []).map((topic) => ({
-                              id: topic.id,
-                              name: topic.name,
-                              moduleId: module.id || topic.moduleId,
-                              moduleName: module.name || null,
-                              moduleNumber: topic.moduleNumber,
-                              volumeId: module.volumeId || null
-                            }))
-                          );
-                        setVolumes(nextVolumes);
-                        setTopics(nextTopics);
-                      } catch {
-                        setVolumes([]);
-                        setTopics([]);
-                      }
-                    } else {
-                      setVolumes([]);
-                      setTopics([]);
-                      setSelectedCourseLevel(null);
-                    }
-                  }}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item name="courseId" label="Course" rules={[{ required: true }]}>
+            <Select
+              placeholder="Select course"
+              options={(enrolled || [])
+                .slice()
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(c => ({ value: c.courseId, label: c.name }))}
+              showSearch
+              optionFilterProp="label"
+              onChange={async (courseId) => {
+                customExamForm.setFieldsValue({ topicIds: undefined, volumeIds: [], moduleIds: [] });
+                const course = (enrolled || []).find(c => c.courseId === courseId);
+                const level = course?.level;
+                const defaultType = getDefaultQuestionType(level);
+                setSelectedCourseLevel(level || null);
+                customExamForm.setFieldsValue({ questionType: defaultType });
+                if (courseId) {
+                  try {
+                    const { data } = await api.get(`/api/learning/courses/${courseId}/detail`);
+                    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+                    const studentPathwayId = currentUser?.pathwayVolumeId;
+                    const nextVolumes = (data?.volumes || [])
+                      .filter(volume => {
+                        if (!volume.isPathway) return true;
+                        if (!studentPathwayId) return true;
+                        return volume.id === studentPathwayId;
+                      })
+                      .map((volume) => ({
+                        id: volume.id,
+                        name: volume.name,
+                        isPathway: volume.isPathway || false,
+                        order: volume.order ?? volume.orderNo ?? null
+                      }));
+                    const allowedVolumeIds = new Set(nextVolumes.map(v => v.id));
+                    const nextTopics = (data?.modules || [])
+                      .filter(module => !module.volumeId || allowedVolumeIds.has(module.volumeId))
+                      .flatMap((module) =>
+                        (module.topics || []).map((topic) => ({
+                          id: topic.id,
+                          name: topic.name,
+                          moduleId: module.id || topic.moduleId,
+                          moduleName: module.name || null,
+                          moduleNumber: topic.moduleNumber,
+                          volumeId: module.volumeId || null
+                        }))
+                      );
+                    setVolumes(nextVolumes);
+                    setTopics(nextTopics);
+                  } catch {
+                    setVolumes([]);
+                    setTopics([]);
+                  }
+                } else {
+                  setVolumes([]);
+                  setTopics([]);
+                  setSelectedCourseLevel(null);
+                }
+              }}
+            />
+          </Form.Item>
           <Row gutter={16}>
             <Col xs={24} sm={12}>
               <Form.Item name="volumeIds" label="Volume(s)">
@@ -810,52 +862,18 @@ export function StudentExams() {
               </Form.Item>
             </Col>
           </Row>
-          <Row gutter={16}>
-            <Col xs={24} sm={12}>
-              <Form.Item 
-                name="startAt" 
-                label="Exam Start Time" 
-                help="Optional: when you want to start taking this exam"
-              >
-                <DatePicker 
-                  showTime 
-                  format="YYYY-MM-DD HH:mm"
-                  style={{ width: '100%' }}
-                  disabledDate={(current) => current && current < dayjs().startOf('day')}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item 
-                name="endAt" 
-                label="Exam End Time" 
-                rules={[
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      const startAt = getFieldValue('startAt');
-                      if (!value || !startAt) return Promise.resolve();
-                      if (value.isBefore(startAt) || value.isSame(startAt)) {
-                        return Promise.reject(new Error('End time must be after start time'));
-                      }
-                      return Promise.resolve();
-                    }
-                  })
-                ]}
-                help="Optional: when this exam expires"
-              >
-                <DatePicker 
-                  showTime 
-                  format="YYYY-MM-DD HH:mm"
-                  style={{ width: '100%' }}
-                  disabledDate={(current) => {
-                    const startAt = customExamForm.getFieldValue('startAt');
-                    if (!startAt) return current && current < dayjs().startOf('day');
-                    return current && current < startAt.startOf('day');
-                  }}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item 
+            name="startAt" 
+            label="Exam Start Time" 
+            help="Optional: when you want to start taking this exam. End time will be calculated automatically based on time limit."
+          >
+            <DatePicker 
+              showTime 
+              format="YYYY-MM-DD HH:mm"
+              style={{ width: '100%' }}
+              disabledDate={(current) => current && current < dayjs().startOf('day')}
+            />
+          </Form.Item>
         </Form>
       </Modal>
     </Space>
