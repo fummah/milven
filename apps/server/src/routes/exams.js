@@ -173,13 +173,17 @@ export function examsRouter(prisma) {
     // For students, check if they already have an open or pending practice exam (exclude mock exam sessions)
     if (isStudent) {
       const now = new Date();
+      // Get mock exam session IDs to exclude them efficiently
+      const mockSessions = await prisma.mockExam.findMany({
+        where: { userId: req.user.id },
+        select: { session1ExamId: true, session2ExamId: true }
+      });
+      const mockExamIds = mockSessions.flatMap(m => [m.session1ExamId, m.session2ExamId]).filter(Boolean);
       const existingExams = await prisma.exam.findMany({
         where: {
           createdById: req.user.id,
           active: true,
-          // Exclude exams that are part of mock exams
-          mockSession1: { is: null },
-          mockSession2: { is: null }
+          ...(mockExamIds.length > 0 ? { id: { notIn: mockExamIds } } : {})
         },
         select: {
           id: true,
