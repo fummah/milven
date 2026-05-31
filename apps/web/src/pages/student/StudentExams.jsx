@@ -677,20 +677,22 @@ export function StudentExams() {
                 topicIds = undefined;
               }
               // Student-created exams should always be COURSE type, topicIds are just filters
-              // Calculate end time from start time + time limit
-              let endAt;
-              if (values.startAt && values.timeLimitMinutes) {
-                endAt = dayjs(values.startAt).add(Number(values.timeLimitMinutes), 'minute').toISOString();
-              }
+              // Auto-generate exam name from student name + exam number
+              const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+              const studentName = currentUser?.name || currentUser?.firstName || 'Student';
+              const examName = `${studentName} Practice Exam #${practiceExamCount + 1}`;
+              // Calculate start and end times: default to now if no start time specified
+              const startAt = values.startAt ? dayjs(values.startAt) : dayjs();
+              const endAt = startAt.add(Number(values.timeLimitMinutes), 'minute');
               const res = await api.post('/api/exams/custom', {
-                name: values.name,
+                name: examName,
                 timeLimitMinutes: Number(values.timeLimitMinutes),
                 questionCount: Number(values.questionCount),
                 examType: 'COURSE',
                 courseId: values.courseId,
                 topicIds: topicIds,
-                startAt: values.startAt ? values.startAt.toISOString() : undefined,
-                endAt: endAt
+                startAt: startAt.toISOString(),
+                endAt: endAt.toISOString()
               });
               const examId = res?.data?.exam?.id;
               if (!examId) throw new Error('Exam not created');
