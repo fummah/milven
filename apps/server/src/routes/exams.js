@@ -158,8 +158,8 @@ export function examsRouter(prisma) {
       moduleId: z.string().optional(),
       conceptIds: z.array(z.string()).optional(),
       questionType: z.enum(['ANY', 'MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']).optional(),
-      startAt: isStudent ? z.coerce.date() : z.coerce.date().optional().nullable(),
-      endAt: isStudent ? z.coerce.date() : z.coerce.date().optional().nullable()
+      startAt: z.coerce.date().optional().nullable(),
+      endAt: z.coerce.date().optional().nullable()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });

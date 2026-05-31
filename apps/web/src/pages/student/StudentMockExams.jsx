@@ -403,6 +403,24 @@ export default function StudentMockExams() {
                             Session 2 Results
                           </Button>
                         )}
+                        {(mock.status === 'SESSION1' || mock.status === 'SESSION2') && (() => {
+                          const session = mock.status === 'SESSION1' ? 1 : 2;
+                          const activeExam = session === 1 ? mock.session1Exam : mock.session2Exam;
+                          const attemptId = activeExam?.attempts?.[0]?.id;
+                          if (!attemptId) return null;
+                          return (
+                            <Button
+                              type="primary"
+                              size="large"
+                              icon={<PlayCircleOutlined />}
+                              onClick={() => navigate(`/student/exam/${attemptId}?mode=mock&mockExamId=${mock.id}&session=${session}`)}
+                              className="rounded-xl"
+                              style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+                            >
+                              Continue Exam
+                            </Button>
+                          );
+                        })()}
                         {!['COMPLETED', 'CANCELLED'].includes(mock.status) && (
                           <Button
                             danger

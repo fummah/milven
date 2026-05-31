@@ -15,6 +15,16 @@ function stripQuestionNumber(text) {
 	return text.replace(/^(<[^>]*>)*\s*(Question|Q)\.?\s*\d+\s*[:.\-–—]\s*/i, '$1');
 }
 
+// Strip leading bold volume/topic title line from question stems (e.g. "<strong>Ethical and Professional Standards</strong>")
+// Used for Level 1 exams where volume name should not appear at top of question
+function stripLeadingVolumeTitle(text) {
+	if (!text) return text;
+	// Match leading <p><strong>Title</strong></p> or <strong>Title</strong><br> or <b>Title</b> at start
+	return text
+		.replace(/^\s*<p>\s*<(strong|b)>[^<]+<\/(strong|b)>\s*<\/p>\s*/i, '')
+		.replace(/^\s*<(strong|b)>[^<]+<\/(strong|b)>\s*(<br\s*\/?>)?\s*/i, '');
+}
+
 // Smart Review Panel Component - Shows after answering in Practice Mode
 function SmartReviewPanel({ answer, question, visible, onAddToRevision, onAddToWeakTopic, onOpenNotes, mode }) {
 	if (!visible || mode === 'exam' || !answer?.selectedOptionId) return null;
@@ -649,6 +659,7 @@ export function ExamTake() {
 	}, [remainingSec, attempt?.status, attemptId]);
 
 	const courseName = attempt?.courseName || attempt?.exam?.name || 'Exam';
+	const examLevel = attempt?.exam?.level || mockExamData?.course?.level || null;
 	const timeUp = remainingSec !== null && remainingSec <= 0;
 	const isSubmitted = attempt?.status === 'SUBMITTED';
 	const hasConstructedPending = (attempt?.answers || []).some(
@@ -1101,6 +1112,15 @@ export function ExamTake() {
 	}
 
 	const onSelectOption = async (questionId, optionId) => {
+		// Optimistically update UI immediately for instant feedback
+		setAttempt(prev => {
+			if (!prev) return prev;
+			const updatedAnswers = (prev.answers || []).map(a =>
+				a.questionId === questionId ? { ...a, selectedOptionId: optionId } : a
+			);
+			return { ...prev, answers: updatedAnswers };
+		});
+
 		try {
 			await api.post(`/api/exams/attempts/${attemptId}/answers`, {
 				questionId,
@@ -1649,7 +1669,7 @@ export function ExamTake() {
 																<div
   className="text-sm md:text-base text-slate-500 font-medium mb-6 prose max-w-none"
   style={{ display: "flex" }}
-  dangerouslySetInnerHTML={{ __html: `<p>${toRoman(subQuestionIdx + 1)}) ${stripQuestionNumber(subQ?.stem) || ''}</p>` }}
+  dangerouslySetInnerHTML={{ __html: `<p>${toRoman(subQuestionIdx + 1)}) ${examLevel === 'LEVEL1' ? stripLeadingVolumeTitle(stripQuestionNumber(subQ?.stem)) || '' : stripQuestionNumber(subQ?.stem) || ''}</p>` }}
 />
 
 																	{subConstructed ? (
@@ -1762,7 +1782,7 @@ export function ExamTake() {
 											<div className="p-6">
 												<div
 													className="text-lg text-slate-800 font-medium mb-6 prose max-w-none"
-													dangerouslySetInnerHTML={{ __html: stripQuestionNumber(q?.stem) || '' }}
+													dangerouslySetInnerHTML={{ __html: examLevel === 'LEVEL1' ? stripLeadingVolumeTitle(stripQuestionNumber(q?.stem)) || '' : stripQuestionNumber(q?.stem) || '' }}
 												/>
 
 												{isConstructed ? (
