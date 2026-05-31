@@ -687,19 +687,13 @@ export function StudentExams() {
                 examType: 'COURSE',
                 courseId: values.courseId,
                 topicIds: topicIds,
+                difficulties: values.difficulties && values.difficulties.length > 0 ? values.difficulties : undefined,
+                questionType: values.questionType || 'ANY',
                 startAt: startAt.toISOString(),
                 endAt: endAt.toISOString()
               });
               const examId = res?.data?.exam?.id;
               if (!examId) throw new Error('Exam not created');
-              await api.post(`/api/exams/${examId}/randomize`, {
-                questionCount: Number(values.questionCount),
-                difficulties: values.difficulties && values.difficulties.length > 0 ? values.difficulties : undefined,
-                courseId: values.courseId,
-                topicIds: topicIds,
-                replaceExisting: true,
-                questionType: values.questionType || 'ANY'
-              });
               message.success('Custom exam created successfully');
               setCustomExamOpen(false);
               customExamForm.resetFields();

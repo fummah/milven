@@ -261,7 +261,7 @@ export function examsRouter(prisma) {
       };
       const pool = await prisma.question.findMany({
         where: { ...where, parentId: null },
-        include: { children: { select: { id: true }, orderBy: [{ orderIndex: 'asc' }] } }
+        select: { id: true, children: { select: { id: true }, orderBy: [{ orderIndex: 'asc' }] } }
       });
       const logicalItems = pool.map((q) => {
         const childIds = (q.children || []).map((c) => c.id);
