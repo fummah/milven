@@ -519,9 +519,14 @@ export function ExamTake() {
 				const res = await api.get(`/api/exams/attempts/${attemptId}`);
 				if (mounted) {
 					setAttempt(res.data.attempt);
-					// Show mode selection if not already set and exam is in progress
+					// For mock exams, always default to exam mode (no choice)
+					// For practice exams, show mode selection if not already set
 					if (!mode && res.data.attempt.status === 'IN_PROGRESS') {
-						setShowModeSelection(true);
+						if (isMockExam) {
+							setMode('exam');
+						} else {
+							setShowModeSelection(true);
+						}
 					}
 					// Show instructions for mock exams
 					if (isMockExam && res.data.attempt.status === 'IN_PROGRESS') {
