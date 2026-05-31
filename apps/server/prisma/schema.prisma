@@ -241,6 +241,8 @@ model Exam {
   examQuestions    ExamQuestion[]
   mockSession1     MockExam?  @relation("MockSession1")
   mockSession2     MockExam?  @relation("MockSession2")
+  @@index([createdById, active])
+  @@index([courseId, active])
 }
 
 model ExamQuestion {

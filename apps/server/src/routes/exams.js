@@ -170,52 +170,7 @@ export function examsRouter(prisma) {
         return res.status(400).json({ error: 'End time must be after start time' });
       }
     }
-    // For students, check if they already have an open or pending practice exam (exclude mock exam sessions)
-    if (isStudent) {
-      const now = new Date();
-      // Get mock exam session IDs to exclude them efficiently
-      const mockSessions = await prisma.mockExam.findMany({
-        where: { userId: req.user.id },
-        select: { session1ExamId: true, session2ExamId: true }
-      });
-      const mockExamIds = mockSessions.flatMap(m => [m.session1ExamId, m.session2ExamId]).filter(Boolean);
-      const existingExams = await prisma.exam.findMany({
-        where: {
-          createdById: req.user.id,
-          active: true,
-          ...(mockExamIds.length > 0 ? { id: { notIn: mockExamIds } } : {})
-        },
-        select: {
-          id: true,
-          startAt: true,
-          endAt: true,
-          attempts: { select: { status: true }, take: 1, orderBy: { createdAt: 'desc' } }
-        }
-      });
-      const hasOpenExam = existingExams.some(exam => {
-        // If the most recent attempt is already submitted, this exam is done
-        const latestAttempt = exam.attempts?.[0];
-        if (latestAttempt?.status === 'SUBMITTED') return false;
-        const startDate = exam.startAt ? new Date(exam.startAt) : null;
-        const endDate = exam.endAt ? new Date(exam.endAt) : null;
-        // If end date has passed, exam is expired
-        if (endDate && now > endDate) return false;
-        // Check if exam is pending (not started yet) or open (between start and end)
-        if (startDate && now < startDate) {
-          return true; // Pending
-        }
-        if (startDate && now >= startDate) {
-          return true; // Open
-        }
-        if (!startDate && !endDate) {
-          return true; // Always available
-        }
-        return false;
-      });
-      if (hasOpenExam) {
-        return res.status(400).json({ error: 'You already have an open or pending practice exam. Please complete or delete it before creating a new one.' });
-      }
-    }
+    // Note: duplicate practice exam check is handled client-side via hasOpenCustomExam
     // Prioritize examType - if explicitly set, use it; otherwise infer from topicIds
     const isQuiz = payload.examType === 'QUIZ' || (payload.examType !== 'COURSE' && (!!payload.topicIds && payload.topicIds.length > 0) || (!!payload.topicId));
     // Derive level if not provided: for quiz from topic, for course from course
