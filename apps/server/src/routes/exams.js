@@ -170,40 +170,46 @@ export function examsRouter(prisma) {
         return res.status(400).json({ error: 'End time must be after start time' });
       }
     }
-    // For students, check if they already have an open or pending custom exam
+    // For students, check if they already have an open or pending practice exam (exclude mock exam sessions)
     if (isStudent) {
       const now = new Date();
       const existingExams = await prisma.exam.findMany({
         where: {
           createdById: req.user.id,
-          active: true
+          active: true,
+          // Exclude exams that are part of mock exams
+          mockSession1: { is: null },
+          mockSession2: { is: null }
         },
         select: {
           id: true,
           startAt: true,
-          endAt: true
+          endAt: true,
+          attempts: { select: { status: true }, take: 1, orderBy: { createdAt: 'desc' } }
         }
       });
       const hasOpenExam = existingExams.some(exam => {
+        // If the most recent attempt is already submitted, this exam is done
+        const latestAttempt = exam.attempts?.[0];
+        if (latestAttempt?.status === 'SUBMITTED') return false;
         const startDate = exam.startAt ? new Date(exam.startAt) : null;
         const endDate = exam.endAt ? new Date(exam.endAt) : null;
+        // If end date has passed, exam is expired
+        if (endDate && now > endDate) return false;
         // Check if exam is pending (not started yet) or open (between start and end)
         if (startDate && now < startDate) {
           return true; // Pending
         }
-        if (startDate && now >= startDate && endDate && now <= endDate) {
+        if (startDate && now >= startDate) {
           return true; // Open
         }
         if (!startDate && !endDate) {
           return true; // Always available
         }
-        if (startDate && now >= startDate && !endDate) {
-          return true; // Started but no end date
-        }
         return false;
       });
       if (hasOpenExam) {
-        return res.status(400).json({ error: 'You already have an open or pending custom exam. Please complete or delete it before creating a new one.' });
+        return res.status(400).json({ error: 'You already have an open or pending practice exam. Please complete or delete it before creating a new one.' });
       }
     }
     // Prioritize examType - if explicitly set, use it; otherwise infer from topicIds

@@ -174,21 +174,17 @@ export function StudentExams() {
   const hasOpenCustomExam = useMemo(() => {
     const now = new Date();
     return customExamItems.some(exam => {
+      // If the latest attempt is submitted, this exam is done
+      const latestAttempt = exam.attempts?.[exam.attempts.length - 1];
+      if (latestAttempt?.status === 'SUBMITTED') return false;
       const startDate = exam.startAt ? new Date(exam.startAt) : null;
       const endDate = exam.endAt ? new Date(exam.endAt) : null;
-      // Check if exam is pending (not started yet) or open (between start and end)
-      if (startDate && now < startDate) {
-        return true; // Pending
-      }
-      if (startDate && now >= startDate && endDate && now <= endDate) {
-        return true; // Open
-      }
-      if (!startDate && !endDate) {
-        return true; // Always available
-      }
-      if (startDate && now >= startDate && !endDate) {
-        return true; // Started but no end date
-      }
+      // If end date has passed, exam is expired
+      if (endDate && now > endDate) return false;
+      // Check if exam is pending (not started yet) or open
+      if (startDate && now < startDate) return true;
+      if (startDate && now >= startDate) return true;
+      if (!startDate && !endDate) return true;
       return false;
     });
   }, [customExamItems]);
