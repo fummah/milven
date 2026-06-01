@@ -2643,7 +2643,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 		const isBundleType = questionType === 'VIGNETTE_MCQ' || isConstructedBundle;
 
 		const metaFieldsBlock = `EVERY question MUST include ALL of these metadata fields (populate ALL of them, never leave null):
-- "qid": string (a short unique identifier, e.g. "Q-${selectedTopics[0]?.name?.substring(0,4)?.toUpperCase() || 'CFA'}-001", increment the number for each question)
+- "qid": string (a short unique random identifier — generate a random alphanumeric code for each question, e.g. "Q-${selectedTopics[0]?.name?.substring(0,4)?.toUpperCase() || 'CFA'}-${Math.random().toString(36).substring(2,6).toUpperCase()}" — each qid MUST be unique and randomly generated, NEVER use sequential numbering like 001, 002, 003)
 - "los": string (the EXACT Learning Outcome Statement from the curriculum document — copy it VERBATIM, e.g. "describe the features of a fixed-income security". These appear just below topic headings and start with verbs like describe, explain, calculate, etc.)
 - "traceSection": string (the EXACT section/reading/topic heading from the curriculum document, e.g. "Reading 33: Cost of Capital" — do NOT invent section names)
 - "tracePage": string (the EXACT page number from the [PAGE N] markers in the curriculum document, e.g. "p. 145" or "p. 145-148" — do NOT guess page numbers)
@@ -2672,7 +2672,7 @@ Each object in "items" MUST follow this structure:
 {
   "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (400-600 words). Requirements:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
-    • Introduce a named protagonist: e.g. "Rebecca Jones is a senior analyst at Apex Capital Management. She is evaluating..."
+    • Introduce a named protagonist with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
     • IMPORTANT — VARY THE EXHIBIT FORMAT across case studies. Do NOT always use tables. Mix approaches:
       FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits (use this for ~40% of case studies)
@@ -2699,7 +2699,7 @@ Each object in "items" MUST follow this structure:
 {
   "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (400-600 words). Requirements:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
-    • Introduce a named protagonist: e.g. "Michael Torres, CFA, is a portfolio strategist at Meridian Asset Management..."
+    • Introduce a named protagonist with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Michael Torres, Rebecca Jones, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]..."
     • Present multiple related financial scenarios with specific data, dates, company names, and context
     • IMPORTANT — VARY THE EXHIBIT FORMAT across case studies. Do NOT always use tables. Mix approaches:
       FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits with realistic financial data (use for ~40% of case studies)
@@ -2744,14 +2744,14 @@ ${metaFieldsBlock}`;
 IMPORTANT GUIDELINES:
 - Draw directly from past CFA exam question styles and real-world financial scenarios
 - Questions must be precise, unambiguous, and test genuine understanding — not memorization
-- Include realistic numerical examples, company names (e.g., Apex Capital, Meridian Asset Management), market scenarios, and specific dates
+- Include realistic numerical examples, UNIQUE fictional company names (invent fresh names each time — NEVER reuse Apex Capital, Meridian Asset Management, or any previously used names), market scenarios, and specific dates
 - For calculations, ALWAYS provide the key formulas and a detailed step-by-step worked solution — this is critical for student revision
 - Each question should test a specific learning outcome related to the topic
 - Vary the difficulty: EASY = straightforward recall/application; MEDIUM = multi-step analysis; HARD = complex scenario requiring synthesis of multiple concepts
 - ALL metadata fields below are REQUIRED — populate every single one to help students during revision
 - For VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles:
   * The vignette MUST be 400–600 words — rich, narrative, CFA-exam-quality
-  * Use a named protagonist (e.g., "Sarah Chen, CFA, is a portfolio manager at Meridian Asset Management...")
+  * Use a named protagonist with a UNIQUE randomly generated name and company — NEVER repeat names like Sarah Chen, Apex Capital, or Meridian Asset Management. Each case study MUST have completely different character and firm names. Vary ethnicity, gender, and company naming style
   * Include multiple related financial scenarios and data points within the passage
   * VARY exhibit formats across case studies: some with HTML tables, some narrative-only (no exhibits), some with text-based charts. Do NOT use tables in every single case study — mix approaches for realism
   * Sub-questions should reference specific exhibits or narrative details by name and test different aspects of the scenario
@@ -2832,6 +2832,18 @@ ${formatBlock}`;
 			}
 
 			const level = course.level || 'LEVEL1';
+			// Generate truly random unique qids server-side
+			const usedQids = new Set();
+			const generateRandomQid = (topicName) => {
+				const prefix = (topicName || 'CFA').substring(0, 4).toUpperCase().replace(/[^A-Z0-9]/g, '');
+				let qid;
+				do {
+					const rand = Math.random().toString(36).substring(2, 7).toUpperCase();
+					qid = `Q-${prefix}-${rand}`;
+				} while (usedQids.has(qid));
+				usedQids.add(qid);
+				return qid;
+			};
 			let topicCursor = 0;
 			let diffCursor = 0;
 			const nextTopic = () => {
@@ -2877,7 +2889,7 @@ ${formatBlock}`;
 							conceptName: sq.conceptName || '',
 							difficulty: useDifficulty,
 							marks: (questionType === 'VIGNETTE_MCQ') ? 3 : (sq.marks ? Number(sq.marks) : 1),
-							qid: sq.qid || '',
+							qid: generateRandomQid(t.name),
 							los: sq.los || '',
 							traceSection: sq.traceSection || '',
 							tracePage: sq.tracePage || '',
@@ -2908,7 +2920,7 @@ ${formatBlock}`;
 					conceptName: it.conceptName || '',
 					difficulty: useDifficulty,
 					marks: it.marks ? Number(it.marks) : 1,
-					qid: it.qid || '',
+					qid: generateRandomQid(t.name),
 					los: it.los || '',
 					traceSection: it.traceSection || '',
 					tracePage: it.tracePage || '',

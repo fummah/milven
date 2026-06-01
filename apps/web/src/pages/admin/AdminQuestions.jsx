@@ -53,6 +53,7 @@ export function AdminQuestions() {
 	// Filters
 	const [filtersVisible, setFiltersVisible] = useState(false);
 	const [courseId, setCourseId] = useState(searchParams.get('courseId') || '');
+	const [filterVolumeId, setFilterVolumeId] = useState(searchParams.get('volumeId') || '');
 	const [topicId, setTopicId] = useState(() => {
 		const topicIds = searchParams.get('topicIds');
 		const topicId = searchParams.get('topicId');
@@ -107,6 +108,7 @@ export function AdminQuestions() {
 				pageSize,
 				...(listTab === 'ai' ? { aiGenerated: true } : {}),
 				...(courseId ? { courseId } : {}),
+				...(filterVolumeId ? { volumeId: filterVolumeId } : {}),
 				...(topicId ? (Array.isArray(topicId) ? { topicIds: topicId.join(',') } : { topicId }) : {}),
 				...(difficulty ? (Array.isArray(difficulty) ? { difficulties: difficulty.join(',') } : { difficulty }) : {}),
 				...(questionType ? (Array.isArray(questionType) ? { types: questionType.join(',') } : { type: questionType }) : {}),
@@ -132,7 +134,7 @@ export function AdminQuestions() {
 	useEffect(() => {
 		loadQuestions();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [page, pageSize, listTab, courseId, topicId, difficulty, questionType, wording]);
+	}, [page, pageSize, listTab, courseId, filterVolumeId, topicId, difficulty, questionType, wording]);
 
 	// Initialize from URL params on mount
 	useEffect(() => {
@@ -241,12 +243,27 @@ export function AdminQuestions() {
 		return () => clearTimeout(timeoutId);
 	}, [wording]);
 
+	const filterVolumeOptions = useMemo(() => {
+		if (!courseId) return [];
+		const filteredTopics = topics.filter(t => t.courseId === courseId);
+		const volumeIds = Array.from(new Set(filteredTopics.map(t => t.module?.volumeId).filter(Boolean)));
+		return volumeIds
+			.map(vid => {
+				const vol = (volumes || []).find(v => v.id === vid);
+				return vol ? { value: vol.id, label: vol.description ? `${vol.name} - ${vol.description}` : vol.name } : null;
+			})
+			.filter(Boolean);
+	}, [topics, volumes, courseId]);
+
 	const filteredTopicOptions = useMemo(() => {
-		const filtered = courseId 
+		let filtered = courseId 
 			? topics.filter(t => t.courseId === courseId)
 			: topics;
+		if (filterVolumeId) {
+			filtered = filtered.filter(t => t.module?.volumeId === filterVolumeId);
+		}
 		return filtered.map(t => ({ value: t.id, label: t.name }));
-	}, [topics, courseId]);
+	}, [topics, courseId, filterVolumeId]);
 
 	const filteredCoursesOptions = useMemo(() => {
 		return (courses || [])
@@ -888,7 +905,7 @@ export function AdminQuestions() {
 	];
 
 	// Check if any filters are active
-	const hasActiveFilters = courseId || (Array.isArray(topicId) ? topicId.length > 0 : topicId) || (Array.isArray(difficulty) ? difficulty.length > 0 : difficulty) || (Array.isArray(questionType) ? questionType.length > 0 : questionType) || wording;
+	const hasActiveFilters = courseId || filterVolumeId || (Array.isArray(topicId) ? topicId.length > 0 : topicId) || (Array.isArray(difficulty) ? difficulty.length > 0 : difficulty) || (Array.isArray(questionType) ? questionType.length > 0 : questionType) || wording;
 
 	return (
 		<Space key="admin-questions-page" direction="vertical" size={16} style={{ width: '100%' }}>
@@ -991,11 +1008,28 @@ export function AdminQuestions() {
 								value={courseId || undefined}
 								onChange={(v) => {
 									setCourseId(v || '');
+									setFilterVolumeId('');
 									setTopicId('');
 								}}
 								options={filteredCoursesOptions}
 								showSearch
 								optionFilterProp="label"
+							/>
+						</Form.Item>
+						<Form.Item label="Volume" style={{ margin: 0 }}>
+							<Select
+								style={{ minWidth: 200, borderRadius: 10 }}
+								allowClear
+								placeholder="All volumes"
+								value={filterVolumeId || undefined}
+								onChange={(v) => {
+									setFilterVolumeId(v || '');
+									setTopicId('');
+								}}
+								options={filterVolumeOptions}
+								showSearch
+								optionFilterProp="label"
+								disabled={!courseId}
 							/>
 						</Form.Item>
 						<Form.Item label="Topic" style={{ margin: 0 }}>
@@ -1066,6 +1100,7 @@ export function AdminQuestions() {
 						<Button 
 							onClick={() => {
 								setCourseId('');
+								setFilterVolumeId('');
 								setTopicId('');
 								setDifficulty('');
 								setQuestionType('');
@@ -1506,7 +1541,7 @@ export function AdminQuestions() {
 												{q?.workedSolution && (
 													<div style={{ marginTop: 6, padding: '6px 10px', background: '#f6ffed', borderRadius: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
-														<span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.workedSolution) }} />
+														<span dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution) }} />
 													</div>
 												)}
 											</div>
@@ -1574,7 +1609,7 @@ export function AdminQuestions() {
 												{q?.workedSolution && (
 													<div style={{ marginTop: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
-														<span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.workedSolution) }} />
+														<span dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution) }} />
 													</div>
 												)}
 											</div>
@@ -2294,7 +2329,7 @@ export function AdminQuestions() {
 													<div
 														className="prose question-preview-content"
 														style={{ margin: '4px 0 0 0', padding: '6px', background: '#e6f7ff', borderRadius: 4 }}
-														dangerouslySetInnerHTML={{ __html: formatFormulaHtml(previewQuestion.question.workedSolution) }}
+														dangerouslySetInnerHTML={{ __html: safeHtml(previewQuestion.question.workedSolution) }}
 													/>
 												</div>
 											)}
