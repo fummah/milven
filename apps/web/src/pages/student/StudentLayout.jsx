@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Layout, Menu, Typography, Avatar, Grid, Drawer, Button } from 'antd';
-import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined, TeamOutlined, ExperimentOutlined, FunctionOutlined, SolutionOutlined, SnippetsOutlined } from '@ant-design/icons';
+import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined, TeamOutlined, ExperimentOutlined, FunctionOutlined, SolutionOutlined, SnippetsOutlined, BarChartOutlined } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const { Sider, Content } = Layout;
@@ -53,7 +53,7 @@ const subMenuBadge = (iconNode, color = '#102540') => (
 const childToParentKey = {
   'student-courses': 'learning', 'student-module-notes': 'learning',
   'student-formula-book': 'study-tools', 'student-summary-sheets': 'study-tools', 'student-revision': 'study-tools',
-  'student-exams': 'exams-group', 'student-mock-exams': 'exams-group', 'student-milven-mocks': 'exams-group', 'student-mistakes': 'exams-group', 'student-comparison': 'exams-group',
+  'student-exams': 'exams-group', 'student-mock-exams': 'exams-group', 'student-milven-mocks': 'exams-group', 'student-mistakes': 'exams-group',
   'student-billing': 'account-group', 'student-invoices': 'account-group', 'student-account': 'account-group'
 };
 
@@ -87,9 +87,9 @@ const menuItems = [
       { key: 'student-mock-exams', icon: subMenuBadge(<ExperimentOutlined />, '#6366f1'), label: <Link to="/student/mock-exams">Mock Exam</Link> },
       { key: 'student-milven-mocks', icon: subMenuBadge(<SolutionOutlined />, '#102540'), label: <Link to="/student/milven-mocks">Milven Mock Exams</Link> },
       { key: 'student-mistakes', icon: subMenuBadge(<ExclamationCircleOutlined />, '#ef4444'), label: <Link to="/student/mistakes">My Mistakes</Link> },
-      { key: 'student-comparison', icon: subMenuBadge(<TeamOutlined />, '#0ea5e9'), label: <Link to="/student/comparison">Compare With Peers</Link> },
     ]
   },
+  { key: 'student-comparison', icon: modernBadge(<BarChartOutlined />, 'linear-gradient(135deg, #0ea5e9, #0284c7)'), label: <Link to="/student/comparison">Performance</Link> },
   {
     key: 'account-group',
     icon: modernBadge(<UserOutlined />, 'linear-gradient(135deg, #64748b, #475569)'),
