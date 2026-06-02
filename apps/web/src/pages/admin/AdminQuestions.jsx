@@ -54,6 +54,7 @@ export function AdminQuestions() {
 	const [filtersVisible, setFiltersVisible] = useState(false);
 	const [courseId, setCourseId] = useState(searchParams.get('courseId') || '');
 	const [filterVolumeId, setFilterVolumeId] = useState(searchParams.get('volumeId') || '');
+	const [filterModuleId, setFilterModuleId] = useState(searchParams.get('moduleId') || '');
 	const [topicId, setTopicId] = useState(() => {
 		const topicIds = searchParams.get('topicIds');
 		const topicId = searchParams.get('topicId');
@@ -109,6 +110,7 @@ export function AdminQuestions() {
 				...(listTab === 'ai' ? { aiGenerated: true } : {}),
 				...(courseId ? { courseId } : {}),
 				...(filterVolumeId ? { volumeId: filterVolumeId } : {}),
+				...(filterModuleId ? { moduleId: filterModuleId } : {}),
 				...(topicId ? (Array.isArray(topicId) ? { topicIds: topicId.join(',') } : { topicId }) : {}),
 				...(difficulty ? (Array.isArray(difficulty) ? { difficulties: difficulty.join(',') } : { difficulty }) : {}),
 				...(questionType ? (Array.isArray(questionType) ? { types: questionType.join(',') } : { type: questionType }) : {}),
@@ -134,7 +136,7 @@ export function AdminQuestions() {
 	useEffect(() => {
 		loadQuestions();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [page, pageSize, listTab, courseId, filterVolumeId, topicId, difficulty, questionType, wording]);
+	}, [page, pageSize, listTab, courseId, filterVolumeId, filterModuleId, topicId, difficulty, questionType, wording]);
 
 	// Initialize from URL params on mount
 	useEffect(() => {
@@ -255,6 +257,20 @@ export function AdminQuestions() {
 			.filter(Boolean);
 	}, [topics, volumes, courseId]);
 
+	const filterModuleOptions = useMemo(() => {
+		let filtered = courseId ? topics.filter(t => t.courseId === courseId) : [];
+		if (filterVolumeId) {
+			filtered = filtered.filter(t => t.module?.volumeId === filterVolumeId);
+		}
+		const moduleMap = new Map();
+		filtered.forEach(t => {
+			if (t.module?.id && !moduleMap.has(t.module.id)) {
+				moduleMap.set(t.module.id, { value: t.module.id, label: t.module.name || t.module.id });
+			}
+		});
+		return Array.from(moduleMap.values());
+	}, [topics, courseId, filterVolumeId]);
+
 	const filteredTopicOptions = useMemo(() => {
 		let filtered = courseId 
 			? topics.filter(t => t.courseId === courseId)
@@ -262,8 +278,11 @@ export function AdminQuestions() {
 		if (filterVolumeId) {
 			filtered = filtered.filter(t => t.module?.volumeId === filterVolumeId);
 		}
+		if (filterModuleId) {
+			filtered = filtered.filter(t => t.moduleId === filterModuleId || t.module?.id === filterModuleId);
+		}
 		return filtered.map(t => ({ value: t.id, label: t.name }));
-	}, [topics, courseId, filterVolumeId]);
+	}, [topics, courseId, filterVolumeId, filterModuleId]);
 
 	const filteredCoursesOptions = useMemo(() => {
 		return (courses || [])
@@ -905,7 +924,7 @@ export function AdminQuestions() {
 	];
 
 	// Check if any filters are active
-	const hasActiveFilters = courseId || filterVolumeId || (Array.isArray(topicId) ? topicId.length > 0 : topicId) || (Array.isArray(difficulty) ? difficulty.length > 0 : difficulty) || (Array.isArray(questionType) ? questionType.length > 0 : questionType) || wording;
+	const hasActiveFilters = courseId || filterVolumeId || filterModuleId || (Array.isArray(topicId) ? topicId.length > 0 : topicId) || (Array.isArray(difficulty) ? difficulty.length > 0 : difficulty) || (Array.isArray(questionType) ? questionType.length > 0 : questionType) || wording;
 
 	return (
 		<Space key="admin-questions-page" direction="vertical" size={16} style={{ width: '100%' }}>
@@ -1009,6 +1028,7 @@ export function AdminQuestions() {
 								onChange={(v) => {
 									setCourseId(v || '');
 									setFilterVolumeId('');
+									setFilterModuleId('');
 									setTopicId('');
 								}}
 								options={filteredCoursesOptions}
@@ -1024,9 +1044,26 @@ export function AdminQuestions() {
 								value={filterVolumeId || undefined}
 								onChange={(v) => {
 									setFilterVolumeId(v || '');
+									setFilterModuleId('');
 									setTopicId('');
 								}}
 								options={filterVolumeOptions}
+								showSearch
+								optionFilterProp="label"
+								disabled={!courseId}
+							/>
+						</Form.Item>
+						<Form.Item label="Learning Module" style={{ margin: 0 }}>
+							<Select
+								style={{ minWidth: 200, borderRadius: 10 }}
+								allowClear
+								placeholder="All modules"
+								value={filterModuleId || undefined}
+								onChange={(v) => {
+									setFilterModuleId(v || '');
+									setTopicId('');
+								}}
+								options={filterModuleOptions}
 								showSearch
 								optionFilterProp="label"
 								disabled={!courseId}
@@ -1101,6 +1138,7 @@ export function AdminQuestions() {
 							onClick={() => {
 								setCourseId('');
 								setFilterVolumeId('');
+								setFilterModuleId('');
 								setTopicId('');
 								setDifficulty('');
 								setQuestionType('');
