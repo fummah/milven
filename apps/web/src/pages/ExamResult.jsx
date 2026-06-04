@@ -21,7 +21,7 @@ import {
 	RightOutlined
 } from '@ant-design/icons';
 import { ModuleNotesDrawer } from '../components/ModuleNotesDrawer.jsx';
-import { safeHtml, formatFormulaHtml } from '../lib/formatFormula';
+import { safeHtml, formatFormulaHtml, formatProseWithMath } from '../lib/formatFormula';
 
 export function ExamResult() {
 	const { attemptId } = useParams();
@@ -529,7 +529,7 @@ export function ExamResult() {
 														{ws && (
 															<div className="p-3 rounded-lg bg-green-50 border border-green-200">
 																<div className="flex items-center gap-2 mb-1"><BulbOutlined className="text-green-600" /><Typography.Text strong className="text-green-800 text-sm">Worked Solution</Typography.Text></div>
-																<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(ws) }} />
+																<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: formatProseWithMath(ws) }} />
 															</div>
 														)}
 													</div>
@@ -755,12 +755,12 @@ export function ExamResult() {
 																	<div className="p-4 space-y-4">
 																		{(traceSection || tracePage) && (<div><Typography.Text strong className="text-purple-700 text-sm">Reference</Typography.Text><div className="text-slate-700 mt-1">{traceSection && <span>{traceSection}</span>}{traceSection && tracePage && <span>, </span>}{tracePage && <span>Page {tracePage}</span>}</div></div>)}
 																		{keyFormulas && (<div><div className="flex items-center gap-2 mb-2"><CalculatorOutlined className="text-blue-600" /><Typography.Text strong className="text-blue-800">Key Formula(s)</Typography.Text></div><div className="prose prose-sm question-preview-content p-4 rounded-lg bg-blue-50/80 border border-blue-200 text-slate-800 max-w-none" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }} /></div>)}
-																		{workedSolution && (<div><div className="flex items-center gap-2 mb-2"><BulbOutlined className="text-green-600" /><Typography.Text strong className="text-green-800">Worked Solution</Typography.Text></div><div className="prose prose-sm question-preview-content p-4 rounded-lg bg-green-50/80 border border-green-200 text-slate-800 max-w-none" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(workedSolution) }} /></div>)}
+																		{workedSolution && (<div><div className="flex items-center gap-2 mb-2"><BulbOutlined className="text-green-600" /><Typography.Text strong className="text-green-800">Worked Solution</Typography.Text></div><div className="prose prose-sm question-preview-content p-4 rounded-lg bg-green-50/80 border border-green-200 text-slate-800 max-w-none" dangerouslySetInnerHTML={{ __html: formatProseWithMath(workedSolution) }} /></div>)}
 																		{aiHints[a.id]?.hint && (<div><div className="flex items-center gap-2 mb-2"><RobotOutlined className="text-violet-600" /><Typography.Text strong className="text-violet-800">AI hint</Typography.Text></div><div className="p-4 rounded-lg bg-violet-50/80 border border-violet-200 text-slate-800 text-sm">{aiHints[a.id].hint}</div></div>)}
 																	</div>
 																</div>
 															) : (
-																<Collapse size="small" className="bg-slate-50 rounded-lg border border-slate-200" items={[{ key: 'explanation', label: (<span className="flex items-center gap-2"><BulbOutlined className="text-slate-500" /><Typography.Text>View explanation</Typography.Text></span>), children: (<Space direction="vertical" size={12} style={{ width: '100%' }}>{(traceSection || tracePage) && (<div><Typography.Text strong className="text-purple-700 text-sm">Reference</Typography.Text><div className="text-slate-600 mt-1">{traceSection && <span>{traceSection}</span>}{traceSection && tracePage && <span>, </span>}{tracePage && <span>Page {tracePage}</span>}</div></div>)}{keyFormulas && (<div><Typography.Text strong className="text-blue-700 text-sm">Key Formula(s)</Typography.Text><div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-blue-50/50 border border-blue-100" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }} /></div>)}{workedSolution && (<div><Typography.Text strong className="text-green-700 text-sm">Worked Solution</Typography.Text><div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-green-50/50 border border-green-100" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(workedSolution) }} /></div>)}</Space>) }]} />
+																<Collapse size="small" className="bg-slate-50 rounded-lg border border-slate-200" items={[{ key: 'explanation', label: (<span className="flex items-center gap-2"><BulbOutlined className="text-slate-500" /><Typography.Text>View explanation</Typography.Text></span>), children: (<Space direction="vertical" size={12} style={{ width: '100%' }}>{(traceSection || tracePage) && (<div><Typography.Text strong className="text-purple-700 text-sm">Reference</Typography.Text><div className="text-slate-600 mt-1">{traceSection && <span>{traceSection}</span>}{traceSection && tracePage && <span>, </span>}{tracePage && <span>Page {tracePage}</span>}</div></div>)}{keyFormulas && (<div><Typography.Text strong className="text-blue-700 text-sm">Key Formula(s)</Typography.Text><div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-blue-50/50 border border-blue-100" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }} /></div>)}{workedSolution && (<div><Typography.Text strong className="text-green-700 text-sm">Worked Solution</Typography.Text><div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-green-50/50 border border-green-100" dangerouslySetInnerHTML={{ __html: formatProseWithMath(workedSolution) }} /></div>)}</Space>) }]} />
 															)}
 														</div>
 													)}

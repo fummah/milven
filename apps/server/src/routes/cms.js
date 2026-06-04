@@ -1,4 +1,4 @@
-﻿import { Router } from 'express';
+import { Router } from 'express';
 import Stripe from 'stripe';
 import OpenAI from 'openai';
 import multer from 'multer';
@@ -196,6 +196,42 @@ export function cmsRouter(prisma) {
    * (=, /, ×, ^, subscripts, Greek letters, common finance abbreviations).
    */
   const FORMULA_PATTERN = /(?:^|\n)([^\n]*(?:[\=][\s]*[^\n]*[\+\-\*\/\^]|(?:PV|FV|NPV|IRR|WACC|EPS|ROE|ROA|CAPM|YTM|HPR|DDM|FCF|FCFE|FCFF|EVA|σ|β|α|μ|Σ|√|∑|∏|∫|Δ)\s*[=])[^\n]*)/gim;
+
+  /**
+   * Validate that traceSection is consistent with the assigned topic name.
+   * If mismatch is detected (e.g. topic is "Standard I" but trace says "Standard VI"), correct it.
+   */
+  function validateTraceSection(traceSection, topicName) {
+    if (!traceSection || !topicName) return traceSection || topicName || '';
+    const traceLower = traceSection.toLowerCase().trim();
+    const topicLower = topicName.toLowerCase().trim();
+    // Extract key identifiers from topic name (e.g. "Standard I" from "Standard I: Professionalism")
+    const topicKeyMatch = topicName.match(/^(standard\s+[ivxlcdm]+|reading\s+\d+|module\s+\d+|chapter\s+\d+|topic\s+\d+)/i);
+    const topicKey = topicKeyMatch ? topicKeyMatch[1].toLowerCase() : null;
+    if (topicKey) {
+      // Check if traceSection references the same standard/reading/module
+      if (traceLower.includes(topicKey)) return traceSection; // consistent
+      // Check if traceSection references a DIFFERENT standard/reading (mismatch)
+      const traceKeyMatch = traceSection.match(/^(standard\s+[ivxlcdm]+|reading\s+\d+|module\s+\d+|chapter\s+\d+|topic\s+\d+)/i);
+      if (traceKeyMatch) {
+        const traceKey = traceKeyMatch[1].toLowerCase();
+        if (traceKey !== topicKey) {
+          // Mismatch detected: replace with topic name as traceSection
+          console.log(`[AI trace fix] traceSection "${traceSection}" does not match topic "${topicName}" — correcting`);
+          return topicName;
+        }
+      }
+    }
+    // General check: does the topic name or a significant portion appear in the trace?
+    const topicWords = topicLower.split(/[\s:,\-]+/).filter(w => w.length > 3);
+    const matchCount = topicWords.filter(w => traceLower.includes(w)).length;
+    if (topicWords.length > 0 && matchCount === 0) {
+      // No overlap at all — likely a mismatch
+      console.log(`[AI trace fix] traceSection "${traceSection}" has no overlap with topic "${topicName}" — correcting`);
+      return `${topicName} — ${traceSection}`;
+    }
+    return traceSection;
+  }
 
   /**
    * Build a topic-aware curriculum excerpt from extracted PDF text.
@@ -2300,7 +2336,7 @@ A curriculum reference document has been provided below. You MUST:
 1. BASE every question on the content, terminology, and examples from this document.
 2. For "los": Copy the EXACT Learning Outcome Statement (LOS) from the document — these are statements starting with verbs like "describe", "explain", "calculate", etc. that appear just below each topic heading. Do NOT paraphrase or invent LOS — use the exact wording from the document.
 3. For "tracePage": Use the EXACT page numbers from the [PAGE N] markers in the document. Format as "p. X" or "p. X-Y" for ranges.
-4. For "traceSection": Use the EXACT section/reading/topic heading as it appears in the document.
+4. For "traceSection": Use the EXACT section/reading/topic heading as it appears in the document. CRITICAL: The traceSection MUST match the assigned topic — if the question is assigned to "Standard I: Professionalism", the traceSection MUST reference a section within Standard I, NEVER a section from Standard VI or any other standard/topic. Consistency between the topic assignment and the traceSection is mandatory.
 5. For "keyFormulas" and "workedSolution": ALWAYS use valid LaTeX notation:
    - Inline formulas: \\( ... \\)   Block formulas: \\[ ... \\]
    - Fractions: \\frac{a}{b}   Exponents: x^{2}, k^{\\alpha}
@@ -2345,7 +2381,7 @@ Return a JSON object with an "items" key. EVERY question/sub-question MUST inclu
 - "explanation": string (concise explanation of the correct answer and common mistakes)
 - "qid": string (short unique ID like "Q-TOPIC-001")
 - "los": string (the EXACT learning outcome statement from the curriculum document — copy it verbatim)
-- "traceSection": string (EXACT section/reading heading from the document, e.g. "Reading 33: Cost of Capital")
+- "traceSection": string (EXACT section/reading heading from the document that MATCHES the assigned topic. CRITICAL: traceSection MUST correspond to the specific topic — e.g. if topic is "Standard I: Professionalism", traceSection MUST reference Standard I content only, NEVER Standard VI or any other topic.)
 - "tracePage": string (EXACT page from the document [PAGE N] markers, e.g. "p. 145" or "p. 145-148")
 - "keyFormulas": string (key formula(s) using VALID LaTeX — e.g. "\\( PV = \\frac{CF_1}{(1+r)^{1}} + \\frac{CF_2}{(1+r)^{2}} \\)", "\\( WACC = w_{d} \\cdot r_{d} \\cdot (1-t) + w_{e} \\cdot r_{e} \\)". Use \\frac, \\sigma, \\beta, \\alpha etc. ALL braces must be balanced. Include variable definitions.)
 - "workedSolution": string (step-by-step worked solution using valid LaTeX for all math — be thorough)
@@ -2382,9 +2418,12 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			let topicCursor = 0;
 			let diffCursor = 0;
 			const nextTopicId = () => {
-				const id = selectedTopics[topicCursor % selectedTopics.length].id;
+				const t = selectedTopics[topicCursor % selectedTopics.length];
 				topicCursor++;
-				return id;
+				return t.id;
+			};
+			const getTopicName = () => {
+				return selectedTopics[(topicCursor - 1) % selectedTopics.length]?.name || '';
 			};
 			const nextDifficulty = () => {
 				const d = diffList[diffCursor % diffList.length];
@@ -2435,7 +2474,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 								marks: 1,
 								qid: sq.qid || null,
 								los: sq.los || null,
-								traceSection: sq.traceSection || null,
+								traceSection: validateTraceSection(sq.traceSection || '', getTopicName()) || null,
 								tracePage: sq.tracePage || null,
 								keyFormulas: sq.keyFormulas || null,
 								workedSolution: (() => { const ws = (sq.workedSolution || '').trim(); const ex = (sq.explanation || '').trim(); if (ws && ex) return `${ex}\n\n--- Worked Solution ---\n${ws}`; return ex || ws || null; })(),
@@ -2477,7 +2516,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 							marks: 1,
 							qid: item.qid || null,
 							los: item.los || null,
-							traceSection: item.traceSection || null,
+							traceSection: validateTraceSection(item.traceSection || '', getTopicName()) || null,
 							tracePage: item.tracePage || null,
 							keyFormulas: item.keyFormulas || null,
 							workedSolution: (() => { const ws = (item.workedSolution || '').trim(); const ex = (item.explanation || '').trim(); if (ws && ex) return `${ex}\n\n--- Worked Solution ---\n${ws}`; return ex || ws || null; })(),
@@ -2645,7 +2684,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 		const metaFieldsBlock = `EVERY question MUST include ALL of these metadata fields (populate ALL of them, never leave null):
 - "qid": string (a short unique random identifier — generate a random alphanumeric code for each question, e.g. "Q-${selectedTopics[0]?.name?.substring(0,4)?.toUpperCase() || 'CFA'}-${Math.random().toString(36).substring(2,6).toUpperCase()}" — each qid MUST be unique and randomly generated, NEVER use sequential numbering like 001, 002, 003)
 - "los": string (the EXACT Learning Outcome Statement from the curriculum document — copy it VERBATIM, e.g. "describe the features of a fixed-income security". These appear just below topic headings and start with verbs like describe, explain, calculate, etc.)
-- "traceSection": string (the EXACT section/reading/topic heading from the curriculum document, e.g. "Reading 33: Cost of Capital" — do NOT invent section names)
+- "traceSection": string (the EXACT section/reading/topic heading from the curriculum document that MATCHES THE ASSIGNED TOPIC. CRITICAL: the traceSection MUST correspond to the specific topic the question is about — e.g. if the topic is "Standard I: Professionalism", the traceSection MUST reference Standard I content, NEVER Standard VI or any other standard. The traceSection must be consistent with the topic tag. Do NOT reference sections outside the assigned topic.)
 - "tracePage": string (the EXACT page number from the [PAGE N] markers in the curriculum document, e.g. "p. 145" or "p. 145-148" — do NOT guess page numbers)
 - "keyFormulas": string (key formula(s) using VALID LaTeX — e.g. "\\( PV = \\frac{CF_1}{(1+r)^{1}} + \\frac{CF_2}{(1+r)^{2}} \\)", "\\( WACC = w_{d} \\cdot r_{d} \\cdot (1-t) + w_{e} \\cdot r_{e} \\)". Use \\frac, \\sigma, \\beta, \\alpha etc. ALL braces must be balanced. Include variable definitions.)
 - "workedSolution": string (step-by-step worked solution using valid LaTeX for all math — be thorough so students can learn from it)
@@ -2761,7 +2800,7 @@ A curriculum reference document has been provided below. You MUST:
 1. BASE every question on the content, terminology, and examples from this document.
 2. For "los": Copy the EXACT Learning Outcome Statement (LOS) from the document — these are statements starting with verbs like "describe", "explain", "calculate", etc. that appear just below each topic heading. Do NOT paraphrase or invent LOS — use the exact wording from the document.
 3. For "tracePage": Use the EXACT page numbers from the [PAGE N] markers in the document. Format as "p. X" or "p. X-Y" for ranges.
-4. For "traceSection": Use the EXACT section/reading/topic heading as it appears in the document.
+4. For "traceSection": Use the EXACT section/reading/topic heading as it appears in the document. CRITICAL: The traceSection MUST match the assigned topic — if the question is assigned to "Standard I: Professionalism", the traceSection MUST reference a section within Standard I, NEVER a section from Standard VI or any other standard/topic. Consistency between the topic assignment and the traceSection is mandatory.
 5. For "keyFormulas" and "workedSolution": ALWAYS use valid LaTeX notation:
    - Inline formulas: \\\\( ... \\\\)   Block formulas: \\\\[ ... \\\\]
    - Fractions: \\\\frac{a}{b}   Exponents: x^{2}, k^{\\\\alpha}
@@ -2782,6 +2821,8 @@ Context:
 - Number of ${isBundleType ? 'case studies' : 'questions'}: ${count}
 ${previewCurriculumSection}
 IMPORTANT: Each question MUST include a "conceptName" field — the name of the specific concept it tests, chosen from the Concepts list above (or a close match if the list says "All concepts"). This is used to map questions back to our curriculum database.
+
+CONSISTENCY RULE: Each question's "traceSection" MUST be a section that falls WITHIN the topic the question is testing. If Topics = "${topicLabel}", then traceSection must reference content from ONLY those topics. For example, if the topic is "Standard I: Professionalism", the traceSection MUST say "Standard I(A) ...", "Standard I(B) ...", etc. — NEVER "Standard VI(A) ..." or content from any other topic. The question content, LOS, traceSection, and topic assignment must ALL be consistent with each other.
 
 ${formatBlock}`;
 
@@ -2891,7 +2932,7 @@ ${formatBlock}`;
 							marks: (questionType === 'VIGNETTE_MCQ') ? 3 : (sq.marks ? Number(sq.marks) : 1),
 							qid: generateRandomQid(t.name),
 							los: sq.los || '',
-							traceSection: sq.traceSection || '',
+							traceSection: validateTraceSection(sq.traceSection || '', t.name),
 							tracePage: sq.tracePage || '',
 							keyFormulas: sq.keyFormulas || '',
 							workedSolution: sq.workedSolution || '',
@@ -2922,7 +2963,7 @@ ${formatBlock}`;
 					marks: it.marks ? Number(it.marks) : 1,
 					qid: generateRandomQid(t.name),
 					los: it.los || '',
-					traceSection: it.traceSection || '',
+					traceSection: validateTraceSection(it.traceSection || '', t.name),
 					tracePage: it.tracePage || '',
 					keyFormulas: it.keyFormulas || '',
 					workedSolution: it.workedSolution || '',

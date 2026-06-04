@@ -3,7 +3,7 @@ import { Card, Form, Input, Button, Select, message, Space, Typography, Table, U
 import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PictureOutlined, DeleteFilled, FilterOutlined, QuestionCircleOutlined, BookOutlined, SearchOutlined, CalendarOutlined, CheckCircleOutlined, DownOutlined, UpOutlined, RobotOutlined, ThunderboltOutlined, TagsOutlined } from '@ant-design/icons';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api, API_URL } from '../../lib/api';
-import { safeHtml, formatFormulaHtml } from '../../lib/formatFormula';
+import { safeHtml, formatFormulaHtml, formatProseWithMath } from '../../lib/formatFormula';
 import { RichTextEditor } from '../../components/RichTextEditor.jsx';
 import { ModuleNotesDrawer } from '../../components/ModuleNotesDrawer.jsx';
 
@@ -1579,7 +1579,7 @@ export function AdminQuestions() {
 												{q?.workedSolution && (
 													<div style={{ marginTop: 6, padding: '6px 10px', background: '#f6ffed', borderRadius: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
-														<span dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution) }} />
+														<span dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} />
 													</div>
 												)}
 											</div>
@@ -1647,7 +1647,7 @@ export function AdminQuestions() {
 												{q?.workedSolution && (
 													<div style={{ marginTop: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
-														<span dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution) }} />
+														<span dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} />
 													</div>
 												)}
 											</div>
@@ -2223,7 +2223,7 @@ export function AdminQuestions() {
 													{q.los && <div style={{ fontSize: 13 }}><Typography.Text strong>LOS: </Typography.Text><Typography.Text>{q.los}</Typography.Text></div>}
 													{(q.traceSection || q.tracePage) && <div style={{ fontSize: 13 }}><Typography.Text strong>Trace: </Typography.Text><Typography.Text>{q.traceSection}{q.traceSection && q.tracePage ? ' – ' : ''}{q.tracePage ? `Page ${q.tracePage}` : ''}</Typography.Text></div>}
 													{q.keyFormulas && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f0f5ff', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Key Formula(s): </Typography.Text><span dangerouslySetInnerHTML={{ __html: safeHtml(q.keyFormulas) }} /></div>}
-													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution) }} /></div>}
+													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} /></div>}
 												</div>
 											)}
 										</Space>
@@ -2271,7 +2271,7 @@ export function AdminQuestions() {
 													{q.los && <div style={{ fontSize: 13 }}><Typography.Text strong>LOS: </Typography.Text><Typography.Text>{q.los}</Typography.Text></div>}
 													{(q.traceSection || q.tracePage) && <div style={{ fontSize: 13 }}><Typography.Text strong>Trace: </Typography.Text><Typography.Text>{q.traceSection}{q.traceSection && q.tracePage ? ' – ' : ''}{q.tracePage ? `Page ${q.tracePage}` : ''}</Typography.Text></div>}
 													{q.keyFormulas && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f0f5ff', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Key Formula(s): </Typography.Text><span dangerouslySetInnerHTML={{ __html: safeHtml(q.keyFormulas) }} /></div>}
-													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span dangerouslySetInnerHTML={{ __html: safeHtml(q.workedSolution) }} /></div>}
+													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} /></div>}
 												</div>
 											)}
 										</Space>
@@ -2367,7 +2367,7 @@ export function AdminQuestions() {
 													<div
 														className="prose question-preview-content"
 														style={{ margin: '4px 0 0 0', padding: '6px', background: '#e6f7ff', borderRadius: 4 }}
-														dangerouslySetInnerHTML={{ __html: safeHtml(previewQuestion.question.workedSolution) }}
+														dangerouslySetInnerHTML={{ __html: formatProseWithMath(previewQuestion.question.workedSolution) }}
 													/>
 												</div>
 											)}

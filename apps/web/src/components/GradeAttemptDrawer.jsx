@@ -3,7 +3,7 @@ import { Drawer, Card, Typography, Space, Button, Tag, InputNumber, message, Mod
 import { BulbOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../lib/api';
-import { formatFormulaHtml } from '../lib/formatFormula';
+import { formatFormulaHtml, formatProseWithMath } from '../lib/formatFormula';
 
 function getCandidateLabel(user) {
   if (!user) return '—';
@@ -234,7 +234,7 @@ export function GradeAttemptDrawer({ attemptId, open, onClose, onSaved }) {
                         <div className="question-preview-content formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(a.question.keyFormulas) }} />
                       )}
                       {a?.question?.workedSolution && (
-                        <div className="question-preview-content formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(a.question.workedSolution) }} />
+                        <div className="question-preview-content formula-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(a.question.workedSolution) }} />
                       )}
                       {!a?.question?.keyFormulas && !a?.question?.workedSolution && (
                         <Typography.Text type="secondary">No key formulas or worked solution set.</Typography.Text>
