@@ -380,6 +380,23 @@ export function AdminQuestions() {
 
 	const selectedTopic = useMemo(() => (topics || []).find(t => t.id === topicId) || null, [topics, topicId]);
 
+	// Watch AI form topicIds so the concept options are reactive when topics change
+	const aiFormTopicIds = Form.useWatch('topicIds', aiForm);
+	const aiConceptOptions = useMemo(() => {
+		const tIds = Array.isArray(aiFormTopicIds) && aiFormTopicIds.length > 0 ? aiFormTopicIds : [];
+		let relevantTopics = aiGenerateCourseId
+			? (topics || []).filter(t => (t.courseId === aiGenerateCourseId || t.course?.id === aiGenerateCourseId))
+			: (topics || []);
+		if (aiGenerateVolumeId) relevantTopics = relevantTopics.filter(t => t.module?.volumeId === aiGenerateVolumeId);
+		if (aiGenerateModuleId) relevantTopics = relevantTopics.filter(t => t.moduleId === aiGenerateModuleId || t.module?.id === aiGenerateModuleId);
+		if (tIds.length > 0) relevantTopics = relevantTopics.filter(t => tIds.includes(t.id));
+		const concepts = [];
+		relevantTopics.forEach(t => {
+			if (t?.concepts) t.concepts.forEach(c => concepts.push({ value: c.id, label: `${c.name} (${t.name})` }));
+		});
+		return concepts;
+	}, [topics, aiFormTopicIds, aiGenerateCourseId, aiGenerateVolumeId, aiGenerateModuleId]);
+
 	// Restrict AI "Generate questions" type list based on selected course level
 	const aiQuestionTypeOptions = useMemo(() => {
 		if (!aiGenerateCourseId) {
@@ -1400,20 +1417,7 @@ export function AdminQuestions() {
 									placeholder="Select concepts (optional)"
 									showSearch
 									optionFilterProp="label"
-									options={(() => {
-										const aiTopicIds = aiForm.getFieldValue('topicIds') || [];
-										let relevantTopics = aiGenerateCourseId
-											? (topics || []).filter(t => (t.courseId === aiGenerateCourseId || t.course?.id === aiGenerateCourseId))
-											: (topics || []);
-										if (aiGenerateVolumeId) relevantTopics = relevantTopics.filter(t => t.module?.volumeId === aiGenerateVolumeId);
-										if (aiGenerateModuleId) relevantTopics = relevantTopics.filter(t => t.moduleId === aiGenerateModuleId || t.module?.id === aiGenerateModuleId);
-										if (aiTopicIds.length > 0) relevantTopics = relevantTopics.filter(t => aiTopicIds.includes(t.id));
-										const concepts = [];
-										relevantTopics.forEach(t => {
-											if (t?.concepts) t.concepts.forEach(c => concepts.push({ value: c.id, label: `${c.name} (${t.name})` }));
-										});
-										return concepts;
-									})()}
+									options={aiConceptOptions}
 								/>
 							</Form.Item>
 						</Col>
