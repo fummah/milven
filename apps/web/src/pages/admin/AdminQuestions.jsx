@@ -384,18 +384,17 @@ export function AdminQuestions() {
 	const aiFormTopicIds = Form.useWatch('topicIds', aiForm);
 	const aiConceptOptions = useMemo(() => {
 		const tIds = Array.isArray(aiFormTopicIds) && aiFormTopicIds.length > 0 ? aiFormTopicIds : [];
-		let relevantTopics = aiGenerateCourseId
-			? (topics || []).filter(t => (t.courseId === aiGenerateCourseId || t.course?.id === aiGenerateCourseId))
-			: (topics || []);
-		if (aiGenerateVolumeId) relevantTopics = relevantTopics.filter(t => t.module?.volumeId === aiGenerateVolumeId);
-		if (aiGenerateModuleId) relevantTopics = relevantTopics.filter(t => t.moduleId === aiGenerateModuleId || t.module?.id === aiGenerateModuleId);
-		if (tIds.length > 0) relevantTopics = relevantTopics.filter(t => tIds.includes(t.id));
+		// Only show concepts when at least one topic is selected
+		if (tIds.length === 0) return [];
 		const concepts = [];
-		relevantTopics.forEach(t => {
-			if (t?.concepts) t.concepts.forEach(c => concepts.push({ value: c.id, label: `${c.name} (${t.name})` }));
+		tIds.forEach(tid => {
+			const topic = (topics || []).find(t => t.id === tid);
+			if (topic?.concepts) {
+				topic.concepts.forEach(c => concepts.push({ value: c.id, label: `${c.name} (${topic.name})` }));
+			}
 		});
 		return concepts;
-	}, [topics, aiFormTopicIds, aiGenerateCourseId, aiGenerateVolumeId, aiGenerateModuleId]);
+	}, [topics, aiFormTopicIds]);
 
 	// Restrict AI "Generate questions" type list based on selected course level
 	const aiQuestionTypeOptions = useMemo(() => {
