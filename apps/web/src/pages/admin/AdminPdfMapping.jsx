@@ -40,32 +40,28 @@ const AdminPdfMapping = () => {
   const fetchCourses = async () => {
     setLoading(true);
     setError(null);
+    
     try {
+      // Use the same endpoint as StudentDashboard for browsing courses
       const token = localStorage.getItem('token');
       const response = await fetch('/api/learning/courses/browse', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
       if (!response.ok) {
-        throw new Error('Failed to fetch courses');
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
       const data = await response.json();
-      setCourses(data.courses || []);
+      if (data.courses && Array.isArray(data.courses)) {
+        setCourses(data.courses);
+      } else {
+        setCourses([]);
+      }
     } catch (error) {
       console.error('Failed to fetch courses:', error);
-      setError('Failed to load courses');
-      // Fallback to public courses if browse fails
-      try {
-        const response = await fetch('/api/learning/courses/public');
-        const data = await response.json();
-        setCourses(data.courses || []);
-        setError(null); // Clear error if fallback succeeds
-      } catch (fallbackError) {
-        console.error('Failed to fetch public courses:', fallbackError);
-        setCourses([]);
-        setError('Unable to load courses');
-      }
+      setError(`Failed to load courses: ${error.message}`);
+      setCourses([]);
     } finally {
       setLoading(false);
     }
