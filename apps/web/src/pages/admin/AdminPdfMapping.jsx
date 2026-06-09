@@ -42,9 +42,9 @@ const AdminPdfMapping = () => {
     setError(null);
     
     try {
-      // Use the same endpoint as StudentDashboard for browsing courses
+      // Use the same endpoint as ExamBuilder for admin courses
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/learning/courses/browse', {
+      const response = await fetch('/api/cms/courses', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -53,11 +53,9 @@ const AdminPdfMapping = () => {
       }
       
       const data = await response.json();
-      if (data.courses && Array.isArray(data.courses)) {
-        setCourses(data.courses);
-      } else {
-        setCourses([]);
-      }
+      // Handle both possible response formats
+      const coursesArray = data.courses || data.items || [];
+      setCourses(Array.isArray(coursesArray) ? coursesArray : []);
     } catch (error) {
       console.error('Failed to fetch courses:', error);
       setError(`Failed to load courses: ${error.message}`);
