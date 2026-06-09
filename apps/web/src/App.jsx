@@ -63,7 +63,7 @@ import { AdminModuleNotes } from './pages/admin/AdminModuleNotes.jsx';
 import AdminDocuments from './pages/admin/AdminDocuments.jsx';
 import AdminMockExams from './pages/admin/AdminMockExams.jsx';
 import AdminPdfMapping from './pages/admin/AdminPdfMapping.jsx';
-import { StudentLearning } from './pages/student/StudentLearning.jsx';
+import StudentLearning from './pages/student/StudentLearning.jsx';
 import { Home } from './pages/Home.jsx';
 import { CoursesPage } from './pages/Courses.jsx';
 import { Careers } from './pages/Careers.jsx';
