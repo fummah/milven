@@ -8,6 +8,8 @@ const AdminPdfMapping = () => {
   const [courses, setCourses] = useState([]);
   const [document, setDocument] = useState(null);
   const [mappings, setMappings] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [learningHierarchy, setLearningHierarchy] = useState({ modules: [], topics: [], concepts: [] });
   const [uploadProgress, setUploadProgress] = useState(null);
   const [currentPdfPage, setCurrentPdfPage] = useState(1);
@@ -18,8 +20,14 @@ const AdminPdfMapping = () => {
 
   useEffect(() => {
     fetchCourses();
-    fetchVolumes();
   }, []);
+
+  useEffect(() => {
+    if (selectedCourse) {
+      fetchVolumes();
+      setSelectedVolume(null); // Reset volume when course changes
+    }
+  }, [selectedCourse]);
 
   useEffect(() => {
     if (selectedCourse && selectedVolume) {
@@ -30,12 +38,36 @@ const AdminPdfMapping = () => {
   }, [selectedCourse, selectedVolume]);
 
   const fetchCourses = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const response = await fetch('/api/learning/courses/public');
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/learning/courses/browse', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch courses');
+      }
+      
       const data = await response.json();
-      setCourses(data.courses);
+      setCourses(data.courses || []);
     } catch (error) {
       console.error('Failed to fetch courses:', error);
+      setError('Failed to load courses');
+      // Fallback to public courses if browse fails
+      try {
+        const response = await fetch('/api/learning/courses/public');
+        const data = await response.json();
+        setCourses(data.courses || []);
+        setError(null); // Clear error if fallback succeeds
+      } catch (fallbackError) {
+        console.error('Failed to fetch public courses:', fallbackError);
+        setCourses([]);
+        setError('Unable to load courses');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -230,19 +262,35 @@ const AdminPdfMapping = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Select Course</label>
-          <select
-            value={selectedCourse || ''}
-            onChange={(e) => {
-              setSelectedCourse(e.target.value);
-              setSelectedVolume(null);
-            }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Choose a course...</option>
-            {courses.map(course => (
-              <option key={course.id} value={course.id}>{course.name}</option>
-            ))}
-          </select>
+          {loading ? (
+            <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+              <span className="text-gray-600">Loading courses...</span>
+            </div>
+          ) : error ? (
+            <div className="w-full px-3 py-2 border border-red-300 rounded-md bg-red-50 text-red-700">
+              {error}
+            </div>
+          ) : (
+            <select
+              value={selectedCourse || ''}
+              onChange={(e) => {
+                setSelectedCourse(e.target.value);
+                setSelectedVolume(null);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Choose a course...</option>
+              {courses.map(course => (
+                <option key={course.id} value={course.id}>
+                  {course.name} {course.level && `(${course.level.replace('LEVEL', 'Level ')})`}
+                </option>
+              ))}
+            </select>
+          )}
+          {courses.length === 0 && !loading && !error && (
+            <p className="text-sm text-gray-500 mt-1">No courses available</p>
+          )}
         </div>
         
         <div>
