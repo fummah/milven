@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Upload, FileText, MapPin, Trash2, Save, Eye, AlertCircle } from 'lucide-react';
+import { api } from '../../lib/api';
 
 const AdminPdfMapping = () => {
   const [volumes, setVolumes] = useState([]);
@@ -42,23 +43,13 @@ const AdminPdfMapping = () => {
     setError(null);
     
     try {
-      // Use the same endpoint as ExamBuilder for admin courses
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/cms/courses', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      // Handle both possible response formats
-      const coursesArray = data.courses || data.items || [];
+      // Use the same api utility as AdminCourses
+      const response = await api.get('/api/cms/courses');
+      const coursesArray = response.data?.courses || response.data?.items || [];
       setCourses(Array.isArray(coursesArray) ? coursesArray : []);
     } catch (error) {
       console.error('Failed to fetch courses:', error);
-      setError(`Failed to load courses: ${error.message}`);
+      setError(`Failed to load courses: ${error.response?.data?.error || error.message}`);
       setCourses([]);
     } finally {
       setLoading(false);
