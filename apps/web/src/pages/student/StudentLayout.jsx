@@ -65,6 +65,7 @@ const menuItems = [
     label: 'Learning',
     children: [
       { key: 'student-courses', icon: subMenuBadge(<BookOutlined />, '#8b5cf6'), label: <Link to="/student/courses">My Courses</Link> },
+      { key: 'student-learning', icon: subMenuBadge(<ReadOutlined />, '#8b5cf6'), label: <Link to="/student/learning">Learning Center</Link> },
       { key: 'student-module-notes', icon: subMenuBadge(<SnippetsOutlined />, '#8b5cf6'), label: <Link to="/student/module-notes">Module Notes</Link> },
     ]
   },

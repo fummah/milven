@@ -79,6 +79,7 @@ model Volume {
   formulas         Formula[]
   summarySheets    SummarySheet[]
   moduleNotes      ModuleNote[]
+  pdfMappings      PdfMapping[]
 }
 
 model CourseVolume {
@@ -682,9 +683,37 @@ model CurriculumDocument {
   uploadedById  String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  pdfMappings   PdfMapping[]
   @@unique([courseId, volumeId])
   @@index([courseId])
   @@index([volumeId])
+}
+
+enum MappingTargetType {
+  MODULE
+  TOPIC
+  CONCEPT
+}
+
+// PDF Mapping - Links specific pages/sections of curriculum PDFs to learning hierarchy
+model PdfMapping {
+  id                   String            @id @default(cuid())
+  volumeId             String
+  volume               Volume            @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  curriculumDocumentId String
+  curriculumDocument   CurriculumDocument @relation(fields: [curriculumDocumentId], references: [id], onDelete: Cascade)
+  targetType           MappingTargetType
+  targetId             String            // Module, Topic, or Concept ID
+  pageNumber           Int
+  pageLabel            String?           // Optional page label (e.g., "A-1", "iv")
+  yOffset              Float             @default(0) // Vertical offset for precise positioning
+  sectionTitle         String?           // Optional section title from PDF
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  
+  @@unique([volumeId, targetType, targetId])
+  @@index([curriculumDocumentId])
+  @@index([pageNumber])
 }
 
 // ─── CFA Formula Book Master ───────────────────────────────

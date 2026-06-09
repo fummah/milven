@@ -62,6 +62,8 @@ import { AdminSummarySheets } from './pages/admin/AdminSummarySheets.jsx';
 import { AdminModuleNotes } from './pages/admin/AdminModuleNotes.jsx';
 import AdminDocuments from './pages/admin/AdminDocuments.jsx';
 import AdminMockExams from './pages/admin/AdminMockExams.jsx';
+import AdminPdfMapping from './pages/admin/AdminPdfMapping.jsx';
+import { StudentLearning } from './pages/student/StudentLearning.jsx';
 import { Home } from './pages/Home.jsx';
 import { CoursesPage } from './pages/Courses.jsx';
 import { Careers } from './pages/Careers.jsx';
@@ -805,6 +807,7 @@ export default function App() {
 						<Route path="summary-sheets" element={<AdminSummarySheets />} />
 						<Route path="module-notes" element={<AdminModuleNotes />} />
 						<Route path="documents" element={<AdminDocuments />} />
+						<Route path="pdf-mapping" element={<AdminPdfMapping />} />
 						<Route path="questions" element={<AdminQuestions />} />
 						<Route path="questions/:id/edit" element={<AdminQuestionEdit />} />
 						<Route path="topics/:id/preview" element={<AdminTopicPreview />} />
@@ -826,6 +829,7 @@ export default function App() {
 					<Route path="/student" element={<RequireStudent><StudentLayout /></RequireStudent>}>
 						<Route index element={<StudentDashboard />} />
 						<Route path="courses" element={<StudentCourses />} />
+						<Route path="learning" element={<StudentLearning />} />
 						<Route path="exams" element={<StudentExams />} />
 						<Route path="exam/:attemptId" element={<ExamTake />} />
 						<Route path="exams/take/:attemptId" element={<ExamTake />} />

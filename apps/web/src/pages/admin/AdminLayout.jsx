@@ -86,6 +86,7 @@ const menuItems = [
       { key: 'questions', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/questions">Questions</Link> },
       { key: 'materials', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/materials">Learning Materials</Link> },
       { key: 'documents', icon: subMenuBadge(<FolderOutlined />, '#8b5cf6'), label: <Link to="/admin/documents">Curriculum Docs</Link> },
+      { key: 'pdf-mapping', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/pdf-mapping">PDF Mapping</Link> },
       { key: 'formulas', icon: subMenuBadge(<FunctionOutlined />, '#8b5cf6'), label: <Link to="/admin/formulas">Formula Book</Link> },
       { key: 'summary-sheets', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/summary-sheets">Summary Sheets</Link> },
       { key: 'module-notes', icon: subMenuBadge(<BookOutlined />, '#8b5cf6'), label: <Link to="/admin/module-notes">Module Notes</Link> },

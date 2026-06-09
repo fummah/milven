@@ -26,6 +26,7 @@ import { testRouter } from './routes/test.js';
 import { formulasRouter } from './routes/formulas.js';
 import { summarySheetsRouter } from './routes/summarySheets.js';
 import { moduleNotesRouter } from './routes/moduleNotes.js';
+import { pdfMappingRouter } from './routes/pdfMapping.js';
 
 /* ===========================
    DATABASE URL COMPOSITION
@@ -204,6 +205,7 @@ app.use('/api/settings', safe(settingsRouter));
 app.use('/api/formulas', safe(formulasRouter));
 app.use('/api/summary-sheets', safe(summarySheetsRouter));
 app.use('/api/module-notes', safe(moduleNotesRouter));
+app.use('/api/pdf-mapping', safe(pdfMappingRouter));
 app.use('/api', safe(testRouter));
 
 /* ===========================
