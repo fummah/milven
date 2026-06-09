@@ -11,6 +11,7 @@ const AdminPdfMapping = () => {
   const [mappings, setMappings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [volumesLoading, setVolumesLoading] = useState(false);
   const [learningHierarchy, setLearningHierarchy] = useState({ modules: [], topics: [], concepts: [] });
   const [uploadProgress, setUploadProgress] = useState(null);
   const [currentPdfPage, setCurrentPdfPage] = useState(1);
@@ -57,15 +58,19 @@ const AdminPdfMapping = () => {
   };
 
   const fetchVolumes = async () => {
+    if (!selectedCourse) return;
+    
+    setVolumesLoading(true);
     try {
-      const courseId = selectedCourse || courses[0]?.id;
-      if (!courseId) return;
-      
-      const response = await fetch(`/api/learning/volumes/public?courseId=${courseId}`);
-      const data = await response.json();
-      setVolumes(data.volumes);
+      const response = await api.get('/api/learning/volumes/public', {
+        params: { courseId: selectedCourse }
+      });
+      setVolumes(response.data?.volumes || []);
     } catch (error) {
       console.error('Failed to fetch volumes:', error);
+      setVolumes([]);
+    } finally {
+      setVolumesLoading(false);
     }
   };
 
@@ -73,15 +78,11 @@ const AdminPdfMapping = () => {
     if (!selectedVolume || !selectedCourse) return;
     
     try {
-      const response = await fetch(`/api/pdf-mapping/volume/${selectedVolume}/document?courseId=${selectedCourse}`);
-      if (response.ok) {
-        const data = await response.json();
-        setDocument(data);
-        setPdfUrl(`/api/pdf-mapping/file/${data.filename}`);
-      } else {
-        setDocument(null);
-        setPdfUrl(null);
-      }
+      const response = await api.get(`/api/pdf-mapping/volume/${selectedVolume}/document`, {
+        params: { courseId: selectedCourse }
+      });
+      setDocument(response.data);
+      setPdfUrl(`/api/pdf-mapping/file/${response.data.filename}`);
     } catch (error) {
       console.error('Failed to fetch document:', error);
       setDocument(null);
@@ -93,13 +94,11 @@ const AdminPdfMapping = () => {
     if (!selectedVolume) return;
     
     try {
-      const response = await fetch(`/api/pdf-mapping/volume/${selectedVolume}/mappings`);
-      if (response.ok) {
-        const data = await response.json();
-        setMappings(data.mappings);
-      }
+      const response = await api.get(`/api/pdf-mapping/volume/${selectedVolume}/mappings`);
+      setMappings(response.data?.mappings || []);
     } catch (error) {
       console.error('Failed to fetch mappings:', error);
+      setMappings([]);
     }
   };
 
@@ -108,26 +107,33 @@ const AdminPdfMapping = () => {
     
     try {
       const [modulesRes, topicsRes, conceptsRes] = await Promise.all([
-        fetch(`/api/learning/modules/public?courseId=${selectedCourse}&volumeId=${selectedVolume}`),
-        fetch(`/api/learning/topics/public?courseId=${selectedCourse}&volumeId=${selectedVolume}`),
-        fetch(`/api/learning/topics/public?courseId=${selectedCourse}`)
+        api.get('/api/learning/modules/public', {
+          params: { courseId: selectedCourse, volumeId: selectedVolume }
+        }),
+        api.get('/api/learning/topics/public', {
+          params: { courseId: selectedCourse, volumeId: selectedVolume }
+        }),
+        api.get('/api/learning/topics/public', {
+          params: { courseId: selectedCourse }
+        })
       ]);
 
-      const modules = await modulesRes.json();
-      const topics = await topicsRes.json();
-      const allConcepts = await conceptsRes.json();
+      const modules = modulesRes.data?.modules || [];
+      const topics = topicsRes.data?.topics || [];
+      const allConcepts = conceptsRes.data?.topics || [];
 
       // Filter concepts to only those in this volume's topics
-      const volumeTopicIds = new Set(topics.topics?.map(t => t.id) || []);
-      const concepts = allConcepts.topics?.filter(t => volumeTopicIds.has(t.id)) || [];
+      const volumeTopicIds = new Set(topics.map(t => t.id));
+      const concepts = allConcepts.filter(t => volumeTopicIds.has(t.id));
 
       setLearningHierarchy({
-        modules: modules.modules || [],
-        topics: topics.topics || [],
-        concepts: concepts || []
+        modules,
+        topics,
+        concepts
       });
     } catch (error) {
       console.error('Failed to fetch learning hierarchy:', error);
+      setLearningHierarchy({ modules: [], topics: [], concepts: [] });
     }
   };
 
@@ -280,17 +286,27 @@ const AdminPdfMapping = () => {
         
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Select Volume</label>
-          <select
-            value={selectedVolume || ''}
-            onChange={(e) => setSelectedVolume(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={!selectedCourse}
-          >
-            <option value="">Choose a volume...</option>
-            {volumes.map(volume => (
-              <option key={volume.id} value={volume.id}>{volume.name}</option>
-            ))}
-          </select>
+          {volumesLoading ? (
+            <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+              <span className="text-gray-600">Loading volumes...</span>
+            </div>
+          ) : (
+            <select
+              value={selectedVolume || ''}
+              onChange={(e) => setSelectedVolume(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={!selectedCourse}
+            >
+              <option value="">Choose a volume...</option>
+              {volumes.map(volume => (
+                <option key={volume.id} value={volume.id}>{volume.name}</option>
+              ))}
+            </select>
+          )}
+          {volumes.length === 0 && !volumesLoading && selectedCourse && (
+            <p className="text-sm text-gray-500 mt-1">No volumes available for this course</p>
+          )}
         </div>
       </div>
 
