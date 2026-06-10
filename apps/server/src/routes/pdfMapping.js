@@ -13,10 +13,13 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    // Use UUID only to avoid filesystem issues with special characters
-    const ext = path.extname(file.originalname) || '.pdf';
-    const uniqueName = `${uuidv4()}${ext}`;
-    cb(null, uniqueName);
+    // Keep original filename but sanitize for filesystem safety
+    const sanitized = file.originalname
+      .replace(/[^a-zA-Z0-9._\-\s]/g, '') // Remove special chars except dots, hyphens, spaces
+      .replace(/\s+/g, '_') // Replace spaces with underscores
+      .replace(/_{2,}/g, '_'); // Collapse multiple underscores
+    const name = sanitized || `${uuidv4()}.pdf`;
+    cb(null, name);
   }
 });
 

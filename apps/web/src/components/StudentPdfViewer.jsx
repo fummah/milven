@@ -38,7 +38,7 @@ const StudentPdfViewer = ({
       });
       
       setDocument(response.data);
-      setPdfUrl(`${api.defaults.baseURL}/api/pdf-mapping/file/${response.data.filename}`);
+      setPdfUrl(`${api.defaults.baseURL}/uploads/curriculum-pdfs/${response.data.filename}`);
       
       // Extract page count from PDF metadata or set a default
       // This could be enhanced with PDF.js to get actual page count

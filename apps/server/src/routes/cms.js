@@ -497,10 +497,13 @@ export function cmsRouter(prisma) {
       }
 
       // Save the actual PDF file to disk for preview/serving
-      const { v4: uuidv4 } = await import('uuid');
       const fsPromises = await import('fs/promises');
       const pathModule = await import('path');
-      const diskFilename = `${uuidv4()}.pdf`;
+      // Keep original filename but sanitize for filesystem safety
+      const diskFilename = file.originalname
+        .replace(/[^a-zA-Z0-9._\-\s]/g, '')
+        .replace(/\s+/g, '_')
+        .replace(/_{2,}/g, '_') || 'document.pdf';
       const uploadDir = pathModule.default.join(process.cwd(), 'uploads', 'curriculum-pdfs');
       await fsPromises.default.mkdir(uploadDir, { recursive: true });
       await fsPromises.default.writeFile(pathModule.default.join(uploadDir, diskFilename), file.buffer);

@@ -85,7 +85,7 @@ const AdminPdfMapping = () => {
       });
       setDocument(response.data);
       if (response.data.fileExists) {
-        setPdfUrl(`${api.defaults.baseURL}/api/pdf-mapping/file/${response.data.filename}`);
+        setPdfUrl(`${api.defaults.baseURL}/uploads/curriculum-pdfs/${response.data.filename}`);
       } else {
         setPdfUrl(null);
       }
@@ -323,7 +323,7 @@ const AdminPdfMapping = () => {
                     <div className="flex items-center space-x-2">
                       {document.fileExists ? (
                         <button
-                          onClick={() => setPdfUrl(`${api.defaults.baseURL}/api/pdf-mapping/file/${document.filename}`)}
+                          onClick={() => setPdfUrl(`${api.defaults.baseURL}/uploads/curriculum-pdfs/${document.filename}`)}
                           className="px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center"
                         >
                           <Eye size={16} className="mr-1" />
