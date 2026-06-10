@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCw, Download, X, BookOpen } from 'lucide-react';
+import { api } from '../lib/api';
 
 const StudentPdfViewer = ({ 
   volumeId, 
@@ -32,21 +33,19 @@ const StudentPdfViewer = ({
       setLoading(true);
       setError(null);
       
-      const response = await fetch(`/api/pdf-mapping/volume/${volumeId}/document?courseId=${courseId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setDocument(data);
-        setPdfUrl(`/api/pdf-mapping/file/${data.filename}`);
-        
-        // Extract page count from PDF metadata or set a default
-        // This could be enhanced with PDF.js to get actual page count
-        setTotalPages(500); // Default estimate, should be dynamic
-      } else {
-        setError('No curriculum document found for this volume');
-      }
+      const response = await api.get(`/api/pdf-mapping/volume/${volumeId}/document`, {
+        params: { courseId }
+      });
+      
+      setDocument(response.data);
+      setPdfUrl(`${api.defaults.baseURL}/api/pdf-mapping/file/${response.data.filename}`);
+      
+      // Extract page count from PDF metadata or set a default
+      // This could be enhanced with PDF.js to get actual page count
+      setTotalPages(500); // Default estimate, should be dynamic
     } catch (err) {
       console.error('Failed to fetch document:', err);
-      setError('Failed to load curriculum document');
+      setError('No curriculum document found for this volume');
     } finally {
       setLoading(false);
     }
@@ -54,10 +53,9 @@ const StudentPdfViewer = ({
 
   const fetchMappingAndNavigate = async (target) => {
     try {
-      const response = await fetch(`/api/pdf-mapping/mapping/${target.type}/${target.id}`);
-      if (response.ok) {
-        const data = await response.json();
-        setCurrentPage(data.mapping.pageNumber);
+      const response = await api.get(`/api/pdf-mapping/mapping/${target.type}/${target.id}`);
+      if (response.data?.mapping) {
+        setCurrentPage(response.data.mapping.pageNumber);
       }
     } catch (err) {
       console.error('Failed to fetch mapping:', err);

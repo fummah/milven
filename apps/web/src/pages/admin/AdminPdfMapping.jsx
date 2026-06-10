@@ -82,7 +82,7 @@ const AdminPdfMapping = () => {
         params: { courseId: selectedCourse }
       });
       setDocument(response.data);
-      setPdfUrl(`/api/pdf-mapping/file/${response.data.filename}`);
+      setPdfUrl(`${api.defaults.baseURL}/api/pdf-mapping/file/${response.data.filename}`);
     } catch (error) {
       console.error('Failed to fetch document:', error);
       setDocument(null);
@@ -148,27 +148,19 @@ const AdminPdfMapping = () => {
 
     try {
       setUploadProgress('Uploading...');
-      const response = await fetch('/api/pdf-mapping/upload', {
-        method: 'POST',
-        body: formData,
+      const response = await api.post('/api/pdf-mapping/upload', formData, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Content-Type': 'multipart/form-data'
         }
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setUploadProgress('Upload successful!');
-        fetchDocument();
-        setTimeout(() => setUploadProgress(null), 2000);
-      } else {
-        const error = await response.json();
-        setUploadProgress(`Upload failed: ${error.error}`);
-        setTimeout(() => setUploadProgress(null), 3000);
-      }
+      setUploadProgress('Upload successful!');
+      fetchDocument();
+      setTimeout(() => setUploadProgress(null), 2000);
     } catch (error) {
       console.error('Upload failed:', error);
-      setUploadProgress('Upload failed');
+      const errorMessage = error.response?.data?.error || 'Upload failed';
+      setUploadProgress(`Upload failed: ${errorMessage}`);
       setTimeout(() => setUploadProgress(null), 3000);
     }
   };
@@ -182,53 +174,33 @@ const AdminPdfMapping = () => {
     if (!mappingTarget || !document) return;
 
     try {
-      const response = await fetch('/api/pdf-mapping/mapping', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          curriculumDocumentId: document.id,
-          targetType: mappingTarget.type,
-          targetId: mappingTarget.id,
-          pageNumber: currentPdfPage,
-          yOffset: 0 // Could be enhanced with PDF viewer position
-        })
+      const response = await api.post('/api/pdf-mapping/mapping', {
+        curriculumDocumentId: document.id,
+        targetType: mappingTarget.type,
+        targetId: mappingTarget.id,
+        pageNumber: currentPdfPage,
+        yOffset: 0 // Could be enhanced with PDF viewer position
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setMappings(prev => [...prev.filter(m => !(m.targetType === mappingTarget.type && m.targetId === mappingTarget.id)), data.mapping]);
-        setIsMapping(false);
-        setMappingTarget(null);
-      } else {
-        const error = await response.json();
-        alert(`Failed to save mapping: ${error.error}`);
-      }
+      const data = response.data;
+      setMappings(prev => [...prev.filter(m => !(m.targetType === mappingTarget.type && m.targetId === mappingTarget.id)), data.mapping]);
+      setIsMapping(false);
+      setMappingTarget(null);
     } catch (error) {
       console.error('Failed to save mapping:', error);
-      alert('Failed to save mapping');
+      const errorMessage = error.response?.data?.error || 'Failed to save mapping';
+      alert(`Failed to save mapping: ${errorMessage}`);
     }
   };
 
   const deleteMapping = async (mappingId) => {
     try {
-      const response = await fetch(`/api/pdf-mapping/mapping/${mappingId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-
-      if (response.ok) {
-        setMappings(prev => prev.filter(m => m.id !== mappingId));
-      } else {
-        alert('Failed to delete mapping');
-      }
+      await api.delete(`/api/pdf-mapping/mapping/${mappingId}`);
+      setMappings(prev => prev.filter(m => m.id !== mappingId));
     } catch (error) {
       console.error('Failed to delete mapping:', error);
-      alert('Failed to delete mapping');
+      const errorMessage = error.response?.data?.error || 'Failed to delete mapping';
+      alert(`Failed to delete mapping: ${errorMessage}`);
     }
   };
 
