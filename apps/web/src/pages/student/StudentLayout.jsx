@@ -5,7 +5,7 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const { Sider, Content } = Layout;
 
-const isLearningPreviewPath = (pathname) => pathname.startsWith('/student/learn/');
+const isLearningPreviewPath = (pathname) => pathname.startsWith('/student/learn/') || pathname === '/student/learning';
 
 const modernBadge = (iconNode, gradient) => (
   <span

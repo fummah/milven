@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, BookOpen, FileText, GraduationCap, Layers, Tag, Clock, BookMarked } from 'lucide-react';
+import { ChevronRight, ChevronDown, ChevronLeft, BookOpen, FileText, GraduationCap, Layers, Tag, Clock, BookMarked, ZoomIn, ZoomOut } from 'lucide-react';
 import { api } from '../../lib/api';
-import StudentPdfViewer from '../../components/StudentPdfViewer.jsx';
 
 const StudentLearning = () => {
   const [courses, setCourses] = useState([]);
@@ -15,11 +14,12 @@ const StudentLearning = () => {
   const [expandedModules, setExpandedModules] = useState(new Set());
   const [expandedTopics, setExpandedTopics] = useState(new Set());
   const [progress, setProgress] = useState({});
-  const [showPdfViewer, setShowPdfViewer] = useState(false);
-  const [pdfViewerTarget, setPdfViewerTarget] = useState(null);
   const [curriculumDoc, setCurriculumDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [hierarchyLoading, setHierarchyLoading] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [activeTarget, setActiveTarget] = useState(null);
 
   useEffect(() => {
     fetchCourses();
@@ -35,6 +35,8 @@ const StudentLearning = () => {
       setConcepts([]);
       setMappings([]);
       setCurriculumDoc(null);
+      setPdfUrl(null);
+      setActiveTarget(null);
     }
   }, [selectedCourse]);
 
@@ -105,7 +107,6 @@ const StudentLearning = () => {
       const allTopics = topicsRes.status === 'fulfilled' ? (topicsRes.value.data?.topics || []) : [];
       const allConcepts = conceptsRes.status === 'fulfilled' ? (conceptsRes.value.data?.concepts || []) : [];
 
-      // Filter to this volume's modules
       const volumeModuleIds = new Set(mods.map(m => m.id));
       const volumeTopics = allTopics.filter(t => volumeModuleIds.has(t.moduleId));
       const volumeTopicIds = new Set(volumeTopics.map(t => t.id));
@@ -115,17 +116,19 @@ const StudentLearning = () => {
       setTopics(volumeTopics);
       setConcepts(volumeConcepts);
 
-      // Handle document + mappings
       if (docRes.status === 'fulfilled') {
         const doc = docRes.value.data;
         setCurriculumDoc(doc);
         setMappings(doc.mappings || []);
+        if (doc.fileExists) {
+          setPdfUrl(`${api.defaults.baseURL}/uploads/curriculum-pdfs/${doc.filename}`);
+        }
       } else {
         setCurriculumDoc(null);
         setMappings([]);
+        setPdfUrl(null);
       }
 
-      // Auto-expand first module
       if (mods.length > 0) {
         setExpandedModules(new Set([mods[0].id]));
       }
@@ -156,10 +159,12 @@ const StudentLearning = () => {
     });
   };
 
-  const openPdfViewer = (target) => {
-    if (!curriculumDoc?.fileExists) return;
-    setPdfViewerTarget(target);
-    setShowPdfViewer(true);
+  const navigateToTarget = (type, id, name) => {
+    const mapping = getMappingForTarget(type, id);
+    if (mapping && pdfUrl) {
+      setCurrentPage(mapping.pageNumber);
+      setActiveTarget({ type, id, name });
+    }
   };
 
   const getTopicsForModule = (moduleId) => topics.filter(t => t.moduleId === moduleId);
@@ -171,7 +176,7 @@ const StudentLearning = () => {
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto p-6 flex items-center justify-center" style={{ minHeight: '60vh' }}>
+      <div className="flex items-center justify-center" style={{ minHeight: '60vh' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-500">Loading your courses...</p>
@@ -181,221 +186,191 @@ const StudentLearning = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-          <GraduationCap size={32} className="text-blue-600" />
-          Learning Center
-        </h1>
-        <p className="text-gray-500 mt-1">Navigate your curriculum, explore modules, topics, and concepts</p>
-      </div>
-
-      {courses.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-          <BookOpen size={48} className="mx-auto text-gray-300 mb-4" />
-          <h3 className="text-lg font-semibold text-gray-700 mb-2">No Courses Yet</h3>
-          <p className="text-gray-500">You haven't subscribed to any courses. Browse available courses to get started.</p>
-        </div>
-      ) : (
-        <>
-          {/* Course & Volume Selection */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-semibold text-gray-600 mb-1.5">Course</label>
-              <select
-                value={selectedCourse || ''}
-                onChange={(e) => setSelectedCourse(e.target.value)}
-                className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
-              >
-                {courses.map(course => (
-                  <option key={course.courseId} value={course.courseId}>
-                    {course.name} {course.level ? `(${course.level.replace('LEVEL', 'Level ')})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-600 mb-1.5">Volume</label>
-              <select
-                value={selectedVolume || ''}
-                onChange={(e) => setSelectedVolume(e.target.value)}
-                className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
-                disabled={!selectedCourse || volumes.length === 0}
-              >
-                <option value="">Select a volume...</option>
-                {volumes.map(volume => (
-                  <option key={volume.id} value={volume.id}>{volume.name}</option>
-                ))}
-              </select>
-            </div>
+    <div className="h-[calc(100vh-64px)] flex flex-col overflow-hidden">
+      {/* Top Bar: Course & Volume Selection */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 py-3">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <GraduationCap size={22} className="text-blue-600" />
+            <span className="font-bold text-gray-900 text-lg hidden sm:inline">Learning Center</span>
           </div>
-
-          {/* Progress Bar */}
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <select
+              value={selectedCourse || ''}
+              onChange={(e) => setSelectedCourse(e.target.value)}
+              className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm min-w-[180px]"
+            >
+              {courses.length === 0 && <option value="">No courses</option>}
+              {courses.map(course => (
+                <option key={course.courseId} value={course.courseId}>
+                  {course.name} {course.level ? `(${course.level.replace('LEVEL', 'Level ')})` : ''}
+                </option>
+              ))}
+            </select>
+            <select
+              value={selectedVolume || ''}
+              onChange={(e) => setSelectedVolume(e.target.value)}
+              className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm min-w-[160px]"
+              disabled={!selectedCourse || volumes.length === 0}
+            >
+              <option value="">Select volume...</option>
+              {volumes.map(volume => (
+                <option key={volume.id} value={volume.id}>{volume.name}</option>
+              ))}
+            </select>
+          </div>
           {selectedCourseData && (
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-5 mb-6 border border-blue-100">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Clock size={18} className="text-blue-600" />
-                  <span className="font-semibold text-gray-800">Course Progress</span>
-                </div>
-                <span className="text-xl font-bold text-blue-700">{progress.percent || selectedCourseData.progressPercent || 0}%</span>
-              </div>
-              <div className="w-full bg-white rounded-full h-2.5 shadow-inner">
-                <div 
-                  className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2.5 rounded-full transition-all duration-500"
+            <div className="flex items-center gap-2 ml-auto">
+              <div className="w-32 bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all"
                   style={{ width: `${progress.percent || selectedCourseData.progressPercent || 0}%` }}
                 />
               </div>
+              <span className="text-xs font-semibold text-blue-700">{progress.percent || selectedCourseData.progressPercent || 0}%</span>
             </div>
           )}
+        </div>
+      </div>
 
-          {/* Volume Content */}
-          {selectedVolume && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              {/* Volume Header */}
-              <div className="px-6 py-4 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Layers size={22} className="text-indigo-600" />
-                  <h2 className="text-lg font-bold text-gray-900">{selectedVolumeData?.name || 'Volume'}</h2>
-                </div>
-                {hasCurriculum && (
-                  <button
-                    onClick={() => openPdfViewer(null)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm font-medium shadow-sm"
-                  >
-                    <FileText size={16} />
-                    Open Curriculum PDF
-                  </button>
-                )}
+      {courses.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center p-12">
+            <BookOpen size={48} className="mx-auto text-gray-300 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">No Courses Yet</h3>
+            <p className="text-gray-500">You haven't subscribed to any courses. Browse available courses to get started.</p>
+          </div>
+        </div>
+      ) : !selectedVolume ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center p-12">
+            <Layers size={48} className="mx-auto text-gray-300 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">Select a Volume</h3>
+            <p className="text-gray-500">Choose a volume from the dropdown above to explore its curriculum.</p>
+          </div>
+        </div>
+      ) : (
+        /* Side-by-side layout */
+        <div className="flex-1 flex overflow-hidden">
+          {/* LEFT: Learning Hierarchy Tree */}
+          <div className="w-[380px] min-w-[320px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col overflow-hidden">
+            {/* Volume Header */}
+            <div className="flex-shrink-0 px-4 py-3 bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Layers size={18} className="text-indigo-600" />
+                <span className="font-bold text-gray-900 text-sm truncate">{selectedVolumeData?.name || 'Volume'}</span>
               </div>
+              {activeTarget && (
+                <div className="mt-1 text-xs text-indigo-600 truncate">
+                  Viewing: {activeTarget.name}
+                </div>
+              )}
+            </div>
 
+            {/* Scrollable Tree */}
+            <div className="flex-1 overflow-y-auto">
               {hierarchyLoading ? (
-                <div className="p-12 text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
-                  <p className="text-gray-500 text-sm">Loading curriculum structure...</p>
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                  <p className="text-gray-500 text-xs">Loading...</p>
                 </div>
               ) : modules.length === 0 ? (
-                <div className="p-12 text-center text-gray-400">
-                  <BookOpen size={40} className="mx-auto mb-3 opacity-50" />
-                  <p>No modules found for this volume</p>
+                <div className="p-8 text-center text-gray-400">
+                  <BookOpen size={32} className="mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No modules found</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-100">
+                <div className="py-1">
                   {modules.map(module => {
                     const moduleTopics = getTopicsForModule(module.id);
                     const isExpanded = expandedModules.has(module.id);
                     const moduleMapping = getMappingForTarget('MODULE', module.id);
+                    const isActive = activeTarget?.type === 'MODULE' && activeTarget?.id === module.id;
 
                     return (
                       <div key={module.id}>
-                        {/* Module Row */}
                         <div
-                          className="flex items-center gap-3 px-6 py-4 cursor-pointer hover:bg-blue-50/50 transition-colors"
-                          onClick={() => toggleModule(module.id)}
+                          className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer transition-colors border-l-3 ${
+                            isActive ? 'bg-blue-50 border-l-blue-600' : 'border-l-transparent hover:bg-gray-50'
+                          }`}
+                          onClick={() => {
+                            toggleModule(module.id);
+                            if (moduleMapping) navigateToTarget('MODULE', module.id, module.name);
+                          }}
                         >
                           {isExpanded ? (
-                            <ChevronDown size={18} className="text-blue-600 flex-shrink-0" />
+                            <ChevronDown size={14} className="text-blue-600 flex-shrink-0" />
                           ) : (
-                            <ChevronRight size={18} className="text-gray-400 flex-shrink-0" />
+                            <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
                           )}
-                          <BookMarked size={18} className="text-blue-600 flex-shrink-0" />
-                          <span className="font-semibold text-gray-900 flex-1">{module.name}</span>
-                          <div className="flex items-center gap-2">
-                            {moduleMapping && (
-                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                                p.{moduleMapping.pageNumber}
-                              </span>
-                            )}
-                            <span className="text-xs text-gray-400">{moduleTopics.length} topics</span>
-                            {hasCurriculum && moduleMapping && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); openPdfViewer({ type: 'MODULE', id: module.id, name: module.name }); }}
-                                className="ml-1 p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                                title="View in curriculum"
-                              >
-                                <FileText size={14} />
-                              </button>
-                            )}
-                          </div>
+                          <BookMarked size={14} className="text-blue-600 flex-shrink-0" />
+                          <span className="text-sm font-semibold text-gray-900 flex-1 truncate">{module.name}</span>
+                          {moduleMapping && (
+                            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+                              p.{moduleMapping.pageNumber}
+                            </span>
+                          )}
                         </div>
 
-                        {/* Topics under Module */}
                         {isExpanded && moduleTopics.length > 0 && (
-                          <div className="bg-gray-50/50">
+                          <div className="ml-3 border-l border-blue-100">
                             {moduleTopics.map(topic => {
                               const topicConcepts = getConceptsForTopic(topic.id);
                               const isTopicExpanded = expandedTopics.has(topic.id);
                               const topicMapping = getMappingForTarget('TOPIC', topic.id);
+                              const isTopicActive = activeTarget?.type === 'TOPIC' && activeTarget?.id === topic.id;
 
                               return (
                                 <div key={topic.id}>
-                                  {/* Topic Row */}
                                   <div
-                                    className="flex items-center gap-3 pl-14 pr-6 py-3 cursor-pointer hover:bg-indigo-50/50 transition-colors"
-                                    onClick={() => toggleTopic(topic.id)}
+                                    className={`flex items-center gap-2 pl-4 pr-3 py-2 cursor-pointer transition-colors border-l-2 ${
+                                      isTopicActive ? 'bg-green-50 border-l-green-600' : 'border-l-transparent hover:bg-gray-50'
+                                    }`}
+                                    onClick={() => {
+                                      toggleTopic(topic.id);
+                                      if (topicMapping) navigateToTarget('TOPIC', topic.id, topic.name);
+                                    }}
                                   >
                                     {topicConcepts.length > 0 ? (
                                       isTopicExpanded ? (
-                                        <ChevronDown size={15} className="text-indigo-500 flex-shrink-0" />
+                                        <ChevronDown size={12} className="text-green-500 flex-shrink-0" />
                                       ) : (
-                                        <ChevronRight size={15} className="text-gray-400 flex-shrink-0" />
+                                        <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
                                       )
                                     ) : (
-                                      <span className="w-[15px] flex-shrink-0" />
+                                      <span className="w-3 flex-shrink-0" />
                                     )}
-                                    <Tag size={14} className="text-green-600 flex-shrink-0" />
-                                    <span className="text-sm font-medium text-gray-800 flex-1">{topic.name}</span>
-                                    <div className="flex items-center gap-2">
-                                      {topicMapping && (
-                                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                                          p.{topicMapping.pageNumber}
-                                        </span>
-                                      )}
-                                      {topicConcepts.length > 0 && (
-                                        <span className="text-xs text-gray-400">{topicConcepts.length} concepts</span>
-                                      )}
-                                      {hasCurriculum && topicMapping && (
-                                        <button
-                                          onClick={(e) => { e.stopPropagation(); openPdfViewer({ type: 'TOPIC', id: topic.id, name: topic.name }); }}
-                                          className="p-1 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
-                                          title="View in curriculum"
-                                        >
-                                          <FileText size={13} />
-                                        </button>
-                                      )}
-                                    </div>
+                                    <Tag size={12} className="text-green-600 flex-shrink-0" />
+                                    <span className="text-xs font-medium text-gray-800 flex-1 truncate">{topic.name}</span>
+                                    {topicMapping && (
+                                      <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+                                        p.{topicMapping.pageNumber}
+                                      </span>
+                                    )}
                                   </div>
 
-                                  {/* Concepts under Topic */}
                                   {isTopicExpanded && topicConcepts.length > 0 && (
-                                    <div className="bg-white/60">
+                                    <div className="ml-4 border-l border-green-100">
                                       {topicConcepts.map(concept => {
                                         const conceptMapping = getMappingForTarget('CONCEPT', concept.id);
+                                        const isConceptActive = activeTarget?.type === 'CONCEPT' && activeTarget?.id === concept.id;
                                         return (
                                           <div
                                             key={concept.id}
-                                            className="flex items-center gap-3 pl-24 pr-6 py-2.5 hover:bg-purple-50/50 transition-colors cursor-pointer"
-                                            onClick={() => hasCurriculum && conceptMapping && openPdfViewer({ type: 'CONCEPT', id: concept.id, name: concept.name })}
+                                            className={`flex items-center gap-2 pl-4 pr-3 py-1.5 cursor-pointer transition-colors border-l-2 ${
+                                              isConceptActive ? 'bg-purple-50 border-l-purple-600' : 'border-l-transparent hover:bg-gray-50'
+                                            }`}
+                                            onClick={() => {
+                                              if (conceptMapping) navigateToTarget('CONCEPT', concept.id, concept.name);
+                                            }}
                                           >
                                             <span className="w-1.5 h-1.5 bg-purple-400 rounded-full flex-shrink-0" />
-                                            <span className="text-sm text-gray-700 flex-1">{concept.name}</span>
-                                            <div className="flex items-center gap-2">
-                                              {conceptMapping && (
-                                                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
-                                                  p.{conceptMapping.pageNumber}
-                                                </span>
-                                              )}
-                                              {hasCurriculum && conceptMapping && (
-                                                <button
-                                                  onClick={(e) => { e.stopPropagation(); openPdfViewer({ type: 'CONCEPT', id: concept.id, name: concept.name }); }}
-                                                  className="p-1 text-purple-600 hover:bg-purple-100 rounded-lg transition-colors"
-                                                  title="View in curriculum"
-                                                >
-                                                  <FileText size={12} />
-                                                </button>
-                                              )}
-                                            </div>
+                                            <span className="text-xs text-gray-700 flex-1 truncate">{concept.name}</span>
+                                            {conceptMapping && (
+                                              <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+                                                p.{conceptMapping.pageNumber}
+                                              </span>
+                                            )}
                                           </div>
                                         );
                                       })}
@@ -412,22 +387,80 @@ const StudentLearning = () => {
                 </div>
               )}
             </div>
-          )}
-        </>
-      )}
+          </div>
 
-      {/* PDF Viewer Modal */}
-      {showPdfViewer && selectedVolume && (
-        <StudentPdfViewer
-          volumeId={selectedVolume}
-          courseId={selectedCourse}
-          initialTarget={pdfViewerTarget}
-          onClose={() => {
-            setShowPdfViewer(false);
-            setPdfViewerTarget(null);
-          }}
-          showNavigation={true}
-        />
+          {/* RIGHT: PDF Viewer */}
+          <div className="flex-1 flex flex-col bg-gray-100 min-w-0 overflow-hidden">
+            {pdfUrl ? (
+              <>
+                {/* PDF Toolbar */}
+                <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                      disabled={currentPage <= 1}
+                      className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-40"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        value={currentPage}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value);
+                          if (v >= 1) setCurrentPage(v);
+                        }}
+                        className="w-14 px-2 py-1 text-center text-sm border border-gray-300 rounded"
+                        min="1"
+                      />
+                      <span className="text-xs text-gray-500">page</span>
+                    </div>
+                    <button
+                      onClick={() => setCurrentPage(currentPage + 1)}
+                      className="p-1.5 rounded hover:bg-gray-100"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                  </div>
+                  {activeTarget && (
+                    <div className="text-xs text-gray-600 truncate max-w-[200px]">
+                      <span className="font-medium">{activeTarget.type}:</span> {activeTarget.name}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1">
+                    <FileText size={14} className="text-gray-400" />
+                    <span className="text-xs text-gray-500 truncate max-w-[150px]">{curriculumDoc?.originalName || curriculumDoc?.filename}</span>
+                  </div>
+                </div>
+
+                {/* PDF Content */}
+                <div className="flex-1 overflow-hidden">
+                  <iframe
+                    src={`${pdfUrl}#page=${currentPage}`}
+                    className="w-full h-full border-0"
+                    title="Curriculum PDF"
+                    key={`pdf-${currentPage}`}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center p-8">
+                  <FileText size={48} className="mx-auto text-gray-300 mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-600 mb-2">
+                    {hierarchyLoading ? 'Loading...' : 'No PDF Available'}
+                  </h3>
+                  <p className="text-gray-400 text-sm">
+                    {hasCurriculum === false
+                      ? 'No curriculum PDF has been uploaded for this volume yet.'
+                      : 'Select a volume to view its curriculum.'}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
