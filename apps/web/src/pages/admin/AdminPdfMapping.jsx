@@ -107,10 +107,13 @@ const AdminPdfMapping = () => {
     
     try {
       const response = await api.get(`/api/pdf-mapping/volume/${selectedVolume}/mappings`);
-      setMappings(response.data?.mappings || []);
+      const fetched = response.data?.mappings || [];
+      if (fetched.length > 0) {
+        setMappings(fetched);
+      }
     } catch (error) {
       console.error('Failed to fetch mappings:', error);
-      setMappings([]);
+      // Don't clear mappings if fetchDocument already provided them
     }
   };
 
@@ -388,12 +391,16 @@ const AdminPdfMapping = () => {
                       return (
                         <div key={module.id} className="border border-gray-200 rounded-lg overflow-hidden">
                           {/* Module */}
-                          <div className="flex items-center justify-between p-3 bg-blue-50">
+                          <div className={`flex items-center justify-between p-3 ${moduleMapping ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'bg-gray-50'}`}>
                             <div className="flex-1">
-                              <p className="font-semibold text-blue-900">{module.name}</p>
-                              {moduleMapping && (
-                                <p className="text-xs text-blue-600">Page {moduleMapping.pageNumber}</p>
-                              )}
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold text-blue-900">{module.name}</p>
+                                {moduleMapping && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white">
+                                    Mapped p.{moduleMapping.pageNumber}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             <div className="flex items-center space-x-1">
                               {moduleMapping && (
@@ -419,12 +426,16 @@ const AdminPdfMapping = () => {
                                 const topicConcepts = learningHierarchy.concepts.filter(c => c.topicId === topic.id);
                                 return (
                                   <div key={topic.id}>
-                                    <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                                    <div className={`flex items-center justify-between p-2 rounded ${topicMapping ? 'bg-green-50 border-l-4 border-l-green-500' : 'bg-gray-50'}`}>
                                       <div className="flex-1">
-                                        <p className="text-sm font-medium text-gray-800">{topic.name}</p>
-                                        {topicMapping && (
-                                          <p className="text-xs text-blue-600">Page {topicMapping.pageNumber}</p>
-                                        )}
+                                        <div className="flex items-center gap-2">
+                                          <p className="text-sm font-medium text-gray-800">{topic.name}</p>
+                                          {topicMapping && (
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-green-600 text-white">
+                                              p.{topicMapping.pageNumber}
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
                                       <div className="flex items-center space-x-1">
                                         {topicMapping && (
@@ -448,12 +459,16 @@ const AdminPdfMapping = () => {
                                         {topicConcepts.map(concept => {
                                           const conceptMapping = getMappingForTarget('CONCEPT', concept.id);
                                           return (
-                                            <div key={concept.id} className="flex items-center justify-between p-1.5 bg-white rounded border border-gray-100">
+                                            <div key={concept.id} className={`flex items-center justify-between p-1.5 rounded border ${conceptMapping ? 'bg-purple-50 border-purple-200 border-l-4 border-l-purple-500' : 'bg-white border-gray-100'}`}>
                                               <div className="flex-1">
-                                                <p className="text-xs font-medium text-gray-700">{concept.name}</p>
-                                                {conceptMapping && (
-                                                  <p className="text-xs text-blue-600">Page {conceptMapping.pageNumber}</p>
-                                                )}
+                                                <div className="flex items-center gap-2">
+                                                  <p className="text-xs font-medium text-gray-700">{concept.name}</p>
+                                                  {conceptMapping && (
+                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-600 text-white">
+                                                      p.{conceptMapping.pageNumber}
+                                                    </span>
+                                                  )}
+                                                </div>
                                               </div>
                                               <div className="flex items-center space-x-1">
                                                 {conceptMapping && (

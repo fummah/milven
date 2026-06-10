@@ -365,20 +365,13 @@ export function pdfMappingRouter(prisma) {
           case 'TOPIC':
             target = await prisma.topic.findUnique({
               where: { id: mapping.targetId },
-              select: { id: true, name: true },
-              include: { module: { select: { name: true } } }
+              select: { id: true, name: true, module: { select: { name: true } } }
             });
             break;
           case 'CONCEPT':
             target = await prisma.concept.findUnique({
               where: { id: mapping.targetId },
-              select: { id: true, name: true },
-              include: { 
-                topic: { 
-                  select: { name: true },
-                  include: { module: { select: { name: true } } }
-                } 
-              }
+              select: { id: true, name: true, topic: { select: { name: true, module: { select: { name: true } } } } }
             });
             break;
         }
