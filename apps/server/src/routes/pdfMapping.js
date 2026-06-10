@@ -13,7 +13,9 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const uniqueName = `${uuidv4()}-${file.originalname}`;
+    // Use UUID only to avoid filesystem issues with special characters
+    const ext = path.extname(file.originalname) || '.pdf';
+    const uniqueName = `${uuidv4()}${ext}`;
     cb(null, uniqueName);
   }
 });
@@ -103,7 +105,8 @@ export function pdfMappingRouter(prisma) {
         success: true,
         curriculumDocument: {
           id: curriculumDocument.id,
-          filename: req.file.originalname,
+          filename: req.file.filename,
+          originalName: req.file.originalname,
           fileSize: req.file.size,
           uploadedAt: curriculumDocument.createdAt
         }
@@ -129,7 +132,9 @@ export function pdfMappingRouter(prisma) {
         include: {
           pdfMappings: {
             orderBy: { pageNumber: 'asc' }
-          }
+          },
+          volume: { select: { name: true } },
+          course: { select: { name: true, level: true } }
         }
       });
 
@@ -137,11 +142,26 @@ export function pdfMappingRouter(prisma) {
         return res.status(404).json({ error: 'No curriculum document found for this volume' });
       }
 
+      // Check if the actual file exists on disk
+      const filePath = path.join(process.cwd(), 'uploads', 'curriculum-pdfs', document.filename);
+      let fileExists = false;
+      try {
+        await fs.access(filePath);
+        fileExists = true;
+      } catch {
+        fileExists = false;
+      }
+
+      // Build display name from course/volume info (never use extractedText which is huge)
+      const displayName = `${document.course?.name || 'Course'} - ${document.volume?.name || 'Volume'}.pdf`;
+
       return res.json({
         id: document.id,
         filename: document.filename,
+        originalName: displayName,
         fileSize: document.fileSize,
         uploadedAt: document.createdAt,
+        fileExists,
         mappings: document.pdfMappings
       });
     } catch (error) {

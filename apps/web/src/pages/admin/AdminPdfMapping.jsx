@@ -84,7 +84,11 @@ const AdminPdfMapping = () => {
         params: { courseId: selectedCourse }
       });
       setDocument(response.data);
-      setPdfUrl(`${api.defaults.baseURL}/api/pdf-mapping/file/${response.data.filename}`);
+      if (response.data.fileExists) {
+        setPdfUrl(`${api.defaults.baseURL}/api/pdf-mapping/file/${response.data.filename}`);
+      } else {
+        setPdfUrl(null);
+      }
     } catch (error) {
       console.error('Failed to fetch document:', error);
       setDocument(null);
@@ -115,25 +119,29 @@ const AdminPdfMapping = () => {
           params: { courseId: selectedCourse, volumeId: selectedVolume }
         }),
         api.get('/api/learning/topics/public', {
-          params: { courseId: selectedCourse, volumeId: selectedVolume }
+          params: { courseId: selectedCourse }
         }),
-        api.get('/api/learning/topics/public', {
+        api.get('/api/cms/concepts', {
           params: { courseId: selectedCourse }
         })
       ]);
 
       const modules = modulesRes.data?.modules || [];
       const topics = topicsRes.data?.topics || [];
-      const allConcepts = conceptsRes.data?.topics || [];
+      const concepts = conceptsRes.data?.concepts || [];
 
-      // Filter concepts to only those in this volume's topics
-      const volumeTopicIds = new Set(topics.map(t => t.id));
-      const concepts = allConcepts.filter(t => volumeTopicIds.has(t.id));
+      // Filter topics to only those belonging to modules in this volume
+      const volumeModuleIds = new Set(modules.map(m => m.id));
+      const volumeTopics = topics.filter(t => volumeModuleIds.has(t.moduleId));
+
+      // Filter concepts to only those belonging to volume topics
+      const volumeTopicIds = new Set(volumeTopics.map(t => t.id));
+      const volumeConcepts = concepts.filter(c => volumeTopicIds.has(c.topicId));
 
       setLearningHierarchy({
         modules,
-        topics,
-        concepts
+        topics: volumeTopics,
+        concepts: volumeConcepts
       });
     } catch (error) {
       console.error('Failed to fetch learning hierarchy:', error);
@@ -303,19 +311,37 @@ const AdminPdfMapping = () => {
                     <div className="flex items-center">
                       <FileText className="mr-2 text-green-600" size={20} />
                       <div>
-                        <p className="font-medium text-green-900">{document.filename}</p>
+                        <p className="font-medium text-green-900">{document.originalName || document.filename}</p>
                         <p className="text-sm text-green-700">
                           {(document.fileSize / 1024 / 1024).toFixed(2)} MB • Uploaded {new Date(document.uploadedAt).toLocaleDateString()}
                         </p>
+                        {!document.fileExists && (
+                          <p className="text-sm text-red-600 mt-1 font-medium">⚠ File missing on server - please reupload</p>
+                        )}
                       </div>
                     </div>
-                    <button
-                      onClick={() => setPdfUrl(`/api/pdf-mapping/file/${document.filename}`)}
-                      className="px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center"
-                    >
-                      <Eye size={16} className="mr-1" />
-                      View
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      {document.fileExists ? (
+                        <button
+                          onClick={() => setPdfUrl(`${api.defaults.baseURL}/api/pdf-mapping/file/${document.filename}`)}
+                          className="px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center"
+                        >
+                          <Eye size={16} className="mr-1" />
+                          View
+                        </button>
+                      ) : (
+                        <label className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer flex items-center">
+                          <Upload size={16} className="mr-1" />
+                          Reupload
+                          <input
+                            type="file"
+                            accept=".pdf"
+                            onChange={handleFileUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -341,122 +367,124 @@ const AdminPdfMapping = () => {
               )}
             </div>
 
-            {/* Learning Hierarchy */}
-            {document && (
-              <div className="bg-white rounded-lg shadow p-6">
+            {/* Learning Hierarchy Tree */}
+            <div className="bg-white rounded-lg shadow p-6">
                 <h2 className="text-xl font-semibold mb-4 flex items-center">
                   <MapPin className="mr-2" size={20} />
                   Learning Hierarchy
                 </h2>
                 
-                <div className="space-y-4">
-                  {/* Modules */}
-                  <div>
-                    <h3 className="font-medium text-gray-900 mb-2">Learning Modules</h3>
-                    <div className="space-y-2">
-                      {learningHierarchy.modules.map(module => {
-                        const mapping = getMappingForTarget('MODULE', module.id);
-                        return (
-                          <div key={module.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                  {learningHierarchy.modules.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No modules found for this volume</p>
+                  ) : (
+                    learningHierarchy.modules.map(module => {
+                      const moduleMapping = getMappingForTarget('MODULE', module.id);
+                      const moduleTopics = learningHierarchy.topics.filter(t => t.moduleId === module.id);
+                      return (
+                        <div key={module.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                          {/* Module */}
+                          <div className="flex items-center justify-between p-3 bg-blue-50">
                             <div className="flex-1">
-                              <p className="font-medium">{module.name}</p>
-                              {mapping && (
-                                <p className="text-sm text-blue-600">Mapped to page {mapping.pageNumber}</p>
+                              <p className="font-semibold text-blue-900">{module.name}</p>
+                              {moduleMapping && (
+                                <p className="text-xs text-blue-600">Page {moduleMapping.pageNumber}</p>
                               )}
                             </div>
-                            <div className="flex items-center space-x-2">
-                              {mapping && (
+                            <div className="flex items-center space-x-1">
+                              {moduleMapping && (
                                 <>
-                                  <button
-                                    onClick={() => navigateToMapping(mapping)}
-                                    className="p-1 text-blue-600 hover:bg-blue-100 rounded"
-                                    title="View in PDF"
-                                  >
-                                    <Eye size={16} />
-                                  </button>
-                                  <button
-                                    onClick={() => deleteMapping(mapping.id)}
-                                    className="p-1 text-red-600 hover:bg-red-100 rounded"
-                                    title="Delete mapping"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
+                                  <button onClick={() => navigateToMapping(moduleMapping)} className="p-1 text-blue-600 hover:bg-blue-100 rounded" title="View in PDF"><Eye size={14} /></button>
+                                  <button onClick={() => deleteMapping(moduleMapping.id)} className="p-1 text-red-600 hover:bg-red-100 rounded" title="Delete mapping"><Trash2 size={14} /></button>
                                 </>
                               )}
                               <button
                                 onClick={() => startMapping({ type: 'MODULE', id: module.id, name: module.name })}
-                                className={`px-3 py-1 rounded-md text-sm ${
-                                  mapping 
-                                    ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' 
-                                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                                }`}
+                                className={`px-2 py-1 rounded text-xs ${moduleMapping ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
                               >
-                                {mapping ? 'Remap' : 'Map'}
+                                {moduleMapping ? 'Remap' : 'Map'}
                               </button>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
 
-                  {/* Topics */}
-                  <div>
-                    <h3 className="font-medium text-gray-900 mb-2">Topics</h3>
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {learningHierarchy.topics.map(topic => {
-                        const mapping = getMappingForTarget('TOPIC', topic.id);
-                        return (
-                          <div key={topic.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                            <div className="flex-1">
-                              <p className="text-sm font-medium">{topic.name}</p>
-                              {mapping && (
-                                <p className="text-xs text-blue-600">Page {mapping.pageNumber}</p>
-                              )}
+                          {/* Topics under this module */}
+                          {moduleTopics.length > 0 && (
+                            <div className="pl-4 border-l-2 border-blue-200 ml-3 my-2 space-y-1">
+                              {moduleTopics.map(topic => {
+                                const topicMapping = getMappingForTarget('TOPIC', topic.id);
+                                const topicConcepts = learningHierarchy.concepts.filter(c => c.topicId === topic.id);
+                                return (
+                                  <div key={topic.id}>
+                                    <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                                      <div className="flex-1">
+                                        <p className="text-sm font-medium text-gray-800">{topic.name}</p>
+                                        {topicMapping && (
+                                          <p className="text-xs text-blue-600">Page {topicMapping.pageNumber}</p>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center space-x-1">
+                                        {topicMapping && (
+                                          <>
+                                            <button onClick={() => navigateToMapping(topicMapping)} className="p-1 text-blue-600 hover:bg-blue-100 rounded" title="View in PDF"><Eye size={12} /></button>
+                                            <button onClick={() => deleteMapping(topicMapping.id)} className="p-1 text-red-600 hover:bg-red-100 rounded" title="Delete mapping"><Trash2 size={12} /></button>
+                                          </>
+                                        )}
+                                        <button
+                                          onClick={() => startMapping({ type: 'TOPIC', id: topic.id, name: topic.name })}
+                                          className={`px-2 py-0.5 rounded text-xs ${topicMapping ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-green-600 text-white hover:bg-green-700'}`}
+                                        >
+                                          {topicMapping ? 'Remap' : 'Map'}
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Concepts under this topic */}
+                                    {topicConcepts.length > 0 && (
+                                      <div className="pl-4 border-l-2 border-green-200 ml-3 my-1 space-y-1">
+                                        {topicConcepts.map(concept => {
+                                          const conceptMapping = getMappingForTarget('CONCEPT', concept.id);
+                                          return (
+                                            <div key={concept.id} className="flex items-center justify-between p-1.5 bg-white rounded border border-gray-100">
+                                              <div className="flex-1">
+                                                <p className="text-xs font-medium text-gray-700">{concept.name}</p>
+                                                {conceptMapping && (
+                                                  <p className="text-xs text-blue-600">Page {conceptMapping.pageNumber}</p>
+                                                )}
+                                              </div>
+                                              <div className="flex items-center space-x-1">
+                                                {conceptMapping && (
+                                                  <>
+                                                    <button onClick={() => navigateToMapping(conceptMapping)} className="p-0.5 text-blue-600 hover:bg-blue-100 rounded" title="View in PDF"><Eye size={11} /></button>
+                                                    <button onClick={() => deleteMapping(conceptMapping.id)} className="p-0.5 text-red-600 hover:bg-red-100 rounded" title="Delete mapping"><Trash2 size={11} /></button>
+                                                  </>
+                                                )}
+                                                <button
+                                                  onClick={() => startMapping({ type: 'CONCEPT', id: concept.id, name: concept.name })}
+                                                  className={`px-1.5 py-0.5 rounded text-xs ${conceptMapping ? 'bg-gray-200 text-gray-600 hover:bg-gray-300' : 'bg-purple-600 text-white hover:bg-purple-700'}`}
+                                                >
+                                                  {conceptMapping ? 'Remap' : 'Map'}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
-                            <div className="flex items-center space-x-1">
-                              {mapping && (
-                                <>
-                                  <button
-                                    onClick={() => navigateToMapping(mapping)}
-                                    className="p-1 text-blue-600 hover:bg-blue-100 rounded"
-                                    title="View in PDF"
-                                  >
-                                    <Eye size={14} />
-                                  </button>
-                                  <button
-                                    onClick={() => deleteMapping(mapping.id)}
-                                    className="p-1 text-red-600 hover:bg-red-100 rounded"
-                                    title="Delete mapping"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </>
-                              )}
-                              <button
-                                onClick={() => startMapping({ type: 'TOPIC', id: topic.id, name: topic.name })}
-                                className={`px-2 py-1 rounded text-xs ${
-                                  mapping 
-                                    ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' 
-                                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                                }`}
-                              >
-                                {mapping ? 'Remap' : 'Map'}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
-            )}
           </div>
 
           {/* Right Column: PDF Viewer */}
-          {pdfUrl && (
-            <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-lg shadow p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold flex items-center">
                   <FileText className="mr-2" size={20} />
@@ -535,14 +563,19 @@ const AdminPdfMapping = () => {
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 p-6">
                     <AlertCircle className="text-red-500 mb-4" size={48} />
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">PDF Not Found</h3>
-                    <p className="text-gray-600 text-center mb-6">
-                      The curriculum PDF for this volume is either missing or could not be loaded.
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">PDF File Not Available</h3>
+                    <p className="text-gray-600 text-center mb-2">
+                      {document ? 'The PDF file is missing from the server. Please reupload it.' : 'No PDF has been uploaded for this volume yet.'}
                     </p>
+                    {document && (
+                      <p className="text-sm text-gray-500 text-center mb-6">
+                        Previously uploaded: {document.originalName || document.filename}
+                      </p>
+                    )}
                     <div className="flex flex-col sm:flex-row gap-3">
                       <label className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer flex items-center justify-center">
                         <Upload size={16} className="mr-2" />
-                        Upload PDF
+                        {document ? 'Reupload PDF' : 'Upload PDF'}
                         <input
                           type="file"
                           accept=".pdf"
@@ -574,7 +607,6 @@ const AdminPdfMapping = () => {
                 </div>
               )}
             </div>
-          )}
         </div>
       )}
     </div>

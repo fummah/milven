@@ -496,19 +496,39 @@ export function cmsRouter(prisma) {
         return res.status(400).json({ error: 'PDF appears to contain very little extractable text. Please upload a text-based PDF (not scanned images).' });
       }
 
+      // Save the actual PDF file to disk for preview/serving
+      const { v4: uuidv4 } = await import('uuid');
+      const fsPromises = await import('fs/promises');
+      const pathModule = await import('path');
+      const diskFilename = `${uuidv4()}.pdf`;
+      const uploadDir = pathModule.default.join(process.cwd(), 'uploads', 'curriculum-pdfs');
+      await fsPromises.default.mkdir(uploadDir, { recursive: true });
+      await fsPromises.default.writeFile(pathModule.default.join(uploadDir, diskFilename), file.buffer);
+
+      // Delete old file if it exists
+      const existingDoc = await prisma.curriculumDocument.findUnique({
+        where: { courseId_volumeId: { courseId, volumeId } },
+        select: { filename: true }
+      });
+      if (existingDoc && existingDoc.filename && existingDoc.filename !== file.originalname) {
+        try {
+          await fsPromises.default.unlink(pathModule.default.join(uploadDir, existingDoc.filename));
+        } catch (e) { /* old file may not exist on disk */ }
+      }
+
       // Upsert: replace existing document for this course+volume
       const doc = await prisma.curriculumDocument.upsert({
         where: { courseId_volumeId: { courseId, volumeId } },
         create: {
           courseId,
           volumeId,
-          filename: file.originalname,
+          filename: diskFilename,
           fileSize: file.size,
           extractedText,
           uploadedById: req.user?.id || null
         },
         update: {
-          filename: file.originalname,
+          filename: diskFilename,
           fileSize: file.size,
           extractedText,
           uploadedById: req.user?.id || null
