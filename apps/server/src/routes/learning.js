@@ -500,6 +500,32 @@ export function learningRouter(prisma) {
     }
   });
 
+  // ─── Public Concepts (no auth, for student learning center) ──────────
+  router.get('/concepts/public', async (req, res) => {
+    try {
+      const courseId = (req.query.courseId ?? '').toString().trim();
+      const topicId = (req.query.topicId ?? '').toString().trim();
+      const where = {};
+      if (courseId) {
+        const topicIds = (await prisma.topic.findMany({
+          where: { courseId },
+          select: { id: true }
+        })).map(t => t.id);
+        where.topicId = { in: topicIds };
+      }
+      if (topicId) where.topicId = topicId;
+      const concepts = await prisma.concept.findMany({
+        where,
+        orderBy: [{ order: 'asc' }, { name: 'asc' }],
+        select: { id: true, name: true, topicId: true, order: true },
+      });
+      return res.json({ concepts });
+    } catch (err) {
+      console.error('[learning.concepts.public]', err);
+      return res.status(500).json({ error: 'Failed to fetch concepts' });
+    }
+  });
+
   return router;
 }
 

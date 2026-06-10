@@ -84,6 +84,10 @@ const AdminPdfMapping = () => {
         params: { courseId: selectedCourse }
       });
       setDocument(response.data);
+      // Also populate mappings from document response
+      if (response.data.mappings?.length) {
+        setMappings(response.data.mappings);
+      }
       if (response.data.fileExists) {
         setPdfUrl(`${api.defaults.baseURL}/uploads/curriculum-pdfs/${response.data.filename}`);
       } else {
