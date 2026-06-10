@@ -12,6 +12,7 @@ const AdminPdfMapping = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [volumesLoading, setVolumesLoading] = useState(false);
+  const [documentLoading, setDocumentLoading] = useState(false);
   const [learningHierarchy, setLearningHierarchy] = useState({ modules: [], topics: [], concepts: [] });
   const [uploadProgress, setUploadProgress] = useState(null);
   const [currentPdfPage, setCurrentPdfPage] = useState(1);
@@ -77,6 +78,7 @@ const AdminPdfMapping = () => {
   const fetchDocument = async () => {
     if (!selectedVolume || !selectedCourse) return;
     
+    setDocumentLoading(true);
     try {
       const response = await api.get(`/api/pdf-mapping/volume/${selectedVolume}/document`, {
         params: { courseId: selectedCourse }
@@ -87,6 +89,8 @@ const AdminPdfMapping = () => {
       console.error('Failed to fetch document:', error);
       setDocument(null);
       setPdfUrl(null);
+    } finally {
+      setDocumentLoading(false);
     }
   };
 
@@ -505,13 +509,57 @@ const AdminPdfMapping = () => {
                 </button>
               </div>
 
-              {/* PDF iframe */}
+              {/* PDF iframe with error handling */}
               <div id="pdf-viewer" className="border border-gray-300 rounded-lg overflow-hidden" style={{ height: '600px' }}>
-                <iframe
-                  src={`${pdfUrl}#page=${currentPdfPage}`}
-                  className="w-full h-full"
-                  title="Curriculum PDF"
-                />
+                {documentLoading ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                    <p className="text-gray-600">Loading PDF...</p>
+                  </div>
+                ) : pdfUrl ? (
+                  <div className="w-full h-full relative">
+                    <iframe
+                      src={`${pdfUrl}#page=${currentPdfPage}`}
+                      className="w-full h-full"
+                      title="Curriculum PDF"
+                      onLoad={() => console.log('PDF loaded successfully')}
+                      onError={(e) => {
+                        console.error('PDF failed to load:', e);
+                        setPdfUrl(null);
+                      }}
+                    />
+                    <div className="absolute top-2 right-2 bg-white bg-opacity-90 px-2 py-1 rounded text-xs text-gray-600">
+                      Page {currentPdfPage}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 p-6">
+                    <AlertCircle className="text-red-500 mb-4" size={48} />
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">PDF Not Found</h3>
+                    <p className="text-gray-600 text-center mb-6">
+                      The curriculum PDF for this volume is either missing or could not be loaded.
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <label className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer flex items-center justify-center">
+                        <Upload size={16} className="mr-2" />
+                        Upload PDF
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      <button
+                        onClick={fetchDocument}
+                        className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 flex items-center justify-center"
+                      >
+                        <Eye size={16} className="mr-2" />
+                        Retry Loading
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {isMapping && (
