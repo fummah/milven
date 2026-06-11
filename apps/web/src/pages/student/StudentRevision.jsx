@@ -15,7 +15,7 @@ import {
 } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
-import { safeHtml, formatFormulaHtml } from '../../lib/formatFormula';
+import { safeHtml, formatFormulaHtml, formatProseWithMath } from '../../lib/formatFormula';
 import { AIHelpPanel } from '../../components/AIHelpPanel.jsx';
 import { ModuleNotesDrawer } from '../../components/ModuleNotesDrawer.jsx';
 
@@ -350,7 +350,7 @@ export default function StudentRevision() {
 																		</div>
 																		<div
 																			className="text-slate-700 prose max-w-none question-preview-content"
-																			dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.workedSolution || '') }}
+																			dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution || '') }}
 																		/>
 																	</div>
 																)}

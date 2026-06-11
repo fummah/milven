@@ -15,7 +15,7 @@ import {
 } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
-import { safeHtml, formatFormulaHtml } from '../../lib/formatFormula';
+import { safeHtml, formatFormulaHtml, formatProseWithMath } from '../../lib/formatFormula';
 import { AIHelpPanel } from '../../components/AIHelpPanel.jsx';
 import { useNavigate } from 'react-router-dom';
 
@@ -535,7 +535,7 @@ export default function StudentMistakes() {
 										{practiceQuestion.workedSolution && (
 											<div
 												className="text-slate-600 text-sm prose max-w-none question-preview-content"
-												dangerouslySetInnerHTML={{ __html: formatFormulaHtml(practiceQuestion.workedSolution || '') }}
+												dangerouslySetInnerHTML={{ __html: formatProseWithMath(practiceQuestion.workedSolution || '') }}
 											/>
 										)}
 										{!practiceQuestion.options.find(o => o.id === practiceAnswer)?.isCorrect && (

@@ -472,6 +472,8 @@ export function ExamResult() {
 											const ws = a?.question?.workedSolution;
 											const guidelines = a?.question?.questionGuidelines;
 											const modelAnswer = a?.question?.output;
+											const traceSection = a?.question?.traceSection;
+											const tracePage = a?.question?.tracePage;
 
 											if (!constructed) {
 												const correct = a.isCorrect === true;
@@ -501,77 +503,79 @@ export function ExamResult() {
 														<Typography.Text strong className="text-blue-800 text-xs uppercase tracking-wide block mb-1">Your Answer</Typography.Text>
 														<div className="text-slate-800 whitespace-pre-wrap prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(yourText) || '—' }} />
 													</div>
-													<div className="space-y-3 mb-4">
-														{los && (
-															<div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200">
-																<div className="flex items-center gap-2 mb-1"><FileTextOutlined className="text-indigo-600" /><Typography.Text strong className="text-indigo-800 text-sm">Learning Outcome (LOS)</Typography.Text></div>
-																<Typography.Text className="text-slate-700 text-sm">{los}</Typography.Text>
+													{/* Curriculum Reference, LOS & Context */}
+													{(los || traceSection || tracePage || a?.question?.topic?.name) && (
+														<div className="p-4 rounded-xl border-2 border-purple-200 bg-purple-50/60 mb-4">
+															<div className="flex items-center gap-2 mb-3">
+																<div className="w-6 h-6 rounded-md bg-purple-600 flex items-center justify-center"><FileTextOutlined className="text-white text-xs" /></div>
+																<Typography.Text strong className="text-purple-900 text-sm">Curriculum Reference & LOS</Typography.Text>
 															</div>
-														)}
+															<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+																{los && (
+																	<div className="col-span-full p-2.5 rounded-lg bg-white border border-purple-100">
+																		<Typography.Text className="text-purple-700 text-xs font-semibold uppercase tracking-wide block mb-1">Learning Outcome Statement (LOS)</Typography.Text>
+																		<Typography.Text className="text-slate-700 text-sm">{los}</Typography.Text>
+																	</div>
+																)}
+																{traceSection && (
+																	<div className="p-2.5 rounded-lg bg-white border border-purple-100">
+																		<Typography.Text className="text-purple-700 text-xs font-semibold uppercase tracking-wide block mb-1">Curriculum Section</Typography.Text>
+																		<Typography.Text className="text-slate-700 text-sm">{traceSection}</Typography.Text>
+																	</div>
+																)}
+																{tracePage && (
+																	<div className="p-2.5 rounded-lg bg-white border border-purple-100">
+																		<Typography.Text className="text-purple-700 text-xs font-semibold uppercase tracking-wide block mb-1">Curriculum Page</Typography.Text>
+																		<Typography.Text className="text-slate-700 text-sm">Page {tracePage}</Typography.Text>
+																	</div>
+																)}
+																{a?.question?.topic?.name && (
+																	<div className="p-2.5 rounded-lg bg-white border border-purple-100">
+																		<Typography.Text className="text-purple-700 text-xs font-semibold uppercase tracking-wide block mb-1">Topic</Typography.Text>
+																		<Typography.Text className="text-slate-700 text-sm">{a.question.topic.name}</Typography.Text>
+																	</div>
+																)}
+																{a?.question?.topic?.moduleName && (
+																	<div className="p-2.5 rounded-lg bg-white border border-purple-100">
+																		<Typography.Text className="text-purple-700 text-xs font-semibold uppercase tracking-wide block mb-1">Learning Module</Typography.Text>
+																		<Typography.Text className="text-slate-700 text-sm">{a.question.topic.moduleName}</Typography.Text>
+																	</div>
+																)}
+															</div>
+															{a?.question?.topic?.id && (
+																<Button icon={<SnippetsOutlined />} onClick={() => openNotesDrawer(a.question.topic.id, a.question.topic.name)} className="rounded-lg mt-3" size="small" style={{ background: '#ede9fe', borderColor: '#c4b5fd', color: '#5b21b6' }}>
+																	View Module Notes & Summary
+																</Button>
+															)}
+														</div>
+													)}
+
+													{/* Model Answer & Marking Guidelines */}
+													<div className="space-y-3 mb-4">
 														{modelAnswer && (
-															<div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
-																<div className="flex items-center gap-2 mb-1"><BulbOutlined className="text-emerald-600" /><Typography.Text strong className="text-emerald-800 text-sm">Model Answer / Expected Output</Typography.Text></div>
-																<div className="text-slate-700 text-sm prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(modelAnswer) }} />
+															<div className="p-4 rounded-xl bg-emerald-50 border-2 border-emerald-200">
+																<div className="flex items-center gap-2 mb-2"><BulbOutlined className="text-emerald-600" /><Typography.Text strong className="text-emerald-800 text-sm">Model Answer / Expected Output</Typography.Text></div>
+																<div className="text-slate-700 text-sm prose prose-sm max-w-none whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: safeHtml(modelAnswer) }} />
 															</div>
 														)}
 														{guidelines && (
-															<div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
-																<div className="flex items-center gap-2 mb-1"><RocketOutlined className="text-amber-600" /><Typography.Text strong className="text-amber-800 text-sm">Marking Guidelines</Typography.Text></div>
-																<div className="text-slate-700 text-sm prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(guidelines) }} />
+															<div className="p-4 rounded-xl bg-amber-50 border-2 border-amber-200">
+																<div className="flex items-center gap-2 mb-2"><RocketOutlined className="text-amber-600" /><Typography.Text strong className="text-amber-800 text-sm">Marking Guidelines</Typography.Text></div>
+																<div className="text-slate-700 text-sm prose prose-sm max-w-none whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: safeHtml(guidelines) }} />
 															</div>
 														)}
 														{kf && (
-															<div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
-																<div className="flex items-center gap-2 mb-1"><CalculatorOutlined className="text-blue-600" /><Typography.Text strong className="text-blue-800 text-sm">Key Formula(s)</Typography.Text></div>
+															<div className="p-4 rounded-xl bg-blue-50 border-2 border-blue-200">
+																<div className="flex items-center gap-2 mb-2"><CalculatorOutlined className="text-blue-600" /><Typography.Text strong className="text-blue-800 text-sm">Key Formula(s)</Typography.Text></div>
 																<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(kf) }} />
 															</div>
 														)}
 														{ws && (
-															<div className="p-3 rounded-lg bg-green-50 border border-green-200">
-																<div className="flex items-center gap-2 mb-1"><BulbOutlined className="text-green-600" /><Typography.Text strong className="text-green-800 text-sm">Worked Solution</Typography.Text></div>
-																<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: formatProseWithMath(ws) }} />
+															<div className="p-4 rounded-xl bg-green-50 border-2 border-green-200">
+																<div className="flex items-center gap-2 mb-2"><BulbOutlined className="text-green-600" /><Typography.Text strong className="text-green-800 text-sm">Worked Solution</Typography.Text></div>
+																<div className="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: formatProseWithMath(ws) }} />
 															</div>
 														)}
-													</div>
-													{/* Additional Info for self-marking */}
-													<div className="p-4 rounded-lg bg-slate-50 border border-slate-200 mb-4">
-														<Typography.Text strong className="text-slate-700 text-xs uppercase tracking-wide block mb-3">Additional Info</Typography.Text>
-														<Space direction="vertical" size={12} style={{ width: '100%' }}>
-															{los && (
-																<div>
-																	<Typography.Text type="secondary" className="text-xs">LOS</Typography.Text>
-																	<div className="text-slate-800 text-sm mt-0.5">{los}</div>
-																</div>
-															)}
-															{a?.question?.topic?.name && (
-																<div>
-																	<Typography.Text type="secondary" className="text-xs">Topic</Typography.Text>
-																	<div className="text-slate-800 text-sm mt-0.5">{a.question.topic.name}</div>
-																</div>
-															)}
-															{a?.question?.topic?.moduleName && (
-																<div>
-																	<Typography.Text type="secondary" className="text-xs">Learning Module</Typography.Text>
-																	<div className="text-slate-800 text-sm mt-0.5">{a.question.topic.moduleName}</div>
-																</div>
-															)}
-															{tracePage && (
-																<div>
-																	<Typography.Text type="secondary" className="text-xs">Page in Curriculum</Typography.Text>
-																	<div className="text-slate-800 text-sm mt-0.5">Page {tracePage}</div>
-																</div>
-															)}
-															{a?.question?.topic?.id && (
-																<Button 
-																	icon={<SnippetsOutlined />} 
-																	onClick={() => openNotesDrawer(a.question.topic.id, a.question.topic.name)} 
-																	className="rounded-xl mt-2" 
-																	style={{ background: '#f0f4f8', borderColor: '#cbd5e1', color: '#102540' }}
-																>
-																	View Module Notes
-																</Button>
-															)}
-														</Space>
 													</div>
 													<div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
 														<Typography.Text strong className="text-slate-700 block mb-3">Score this answer:</Typography.Text>

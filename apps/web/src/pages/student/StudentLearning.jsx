@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, ChevronLeft, BookOpen, FileText, GraduationCap, Layers, Tag, Clock, BookMarked, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronRight, ChevronDown, ChevronLeft, BookOpen, FileText, GraduationCap, Layers, Tag, Clock, BookMarked, ZoomIn, ZoomOut, X, Menu } from 'lucide-react';
 import { api } from '../../lib/api';
 
 const StudentLearning = () => {
@@ -20,6 +20,7 @@ const StudentLearning = () => {
   const [pdfUrl, setPdfUrl] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [activeTarget, setActiveTarget] = useState(null);
+  const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
 
   useEffect(() => {
     fetchCourses();
@@ -164,6 +165,8 @@ const StudentLearning = () => {
     if (mapping && pdfUrl) {
       setCurrentPage(mapping.pageNumber);
       setActiveTarget({ type, id, name });
+      // Close mobile tree after navigation
+      setMobileTreeOpen(false);
     }
   };
 
@@ -188,17 +191,17 @@ const StudentLearning = () => {
   return (
     <div className="h-[calc(100vh-64px)] flex flex-col overflow-hidden">
       {/* Top Bar: Course & Volume Selection */}
-      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-4 py-3">
-        <div className="flex items-center gap-4 flex-wrap">
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 px-3 sm:px-4 py-2 sm:py-3">
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <GraduationCap size={22} className="text-blue-600" />
-            <span className="font-bold text-gray-900 text-lg hidden sm:inline">Learning Center</span>
+            <GraduationCap size={20} className="text-blue-600" />
+            <span className="font-bold text-gray-900 text-base sm:text-lg hidden sm:inline">Learning Center</span>
           </div>
-          <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
             <select
               value={selectedCourse || ''}
               onChange={(e) => setSelectedCourse(e.target.value)}
-              className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm min-w-[180px]"
+              className="px-2 sm:px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs sm:text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm min-w-[140px] sm:min-w-[180px]"
             >
               {courses.length === 0 && <option value="">No courses</option>}
               {courses.map(course => (
@@ -210,7 +213,7 @@ const StudentLearning = () => {
             <select
               value={selectedVolume || ''}
               onChange={(e) => setSelectedVolume(e.target.value)}
-              className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm min-w-[160px]"
+              className="px-2 sm:px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs sm:text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm min-w-[120px] sm:min-w-[160px]"
               disabled={!selectedCourse || volumes.length === 0}
             >
               <option value="">Select volume...</option>
@@ -221,13 +224,13 @@ const StudentLearning = () => {
           </div>
           {selectedCourseData && (
             <div className="flex items-center gap-2 ml-auto">
-              <div className="w-32 bg-gray-200 rounded-full h-2">
+              <div className="w-20 sm:w-32 bg-gray-200 rounded-full h-2">
                 <div
                   className="bg-blue-600 h-2 rounded-full transition-all"
                   style={{ width: `${progress.percent || selectedCourseData.progressPercent || 0}%` }}
                 />
               </div>
-              <span className="text-xs font-semibold text-blue-700">{progress.percent || selectedCourseData.progressPercent || 0}%</span>
+              <span className="text-[10px] sm:text-xs font-semibold text-blue-700">{progress.percent || selectedCourseData.progressPercent || 0}%</span>
             </div>
           )}
         </div>
@@ -250,22 +253,40 @@ const StudentLearning = () => {
           </div>
         </div>
       ) : (
-        /* Side-by-side layout */
-        <div className="flex-1 flex overflow-hidden">
+        /* Side-by-side layout with mobile drawer */
+        <div className="flex-1 flex overflow-hidden relative">
+          {/* Mobile Tree Overlay */}
+          {mobileTreeOpen && (
+            <div
+              className="fixed inset-0 bg-black/50 z-40 sm:hidden"
+              onClick={() => setMobileTreeOpen(false)}
+            />
+          )}
+
           {/* LEFT: Learning Hierarchy Tree */}
-          <div className="w-[380px] min-w-[320px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col overflow-hidden">
+          <div className={`fixed sm:relative z-50 sm:z-auto h-full bg-white flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+            mobileTreeOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'
+          } w-[85vw] sm:w-[380px] min-w-[320px] max-w-[400px] border-r border-gray-200`}>
             {/* Volume Header */}
-            <div className="flex-shrink-0 px-4 py-3 bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <Layers size={18} className="text-indigo-600" />
+            <div className="flex-shrink-0 px-4 py-3 bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <Layers size={18} className="text-indigo-600 flex-shrink-0" />
                 <span className="font-bold text-gray-900 text-sm truncate">{selectedVolumeData?.name || 'Volume'}</span>
               </div>
-              {activeTarget && (
-                <div className="mt-1 text-xs text-indigo-600 truncate">
+              <button
+                onClick={() => setMobileTreeOpen(false)}
+                className="sm:hidden p-1 rounded hover:bg-gray-200"
+              >
+                <X size={18} className="text-gray-600" />
+              </button>
+            </div>
+            {activeTarget && (
+              <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100">
+                <div className="text-xs text-indigo-600 truncate">
                   Viewing: {activeTarget.name}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Scrollable Tree */}
             <div className="flex-1 overflow-y-auto">
@@ -394,8 +415,14 @@ const StudentLearning = () => {
             {pdfUrl ? (
               <>
                 {/* PDF Toolbar */}
-                <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200">
+                <div className="flex-shrink-0 flex items-center justify-between px-3 sm:px-4 py-2 bg-white border-b border-gray-200">
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setMobileTreeOpen(true)}
+                      className="sm:hidden p-1.5 rounded hover:bg-gray-100"
+                    >
+                      <Menu size={18} />
+                    </button>
                     <button
                       onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                       disabled={currentPage <= 1}
@@ -411,10 +438,10 @@ const StudentLearning = () => {
                           const v = parseInt(e.target.value);
                           if (v >= 1) setCurrentPage(v);
                         }}
-                        className="w-14 px-2 py-1 text-center text-sm border border-gray-300 rounded"
+                        className="w-12 sm:w-14 px-2 py-1 text-center text-sm border border-gray-300 rounded"
                         min="1"
                       />
-                      <span className="text-xs text-gray-500">page</span>
+                      <span className="text-xs text-gray-500 hidden sm:inline">page</span>
                     </div>
                     <button
                       onClick={() => setCurrentPage(currentPage + 1)}
@@ -424,13 +451,13 @@ const StudentLearning = () => {
                     </button>
                   </div>
                   {activeTarget && (
-                    <div className="text-xs text-gray-600 truncate max-w-[200px]">
+                    <div className="text-xs text-gray-600 truncate max-w-[150px] sm:max-w-[200px]">
                       <span className="font-medium">{activeTarget.type}:</span> {activeTarget.name}
                     </div>
                   )}
                   <div className="flex items-center gap-1">
                     <FileText size={14} className="text-gray-400" />
-                    <span className="text-xs text-gray-500 truncate max-w-[150px]">{curriculumDoc?.originalName || curriculumDoc?.filename}</span>
+                    <span className="text-xs text-gray-500 truncate max-w-[100px] sm:max-w-[150px]">{curriculumDoc?.originalName || curriculumDoc?.filename}</span>
                   </div>
                 </div>
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { formatFormulaHtml } from '../lib/formatFormula';
+import { formatFormulaHtml, formatProseWithMath } from '../lib/formatFormula';
 import { Card, Button, Typography, Space, message, Switch, InputNumber, Radio, Modal, Drawer, Tag, Divider, Progress, Tooltip, Alert, Collapse } from 'antd';
 import { RichTextEditor } from '../components/RichTextEditor.jsx';
 import { AIHelpPanel } from '../components/AIHelpPanel.jsx';
@@ -120,7 +120,7 @@ function SmartReviewPanel({ answer, question, visible, onAddToRevision, onAddToW
 								),
 								children: (
 									<div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
-										<div className="!mb-0 text-slate-700 whitespace-pre-wrap formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(question.workedSolution) }} />
+										<div className="!mb-0 text-slate-700 whitespace-pre-wrap formula-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(question.workedSolution) }} />
 									</div>
 								)
 							}]}

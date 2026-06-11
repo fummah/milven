@@ -684,9 +684,9 @@ export function formatProseWithMath(text) {
 	let match;
 
 	while ((match = mathPattern.exec(s)) !== null) {
-		// Prose before this math block — convert bare commands to Unicode
+		// Prose before this math block — render inline LaTeX expressions + convert bare commands
 		const prose = s.slice(lastIndex, match.index);
-		if (prose) parts.push(normalizeVariableDescription(latexCommandsToUnicode(prose)));
+		if (prose) parts.push(renderProseSegment(prose));
 
 		// Math block — render via KaTeX
 		const block = match[1];
@@ -698,9 +698,74 @@ export function formatProseWithMath(text) {
 
 	// Remaining prose after the last math block
 	const tail = s.slice(lastIndex);
-	if (tail) parts.push(normalizeVariableDescription(latexCommandsToUnicode(tail)));
+	if (tail) parts.push(renderProseSegment(tail));
 
 	return parts.join('');
+}
+
+/**
+ * Render a prose segment that may contain inline raw LaTeX expressions.
+ * Detects patterns like \frac{...}{...}, \sqrt{...}, and other complex
+ * LaTeX expressions, renders them via KaTeX inline, and converts the
+ * remaining bare commands to Unicode.
+ */
+function renderProseSegment(prose) {
+	if (!prose) return '';
+
+	// Pattern to find inline LaTeX expressions that should be rendered via KaTeX:
+	// - \frac{...}{...} (with optional trailing = number)
+	// - \sqrt{...} (with optional trailing = number)
+	// Does NOT capture leading prose — only the math command and its arguments.
+	const inlineLatexPattern = /\\(?:frac|dfrac|tfrac|cfrac)\{[^}]*\}\{[^}]*\}(?:\s*=\s*[0-9.,]+)?|\\sqrt\{[^}]*\}(?:\s*=\s*[0-9.,]+)?/g;
+
+	let result = '';
+	let idx = 0;
+	let m;
+
+	while ((m = inlineLatexPattern.exec(prose)) !== null) {
+		// Text before this math expression
+		const before = prose.slice(idx, m.index);
+		if (before) result += latexCommandsToUnicode(before);
+
+		// Render the matched expression via KaTeX
+		const expr = m[0].trim();
+		try {
+			result += katex.renderToString(expr, {
+				displayMode: false,
+				throwOnError: true,
+				trust: true,
+				strict: false,
+			});
+		} catch {
+			// If KaTeX fails on the full match, try just the \frac/\sqrt part
+			const cmdMatch = expr.match(/\\(?:frac|sqrt|dfrac|tfrac|cfrac)\{[^}]*\}(?:\{[^}]*\})?/);
+			if (cmdMatch) {
+				const beforeCmd = expr.slice(0, expr.indexOf(cmdMatch[0]));
+				const afterCmd = expr.slice(expr.indexOf(cmdMatch[0]) + cmdMatch[0].length);
+				result += latexCommandsToUnicode(beforeCmd);
+				try {
+					result += katex.renderToString(cmdMatch[0], {
+						displayMode: false,
+						throwOnError: true,
+						trust: true,
+						strict: false,
+					});
+				} catch {
+					result += latexCommandsToUnicode(cmdMatch[0]);
+				}
+				result += latexCommandsToUnicode(afterCmd);
+			} else {
+				result += latexCommandsToUnicode(expr);
+			}
+		}
+		idx = m.index + m[0].length;
+	}
+
+	// Remaining text after last inline expression
+	const remaining = prose.slice(idx);
+	if (remaining) result += latexCommandsToUnicode(remaining);
+
+	return result;
 }
 
 /**
