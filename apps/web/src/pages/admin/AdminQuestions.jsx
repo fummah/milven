@@ -1218,7 +1218,7 @@ export function AdminQuestions() {
 				open={bulkOpen}
 				onCancel={() => !bulkUploading && setBulkOpen(false)}
 				closable={!bulkUploading}
-				maskClosable={!bulkUploading}
+				maskClosable={false}
 				onOk={() => {
 					const csv = bulkForm.getFieldValue('csv');
 					const xlsx = bulkForm.getFieldValue('xlsx');
@@ -1291,7 +1291,7 @@ export function AdminQuestions() {
 				open={aiGenerateModalOpen}
 				onCancel={() => !aiGenerateLoading && setAiGenerateModalOpen(false)}
 				closable={!aiGenerateLoading}
-				maskClosable={!aiGenerateLoading}
+				maskClosable={false}
 				footer={null}
 				className="modern-modal"
 				width={760}
@@ -1488,7 +1488,7 @@ export function AdminQuestions() {
 				open={aiPreviewOpen}
 				onCancel={() => { if (!aiAcceptLoading) { setAiPreviewOpen(false); setAiSelectedIndices([]); } }}
 				closable={!aiAcceptLoading}
-				maskClosable={!aiAcceptLoading}
+				maskClosable={false}
 				footer={null}
 				width={1400}
 				className="modern-modal"
@@ -1539,7 +1539,7 @@ export function AdminQuestions() {
 										{(bundle.questions || []).map((q, qIdx) => (
 											<div key={qIdx} style={{ padding: '10px 12px', borderRadius: 10, background: '#fafafa', border: '1px solid #f0f0f0', marginBottom: 8 }}>
 												<Typography.Text strong style={{ color: '#531dab' }}>{`Sub-question ${qIdx + 1}`}{!isVignette && q?.marks ? ` (${q.marks} mark${q.marks > 1 ? 's' : ''})` : ''}</Typography.Text>
-												<div className="prose prose-sm question-preview-content" style={{ marginTop: 4 }} dangerouslySetInnerHTML={{ __html: safeHtml(q?.stem || '') }} />
+												<div className="prose prose-sm question-preview-content formula-content" style={{ marginTop: 4 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(q?.stem || '') }} />
 												<div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
 													<Tag color="blue" style={{ cursor: q?.topicId ? 'pointer' : undefined }} onClick={(e) => { if (q?.topicId) { e.stopPropagation(); openNotesDrawer(q.topicId, q.topicName || q.topicId); } }}>{q?.topicName || q?.topicId}{q?.topicId ? ' 📖' : ''}</Tag>
 													<Tag color="purple">{q?.difficulty}</Tag>
@@ -1607,7 +1607,7 @@ export function AdminQuestions() {
 												style={{ marginTop: 3 }}
 											/>
 											<div style={{ flex: 1, minWidth: 0 }}>
-												<div className="prose prose-sm question-preview-content" dangerouslySetInnerHTML={{ __html: safeHtml(q?.stem || '') }} />
+												<div className="prose prose-sm question-preview-content formula-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q?.stem || '') }} />
 												<div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
 													<Tag color="blue" style={{ cursor: q?.topicId ? 'pointer' : undefined }} onClick={(e) => { if (q?.topicId) { e.stopPropagation(); openNotesDrawer(q.topicId, q.topicName || q.topicId); } }}>{q?.topicName || q?.topicId}{q?.topicId ? ' 📖' : ''}</Tag>
 													<Tag color="purple">{q?.difficulty}</Tag>
@@ -2204,7 +2204,7 @@ export function AdminQuestions() {
 											<div
 												className="prose question-preview-content"
 												style={{ margin: 0 }}
-												dangerouslySetInnerHTML={{ __html: safeHtml(q.stem) }}
+												dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.stem) }}
 											/>
 											{(q.options || []).length > 0 && (
 												<Radio.Group value={(q.options || []).find(o => o.isCorrect)?.id} disabled>
@@ -2266,7 +2266,7 @@ export function AdminQuestions() {
 											<div
 												className="prose question-preview-content"
 												style={{ margin: 0 }}
-												dangerouslySetInnerHTML={{ __html: safeHtml(q.stem) }}
+												dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.stem) }}
 											/>
 											{(q.qid || q.los || q.traceSection || q.tracePage || q.keyFormulas || q.workedSolution) && (
 												<div style={{ marginTop: 4, borderTop: '1px solid #f0f0f0', paddingTop: 6 }}>
@@ -2310,7 +2310,7 @@ export function AdminQuestions() {
 										<div
 											className="prose question-preview-content"
 											style={{ margin: 0 }}
-											dangerouslySetInnerHTML={{ __html: safeHtml(previewQuestion.question.stem) }}
+											dangerouslySetInnerHTML={{ __html: formatProseWithMath(previewQuestion.question.stem) }}
 										/>
 									</Space>
 								</Card>

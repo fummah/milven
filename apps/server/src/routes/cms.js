@@ -2775,8 +2775,8 @@ Each object in "items" MUST follow this structure:
       "Determine whether the stock market is overvalued using the:\ni. Fed model.\nii. Yardeni model.\nJustify each response with one reason."
       Only use sub-points when the question naturally breaks into distinct parts. Other sub-questions should be single direct prompts.
     • Have "marks" (integer — the total across all sub-questions should equal 12)
-    • Have "questionGuidelines" (specific marking criteria)
-    • Have "output" (full model answer that would receive maximum marks)
+    • Have "questionGuidelines" (DETAILED marking criteria showing how marks are split — e.g. "Formula identification (1 mark)\nCorrect substitution (1 mark)\nFinal calculation (1 mark)\nInterpretation (1 mark)" — each step MUST show its mark allocation so students can self-assess)
+    • Have "output" (full model answer that would receive maximum marks — use valid LaTeX for all formulas and show the step-by-step working with mark allocations inline, e.g. "Step 1: Identify formula... [1 mark]\nStep 2: Substitute values... [1 mark]")
 ${selectedTopics.length > 1 ? `    • TOPIC DISTRIBUTION: The selected topics are [${selectedTopics.map(t => t.name).join(', ')}]. You MUST spread these topics equally across the sub-questions. Each sub-question should test a different topic from this list. Assign topics round-robin so all selected topics are covered.
 ` : ''}
     • Plus ALL metadata fields below. No "options" field.
@@ -2790,13 +2790,34 @@ ${metaFieldsBlock}`;
 Each object in the "items" array MUST have:
 - "stem": string (clearly describe what the candidate must calculate/explain and how many marks are available)
 - "marks": integer (marks for this question)
-- "questionGuidelines": string (specific marking criteria and what the examiner expects)
-- "output": string (the expected model answer/output that would receive full marks)
+- "questionGuidelines": string (DETAILED marking criteria showing how marks are split per step — e.g. "Formula identification (1 mark)\nCorrect substitution (1 mark)\nFinal calculation (1 mark)" — each component MUST show its mark so students can self-assess)
+- "output": string (full model answer using valid LaTeX for formulas — show step-by-step working with mark allocations inline, e.g. "Step 1: \\( formula \\) [1 mark]\nStep 2: Substitute... [1 mark]")
 - No "options" field
 - Plus ALL metadata fields listed below (keyFormulas and workedSolution are especially important for constructed response)
 
 ${metaFieldsBlock}`;
 		}
+
+		// Fetch existing question stems for the selected topics to prevent duplicates
+		let existingStemsBlock = '';
+		try {
+			const existingQuestions = await prisma.question.findMany({
+				where: { topicId: { in: topicIds }, type: questionType },
+				select: { stem: true },
+				orderBy: { createdAt: 'desc' },
+				take: 50
+			});
+			if (existingQuestions.length > 0) {
+				const stems = existingQuestions
+					.map(q => (q.stem || '').replace(/<[^>]+>/g, '').trim())
+					.filter(s => s.length > 15)
+					.slice(0, 30)
+					.map((s, i) => `${i + 1}. ${s.substring(0, 150)}`);
+				if (stems.length > 0) {
+					existingStemsBlock = `\n\nDUPLICATE AVOIDANCE — The following questions ALREADY EXIST in our question bank. You MUST NOT generate questions that are the same or very similar to any of these. Generate COMPLETELY DIFFERENT questions that test different aspects or use different scenarios:\n${stems.join('\n')}\n`;
+				}
+			}
+		} catch { /* ignore if fetch fails */ }
 
 		const previewCurriculumSection = previewCurriculumExcerpt
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${previewCurriculumExcerpt}\n---\n`
@@ -2842,7 +2863,7 @@ Context:
 - Question type: ${typeLabel}
 - Difficulty levels: ${difficultyLabel}
 - Number of ${isBundleType ? 'case studies' : 'questions'}: ${count}
-${previewCurriculumSection}
+${previewCurriculumSection}${existingStemsBlock}
 IMPORTANT: Each question MUST include a "conceptName" field — the name of the specific concept it tests, chosen from the Concepts list above (or a close match if the list says "All concepts"). This is used to map questions back to our curriculum database.
 
 CONSISTENCY RULE: Each question's "traceSection" MUST be a section that falls WITHIN the topic the question is testing. If Topics = "${topicLabel}", then traceSection must reference content from ONLY those topics. For example, if the topic is "Standard I: Professionalism", the traceSection MUST say "Standard I(A) ...", "Standard I(B) ...", etc. — NEVER "Standard VI(A) ..." or content from any other topic. The question content, LOS, traceSection, and topic assignment must ALL be consistent with each other.

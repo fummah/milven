@@ -1168,9 +1168,11 @@ export function examsRouter(prisma) {
 		if (!attempt || attempt.userId !== req.user.id) return res.status(404).json({ error: 'Attempt not found' });
 
 		// Build hierarchical tree: Volume → Module → Topic
-		const volumeMap = new Map(); // volumeId -> { name, modules: Map<moduleId, { name, topics: Map<topicName, {correct, total}> }> }
+		// Use marks-based scoring: earned marks vs total possible marks (matching computeAttemptScorePercent logic)
+		const volumeMap = new Map();
 
 		for (const a of attempt.answers) {
+			if (a.excludedFromMarking) continue;
 			const topic = a.question?.topic;
 			const mod = topic?.module;
 			const vol = mod?.volume;
@@ -1183,50 +1185,55 @@ export function examsRouter(prisma) {
 			const topicId = topic?.id || 'unknown';
 
 			if (!volumeMap.has(volumeId)) {
-				volumeMap.set(volumeId, { id: volumeId, name: volumeName, correct: 0, total: 0, modules: new Map() });
+				volumeMap.set(volumeId, { id: volumeId, name: volumeName, earned: 0, total: 0, modules: new Map() });
 			}
 			const volEntry = volumeMap.get(volumeId);
 
 			if (!volEntry.modules.has(moduleId)) {
-				volEntry.modules.set(moduleId, { id: moduleId, name: moduleName, correct: 0, total: 0, topics: new Map() });
+				volEntry.modules.set(moduleId, { id: moduleId, name: moduleName, earned: 0, total: 0, topics: new Map() });
 			}
 			const modEntry = volEntry.modules.get(moduleId);
 
 			if (!modEntry.topics.has(topicId)) {
-				modEntry.topics.set(topicId, { id: topicId, name: topicName, correct: 0, total: 0 });
+				modEntry.topics.set(topicId, { id: topicId, name: topicName, earned: 0, total: 0 });
 			}
 			const topicEntry = modEntry.topics.get(topicId);
 
-			topicEntry.total += 1;
-			modEntry.total += 1;
-			volEntry.total += 1;
-
-			if (a.isCorrect) {
-				topicEntry.correct += 1;
-				modEntry.correct += 1;
-				volEntry.correct += 1;
+			const qMarks = a.question?.marks ?? 1;
+			let earnedMarks = 0;
+			if (a.question?.type === 'CONSTRUCTED_RESPONSE') {
+				earnedMarks = a.marksAwarded ?? 0;
+			} else {
+				earnedMarks = a.isCorrect ? qMarks : 0;
 			}
+
+			topicEntry.total += qMarks;
+			topicEntry.earned += earnedMarks;
+			modEntry.total += qMarks;
+			modEntry.earned += earnedMarks;
+			volEntry.total += qMarks;
+			volEntry.earned += earnedMarks;
 		}
 
 		// Convert to serializable structure
 		const tree = Array.from(volumeMap.values()).map(vol => ({
 			id: vol.id,
 			name: vol.name,
-			correct: vol.correct,
+			correct: vol.earned,
 			total: vol.total,
-			percent: vol.total ? Math.round((vol.correct / vol.total) * 100) : 0,
+			percent: vol.total ? Math.round((vol.earned / vol.total) * 100) : 0,
 			modules: Array.from(vol.modules.values()).map(mod => ({
 				id: mod.id,
 				name: mod.name,
-				correct: mod.correct,
+				correct: mod.earned,
 				total: mod.total,
-				percent: mod.total ? Math.round((mod.correct / mod.total) * 100) : 0,
+				percent: mod.total ? Math.round((mod.earned / mod.total) * 100) : 0,
 				topics: Array.from(mod.topics.values()).map(t => ({
 					id: t.id,
 					name: t.name,
-					correct: t.correct,
+					correct: t.earned,
 					total: t.total,
-					percent: t.total ? Math.round((t.correct / t.total) * 100) : 0
+					percent: t.total ? Math.round((t.earned / t.total) * 100) : 0
 				}))
 			}))
 		}));
@@ -1234,14 +1241,20 @@ export function examsRouter(prisma) {
 		// Also keep flat byTopic for backward compatibility
 		const flatTopicMap = new Map();
 		for (const a of attempt.answers) {
+			if (a.excludedFromMarking) continue;
 			const topicName = a.question.topic?.name ?? 'Unknown';
-			if (!flatTopicMap.has(topicName)) flatTopicMap.set(topicName, { correct: 0, total: 0 });
+			if (!flatTopicMap.has(topicName)) flatTopicMap.set(topicName, { earned: 0, total: 0 });
 			const agg = flatTopicMap.get(topicName);
-			agg.total += 1;
-			if (a.isCorrect) agg.correct += 1;
+			const qMarks = a.question?.marks ?? 1;
+			agg.total += qMarks;
+			if (a.question?.type === 'CONSTRUCTED_RESPONSE') {
+				agg.earned += a.marksAwarded ?? 0;
+			} else {
+				agg.earned += a.isCorrect ? qMarks : 0;
+			}
 		}
 		const byTopic = Array.from(flatTopicMap.entries()).map(([topic, v]) => ({
-			topic, correct: v.correct, total: v.total, percent: (v.correct / (v.total || 1)) * 100
+			topic, correct: v.earned, total: v.total, percent: v.total ? Math.round((v.earned / v.total) * 100) : 0
 		}));
 
 		return res.json({ byTopic, tree });

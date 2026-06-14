@@ -23,6 +23,22 @@ import {
 import { ModuleNotesDrawer } from '../components/ModuleNotesDrawer.jsx';
 import { safeHtml, formatFormulaHtml, formatProseWithMath } from '../lib/formatFormula';
 
+// Fix nested numbering: convert inner roman numerals (i., ii., iii.) to a), b), c) etc.
+function fixNestedNumbering(text) {
+	if (!text) return text;
+	const romanToLetter = { 'i': 'a', 'ii': 'b', 'iii': 'c', 'iv': 'd', 'v': 'e', 'vi': 'f', 'vii': 'g', 'viii': 'h', 'ix': 'i', 'x': 'j' };
+	const hasNestedRoman = /(?:^|[\s>])([ivx]+)\.\s/i.test(text);
+	if (!hasNestedRoman) return text;
+	let result = text.replace(/(?:<br\s*\/?>|\n)?\s*([ivx]+)[.)]\s/gi, (match, numeral, offset) => {
+		const lower = numeral.toLowerCase();
+		const letter = romanToLetter[lower];
+		if (!letter) return match;
+		const prefix = offset > 0 ? '<br/>' : '';
+		return `${prefix}${letter}) `;
+	});
+	return result;
+}
+
 export function ExamResult() {
 	const { attemptId } = useParams();
 	const navigate = useNavigate();
@@ -482,7 +498,7 @@ export function ExamResult() {
 														<div className="flex items-start gap-3 mb-2">
 															<div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-white font-semibold text-sm bg-slate-500">{toRoman(subIdx + 1)}</div>
 															<div className="flex-1">
-																<div className="prose prose-sm text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(a?.question?.stem) || '' }} />
+																<div className="prose prose-sm text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: formatProseWithMath(fixNestedNumbering(a?.question?.stem || '')) }} />
 																<div className="mt-2">{correct ? <Tag color="green"><CheckCircleOutlined /> Correct</Tag> : <Tag color="red"><CloseCircleOutlined /> Incorrect</Tag>}</div>
 															</div>
 														</div>
@@ -495,7 +511,7 @@ export function ExamResult() {
 													<div className="flex items-start gap-3 mb-4">
 														<div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-white font-semibold text-sm bg-indigo-600">{toRoman(subIdx + 1)}</div>
 														<div className="flex-1">
-															<div className="prose prose-sm text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(a?.question?.stem) || '' }} />
+															<div className="prose prose-sm text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: formatProseWithMath(fixNestedNumbering(a?.question?.stem || '')) }} />
 															<Tag color="blue" className="mt-1">{maxMarks} point{maxMarks !== 1 ? 's' : ''}</Tag>
 														</div>
 													</div>
@@ -555,13 +571,13 @@ export function ExamResult() {
 														{modelAnswer && (
 															<div className="p-4 rounded-xl bg-emerald-50 border-2 border-emerald-200">
 																<div className="flex items-center gap-2 mb-2"><BulbOutlined className="text-emerald-600" /><Typography.Text strong className="text-emerald-800 text-sm">Model Answer / Expected Output</Typography.Text></div>
-																<div className="text-slate-700 text-sm prose prose-sm max-w-none whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: safeHtml(modelAnswer) }} />
+																<div className="text-slate-700 text-sm prose prose-sm max-w-none whitespace-pre-wrap question-preview-content formula-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(modelAnswer) }} />
 															</div>
 														)}
 														{guidelines && (
 															<div className="p-4 rounded-xl bg-amber-50 border-2 border-amber-200">
 																<div className="flex items-center gap-2 mb-2"><RocketOutlined className="text-amber-600" /><Typography.Text strong className="text-amber-800 text-sm">Marking Guidelines</Typography.Text></div>
-																<div className="text-slate-700 text-sm prose prose-sm max-w-none whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: safeHtml(guidelines) }} />
+																<div className="text-slate-700 text-sm prose prose-sm max-w-none whitespace-pre-wrap question-preview-content formula-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(guidelines) }} />
 															</div>
 														)}
 														{kf && (
@@ -684,7 +700,7 @@ export function ExamResult() {
 													<div className="flex items-start gap-3 mb-3">
 														<div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-white font-semibold bg-slate-600">{toRoman(subIdx + 1)}</div>
 														<div className="flex-1 min-w-0">
-															<div className="prose prose-sm question-preview-content text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: safeHtml(a?.question?.stem) || '' }} />
+															<div className="prose prose-sm question-preview-content text-slate-700 max-w-none" dangerouslySetInnerHTML={{ __html: formatProseWithMath(fixNestedNumbering(a?.question?.stem || '')) }} />
 														</div>
 													</div>
 													<div className="mt-4 p-4 rounded-lg bg-slate-50 border border-slate-200">

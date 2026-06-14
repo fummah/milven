@@ -15,6 +15,25 @@ function stripQuestionNumber(text) {
 	return text.replace(/^(<[^>]*>)*\s*(Question|Q)\.?\s*\d+\s*[:.\-–—]\s*/i, '$1');
 }
 
+// Fix nested numbering: convert inner roman numerals (i., ii., iii., iv., v., vi.) to a), b), c) etc.
+// This handles cases like "i) i. What is your name? ii. Your surname" where inner numbering conflicts
+function fixNestedNumbering(text) {
+	if (!text) return text;
+	const romanToLetter = { 'i': 'a', 'ii': 'b', 'iii': 'c', 'iv': 'd', 'v': 'e', 'vi': 'f', 'vii': 'g', 'viii': 'h', 'ix': 'i', 'x': 'j' };
+	// Detect if there are nested roman numerals inside the stem (i. ii. iii. patterns after the first word)
+	const hasNestedRoman = /(?:^|[\s>])([ivx]+)\.\s/i.test(text);
+	if (!hasNestedRoman) return text;
+	// Replace patterns like "i." "ii." "iii." etc. with "a)" "b)" "c)" and ensure line break before each
+	let result = text.replace(/(?:<br\s*\/?>|\n)?\s*([ivx]+)[.)]\s/gi, (match, numeral, offset) => {
+		const lower = numeral.toLowerCase();
+		const letter = romanToLetter[lower];
+		if (!letter) return match;
+		const prefix = offset > 0 ? '<br/>' : '';
+		return `${prefix}${letter}) `;
+	});
+	return result;
+}
+
 // Strip leading bold volume/topic title line from question stems (e.g. "<strong>Ethical and Professional Standards</strong>")
 // Used for Level 1 exams where volume name should not appear at top of question
 function stripLeadingVolumeTitle(text) {
@@ -1674,7 +1693,7 @@ export function ExamTake() {
 																<div
   className="text-sm md:text-base text-slate-500 font-medium mb-6 prose max-w-none"
   style={{ display: "flex" }}
-  dangerouslySetInnerHTML={{ __html: `<p>${toRoman(subQuestionIdx + 1)}) ${examLevel === 'LEVEL1' ? stripLeadingVolumeTitle(stripQuestionNumber(subQ?.stem)) || '' : stripQuestionNumber(subQ?.stem) || ''}</p>` }}
+  dangerouslySetInnerHTML={{ __html: `<p>${toRoman(subQuestionIdx + 1)}) ${formatProseWithMath(fixNestedNumbering(examLevel === 'LEVEL1' ? stripLeadingVolumeTitle(stripQuestionNumber(subQ?.stem)) || '' : stripQuestionNumber(subQ?.stem) || ''))}</p>` }}
 />
 
 																	{subConstructed ? (
@@ -1787,7 +1806,7 @@ export function ExamTake() {
 											<div className="p-6">
 												<div
 													className="text-lg text-slate-800 font-medium mb-6 prose max-w-none"
-													dangerouslySetInnerHTML={{ __html: examLevel === 'LEVEL1' ? stripLeadingVolumeTitle(stripQuestionNumber(q?.stem)) || '' : stripQuestionNumber(q?.stem) || '' }}
+													dangerouslySetInnerHTML={{ __html: formatProseWithMath(fixNestedNumbering(examLevel === 'LEVEL1' ? stripLeadingVolumeTitle(stripQuestionNumber(q?.stem)) || '' : stripQuestionNumber(q?.stem) || '')) }}
 												/>
 
 												{isConstructed ? (
@@ -2044,18 +2063,27 @@ export function ExamTake() {
 										>
 											Mark it myself
 										</Button>
-										<Button
-											size="large"
-											block
-											onClick={() => setMarkingPref('ADMIN')}
-											className="h-12 rounded-xl font-semibold"
-											style={{ background: 'linear-gradient(135deg, #1e40af, #3b82f6)', color: '#fff', border: 'none' }}
-										>
-											Submit to admin for marking
-										</Button>
-										<Typography.Text type="secondary" className="text-center block text-xs mt-1">
-											If you choose admin marking, you will be notified when marking is complete.
-										</Typography.Text>
+										{isMockExam && (
+											<Button
+												size="large"
+												block
+												onClick={() => setMarkingPref('ADMIN')}
+												className="h-12 rounded-xl font-semibold"
+												style={{ background: 'linear-gradient(135deg, #1e40af, #3b82f6)', color: '#fff', border: 'none' }}
+											>
+												Submit to admin for marking
+											</Button>
+										)}
+										{isMockExam && (
+											<Typography.Text type="secondary" className="text-center block text-xs mt-1">
+												If you choose admin marking, you will be notified when marking is complete.
+											</Typography.Text>
+										)}
+										{!isMockExam && (
+											<Typography.Text type="secondary" className="text-center block text-xs mt-1">
+												Self-mark your constructed responses using the model answer and guidelines provided.
+											</Typography.Text>
+										)}
 									</Space>
 								</div>
 							</>
