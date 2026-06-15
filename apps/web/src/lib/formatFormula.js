@@ -85,6 +85,13 @@ export function formulaSanitizer(text) {
 	// e.g., \\\\times → \\times
 	s = s.replace(/\\{3,}(times|cdot|frac|sqrt|text|alpha|beta|gamma|delta|sigma|mu|rho|lambda|pi|theta|epsilon|tau|phi|omega|Delta|Sigma|Omega|Phi|Theta|Lambda|Gamma|left|right|sum|prod|int|lim|ln|log|exp|sin|cos|tan|overline|bar|hat|tilde|vec|mathbf|mathrm|geq|leq|neq|approx|infty|pm|nu|kappa|chi|psi|zeta|eta|xi|Pi|Psi|Xi|mp|forall|exists|partial|nabla)\b/g, '\\$1');
 
+	// ── Fix double-escaped LaTeX delimiters ─────────────────────────────
+	// JSON escaping often produces \\( instead of \(, \\[ instead of \[
+	s = s.replace(/\\\\\(/g, '\\(');  // \\( → \(
+	s = s.replace(/\\\\\)/g, '\\)');  // \\) → \)
+	s = s.replace(/\\\\\[/g, '\\[');  // \\[ → \[
+	s = s.replace(/\\\\\]/g, '\\]');  // \\] → \]
+
 	// ── Clean up stray control characters ───────────────────────────────
 	// Remove any remaining literal tab/backspace/formfeed that shouldn't be there
 	s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
