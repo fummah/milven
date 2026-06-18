@@ -1550,7 +1550,7 @@ export function AdminQuestions() {
 														{q.options.map((o, oi) => (
 															<div key={oi} style={{ display: 'flex', gap: 8, padding: '2px 0', color: o.isCorrect ? '#389e0d' : undefined, fontWeight: o.isCorrect ? 600 : 400 }}>
 																<span style={{ width: 20, flexShrink: 0 }}>{String.fromCharCode(65 + oi)}.</span>
-																<span dangerouslySetInnerHTML={{ __html: safeHtml(o.text || '') }} />
+																<span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(o.text || '') }} />
 																{o.isCorrect && <CheckCircleOutlined style={{ color: '#389e0d', marginLeft: 4 }} />}
 															</div>
 														))}
@@ -1559,7 +1559,7 @@ export function AdminQuestions() {
 												{q?.explanation && (
 													<div style={{ marginTop: 8, padding: '6px 10px', background: '#fffbe6', borderRadius: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Explanation: </Typography.Text>
-														<span dangerouslySetInnerHTML={{ __html: safeHtml(q.explanation) }} />
+														<span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.explanation) }} />
 													</div>
 												)}
 												{q?.los && (
@@ -1582,7 +1582,7 @@ export function AdminQuestions() {
 												{q?.workedSolution && (
 													<div style={{ marginTop: 6, padding: '6px 10px', background: '#f6ffed', borderRadius: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
-														<span dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} />
+														<span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} />
 													</div>
 												)}
 											</div>
@@ -1618,7 +1618,7 @@ export function AdminQuestions() {
 														{q.options.map((o, oi) => (
 															<div key={oi} style={{ display: 'flex', gap: 8, padding: '2px 0', color: o.isCorrect ? '#389e0d' : undefined, fontWeight: o.isCorrect ? 600 : 400 }}>
 																<span style={{ width: 20, flexShrink: 0 }}>{String.fromCharCode(65 + oi)}.</span>
-																<span dangerouslySetInnerHTML={{ __html: safeHtml(o.text || '') }} />
+																<span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(o.text || '') }} />
 																{o.isCorrect && <CheckCircleOutlined style={{ color: '#389e0d', marginLeft: 4 }} />}
 															</div>
 														))}
@@ -1627,7 +1627,7 @@ export function AdminQuestions() {
 												{q?.explanation && (
 													<div style={{ marginTop: 8, padding: '6px 10px', background: '#fffbe6', borderRadius: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Explanation: </Typography.Text>
-														<span dangerouslySetInnerHTML={{ __html: safeHtml(q.explanation) }} />
+														<span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.explanation) }} />
 													</div>
 												)}
 												{q?.los && (
@@ -1650,7 +1650,7 @@ export function AdminQuestions() {
 												{q?.workedSolution && (
 													<div style={{ marginTop: 6, fontSize: 13 }}>
 														<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
-														<span dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} />
+														<span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} />
 													</div>
 												)}
 											</div>
@@ -2212,7 +2212,7 @@ export function AdminQuestions() {
 														{(q.options || []).map((option, oIdx) => (
 															<Radio key={option.id || oIdx} value={option.id || oIdx}>
 																<Space align="start">
-																	<span className="prose question-preview-content" style={{ display: 'inline-block' }} dangerouslySetInnerHTML={{ __html: safeHtml(option.text) }} />
+																	<span className="prose question-preview-content" style={{ display: 'inline-block' }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.text) }} />
 																	{option.isCorrect && <Tag color="green">Correct</Tag>}
 																</Space>
 															</Radio>
@@ -2225,8 +2225,8 @@ export function AdminQuestions() {
 													{q.qid && <div style={{ fontSize: 13 }}><Typography.Text strong>QID: </Typography.Text><Typography.Text>{q.qid}</Typography.Text></div>}
 													{q.los && <div style={{ fontSize: 13 }}><Typography.Text strong>LOS: </Typography.Text><Typography.Text>{q.los}</Typography.Text></div>}
 													{(q.traceSection || q.tracePage) && <div style={{ fontSize: 13 }}><Typography.Text strong>Trace: </Typography.Text><Typography.Text>{q.traceSection}{q.traceSection && q.tracePage ? ' – ' : ''}{q.tracePage ? `Page ${q.tracePage}` : ''}</Typography.Text></div>}
-													{q.keyFormulas && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f0f5ff', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Key Formula(s): </Typography.Text><span dangerouslySetInnerHTML={{ __html: safeHtml(q.keyFormulas) }} /></div>}
-													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} /></div>}
+													{q.keyFormulas && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f0f5ff', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Key Formula(s): </Typography.Text><span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.keyFormulas) }} /></div>}
+													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} /></div>}
 												</div>
 											)}
 										</Space>
@@ -2273,8 +2273,8 @@ export function AdminQuestions() {
 													{q.qid && <div style={{ fontSize: 13 }}><Typography.Text strong>QID: </Typography.Text><Typography.Text>{q.qid}</Typography.Text></div>}
 													{q.los && <div style={{ fontSize: 13 }}><Typography.Text strong>LOS: </Typography.Text><Typography.Text>{q.los}</Typography.Text></div>}
 													{(q.traceSection || q.tracePage) && <div style={{ fontSize: 13 }}><Typography.Text strong>Trace: </Typography.Text><Typography.Text>{q.traceSection}{q.traceSection && q.tracePage ? ' – ' : ''}{q.tracePage ? `Page ${q.tracePage}` : ''}</Typography.Text></div>}
-													{q.keyFormulas && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f0f5ff', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Key Formula(s): </Typography.Text><span dangerouslySetInnerHTML={{ __html: safeHtml(q.keyFormulas) }} /></div>}
-													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} /></div>}
+													{q.keyFormulas && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f0f5ff', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Key Formula(s): </Typography.Text><span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.keyFormulas) }} /></div>}
+													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} /></div>}
 												</div>
 											)}
 										</Space>
@@ -2321,7 +2321,7 @@ export function AdminQuestions() {
 												{(previewQuestion.question.options || []).map((option, idx) => (
 													<Radio key={option.id || idx} value={option.id || idx}>
 														<Space align="start">
-															<span className="prose question-preview-content" style={{ display: 'inline-block' }} dangerouslySetInnerHTML={{ __html: safeHtml(option.text) }} />
+															<span className="prose question-preview-content" style={{ display: 'inline-block' }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.text) }} />
 															{option.isCorrect && <Tag color="green">Correct</Tag>}
 														</Space>
 													</Radio>

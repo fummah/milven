@@ -1843,7 +1843,7 @@ export function ExamTake() {
 																			<span className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm bg-slate-100 text-slate-600">
 																				{letters[optIdx] || optIdx + 1}
 																			</span>
-																			<span className="pt-1 text-slate-700">{opt.text}</span>
+																			<span className="pt-1 text-slate-700 prose prose-sm max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(opt.text) }} />
 																		</div>
 																	</Radio>
 																);
@@ -2063,7 +2063,7 @@ export function ExamTake() {
 										>
 											Mark it myself
 										</Button>
-										{isMockExam && (
+										{isMockExam && mode === 'exam' && (
 											<Button
 												size="large"
 												block
@@ -2074,7 +2074,7 @@ export function ExamTake() {
 												Submit to admin for marking
 											</Button>
 										)}
-										{isMockExam && (
+										{isMockExam && mode === 'exam' && (
 											<Typography.Text type="secondary" className="text-center block text-xs mt-1">
 												If you choose admin marking, you will be notified when marking is complete.
 											</Typography.Text>

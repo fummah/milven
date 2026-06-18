@@ -4,7 +4,7 @@ import { EditOutlined, DeleteOutlined, EyeOutlined, CheckCircleOutlined, StopOut
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { api } from '../../lib/api';
-import { safeHtml, formatFormulaHtml } from '../../lib/formatFormula';
+import { safeHtml, formatFormulaHtml, formatProseWithMath } from '../../lib/formatFormula';
 import { GradeAttemptDrawer } from '../../components/GradeAttemptDrawer.jsx';
 
 const { Option } = Select;
@@ -939,7 +939,7 @@ export function AdminExams() {
                           <div className="prose question-preview-content" dangerouslySetInnerHTML={{ __html: safeHtml(q.vignetteText) }} />
                         </div>
                       )}
-                      <div className="prose question-preview-content" style={{ margin: 0 }} dangerouslySetInnerHTML={{ __html: safeHtml(q.stem || '') }} />
+                      <div className="prose question-preview-content" style={{ margin: 0 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.stem || '') }} />
                       {q.options && q.options.length > 0 && (
                         <List
                           size="small"
@@ -948,7 +948,7 @@ export function AdminExams() {
                             <List.Item style={{ padding: '4px 0' }}>
                               <Space align="start">
                                 <Typography.Text>{String.fromCharCode(65 + optIdx)}.</Typography.Text>
-                                <span className="prose question-preview-content" style={{ display: 'inline-block', color: opt.isCorrect ? '#52c41a' : 'inherit' }} dangerouslySetInnerHTML={{ __html: safeHtml(opt.text || '') }} />
+                                <span className="prose question-preview-content" style={{ display: 'inline-block', color: opt.isCorrect ? '#52c41a' : 'inherit' }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(opt.text || '') }} />
                                 {opt.isCorrect && <Tag color="green" size="small">Correct</Tag>}
                               </Space>
                             </List.Item>

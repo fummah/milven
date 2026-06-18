@@ -319,7 +319,7 @@ export default function StudentMistakes() {
 
 											<div
 												className="text-slate-800 font-medium mb-4 text-base prose max-w-none question-preview-content"
-												dangerouslySetInnerHTML={{ __html: safeHtml(q?.stem || '') }}
+												dangerouslySetInnerHTML={{ __html: formatProseWithMath(q?.stem || '') }}
 											/>
 
 											{/* Quick Practice Button */}
@@ -453,7 +453,7 @@ export default function StudentMistakes() {
 						<div className="p-6">
 							<div
 								className="text-slate-800 font-medium text-base mb-6 prose max-w-none question-preview-content"
-								dangerouslySetInnerHTML={{ __html: safeHtml(practiceQuestion.stem || '') }}
+								dangerouslySetInnerHTML={{ __html: formatProseWithMath(practiceQuestion.stem || '') }}
 							/>
 
 							<Radio.Group 
@@ -502,7 +502,7 @@ export default function StudentMistakes() {
 													</span>
 													<div
 														className={`prose max-w-none question-preview-content ${showAsWrong ? 'text-red-700' : showAsCorrect ? 'text-emerald-700 font-medium' : 'text-slate-700'}`}
-														dangerouslySetInnerHTML={{ __html: safeHtml(opt.text || '') }}
+														dangerouslySetInnerHTML={{ __html: formatProseWithMath(opt.text || '') }}
 													/>
 												</div>
 											</Radio>

@@ -310,7 +310,7 @@ export default function StudentRevision() {
 										<div className="p-5">
 											<div
 												className="text-slate-800 font-medium mb-4 text-base prose max-w-none question-preview-content"
-												dangerouslySetInnerHTML={{ __html: safeHtml(q?.stem || '') }}
+												dangerouslySetInnerHTML={{ __html: formatProseWithMath(q?.stem || '') }}
 											/>
 
 											{/* Collapsible Content */}
@@ -335,7 +335,7 @@ export default function StudentRevision() {
 																				</span>
 																				<div
 																					className={`prose max-w-none question-preview-content ${opt.isCorrect ? 'text-emerald-700 font-medium' : 'text-slate-600'}`}
-																					dangerouslySetInnerHTML={{ __html: safeHtml(opt.text || '') }}
+																					dangerouslySetInnerHTML={{ __html: formatProseWithMath(opt.text || '') }}
 																				/>
 																			</div>
 																		</div>
