@@ -58,7 +58,8 @@ export function formulaSanitizer(text) {
 	// \b + "eta"   →  \beta    (backspace char before "eta")
 	s = s.replace(/\beta/g, '\\beta');
 	// \b + "ar"    →  \bar     (backspace char before "ar")
-	s = s.replace(/\bar/g, '\\bar');
+	// Only fix when followed by '{' or non-letter (avoid corrupting words like "are", "barn")
+	s = s.replace(/\bar(?=[{^_ ]|$)/g, '\\bar');
 	// \f + "rac"   →  \frac    (formfeed char before "rac")
 	s = s.replace(/\frac/g, '\\frac');
 	// \n + "u"     →  \nu      (newline before "u", only in formula context)
