@@ -297,30 +297,32 @@ function SummarySheetView({ sheet }) {
 	const rules = Array.isArray(s.distinctions) ? s.distinctions : [];
 	const traps = Array.isArray(s.examTraps) ? s.examTraps : [];
 	const checks = Array.isArray(s.revisionCheck) ? s.revisionCheck : [];
+	const instructorReview = Array.isArray(s.quickDrills) ? s.quickDrills : [];
+	const coverageStatus = s.useCase || '';
 
 	return (
 		<div style={{ background: '#f8f9fa', borderRadius: 16, overflow: 'hidden' }}>
 			{/* ═══════════ PAGE 1: Concept Overview ═══════════ */}
 			<div style={{ background: '#fff', marginBottom: 4 }}>
-				{/* Header Bar */}
-				<div style={{ background: '#102540', padding: '16px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-					<div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-						<Typography.Text style={{ color: '#fff', fontSize: 18, fontWeight: 800, letterSpacing: 1 }}>MILVEN</Typography.Text>
-						<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>FINANCE SCHOOL</Typography.Text>
+				{/* Header Bar — LM name inside navy band */}
+				<div style={{ background: '#102540', padding: '14px 28px 12px' }}>
+					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+						<div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+							<Typography.Text style={{ color: '#fff', fontSize: 18, fontWeight: 800, letterSpacing: 1 }}>MILVEN</Typography.Text>
+							<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>FINANCE SCHOOL</Typography.Text>
+						</div>
+						<Typography.Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
+							{LEVEL_LABELS[s.level]} | {s.course?.name || s.volume?.name || ''}
+						</Typography.Text>
 					</div>
-					<Typography.Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
-						{LEVEL_LABELS[s.level]} | {s.course?.name || s.volume?.name || ''}
+					<Typography.Text style={{ color: '#fff', fontSize: 15, fontWeight: 700 }}>
+						Learning Module: {safeRender(s.module?.name || s.title)}
 					</Typography.Text>
-				</div>
-
-				{/* Title */}
-				<div style={{ padding: '16px 28px 8px' }}>
-					<Typography.Title level={4} style={{ margin: 0, color: '#102540' }}>{s.title}</Typography.Title>
 				</div>
 
 				{/* Module Objective - gold bordered box */}
 				{s.snapshot && (
-					<div style={{ margin: '8px 28px 16px', padding: '14px 18px', border: '2px solid #c9a227', borderRadius: 8, background: '#fffef5' }}>
+					<div style={{ margin: '12px 28px 16px', padding: '14px 18px', border: '2px solid #c9a227', borderRadius: 8, background: '#fffef5' }}>
 						<Typography.Text style={{ fontSize: 13, color: '#102540', lineHeight: 1.7 }}>
 							<strong>Learning Module Objective:</strong> {safeRender(s.snapshot)}
 						</Typography.Text>
@@ -366,7 +368,7 @@ function SummarySheetView({ sheet }) {
 										</div>
 										{Array.isArray(node.subtopics) && (
 											<div style={{ fontSize: 12, color: '#102540', fontWeight: 600 }}>
-												{node.subtopics.map(s => safeRender(s)).join(' | ')}
+												{node.subtopics.map(st => safeRender(st)).join(' | ')}
 											</div>
 										)}
 										{node.connectionTo && (
@@ -384,18 +386,18 @@ function SummarySheetView({ sheet }) {
 
 			{/* ═══════════ PAGE 2: Exam Decision Map + Formula Strip ═══════════ */}
 			<div style={{ background: '#fff' }}>
-				{/* Page 2 Header */}
-				<div style={{ background: '#102540', padding: '12px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-					<div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-						<Typography.Text style={{ color: '#fff', fontSize: 16, fontWeight: 800, letterSpacing: 1 }}>MILVEN</Typography.Text>
-						<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>FINANCE SCHOOL</Typography.Text>
+				{/* Page 2 Header — LM title inside navy band */}
+				<div style={{ background: '#102540', padding: '14px 28px 12px' }}>
+					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+						<div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+							<Typography.Text style={{ color: '#fff', fontSize: 16, fontWeight: 800, letterSpacing: 1 }}>MILVEN</Typography.Text>
+							<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>FINANCE SCHOOL</Typography.Text>
+						</div>
+						<Typography.Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>Diagrammatic Revision Page</Typography.Text>
 					</div>
-					<Typography.Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>Diagrammatic Revision Page</Typography.Text>
-				</div>
-				<div style={{ padding: '12px 28px 4px' }}>
-					<Typography.Title level={5} style={{ margin: 0, color: '#102540' }}>
+					<Typography.Text style={{ color: '#fff', fontSize: 14, fontWeight: 700 }}>
 						{safeRender(s.module?.name || s.title)} | Exam Decision Map + Formula Strip
-					</Typography.Title>
+					</Typography.Text>
 				</div>
 
 				<div style={{ padding: '16px 28px 24px', display: 'grid', gridTemplateColumns: topicMap.length > 0 ? '1fr 1fr' : '1fr', gap: 24 }}>
@@ -407,18 +409,14 @@ function SummarySheetView({ sheet }) {
 								{topicMap.map((t, i) => (
 									<div key={i}>
 										<div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-											{/* Question node (navy rounded) */}
 											<div style={{ flex: '0 0 160px', padding: '10px 14px', border: '2px solid #102540', borderRadius: 20, background: '#fff', fontSize: 12, fontWeight: 600, color: '#102540', textAlign: 'center' }}>
 												{safeRender(t.topic || t.hook)}
 											</div>
-											{/* Arrow */}
 											<div style={{ flex: '0 0 30px', textAlign: 'center', color: '#c9a227', fontSize: 16, fontWeight: 700 }}>→</div>
-											{/* Answer node (gold rounded) */}
 											<div style={{ flex: 1, padding: '10px 14px', border: '2px solid #c9a227', borderRadius: 20, background: '#fffef5', fontSize: 12, color: '#374151' }}>
 												{Array.isArray(t.concepts) ? t.concepts.join(' | ') : safeRender(t.concepts || '')}
 											</div>
 										</div>
-										{/* Vertical connector */}
 										{i < topicMap.length - 1 && (
 											<div style={{ marginLeft: 80, width: 2, height: 16, background: '#102540', marginBottom: 4 }} />
 										)}
@@ -430,7 +428,6 @@ function SummarySheetView({ sheet }) {
 
 					{/* Right column: Formula Strip + Decision Rules + Exam Traps */}
 					<div>
-						{/* FORMULA STRIP */}
 						{formulas.length > 0 && (
 							<div style={{ marginBottom: 20 }}>
 								<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 1 }}>FORMULA STRIP</Typography.Text>
@@ -445,7 +442,6 @@ function SummarySheetView({ sheet }) {
 							</div>
 						)}
 
-						{/* DECISION RULES */}
 						{rules.length > 0 && (
 							<div style={{ marginBottom: 20 }}>
 								<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 1 }}>DECISION RULES</Typography.Text>
@@ -459,7 +455,6 @@ function SummarySheetView({ sheet }) {
 							</div>
 						)}
 
-						{/* EXAM TRAPS */}
 						{traps.length > 0 && (
 							<div style={{ marginBottom: 20 }}>
 								<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 1 }}>EXAM TRAPS</Typography.Text>
@@ -481,6 +476,43 @@ function SummarySheetView({ sheet }) {
 						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 1 }}>FINAL CHECKLIST BEFORE QUESTIONS</Typography.Text>
 						<div style={{ marginTop: 10, fontSize: 13, color: '#374151', lineHeight: 1.7 }}>
 							Can you: {checks.map(c => safeRender(c.item)).join('; ')}?
+						</div>
+					</div>
+				)}
+
+				{/* INSTRUCTOR REVIEW REQUIRED */}
+				{instructorReview.length > 0 && (
+					<div style={{ margin: '0 28px 24px' }}>
+						{instructorReview[0]?.issue === 'None identified' ? (
+							<div style={{ padding: '12px 18px', background: '#f0fdf4', borderRadius: 10, borderLeft: '4px solid #22c55e', fontSize: 13, color: '#166534' }}>
+								<strong style={{ textTransform: 'uppercase', letterSpacing: 1 }}>Instructor Review:</strong> All content verified — ready for publication.
+							</div>
+						) : (
+							<div style={{ padding: '14px 18px', background: '#fef2f2', borderRadius: 10, borderLeft: '4px solid #ef4444' }}>
+								<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#991b1b', letterSpacing: 1 }}>INSTRUCTOR REVIEW REQUIRED</Typography.Text>
+								{instructorReview.map((d, i) => (
+									<div key={i} style={{ marginTop: 6 }}>
+										<div style={{ fontSize: 12, fontWeight: 600, color: '#991b1b' }}>{safeRender(d.issue || d.question)}</div>
+										{d.recommendation && <div style={{ fontSize: 12, color: '#7f1d1d', marginTop: 2 }}>→ {safeRender(d.recommendation)}</div>}
+									</div>
+								))}
+							</div>
+						)}
+					</div>
+				)}
+
+				{/* COVERAGE QUALITY CHECK */}
+				{coverageStatus && (
+					<div style={{ margin: '0 28px 20px' }}>
+						<div style={{
+							padding: '14px 20px', borderRadius: 10, fontSize: 14, fontWeight: 700, textAlign: 'center',
+							background: coverageStatus === 'PASS' ? '#f0fdf4' : coverageStatus === 'REVISE' ? '#fffbeb' : '#fef2f2',
+							color: coverageStatus === 'PASS' ? '#166534' : coverageStatus === 'REVISE' ? '#92400e' : '#991b1b',
+							border: `2px solid ${coverageStatus === 'PASS' ? '#22c55e' : coverageStatus === 'REVISE' ? '#f59e0b' : '#ef4444'}`,
+						}}>
+							{coverageStatus === 'PASS' ? '✓ PASS — ALL TOPICS, LOS, FORMULAS, DECISION RULES & TRAPS COVERED' :
+							 coverageStatus === 'REVISE' ? '⚠ REVISE — SOME AREAS INCOMPLETE' :
+							 '✗ INSTRUCTOR REVIEW REQUIRED'}
 						</div>
 					</div>
 				)}
