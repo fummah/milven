@@ -2409,6 +2409,16 @@ Return a JSON object with an "items" key. EVERY question/sub-question MUST inclu
 - "keyFormulas": string (key formula(s) using VALID LaTeX — e.g. "\\( PV = \\frac{CF_1}{(1+r)^{1}} + \\frac{CF_2}{(1+r)^{2}} \\)", "\\( WACC = w_{d} \\cdot r_{d} \\cdot (1-t) + w_{e} \\cdot r_{e} \\)". Use \\frac, \\sigma, \\beta, \\alpha etc. ALL braces must be balanced. Include variable definitions.)
 - "workedSolution": string (step-by-step worked solution using valid LaTeX for all math — be thorough)
 
+CRITICAL — CALCULATION CONSISTENCY RULE (MUST FOLLOW):
+For EVERY question that involves a numerical calculation:
+1. FIRST complete the full worked solution with every arithmetic step shown.
+2. DERIVE the final numerical answer from your worked solution.
+3. The correct MCQ option (isCorrect: true) MUST display the EXACT number you computed in the worked solution — NOT a different number.
+4. NEVER pick the correct answer first and then write the solution — always solve first, then set the matching option as correct.
+5. DOUBLE-CHECK: After generating the question, verify that the workedSolution's final value matches the correct option's text exactly. If they differ, fix the option to match the solution.
+6. The two distractor options must be plausible but numerically different from the correct answer (e.g. common errors like forgetting the square root, using wrong weights, omitting a term).
+Violating this rule produces hallucinated answers that damage student trust. Accuracy is mandatory.
+
 For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of 4-5 MCQ sub-questions with same fields }.
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
@@ -2420,7 +2430,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. Always return valid JSON only.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
-				temperature: 0.75,
+				temperature: 0.4,
 				response_format: { type: 'json_object' }
 			});
 			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
