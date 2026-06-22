@@ -177,8 +177,8 @@ export function summarySheetsRouter(prisma) {
 				if (vol) volumeName = vol.name;
 			}
 			if (moduleId) {
-				const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { name: true, description: true } });
-				if (mod) { moduleName = mod.name; moduleObjective = mod.description || null; }
+				const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { name: true } });
+				if (mod) { moduleName = mod.name; }
 			}
 			// Resolve topics within scope
 			const topicWhere = { courseId };
