@@ -32,7 +32,6 @@ export function AdminSummarySheets() {
 	const [aiCourseId, setAiCourseId] = useState(null);
 	const [aiVolumeId, setAiVolumeId] = useState(null);
 	const [aiModuleId, setAiModuleId] = useState(null);
-	const [aiTopicId, setAiTopicId] = useState(null);
 	const [aiCount, setAiCount] = useState(null);
 	const [aiYear, setAiYear] = useState(2026);
 
@@ -53,7 +52,6 @@ export function AdminSummarySheets() {
 	const [courses, setCourses] = useState([]);
 	const [volumes, setVolumes] = useState([]);
 	const [modules, setModules] = useState([]);
-	const [topics, setTopics] = useState([]);
 
 	// Form cascading selects
 	const [formCourseId, setFormCourseId] = useState(null);
@@ -72,12 +70,6 @@ export function AdminSummarySheets() {
 		return list;
 	}, [formCourseId, formVolumeId, modules]);
 
-	const formTopics = useMemo(() => {
-		let list = topics;
-		if (formCourseId) list = list.filter(t => t.courseId === formCourseId);
-		if (formModuleId) list = list.filter(t => t.moduleId === formModuleId);
-		return list;
-	}, [formCourseId, formModuleId, topics]);
 
 	// AI modal cascading
 	const aiVolumes = useMemo(() => {
@@ -92,12 +84,6 @@ export function AdminSummarySheets() {
 		return list;
 	}, [aiCourseId, aiVolumeId, modules]);
 
-	const aiTopics = useMemo(() => {
-		let list = topics;
-		if (aiCourseId) list = list.filter(t => t.courseId === aiCourseId);
-		if (aiModuleId) list = list.filter(t => t.moduleId === aiModuleId);
-		return list;
-	}, [aiCourseId, aiModuleId, topics]);
 
 	// Load lookup data
 	useEffect(() => {
@@ -108,7 +94,6 @@ export function AdminSummarySheets() {
 	useEffect(() => {
 		if (courses.length) {
 			api.get('/api/cms/modules').then(r => setModules(r.data?.modules || [])).catch(() => {});
-			api.get('/api/cms/topics').then(r => setTopics(r.data?.topics || [])).catch(() => {});
 		}
 	}, [courses]);
 
@@ -149,7 +134,6 @@ export function AdminSummarySheets() {
 			courseId: record.courseId,
 			volumeId: record.volumeId,
 			moduleId: record.moduleId,
-			topicId: record.topicId,
 			year: record.year || 2026,
 			snapshot: record.snapshot || '',
 			useCase: record.useCase || '',
@@ -222,7 +206,6 @@ export function AdminSummarySheets() {
 				courseId: aiCourseId,
 				volumeId: aiVolumeId || undefined,
 				moduleId: aiModuleId || undefined,
-				topicId: aiTopicId || undefined,
 				level: selectedCourse.level,
 				year: aiYear,
 				count: aiCount || undefined,
@@ -482,7 +465,7 @@ export function AdminSummarySheets() {
 									allowClear showSearch optionFilterProp="label"
 									onChange={v => {
 										setFormCourseId(v);
-										form.setFieldsValue({ volumeId: null, moduleId: null, topicId: null });
+										form.setFieldsValue({ volumeId: null, moduleId: null });
 										setFormVolumeId(null); setFormModuleId(null);
 									}}
 								/>
@@ -496,7 +479,7 @@ export function AdminSummarySheets() {
 									allowClear showSearch optionFilterProp="label"
 									onChange={v => {
 										setFormVolumeId(v);
-										form.setFieldsValue({ moduleId: null, topicId: null });
+										form.setFieldsValue({ moduleId: null });
 										setFormModuleId(null);
 									}}
 								/>
@@ -512,17 +495,7 @@ export function AdminSummarySheets() {
 									allowClear showSearch optionFilterProp="label"
 									onChange={v => {
 										setFormModuleId(v);
-										form.setFieldsValue({ topicId: null });
 									}}
-								/>
-							</Form.Item>
-						</Col>
-						<Col span={12}>
-							<Form.Item name="topicId" label="Topic">
-								<Select
-									placeholder="Select topic"
-									options={formTopics.map(t => ({ value: t.id, label: t.name }))}
-									allowClear showSearch optionFilterProp="label"
 								/>
 							</Form.Item>
 						</Col>
@@ -594,7 +567,7 @@ export function AdminSummarySheets() {
 					<div>
 						<div style={{ marginBottom: 20, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
 							<Typography.Text style={{ fontSize: 13, color: '#475569' }}>
-								AI will generate a complete CFA Summary Sheet with key definitions, formulas, distinctions, exam traps, memory hooks, quick drills, and a revision checklist.
+								AI will generate a Milven Summary Dashboard at Learning Module level with concept maps, formula strips, decision rules, exam traps, and revision checklists.
 							</Typography.Text>
 						</div>
 						<Row gutter={[12, 16]}>
@@ -602,7 +575,7 @@ export function AdminSummarySheets() {
 								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>Course *</Typography.Text>
 								<Select
 									placeholder="Select course" value={aiCourseId}
-									onChange={v => { setAiCourseId(v); setAiVolumeId(null); setAiModuleId(null); setAiTopicId(null); }}
+									onChange={v => { setAiCourseId(v); setAiVolumeId(null); setAiModuleId(null); }}
 									options={courses.map(c => ({ value: c.id, label: `${c.name} (${LEVEL_LABELS[c.level] || c.level})` }))}
 									style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label"
 								/>
@@ -611,7 +584,7 @@ export function AdminSummarySheets() {
 								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>Volume</Typography.Text>
 								<Select
 									placeholder="All volumes" value={aiVolumeId}
-									onChange={v => { setAiVolumeId(v); setAiModuleId(null); setAiTopicId(null); }}
+									onChange={v => { setAiVolumeId(v); setAiModuleId(null); }}
 									options={aiVolumes.map(v => ({ value: v.id, label: v.name }))}
 									style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label"
 								/>
@@ -620,16 +593,8 @@ export function AdminSummarySheets() {
 								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>Learning Module</Typography.Text>
 								<Select
 									placeholder="All modules" value={aiModuleId}
-									onChange={v => { setAiModuleId(v); setAiTopicId(null); }}
+									onChange={v => { setAiModuleId(v); }}
 									options={aiModules.map(m => ({ value: m.id, label: m.name }))}
-									style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label"
-								/>
-							</Col>
-							<Col span={12}>
-								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>Topic</Typography.Text>
-								<Select
-									placeholder="All topics" value={aiTopicId} onChange={setAiTopicId}
-									options={aiTopics.map(t => ({ value: t.id, label: t.name }))}
 									style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label"
 								/>
 							</Col>
@@ -736,31 +701,53 @@ export function AdminSummarySheets() {
 	);
 }
 
+// ─── Dashboard Section Header ──────────────────────────────────
+function DashboardSectionHeader({ number, title, color = '#102540' }) {
+	return (
+		<div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+			<div style={{ width: 28, height: 28, borderRadius: 8, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+				{number}
+			</div>
+			<Typography.Text strong style={{ fontSize: 14, color, textTransform: 'uppercase', letterSpacing: 0.8 }}>{title}</Typography.Text>
+		</div>
+	);
+}
+
 // ─── Summary Sheet Preview Content (compact, for AI preview) ──────
-function SummarySheetPreviewContent({ sheet, compact }) {
+function SummarySheetPreviewContent({ sheet }) {
 	const s = sheet;
-	const defs = Array.isArray(s.coreDefinitions) ? s.coreDefinitions : [];
+	const losItems = Array.isArray(s.coreDefinitions) ? s.coreDefinitions : [];
+	const conceptMap = Array.isArray(s.diagrams) ? s.diagrams : [];
+	const topicMap = Array.isArray(s.memoryHooks) ? s.memoryHooks : [];
 	const formulas = Array.isArray(s.formulas) ? s.formulas : [];
-	const distinctions = Array.isArray(s.distinctions) ? s.distinctions : [];
+	const rules = Array.isArray(s.distinctions) ? s.distinctions : [];
 	const traps = Array.isArray(s.examTraps) ? s.examTraps : [];
-	const hooks = Array.isArray(s.memoryHooks) ? s.memoryHooks : [];
-	const drills = Array.isArray(s.quickDrills) ? s.quickDrills : [];
 	const checks = Array.isArray(s.revisionCheck) ? s.revisionCheck : [];
+	const instructorReview = Array.isArray(s.quickDrills) ? s.quickDrills : [];
 
 	return (
 		<div>
 			<Typography.Text strong style={{ fontSize: 16, color: '#102540' }}>{s.title}</Typography.Text>
-			{s.snapshot && <div style={{ color: '#475569', fontSize: 13, marginTop: 4 }}>{s.snapshot}</div>}
-			{s.useCase && <Tag color="blue" style={{ marginTop: 6, fontSize: 11 }}>{s.useCase}</Tag>}
+			{s.snapshot && (
+				<div style={{ marginTop: 8, padding: '10px 14px', background: '#f0f4f8', borderRadius: 8, borderLeft: '4px solid #102540', fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
+					{s.snapshot}
+				</div>
+			)}
+			{s.useCase && (
+				<Tag color={s.useCase === 'PASS' ? 'green' : s.useCase === 'REVISE' ? 'orange' : 'red'} style={{ marginTop: 6, fontSize: 11 }}>
+					Coverage: {s.useCase}
+				</Tag>
+			)}
 
-			{defs.length > 0 && (
+			{losItems.length > 0 && (
 				<div style={{ marginTop: 12 }}>
-					<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>Key Definitions</Typography.Text>
+					<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>LOS Snapshot</Typography.Text>
 					<div style={{ marginTop: 6 }}>
-						{defs.map((d, i) => (
-							<div key={i} style={{ display: 'flex', gap: 8, padding: '4px 0', borderBottom: '1px solid #f0f0f0', fontSize: 13 }}>
-								<span style={{ fontWeight: 600, color: '#102540', minWidth: compact ? 100 : 140, flexShrink: 0 }}>{d.term}</span>
-								<span style={{ color: '#374151' }}>{d.definition}</span>
+						{losItems.map((d, i) => (
+							<div key={i} style={{ display: 'flex', gap: 8, padding: '4px 0', borderBottom: '1px solid #f0f0f0', fontSize: 12 }}>
+								<Tag color="blue" style={{ fontSize: 10, flexShrink: 0 }}>{d.ref || d.term}</Tag>
+								<span style={{ color: '#374151' }}>{d.statement || d.definition}</span>
+								{(d.commandWord) && <Tag style={{ fontSize: 10, flexShrink: 0 }}>{d.commandWord}</Tag>}
 							</div>
 						))}
 					</div>
@@ -769,37 +756,27 @@ function SummarySheetPreviewContent({ sheet, compact }) {
 
 			{formulas.length > 0 && (
 				<div style={{ marginTop: 12, background: '#f0f4f8', borderRadius: 8, padding: '10px 14px', border: '1px solid #e2e8f0' }}>
-					<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>Formula Zone</Typography.Text>
+					<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>Formula Strip</Typography.Text>
 					{formulas.map((f, i) => (
 						<div key={i} style={{ padding: '6px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
-							<MathText text={f.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540' }} />
-							<MathVariables text={f.variables} tag="div" style={{ fontSize: 12, color: '#64748b', marginTop: 2 }} />
-							{f.whenToUse && <div style={{ fontSize: 12, color: '#3b82f6', marginTop: 1 }}>{f.whenToUse}</div>}
+							<MathText text={f.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 14, fontWeight: 600, color: '#102540' }} />
+							{f.useCase && <div style={{ fontSize: 11, color: '#3b82f6', marginTop: 1 }}>{f.useCase}</div>}
+							{f.interpretation && <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>{f.interpretation}</div>}
 						</div>
 					))}
 				</div>
 			)}
 
-			{distinctions.length > 0 && (
+			{rules.length > 0 && (
 				<div style={{ marginTop: 12 }}>
-					<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>Compare & Distinguish</Typography.Text>
-					<div style={{ marginTop: 6 }}>
-						{distinctions.map((d, i) => (
-							<div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '6px 0', borderBottom: '1px solid #f0f0f0' }}>
-								<div style={{ padding: '6px 10px', background: '#eff6ff', borderRadius: 6, fontSize: 13 }}>
-									<span style={{ fontWeight: 600, color: '#1d4ed8' }}>{d.left}</span>
-								</div>
-								<div style={{ padding: '6px 10px', background: '#fef3c7', borderRadius: 6, fontSize: 13 }}>
-									<span style={{ fontWeight: 600, color: '#92400e' }}>{d.right}</span>
-								</div>
-								{d.difference && (
-									<div style={{ gridColumn: '1 / -1', fontSize: 12, color: '#64748b', paddingLeft: 10 }}>
-										↳ {d.difference}
-									</div>
-								)}
-							</div>
-						))}
-					</div>
+					<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>Decision Rules</Typography.Text>
+					{rules.map((d, i) => (
+						<div key={i} style={{ padding: '4px 0', borderBottom: '1px solid #f0f0f0', fontSize: 12 }}>
+							<span style={{ fontWeight: 600, color: '#102540' }}>{d.scenario || d.left}</span>
+							<span style={{ color: '#374151' }}> → {d.rule || d.right}</span>
+							{(d.apply || d.difference) && <span style={{ color: '#64748b' }}> ({d.apply || d.difference})</span>}
+						</div>
+					))}
 				</div>
 			)}
 
@@ -809,123 +786,97 @@ function SummarySheetPreviewContent({ sheet, compact }) {
 						<div style={{ padding: '10px 14px', background: '#fef3c7', borderRadius: 8, borderLeft: '3px solid #f59e0b' }}>
 							<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#92400e' }}>Exam Traps</Typography.Text>
 							{traps.map((t, i) => (
-								<div key={i} style={{ fontSize: 13, color: '#92400e', marginTop: 4 }}>• {t.trap}</div>
+								<div key={i} style={{ fontSize: 12, color: '#92400e', marginTop: 4 }}>• {t.trap}</div>
 							))}
 						</div>
 					</Col>
 				)}
-				{hooks.length > 0 && (
+				{checks.length > 0 && (
 					<Col span={12}>
-						<div style={{ padding: '10px 14px', background: '#f0fdf4', borderRadius: 8, borderLeft: '3px solid #22c55e' }}>
-							<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#166534' }}>Memory Hooks</Typography.Text>
-							{hooks.map((h, i) => (
-								<div key={i} style={{ fontSize: 13, color: '#166534', marginTop: 4 }}>• {h.hook}</div>
+						<div style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: 8, borderLeft: '3px solid #102540' }}>
+							<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540' }}>Revision Checklist</Typography.Text>
+							{checks.map((c, i) => (
+								<div key={i} style={{ fontSize: 12, color: '#374151', marginTop: 4 }}>☐ {c.item}</div>
 							))}
 						</div>
 					</Col>
 				)}
 			</Row>
 
-			{drills.length > 0 && (
-				<div style={{ marginTop: 12, padding: '10px 14px', background: '#eff6ff', borderRadius: 8, borderLeft: '3px solid #3b82f6' }}>
-					<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#1d4ed8' }}>Quick Drills</Typography.Text>
-					{drills.map((d, i) => (
-						<div key={i} style={{ fontSize: 13, color: '#1e3a5a', marginTop: 4 }}>{i + 1}. {d.question}</div>
+			{instructorReview.length > 0 && instructorReview[0]?.issue !== 'None identified' && (
+				<div style={{ marginTop: 12, padding: '10px 14px', background: '#fef2f2', borderRadius: 8, borderLeft: '3px solid #ef4444' }}>
+					<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#991b1b' }}>Instructor Review Required</Typography.Text>
+					{instructorReview.map((d, i) => (
+						<div key={i} style={{ fontSize: 12, color: '#991b1b', marginTop: 4 }}>{d.issue || d.question}: {d.recommendation || ''}</div>
 					))}
-				</div>
-			)}
-
-			{checks.length > 0 && (
-				<div style={{ marginTop: 12 }}>
-					<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540' }}>Revision Checklist</Typography.Text>
-					<div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-						{checks.map((c, i) => (
-							<Tag key={i} style={{ fontSize: 12 }}>☐ {c.item}</Tag>
-						))}
-					</div>
 				</div>
 			)}
 		</div>
 	);
 }
 
-// ─── Summary Sheet Full Preview Card (premium styled) ─────────
+// ─── Summary Sheet Full Preview Card (Milven Dashboard) ─────────
 function SummarySheetPreviewCard({ sheet }) {
 	const s = sheet;
-	const defs = Array.isArray(s.coreDefinitions) ? s.coreDefinitions : [];
+	const losItems = Array.isArray(s.coreDefinitions) ? s.coreDefinitions : [];
+	const conceptMap = Array.isArray(s.diagrams) ? s.diagrams : [];
+	const topicMap = Array.isArray(s.memoryHooks) ? s.memoryHooks : [];
 	const formulas = Array.isArray(s.formulas) ? s.formulas : [];
-	const distinctions = Array.isArray(s.distinctions) ? s.distinctions : [];
+	const rules = Array.isArray(s.distinctions) ? s.distinctions : [];
 	const traps = Array.isArray(s.examTraps) ? s.examTraps : [];
-	const hooks = Array.isArray(s.memoryHooks) ? s.memoryHooks : [];
-	const drills = Array.isArray(s.quickDrills) ? s.quickDrills : [];
 	const checks = Array.isArray(s.revisionCheck) ? s.revisionCheck : [];
+	const instructorReview = Array.isArray(s.quickDrills) ? s.quickDrills : [];
+	const coverageStatus = s.useCase || '';
 
 	return (
 		<div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden' }}>
-			{/* Identity bar */}
-			<div style={{
-				background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)',
-				padding: '20px 28px',
-			}}>
+			{/* ── Identity Bar ── */}
+			<div style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', padding: '20px 28px' }}>
 				<Typography.Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5 }}>
 					{LEVEL_LABELS[s.level]} {s.volume?.name ? `| ${s.volume.name}` : ''} {s.module?.name ? `| ${s.module.name}` : ''}
 				</Typography.Text>
-				<Typography.Title level={3} style={{ margin: '4px 0 0', color: '#fff' }}>
-					{s.title}
-				</Typography.Title>
-				<div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-					<Tag style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 11 }}>Milven Summary Sheet</Tag>
+				<Typography.Title level={3} style={{ margin: '4px 0 0', color: '#fff' }}>{s.title}</Typography.Title>
+				<div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
+					<Tag style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 11 }}>Milven Summary Dashboard</Tag>
 					<Tag style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 11 }}>{s.year} Edition</Tag>
 					<Tag color={s.status === 'PUBLISHED' ? 'green' : 'default'} style={{ fontSize: 11 }}>{s.status}</Tag>
+					{coverageStatus && (
+						<Tag color={coverageStatus === 'PASS' ? 'green' : coverageStatus === 'REVISE' ? 'orange' : 'red'} style={{ fontSize: 11 }}>
+							Coverage: {coverageStatus}
+						</Tag>
+					)}
 				</div>
 			</div>
 
-			{/* Module Snapshot */}
-			{(s.snapshot || s.useCase) && (
+			{/* ── 1. Module Objective ── */}
+			{s.snapshot && (
 				<div style={{ padding: '16px 28px', background: '#f0f4f8', borderBottom: '1px solid #e2e8f0' }}>
-					{s.snapshot && <div style={{ color: '#374151', fontSize: 14, lineHeight: 1.6 }}>{s.snapshot}</div>}
-					{s.useCase && <div style={{ color: '#3b82f6', fontSize: 12, marginTop: 4 }}><strong>Use case:</strong> {s.useCase}</div>}
+					<DashboardSectionHeader number="1" title="Module Objective" />
+					<div style={{ padding: '12px 16px', background: '#fff', borderRadius: 10, borderLeft: '4px solid #102540', color: '#374151', fontSize: 14, lineHeight: 1.7 }}>
+						{s.snapshot}
+					</div>
 				</div>
 			)}
 
 			<div style={{ padding: '20px 28px' }}>
-				{/* Core Definitions */}
-				{defs.length > 0 && (
-					<div style={{ marginBottom: 20 }}>
-						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>
-							Key Definitions
-						</Typography.Text>
-						<div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-							{defs.map((d, i) => (
-								<div key={i} style={{ display: 'flex', gap: 12, padding: '8px 12px', background: i % 2 === 0 ? '#f8fafc' : '#fff', borderRadius: 8, border: '1px solid #f0f0f0' }}>
-									<span style={{ fontWeight: 700, color: '#102540', minWidth: 150, flexShrink: 0, fontSize: 13 }}>{d.term}</span>
-									<span style={{ color: '#374151', fontSize: 13 }}>{d.definition}</span>
-								</div>
-							))}
-						</div>
-					</div>
-				)}
-
-				{/* Formula Zone */}
-				{formulas.length > 0 && (
-					<div style={{ marginBottom: 20, background: '#f0f4f8', borderRadius: 12, padding: '16px 20px', border: '1px solid #e2e8f0' }}>
-						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>
-							Formula Zone
-						</Typography.Text>
-						<table style={{ width: '100%', marginTop: 10, borderCollapse: 'collapse' }}>
+				{/* ── 2. LOS Snapshot ── */}
+				{losItems.length > 0 && (
+					<div style={{ marginBottom: 24 }}>
+						<DashboardSectionHeader number="2" title="LOS Snapshot" />
+						<table style={{ width: '100%', borderCollapse: 'collapse' }}>
 							<thead>
-								<tr style={{ borderBottom: '2px solid #cbd5e1' }}>
-									<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Formula</th>
-									<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Variables</th>
-									<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>When to Use</th>
+								<tr style={{ borderBottom: '2px solid #102540' }}>
+									<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase', width: 90 }}>LOS Ref</th>
+									<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Statement</th>
+									<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase', width: 100 }}>Command</th>
 								</tr>
 							</thead>
 							<tbody>
-								{formulas.map((f, i) => (
-									<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
-										<td style={{ padding: '8px', fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', whiteSpace: 'pre-wrap' }}><MathText text={f.formula} /></td>
-										<td style={{ padding: '8px', fontSize: 12, color: '#475569' }}><MathVariables text={f.variables} /></td>
-										<td style={{ padding: '8px', fontSize: 12, color: '#3b82f6' }}>{f.whenToUse}</td>
+								{losItems.map((d, i) => (
+									<tr key={i} style={{ borderBottom: '1px solid #e2e8f0', background: i % 2 === 0 ? '#f8fafc' : '#fff' }}>
+										<td style={{ padding: '8px 10px', fontSize: 12, fontWeight: 600, color: '#102540' }}>{d.ref || d.term}</td>
+										<td style={{ padding: '8px 10px', fontSize: 13, color: '#374151' }}>{d.statement || d.definition}</td>
+										<td style={{ padding: '8px 10px' }}><Tag color="blue" style={{ fontSize: 11 }}>{d.commandWord || '—'}</Tag></td>
 									</tr>
 								))}
 							</tbody>
@@ -933,24 +884,20 @@ function SummarySheetPreviewCard({ sheet }) {
 					</div>
 				)}
 
-				{/* Distinctions */}
-				{distinctions.length > 0 && (
-					<div style={{ marginBottom: 20 }}>
-						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>
-							Compare & Distinguish
-						</Typography.Text>
-						<div style={{ marginTop: 8 }}>
-							{distinctions.map((d, i) => (
-								<div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 8 }}>
-									<div style={{ padding: '10px 14px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
-										<Typography.Text strong style={{ color: '#1d4ed8', fontSize: 13 }}>{d.left}</Typography.Text>
-									</div>
-									<div style={{ padding: '10px 14px', background: '#fef3c7', borderRadius: 8, border: '1px solid #fcd34d' }}>
-										<Typography.Text strong style={{ color: '#92400e', fontSize: 13 }}>{d.right}</Typography.Text>
-									</div>
-									{d.difference && (
-										<div style={{ gridColumn: '1 / -1', fontSize: 12, color: '#64748b', paddingLeft: 14, fontStyle: 'italic' }}>
-											{d.difference}
+				{/* ── 3. Module Concept Map ── */}
+				{conceptMap.length > 0 && (
+					<div style={{ marginBottom: 24 }}>
+						<DashboardSectionHeader number="3" title="Module Concept Map" color="#1b3a5b" />
+						<div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
+							{conceptMap.map((node, i) => (
+								<div key={i} style={{ flex: '1 1 220px', maxWidth: 320, background: '#f0f4f8', borderRadius: 12, border: '2px solid #102540', padding: '14px 16px', position: 'relative' }}>
+									<div style={{ fontWeight: 700, color: '#102540', fontSize: 14, marginBottom: 6 }}>{node.topic}</div>
+									{Array.isArray(node.subtopics) && node.subtopics.map((sub, j) => (
+										<div key={j} style={{ fontSize: 12, color: '#475569', paddingLeft: 10, borderLeft: '2px solid #cbd5e1', marginBottom: 3 }}>{sub}</div>
+									))}
+									{node.connectionTo && (
+										<div style={{ marginTop: 8, fontSize: 11, color: '#3b82f6', fontWeight: 600 }}>
+											→ {node.connectionTo}
 										</div>
 									)}
 								</div>
@@ -959,60 +906,143 @@ function SummarySheetPreviewCard({ sheet }) {
 					</div>
 				)}
 
-				{/* Exam Traps & Memory Hooks side by side */}
-				<Row gutter={16} style={{ marginBottom: 20 }}>
-					{traps.length > 0 && (
-						<Col span={12}>
-							<div style={{ padding: '14px 18px', background: '#fef3c7', borderRadius: 10, borderLeft: '4px solid #f59e0b', height: '100%' }}>
-								<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#92400e', letterSpacing: 0.5 }}>
-									Exam Traps
-								</Typography.Text>
-								{traps.map((t, i) => (
-									<div key={i} style={{ fontSize: 13, color: '#92400e', marginTop: 6, lineHeight: 1.5 }}>⚠ {t.trap}</div>
+				{/* ── 4. Topic-to-Concept Map ── */}
+				{topicMap.length > 0 && (
+					<div style={{ marginBottom: 24 }}>
+						<DashboardSectionHeader number="4" title="Topic-to-Concept Map" color="#1b3a5b" />
+						<table style={{ width: '100%', borderCollapse: 'collapse' }}>
+							<thead>
+								<tr style={{ borderBottom: '2px solid #102540' }}>
+									<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase', width: '25%' }}>Topic</th>
+									<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Key Concepts</th>
+									<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase', width: '30%' }}>Link to Objective</th>
+								</tr>
+							</thead>
+							<tbody>
+								{topicMap.map((t, i) => (
+									<tr key={i} style={{ borderBottom: '1px solid #e2e8f0', background: i % 2 === 0 ? '#f8fafc' : '#fff' }}>
+										<td style={{ padding: '8px 10px', fontWeight: 600, fontSize: 13, color: '#102540' }}>{t.topic || t.hook}</td>
+										<td style={{ padding: '8px 10px', fontSize: 12, color: '#374151' }}>
+											{Array.isArray(t.concepts) ? t.concepts.join(', ') : (t.concepts || '')}
+										</td>
+										<td style={{ padding: '8px 10px', fontSize: 12, color: '#3b82f6' }}>{t.linkToObjective || ''}</td>
+									</tr>
 								))}
-							</div>
-						</Col>
-					)}
-					{hooks.length > 0 && (
-						<Col span={12}>
-							<div style={{ padding: '14px 18px', background: '#f0fdf4', borderRadius: 10, borderLeft: '4px solid #22c55e', height: '100%' }}>
-								<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#166534', letterSpacing: 0.5 }}>
-									Memory Hooks
-								</Typography.Text>
-								{hooks.map((h, i) => (
-									<div key={i} style={{ fontSize: 13, color: '#166534', marginTop: 6, lineHeight: 1.5 }}>💡 {h.hook}</div>
-								))}
-							</div>
-						</Col>
-					)}
-				</Row>
-
-				{/* Quick Drills */}
-				{drills.length > 0 && (
-					<div style={{ marginBottom: 20, padding: '14px 18px', background: '#eff6ff', borderRadius: 10, borderLeft: '4px solid #3b82f6' }}>
-						<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#1d4ed8', letterSpacing: 0.5 }}>
-							Quick Drills
-						</Typography.Text>
-						{drills.map((d, i) => (
-							<div key={i} style={{ fontSize: 13, color: '#1e3a5a', marginTop: 6, lineHeight: 1.5 }}>
-								<strong>{i + 1}.</strong> {d.question}
-							</div>
-						))}
+							</tbody>
+						</table>
 					</div>
 				)}
 
-				{/* Revision Checklist */}
-				{checks.length > 0 && (
-					<div style={{ padding: '14px 18px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
-						<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>
-							Revision Check
-						</Typography.Text>
-						<div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-							{checks.map((c, i) => (
-								<div key={i} style={{ padding: '6px 12px', background: '#fff', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, color: '#374151' }}>
-									☐ {c.item}
+				{/* ── 5. Formula Strip ── */}
+				{formulas.length > 0 && (
+					<div style={{ marginBottom: 24, background: '#f0f4f8', borderRadius: 12, padding: '16px 20px', border: '1px solid #e2e8f0' }}>
+						<DashboardSectionHeader number="5" title="Formula Strip" />
+						<table style={{ width: '100%', borderCollapse: 'collapse' }}>
+							<thead>
+								<tr style={{ borderBottom: '2px solid #cbd5e1' }}>
+									<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Formula</th>
+									<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Use Case</th>
+									<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Interpretation</th>
+								</tr>
+							</thead>
+							<tbody>
+								{formulas.map((f, i) => (
+									<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
+										<td style={{ padding: '8px', fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', whiteSpace: 'pre-wrap' }}>
+											<MathText text={f.formula} />
+										</td>
+										<td style={{ padding: '8px', fontSize: 12, color: '#3b82f6' }}>{f.useCase || f.whenToUse || ''}</td>
+										<td style={{ padding: '8px', fontSize: 12, color: '#475569' }}>{f.interpretation || ''}</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+				)}
+
+				{/* ── 6. Exam Decision Rules ── */}
+				{rules.length > 0 && (
+					<div style={{ marginBottom: 24 }}>
+						<DashboardSectionHeader number="6" title="Exam Decision Rules" color="#1d4ed8" />
+						<div style={{ display: 'grid', gap: 8 }}>
+							{rules.map((d, i) => (
+								<div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 8, padding: '10px 14px', background: i % 2 === 0 ? '#eff6ff' : '#fff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
+									<div style={{ fontSize: 13, fontWeight: 600, color: '#102540' }}>{d.scenario || d.left}</div>
+									<div style={{ fontSize: 18, color: '#3b82f6', fontWeight: 700 }}>→</div>
+									<div>
+										<div style={{ fontSize: 13, color: '#1d4ed8', fontWeight: 600 }}>{d.rule || d.right}</div>
+										{(d.apply || d.difference) && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{d.apply || d.difference}</div>}
+									</div>
 								</div>
 							))}
+						</div>
+					</div>
+				)}
+
+				{/* ── 7. Exam Traps ── */}
+				{traps.length > 0 && (
+					<div style={{ marginBottom: 24 }}>
+						<DashboardSectionHeader number="7" title="Exam Traps" color="#92400e" />
+						<div style={{ padding: '14px 18px', background: '#fef3c7', borderRadius: 10, borderLeft: '4px solid #f59e0b' }}>
+							{traps.map((t, i) => (
+								<div key={i} style={{ fontSize: 13, color: '#92400e', marginTop: i > 0 ? 8 : 0, lineHeight: 1.5, display: 'flex', gap: 8 }}>
+									<span style={{ flexShrink: 0, fontWeight: 700 }}>⚠</span>
+									<span>{t.trap}</span>
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+
+				{/* ── 8. Final Revision Checklist ── */}
+				{checks.length > 0 && (
+					<div style={{ marginBottom: 24 }}>
+						<DashboardSectionHeader number="8" title="Final Revision Checklist" />
+						<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+							{checks.map((c, i) => (
+								<div key={i} style={{ padding: '8px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, color: '#374151', display: 'flex', alignItems: 'center', gap: 8 }}>
+									<div style={{ width: 18, height: 18, borderRadius: 4, border: '2px solid #102540', flexShrink: 0 }} />
+									{c.item}
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+
+				{/* ── 9. Instructor Review Required ── */}
+				{instructorReview.length > 0 && (
+					<div style={{ marginBottom: 24 }}>
+						<DashboardSectionHeader number="9" title="Instructor Review Required" color="#991b1b" />
+						{instructorReview[0]?.issue === 'None identified' ? (
+							<div style={{ padding: '12px 18px', background: '#f0fdf4', borderRadius: 10, borderLeft: '4px solid #22c55e', fontSize: 13, color: '#166534' }}>
+								All content verified — ready for publication.
+							</div>
+						) : (
+							<div style={{ padding: '14px 18px', background: '#fef2f2', borderRadius: 10, borderLeft: '4px solid #ef4444' }}>
+								{instructorReview.map((d, i) => (
+									<div key={i} style={{ marginTop: i > 0 ? 8 : 0 }}>
+										<div style={{ fontSize: 13, fontWeight: 600, color: '#991b1b' }}>{d.issue || d.question}</div>
+										{(d.recommendation) && <div style={{ fontSize: 12, color: '#7f1d1d', marginTop: 2 }}>→ {d.recommendation}</div>}
+									</div>
+								))}
+							</div>
+						)}
+					</div>
+				)}
+
+				{/* ── 10. Coverage Quality Check ── */}
+				{coverageStatus && (
+					<div style={{ marginBottom: 10 }}>
+						<DashboardSectionHeader number="10" title="Coverage Quality Check" color={coverageStatus === 'PASS' ? '#166534' : '#991b1b'} />
+						<div style={{
+							padding: '12px 18px', borderRadius: 10, fontSize: 14, fontWeight: 700, textAlign: 'center',
+							background: coverageStatus === 'PASS' ? '#f0fdf4' : coverageStatus === 'REVISE' ? '#fffbeb' : '#fef2f2',
+							color: coverageStatus === 'PASS' ? '#166534' : coverageStatus === 'REVISE' ? '#92400e' : '#991b1b',
+							border: `2px solid ${coverageStatus === 'PASS' ? '#22c55e' : coverageStatus === 'REVISE' ? '#f59e0b' : '#ef4444'}`,
+						}}>
+							{coverageStatus === 'PASS' ? '✓ ALL TOPICS, LOS, FORMULAS, DECISION RULES & TRAPS COVERED' :
+							 coverageStatus === 'REVISE' ? '⚠ REVISION NEEDED — SOME AREAS INCOMPLETE' :
+							 '✗ INSTRUCTOR REVIEW REQUIRED'}
 						</div>
 					</div>
 				)}
@@ -1025,7 +1055,7 @@ function SummarySheetPreviewCard({ sheet }) {
 				background: '#f8fafc',
 			}}>
 				<Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>
-					Milven Finance School | Summary Sheet {s.year}
+					Milven Finance School | Milven Summary Dashboard {s.year}
 				</Typography.Text>
 				<Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>
 					Simplified. Exam-focused. Built to help you pass.

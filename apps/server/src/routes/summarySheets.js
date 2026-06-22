@@ -152,7 +152,6 @@ export function summarySheetsRouter(prisma) {
 			courseId: z.string(),
 			volumeId: z.string().optional().nullable(),
 			moduleId: z.string().optional().nullable(),
-			topicId: z.string().optional().nullable(),
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 			year: z.coerce.number().int().optional().default(2026),
 			count: z.coerce.number().int().min(1).max(20).optional().nullable(),
@@ -160,7 +159,7 @@ export function summarySheetsRouter(prisma) {
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: 'Validation failed', details: parse.error.flatten() });
 
-		const { courseId, volumeId, moduleId, topicId, level, year } = parse.data;
+		const { courseId, volumeId, moduleId, level, year } = parse.data;
 		let count = parse.data.count || null;
 
 		const apiKey = await getOpenAIApiKey(prisma);
@@ -170,7 +169,7 @@ export function summarySheetsRouter(prisma) {
 			const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true } });
 			if (!course) return res.status(400).json({ error: 'Course not found' });
 
-			let volumeName = null, moduleName = null, topicName = null;
+			let volumeName = null, moduleName = null, moduleObjective = null;
 			let topicNames = [];
 
 			if (volumeId) {
@@ -178,20 +177,15 @@ export function summarySheetsRouter(prisma) {
 				if (vol) volumeName = vol.name;
 			}
 			if (moduleId) {
-				const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { name: true } });
-				if (mod) moduleName = mod.name;
+				const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { name: true, description: true } });
+				if (mod) { moduleName = mod.name; moduleObjective = mod.description || null; }
 			}
-			if (topicId) {
-				const t = await prisma.topic.findUnique({ where: { id: topicId }, select: { name: true } });
-				if (t) topicName = t.name;
-				topicNames = [topicName];
-			} else {
-				const topicWhere = { courseId };
-				if (moduleId) topicWhere.moduleId = moduleId;
-				else if (volumeId) topicWhere.module = { volumeId };
-				const resolvedTopics = await prisma.topic.findMany({ where: topicWhere, select: { id: true, name: true }, orderBy: { order: 'asc' }, take: 50 });
-				topicNames = resolvedTopics.map(t => t.name);
-			}
+			// Resolve topics within scope
+			const topicWhere = { courseId };
+			if (moduleId) topicWhere.moduleId = moduleId;
+			else if (volumeId) topicWhere.module = { volumeId };
+			const resolvedTopics = await prisma.topic.findMany({ where: topicWhere, select: { id: true, name: true }, orderBy: { order: 'asc' }, take: 50 });
+			topicNames = resolvedTopics.map(t => t.name);
 
 			// Auto-detect count: if moduleId given, 1 sheet for that module; if volumeId, count modules in volume; else count modules in course
 			if (!count) {
@@ -259,66 +253,121 @@ export function summarySheetsRouter(prisma) {
 
 			const levelLabel = level.replace('LEVEL', 'Level ');
 			const hierarchyContext = [
-				`Course: ${course.name}`,
-				`CFA Level: ${levelLabel}`,
+				`Programme: CFA`,
+				`Exam Level: ${levelLabel}`,
+				`Course / Topic Area: ${course.name}`,
 				volumeName ? `Volume: ${volumeName}` : null,
 				moduleName ? `Learning Module: ${moduleName}` : null,
-				topicName ? `Topic: ${topicName}` : (topicNames.length > 0 ? `Topics: ${topicNames.join(', ')}` : null),
+				moduleObjective ? `Learning Module Objective: ${moduleObjective}` : null,
+				topicNames.length > 0 ? `Topic Headings: ${topicNames.join('; ')}` : null,
 			].filter(Boolean).join('\n');
 
+			// Fetch existing module notes for this module (completed topic-level Milven Notes)
+			let topicNotesContext = '';
+			if (moduleId) {
+				const existingNotes = await prisma.moduleNote.findMany({
+					where: { moduleId, status: 'PUBLISHED' },
+					select: { title: true, overview: true, moduleSummary: true },
+					take: 10,
+				});
+				if (existingNotes.length > 0) {
+					topicNotesContext = '\n\nCOMPLETED TOPIC-LEVEL MILVEN NOTES:\n' + existingNotes.map(n =>
+						`- ${n.title}: ${n.overview || ''} ${n.moduleSummary || ''}`
+					).join('\n') + '\n';
+				}
+			}
+
+			// Fetch formulas for this module
+			let formulaListContext = '';
+			if (moduleId) {
+				const existingFormulas = await prisma.formula.findMany({
+					where: { moduleId },
+					select: { name: true, formula: true, variables: true },
+					take: 30,
+				});
+				if (existingFormulas.length > 0) {
+					formulaListContext = '\n\nFORMULA LIST FROM DATABASE:\n' + existingFormulas.map(f =>
+						`- ${f.name}: ${f.formula} (${f.variables || ''})`
+					).join('\n') + '\n';
+				}
+			}
+
 			const curriculumSection = curriculumExcerpt
-				? `\n\nCURRICULUM REFERENCE MATERIAL (use this as the primary source — reference exact LOS, formulas, and page numbers from the document):\n---\n${curriculumExcerpt}\n---\n`
+				? `\n\nCURRICULUM REFERENCE MATERIAL (use as primary source — reference exact LOS, formulas, page numbers):\n---\n${curriculumExcerpt}\n---\n`
 				: '';
 
-			const prompt = `You are a senior CFA curriculum expert at Milven Finance School. Generate 1 CFA Summary Sheet in JSON format.
+			const prompt = `You are a senior CFA curriculum expert at Milven Finance School.
 
-This summary sheet MUST be equivalent to 2-3 FULL printed pages of content. It is a high-impact revision document that covers the ENTIRE learning module in detail. Every topic, formula, and key concept must be included. Do NOT produce a short summary — this is premium study material.
+TASK: Generate a Learning Module-level Milven Summary — a one-to-two page diagrammatic revision dashboard.
 
+INPUTS:
 ${hierarchyContext}
 Year: ${year}
-${curriculumSection}
-MINIMUM LENGTH REQUIREMENTS (generate AT LEAST these amounts — more is better):
-- "snapshot": 4-6 sentences describing what the sheet covers, why it matters, and how to use it
-- "useCase": 2-3 sentences on when to use this sheet
-- "coreDefinitions": 12-20 key definitions. Each definition must be 2-3 sentences in exam language. Cover EVERY important term in the module.
-- "formulas": 8-15 formulas. Include EVERY formula from the curriculum for this module. Each must have full variables explanation and when-to-use context (2-3 sentences each).
-  * Use valid LaTeX: \frac{a}{b} for fractions, P_{0}, CF_{t} for subscripts, (1+r)^{n} for superscripts, \sigma, \beta, \alpha for Greek
-  * Inline: \( ... \)  Block: \[ ... \]  ALL braces must be balanced
-  * PRESERVE exact notation from the curriculum document but convert to valid LaTeX
-- "distinctions": 5-8 comparisons of look-alike concepts. Each "difference" field must be 3-5 sentences explaining the distinction clearly.
-- "diagrams": 3-5 text-based visual aids (flowcharts, comparison tables, process flows). Each "description" must be detailed (5-10 sentences describing the visual layout and relationships).
-- "examTraps": 6-10 common exam traps. Each "trap" must be 2-3 sentences explaining what candidates confuse and how to avoid it.
-- "memoryHooks": 8-12 memory cues. Each hook should be a memorable phrase or mnemonic.
-- "quickDrills": 6-10 fast recall/calculation questions. Each question should be specific and exam-relevant.
-- "revisionCheck": 10-15 self-check items covering every key concept in the module.
+${curriculumSection}${topicNotesContext}${formulaListContext}
+
+CORE RULES:
+1. Generate at Learning Module level only.
+2. Prefer one page; use two pages only for dense or calculation-heavy modules.
+3. Do NOT copy or reproduce the curriculum verbatim.
+4. Include EVERY topic in the learning module.
+5. Link every major topic to the learning module objective.
+6. Cover ALL Learning Outcome Statements in candidate-friendly language.
+7. Use diagrammatic structures: boxes, arrows, tables, formula strips and checklists.
+8. Avoid long paragraphs.
+9. Include key formulas with use cases.
+10. Include decision rules that help candidates choose the correct measure or concept.
+11. Include common exam traps.
+12. Flag missing or unsupported areas under Instructor Review Required.
+
+REQUIRED OUTPUT SECTIONS (populate ALL of them):
+
+1. "snapshot" (string) — Module Objective: 2-3 sentences stating WHAT the module teaches and HOW it connects to the exam. This goes in the callout box at the top.
+
+2. "coreDefinitions" (array) — LOS Snapshot: [{ref, statement, commandWord}]. List EVERY Learning Outcome Statement with its reference code, the statement in candidate-friendly language, and the command word (calculate, describe, explain, compare, etc.). Minimum 5 items.
+
+3. "diagrams" (array) — Module Concept Map: [{topic, subtopics, connectionTo}]. Show how the topics in this module connect to each other and to the module objective. Each entry is a topic node with its subtopics and what it connects to. Minimum 3 items.
+
+4. "memoryHooks" (array) — Topic-to-Concept Map: [{topic, concepts, linkToObjective}]. For each topic, list the key concepts and explain how they link to the module objective. Minimum 3 items.
+
+5. "formulas" (array) — Formula Strip: [{formula, useCase, interpretation}]. Every key formula with its use case scenario and a one-line interpretation of what the result means. Minimum 6 items.
+   * Use valid LaTeX: \\frac{a}{b} for fractions, P_{0}, CF_{t} for subscripts, (1+r)^{n} for superscripts, \\sigma, \\beta, \\alpha for Greek
+   * Inline: \\( ... \\)  Block: \\[ ... \\]  ALL braces must be balanced
+
+6. "distinctions" (array) — Exam Decision Rules: [{scenario, rule, apply}]. Decision rules that help candidates choose the correct measure, method, or concept in exam questions. e.g. "If asked about return over multiple periods → use geometric mean, not arithmetic mean". Minimum 5 items.
+
+7. "examTraps" (array) — Exam Traps: [{trap}]. Short warning statements about common mistakes. e.g. "Arithmetic mean is NOT always appropriate — geometric mean for compounding." Minimum 5 items.
+
+8. "revisionCheck" (array) — Final Revision Checklist: [{item}]. Action-verb checklist items. e.g. "Calculate holding period return from given cash flows." Minimum 8 items.
+
+9. "quickDrills" (array) — Instructor Review Required: [{issue, recommendation}]. Flag any gaps, ambiguous areas, or content not fully supported by the curriculum. If none, include one item: {issue: "None identified", recommendation: "Ready for publication"}.
+
+10. "useCase" (string) — Coverage Quality Check: One of "PASS", "REVISE", or "INSTRUCTOR REVIEW REQUIRED". Confirm all topics, LOS, formulas, decision rules and traps are covered.
 
 Return a JSON object:
 {
   "sheets": [
     {
-      "title": "string",
-      "snapshot": "LONG string (4-6 sentences)",
-      "useCase": "string (2-3 sentences)",
-      "coreDefinitions": [{"term": "string", "definition": "DETAILED string (2-3 sentences)"}, ...12-20 items],
-      "formulas": [{"formula": "rich notation string", "variables": "define ALL variables", "whenToUse": "2-3 sentences"}, ...8-15 items],
-      "distinctions": [{"left": "string", "right": "string", "difference": "DETAILED 3-5 sentences"}, ...5-8 items],
-      "diagrams": [{"title": "string", "description": "DETAILED 5-10 sentences"}, ...3-5 items],
-      "examTraps": [{"trap": "2-3 sentences"}, ...6-10 items],
-      "memoryHooks": [{"hook": "string"}, ...8-12 items],
-      "quickDrills": [{"question": "string"}, ...6-10 items],
-      "revisionCheck": [{"item": "string"}, ...10-15 items]
+      "title": "LM#: [Learning Module Name]",
+      "snapshot": "Module Objective string",
+      "useCase": "PASS|REVISE|INSTRUCTOR REVIEW REQUIRED",
+      "coreDefinitions": [{"ref": "LOS 1.a", "statement": "...", "commandWord": "calculate"}],
+      "diagrams": [{"topic": "...", "subtopics": ["..."], "connectionTo": "..."}],
+      "memoryHooks": [{"topic": "...", "concepts": ["..."], "linkToObjective": "..."}],
+      "formulas": [{"formula": "LaTeX string", "useCase": "...", "interpretation": "..."}],
+      "distinctions": [{"scenario": "...", "rule": "...", "apply": "..."}],
+      "examTraps": [{"trap": "..."}],
+      "revisionCheck": [{"item": "..."}],
+      "quickDrills": [{"issue": "...", "recommendation": "..."}]
     }
   ]
 }
 
-IMPORTANT: MAXIMIZE the length and detail of your response. Use ALL available tokens. This is premium study material — short or thin content is unacceptable. Every section must be FULLY populated with the minimum number of items listed above.
+OUTPUT STANDARD: The final summary must read like a premium Milven revision dashboard, not like a textbook summary. Clean, visual, concise, exam-focused.
 
 Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
 
 			const openai = new OpenAI({ apiKey });
 
-			// gpt-4o-mini supports max 16384 completion tokens
-			// Generate one sheet at a time to ensure 2-3 pages of content per sheet
 			let items = [];
 			const sheetsToGenerate = Math.min(count, 20);
 
@@ -326,7 +375,7 @@ Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
 				const completion = await openai.chat.completions.create({
 					model: 'gpt-4o-mini',
 					messages: [
-						{ role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. CRITICAL: Generate the LONGEST, most detailed response possible. Use ALL available tokens. Every array must meet the MINIMUM item counts specified. Every text field must be multiple sentences. Do NOT abbreviate — write FULL detailed content.\n\n${LATEX_SYSTEM_RULES}` },
+						{ role: 'system', content: `You are the Milven Summary Generator and Layout Formatter. Return valid JSON only. Generate a diagrammatic revision dashboard at Learning Module level. Every section must be fully populated. Use concise exam-focused language. Do NOT write textbook paragraphs.\n\n${LATEX_SYSTEM_RULES}` },
 						{ role: 'user', content: prompt }
 					],
 					temperature: 0.7,
@@ -348,7 +397,7 @@ Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
 
 			return res.json({
 				generated: { items },
-				meta: { courseId, volumeId, moduleId, topicId, level, year }
+				meta: { courseId, volumeId, moduleId, level, year }
 			});
 		} catch (err) {
 			const msg = err?.error?.message || err?.message || 'OpenAI request failed';
@@ -367,7 +416,7 @@ Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
 			if (!Array.isArray(selectedIndices) || selectedIndices.length === 0) {
 				return res.status(400).json({ error: 'No sheets selected' });
 			}
-			const { courseId, volumeId, moduleId, topicId, level, year } = meta || {};
+			const { courseId, volumeId, moduleId, level, year } = meta || {};
 			if (!courseId || !level) {
 				return res.status(400).json({ error: 'Missing meta (courseId, level)' });
 			}
@@ -384,7 +433,6 @@ Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
 							courseId,
 							volumeId: volumeId || null,
 							moduleId: moduleId || null,
-							topicId: topicId || null,
 							year: year || 2026,
 							snapshot: item.snapshot || null,
 							useCase: item.useCase || null,

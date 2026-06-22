@@ -231,7 +231,7 @@ export function StudentModuleNotes() {
 							<BookOutlined style={{ fontSize: 20, color: '#fff' }} />
 						</div>
 						<div>
-							<Typography.Title level={4} style={{ margin: 0, color: '#102540' }}>Module Notes</Typography.Title>
+							<Typography.Title level={4} style={{ margin: 0, color: '#102540' }}>Milven Module Notes</Typography.Title>
 							<Typography.Text type="secondary" style={{ fontSize: 12 }}>Premium exam-focused learning module notes</Typography.Text>
 						</div>
 					</div>

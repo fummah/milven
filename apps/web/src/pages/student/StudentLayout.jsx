@@ -66,7 +66,7 @@ const menuItems = [
     children: [
       { key: 'student-courses', icon: subMenuBadge(<BookOutlined />, '#8b5cf6'), label: <Link to="/student/courses">My Courses</Link> },
       { key: 'student-learning', icon: subMenuBadge(<ReadOutlined />, '#8b5cf6'), label: <Link to="/student/learning">Learning Center</Link> },
-      { key: 'student-module-notes', icon: subMenuBadge(<SnippetsOutlined />, '#8b5cf6'), label: <Link to="/student/module-notes">Module Notes</Link> },
+      { key: 'student-module-notes', icon: subMenuBadge(<SnippetsOutlined />, '#8b5cf6'), label: <Link to="/student/module-notes">Milven Module Notes</Link> },
     ]
   },
   {
@@ -75,7 +75,7 @@ const menuItems = [
     label: 'Study Tools',
     children: [
       { key: 'student-formula-book', icon: subMenuBadge(<FunctionOutlined />, '#102540'), label: <Link to="/student/formula-book">Formula Book</Link> },
-      { key: 'student-summary-sheets', icon: subMenuBadge(<FileTextOutlined />, '#102540'), label: <Link to="/student/summary-sheets">Summary Sheets</Link> },
+      { key: 'student-summary-sheets', icon: subMenuBadge(<FileTextOutlined />, '#102540'), label: <Link to="/student/summary-sheets">Milven Summary Sheets</Link> },
       { key: 'student-revision', icon: subMenuBadge(<StarOutlined />, '#eab308'), label: <Link to="/student/revision">Revision List</Link> },
     ]
   },
