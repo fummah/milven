@@ -210,7 +210,7 @@ export function summarySheetsRouter(prisma) {
 					if (text.length <= 15000) {
 						curriculumExcerpt = text;
 					} else {
-						const keywords = [...topicNames, topicName, moduleName].filter(Boolean)
+						const keywords = [...topicNames, moduleName].filter(Boolean)
 							.flatMap(n => n.split(/[\s,;:()\-\/]+/).filter(w => w.length > 3))
 							.map(w => w.toLowerCase());
 						if (keywords.length === 0) {
