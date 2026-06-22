@@ -288,15 +288,6 @@ export function StudentSummarySheets() {
 	);
 }
 
-function SectionHeader({ number, title, color = '#102540' }) {
-	return (
-		<div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-			<div style={{ width: 26, height: 26, borderRadius: 7, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{number}</div>
-			<Typography.Text strong style={{ fontSize: 13, color, textTransform: 'uppercase', letterSpacing: 0.8 }}>{title}</Typography.Text>
-		</div>
-	);
-}
-
 function SummarySheetView({ sheet }) {
 	const s = sheet;
 	const losItems = Array.isArray(s.coreDefinitions) ? s.coreDefinitions : [];
@@ -306,208 +297,199 @@ function SummarySheetView({ sheet }) {
 	const rules = Array.isArray(s.distinctions) ? s.distinctions : [];
 	const traps = Array.isArray(s.examTraps) ? s.examTraps : [];
 	const checks = Array.isArray(s.revisionCheck) ? s.revisionCheck : [];
-	const instructorReview = Array.isArray(s.quickDrills) ? s.quickDrills : [];
-	const coverageStatus = s.useCase || '';
 
 	return (
-		<div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden' }}>
-			{/* Identity Bar */}
-			<div style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', padding: '24px 28px' }}>
-				<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5 }}>
-					{LEVEL_LABELS[s.level]} {s.volume?.name ? `| ${s.volume.name}` : ''} {s.module?.name ? `| ${s.module.name}` : ''}
-				</Typography.Text>
-				<Typography.Title level={3} style={{ margin: '4px 0 0', color: '#fff' }}>{s.title}</Typography.Title>
-				<div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
-					<Tag style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 11 }}>Milven Summary Dashboard</Tag>
-					<Tag style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 11 }}>{s.year} Edition</Tag>
-					{coverageStatus && <Tag color={coverageStatus === 'PASS' ? 'green' : coverageStatus === 'REVISE' ? 'orange' : 'red'} style={{ fontSize: 11 }}>Coverage: {coverageStatus}</Tag>}
-				</div>
-			</div>
-
-			{/* 1. Module Objective */}
-			{s.snapshot && (
-				<div style={{ padding: '16px 28px', background: '#f0f4f8', borderBottom: '1px solid #e2e8f0' }}>
-					<SectionHeader number="1" title="Module Objective" />
-					<div style={{ padding: '12px 16px', background: '#fff', borderRadius: 10, borderLeft: '4px solid #102540', color: '#374151', fontSize: 14, lineHeight: 1.7 }}>
-						{safeRender(s.snapshot)}
+		<div style={{ background: '#f8f9fa', borderRadius: 16, overflow: 'hidden' }}>
+			{/* ═══════════ PAGE 1: Concept Overview ═══════════ */}
+			<div style={{ background: '#fff', marginBottom: 4 }}>
+				{/* Header Bar */}
+				<div style={{ background: '#102540', padding: '16px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+					<div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+						<Typography.Text style={{ color: '#fff', fontSize: 18, fontWeight: 800, letterSpacing: 1 }}>MILVEN</Typography.Text>
+						<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>FINANCE SCHOOL</Typography.Text>
 					</div>
+					<Typography.Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
+						{LEVEL_LABELS[s.level]} | {s.course?.name || s.volume?.name || ''}
+					</Typography.Text>
 				</div>
-			)}
 
-			<div style={{ padding: '20px 28px' }}>
-				{/* 2. LOS Snapshot */}
+				{/* Title */}
+				<div style={{ padding: '16px 28px 8px' }}>
+					<Typography.Title level={4} style={{ margin: 0, color: '#102540' }}>{s.title}</Typography.Title>
+				</div>
+
+				{/* Module Objective - gold bordered box */}
+				{s.snapshot && (
+					<div style={{ margin: '8px 28px 16px', padding: '14px 18px', border: '2px solid #c9a227', borderRadius: 8, background: '#fffef5' }}>
+						<Typography.Text style={{ fontSize: 13, color: '#102540', lineHeight: 1.7 }}>
+							<strong>Learning Module Objective:</strong> {safeRender(s.snapshot)}
+						</Typography.Text>
+					</div>
+				)}
+
+				{/* LOS SNAPSHOT - horizontal pills */}
 				{losItems.length > 0 && (
-					<div style={{ marginBottom: 24 }}>
-						<SectionHeader number="2" title="LOS Snapshot" />
-						<table style={{ width: '100%', borderCollapse: 'collapse' }}>
-							<thead><tr style={{ borderBottom: '2px solid #102540' }}>
-								<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase', width: 90 }}>LOS Ref</th>
-								<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Statement</th>
-								<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase', width: 100 }}>Command</th>
-							</tr></thead>
-							<tbody>{losItems.map((d, i) => (
-								<tr key={i} style={{ borderBottom: '1px solid #e2e8f0', background: i % 2 === 0 ? '#f8fafc' : '#fff' }}>
-									<td style={{ padding: '8px 10px', fontSize: 12, fontWeight: 600, color: '#102540' }}>{safeRender(d.ref || d.term)}</td>
-									<td style={{ padding: '8px 10px', fontSize: 13, color: '#374151' }}>{safeRender(d.statement || d.definition)}</td>
-									<td style={{ padding: '8px 10px' }}><Tag color="blue" style={{ fontSize: 11 }}>{safeRender(d.commandWord || '—')}</Tag></td>
-								</tr>
-							))}</tbody>
-						</table>
+					<div style={{ padding: '0 28px 20px' }}>
+						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 1 }}>LOS SNAPSHOT</Typography.Text>
+						<div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
+							{losItems.map((d, i) => (
+								<div key={i} style={{ flex: '1 1 160px', maxWidth: 220, padding: '10px 14px', background: '#f8f9fa', border: '1px solid #e2e8f0', borderRadius: 8, textAlign: 'center' }}>
+									<div style={{ fontSize: 12, color: '#374151', lineHeight: 1.4 }}>{safeRender(d.statement || d.definition)}</div>
+								</div>
+							))}
+						</div>
 					</div>
 				)}
 
-				{/* 3. Module Concept Map */}
+				{/* TOPIC-TO-OBJECTIVE CONCEPT MAP - visual diagram */}
 				{conceptMap.length > 0 && (
-					<div style={{ marginBottom: 24 }}>
-						<SectionHeader number="3" title="Module Concept Map" color="#1b3a5b" />
-						<div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
-							{conceptMap.map((node, i) => (
-								<div key={i} style={{ flex: '1 1 220px', maxWidth: 320, background: '#f0f4f8', borderRadius: 12, border: '2px solid #102540', padding: '14px 16px' }}>
-									<div style={{ fontWeight: 700, color: '#102540', fontSize: 14, marginBottom: 6 }}>{safeRender(node.topic)}</div>
-									{Array.isArray(node.subtopics) && node.subtopics.map((sub, j) => (
-										<div key={j} style={{ fontSize: 12, color: '#475569', paddingLeft: 10, borderLeft: '2px solid #cbd5e1', marginBottom: 3 }}>{safeRender(sub)}</div>
-									))}
-									{node.connectionTo && <div style={{ marginTop: 8, fontSize: 11, color: '#3b82f6', fontWeight: 600 }}>→ {safeRender(node.connectionTo)}</div>}
+					<div style={{ padding: '0 28px 24px' }}>
+						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 1 }}>TOPIC-TO-OBJECTIVE CONCEPT MAP</Typography.Text>
+						<div style={{ marginTop: 14, position: 'relative', padding: '20px 0' }}>
+							{/* Central module node */}
+							<div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
+								<div style={{ background: '#102540', color: '#fff', padding: '16px 24px', borderRadius: 10, textAlign: 'center', maxWidth: 380 }}>
+									<div style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase' }}>{safeRender(s.module?.name || s.title)}</div>
+									{s.snapshot && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>{s.snapshot.length > 80 ? s.snapshot.substring(0, 80) + '...' : safeRender(s.snapshot)}</div>}
 								</div>
-							))}
-						</div>
-					</div>
-				)}
-
-				{/* 4. Topic-to-Concept Map */}
-				{topicMap.length > 0 && (
-					<div style={{ marginBottom: 24 }}>
-						<SectionHeader number="4" title="Topic-to-Concept Map" color="#1b3a5b" />
-						<table style={{ width: '100%', borderCollapse: 'collapse' }}>
-							<thead><tr style={{ borderBottom: '2px solid #102540' }}>
-								<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase', width: '25%' }}>Topic</th>
-								<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Key Concepts</th>
-								<th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, color: '#64748b', textTransform: 'uppercase', width: '30%' }}>Link to Objective</th>
-							</tr></thead>
-							<tbody>{topicMap.map((t, i) => (
-								<tr key={i} style={{ borderBottom: '1px solid #e2e8f0', background: i % 2 === 0 ? '#f8fafc' : '#fff' }}>
-									<td style={{ padding: '8px 10px', fontWeight: 600, fontSize: 13, color: '#102540' }}>{safeRender(t.topic || t.hook)}</td>
-									<td style={{ padding: '8px 10px', fontSize: 12, color: '#374151' }}>{Array.isArray(t.concepts) ? t.concepts.join(', ') : safeRender(t.concepts || '')}</td>
-									<td style={{ padding: '8px 10px', fontSize: 12, color: '#3b82f6' }}>{safeRender(t.linkToObjective || '')}</td>
-								</tr>
-							))}</tbody>
-						</table>
-					</div>
-				)}
-
-				{/* 5. Formula Strip */}
-				{formulas.length > 0 && (
-					<div style={{ marginBottom: 24, background: '#f0f4f8', borderRadius: 12, padding: '16px 20px', border: '1px solid #e2e8f0' }}>
-						<SectionHeader number="5" title="Formula Strip" />
-						<table style={{ width: '100%', borderCollapse: 'collapse' }}>
-							<thead><tr style={{ borderBottom: '2px solid #cbd5e1' }}>
-								<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Formula</th>
-								<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Use Case</th>
-								<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b', textTransform: 'uppercase' }}>Interpretation</th>
-							</tr></thead>
-							<tbody>{formulas.map((f, i) => (
-								<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
-									<td style={{ padding: '8px', fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540' }}><MathText text={f.formula} /></td>
-									<td style={{ padding: '8px', fontSize: 12, color: '#3b82f6' }}>{safeRender(f.useCase || f.whenToUse || '')}</td>
-									<td style={{ padding: '8px', fontSize: 12, color: '#475569' }}>{safeRender(f.interpretation || '')}</td>
-								</tr>
-							))}</tbody>
-						</table>
-					</div>
-				)}
-
-				{/* 6. Exam Decision Rules */}
-				{rules.length > 0 && (
-					<div style={{ marginBottom: 24 }}>
-						<SectionHeader number="6" title="Exam Decision Rules" color="#1d4ed8" />
-						<div style={{ display: 'grid', gap: 8 }}>
-							{rules.map((d, i) => (
-								<div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 8, padding: '10px 14px', background: i % 2 === 0 ? '#eff6ff' : '#fff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
-									<div style={{ fontSize: 13, fontWeight: 600, color: '#102540' }}>{safeRender(d.scenario || d.left)}</div>
-									<div style={{ fontSize: 18, color: '#3b82f6', fontWeight: 700 }}>→</div>
-									<div>
-										<div style={{ fontSize: 13, color: '#1d4ed8', fontWeight: 600 }}>{safeRender(d.rule || d.right)}</div>
-										{(d.apply || d.difference) && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{safeRender(d.apply || d.difference)}</div>}
-									</div>
-								</div>
-							))}
-						</div>
-					</div>
-				)}
-
-				{/* 7. Exam Traps */}
-				{traps.length > 0 && (
-					<div style={{ marginBottom: 24 }}>
-						<SectionHeader number="7" title="Exam Traps" color="#92400e" />
-						<div style={{ padding: '14px 18px', background: '#fef3c7', borderRadius: 10, borderLeft: '4px solid #f59e0b' }}>
-							{traps.map((t, i) => (
-								<div key={i} style={{ fontSize: 13, color: '#92400e', marginTop: i > 0 ? 8 : 0, lineHeight: 1.5, display: 'flex', gap: 8 }}>
-									<span style={{ flexShrink: 0, fontWeight: 700 }}>⚠</span>
-									<span>{safeRender(t.trap)}</span>
-								</div>
-							))}
-						</div>
-					</div>
-				)}
-
-				{/* 8. Final Revision Checklist */}
-				{checks.length > 0 && (
-					<div style={{ marginBottom: 24 }}>
-						<SectionHeader number="8" title="Final Revision Checklist" />
-						<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-							{checks.map((c, i) => (
-								<div key={i} style={{ padding: '8px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, color: '#374151', display: 'flex', alignItems: 'center', gap: 8 }}>
-									<div style={{ width: 18, height: 18, borderRadius: 4, border: '2px solid #102540', flexShrink: 0 }} />
-									{safeRender(c.item)}
-								</div>
-							))}
-						</div>
-					</div>
-				)}
-
-				{/* 9. Instructor Review */}
-				{instructorReview.length > 0 && (
-					<div style={{ marginBottom: 24 }}>
-						<SectionHeader number="9" title="Instructor Review Required" color="#991b1b" />
-						{instructorReview[0]?.issue === 'None identified' ? (
-							<div style={{ padding: '12px 18px', background: '#f0fdf4', borderRadius: 10, borderLeft: '4px solid #22c55e', fontSize: 13, color: '#166534' }}>
-								All content verified — ready for publication.
 							</div>
-						) : (
-							<div style={{ padding: '14px 18px', background: '#fef2f2', borderRadius: 10, borderLeft: '4px solid #ef4444' }}>
-								{instructorReview.map((d, i) => (
-									<div key={i} style={{ marginTop: i > 0 ? 8 : 0 }}>
-										<div style={{ fontSize: 13, fontWeight: 600, color: '#991b1b' }}>{safeRender(d.issue || d.question)}</div>
-										{d.recommendation && <div style={{ fontSize: 12, color: '#7f1d1d', marginTop: 2 }}>→ {safeRender(d.recommendation)}</div>}
+							{/* Arrow connector */}
+							<div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+								<div style={{ width: 2, height: 24, background: '#102540' }} />
+							</div>
+							{/* Topic boxes grid */}
+							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+								{conceptMap.map((node, i) => (
+									<div key={i} style={{ border: '2px solid #102540', borderRadius: 10, padding: '14px 16px', background: '#fff' }}>
+										<div style={{ fontSize: 12, fontWeight: 800, color: '#102540', textTransform: 'uppercase', marginBottom: 4 }}>
+											{i + 1}. {safeRender(node.topic)}
+										</div>
+										{Array.isArray(node.subtopics) && (
+											<div style={{ fontSize: 12, color: '#102540', fontWeight: 600 }}>
+												{node.subtopics.map(s => safeRender(s)).join(' | ')}
+											</div>
+										)}
+										{node.connectionTo && (
+											<div style={{ fontSize: 11, color: '#64748b', marginTop: 6, fontStyle: 'italic' }}>
+												{safeRender(node.connectionTo)}
+											</div>
+										)}
 									</div>
 								))}
 							</div>
-						)}
-					</div>
-				)}
-
-				{/* 10. Coverage Quality Check */}
-				{coverageStatus && (
-					<div style={{ marginBottom: 10 }}>
-						<SectionHeader number="10" title="Coverage Quality Check" color={coverageStatus === 'PASS' ? '#166534' : '#991b1b'} />
-						<div style={{
-							padding: '12px 18px', borderRadius: 10, fontSize: 14, fontWeight: 700, textAlign: 'center',
-							background: coverageStatus === 'PASS' ? '#f0fdf4' : coverageStatus === 'REVISE' ? '#fffbeb' : '#fef2f2',
-							color: coverageStatus === 'PASS' ? '#166534' : coverageStatus === 'REVISE' ? '#92400e' : '#991b1b',
-							border: `2px solid ${coverageStatus === 'PASS' ? '#22c55e' : coverageStatus === 'REVISE' ? '#f59e0b' : '#ef4444'}`,
-						}}>
-							{coverageStatus === 'PASS' ? '✓ ALL TOPICS, LOS, FORMULAS, DECISION RULES & TRAPS COVERED' :
-							 coverageStatus === 'REVISE' ? '⚠ REVISION NEEDED — SOME AREAS INCOMPLETE' :
-							 '✗ INSTRUCTOR REVIEW REQUIRED'}
 						</div>
 					</div>
 				)}
 			</div>
 
-			{/* Footer */}
-			<div style={{ padding: '12px 28px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', background: '#f8fafc' }}>
-				<Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>Milven Finance School | Milven Summary Dashboard {s.year}</Typography.Text>
-				<Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>Simplified. Exam-focused. Built to help you pass.</Typography.Text>
+			{/* ═══════════ PAGE 2: Exam Decision Map + Formula Strip ═══════════ */}
+			<div style={{ background: '#fff' }}>
+				{/* Page 2 Header */}
+				<div style={{ background: '#102540', padding: '12px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+					<div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+						<Typography.Text style={{ color: '#fff', fontSize: 16, fontWeight: 800, letterSpacing: 1 }}>MILVEN</Typography.Text>
+						<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>FINANCE SCHOOL</Typography.Text>
+					</div>
+					<Typography.Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>Diagrammatic Revision Page</Typography.Text>
+				</div>
+				<div style={{ padding: '12px 28px 4px' }}>
+					<Typography.Title level={5} style={{ margin: 0, color: '#102540' }}>
+						{safeRender(s.module?.name || s.title)} | Exam Decision Map + Formula Strip
+					</Typography.Title>
+				</div>
+
+				<div style={{ padding: '16px 28px 24px', display: 'grid', gridTemplateColumns: topicMap.length > 0 ? '1fr 1fr' : '1fr', gap: 24 }}>
+					{/* Left: EXAM LOGIC DECISION MAP (vertical flowchart) */}
+					{topicMap.length > 0 && (
+						<div>
+							<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 1 }}>EXAM LOGIC DECISION MAP</Typography.Text>
+							<div style={{ marginTop: 12 }}>
+								{topicMap.map((t, i) => (
+									<div key={i}>
+										<div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+											{/* Question node (navy rounded) */}
+											<div style={{ flex: '0 0 160px', padding: '10px 14px', border: '2px solid #102540', borderRadius: 20, background: '#fff', fontSize: 12, fontWeight: 600, color: '#102540', textAlign: 'center' }}>
+												{safeRender(t.topic || t.hook)}
+											</div>
+											{/* Arrow */}
+											<div style={{ flex: '0 0 30px', textAlign: 'center', color: '#c9a227', fontSize: 16, fontWeight: 700 }}>→</div>
+											{/* Answer node (gold rounded) */}
+											<div style={{ flex: 1, padding: '10px 14px', border: '2px solid #c9a227', borderRadius: 20, background: '#fffef5', fontSize: 12, color: '#374151' }}>
+												{Array.isArray(t.concepts) ? t.concepts.join(' | ') : safeRender(t.concepts || '')}
+											</div>
+										</div>
+										{/* Vertical connector */}
+										{i < topicMap.length - 1 && (
+											<div style={{ marginLeft: 80, width: 2, height: 16, background: '#102540', marginBottom: 4 }} />
+										)}
+									</div>
+								))}
+							</div>
+						</div>
+					)}
+
+					{/* Right column: Formula Strip + Decision Rules + Exam Traps */}
+					<div>
+						{/* FORMULA STRIP */}
+						{formulas.length > 0 && (
+							<div style={{ marginBottom: 20 }}>
+								<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 1 }}>FORMULA STRIP</Typography.Text>
+								<div style={{ marginTop: 10, border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+									{formulas.map((f, i) => (
+										<div key={i} style={{ display: 'flex', padding: '8px 14px', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none', background: i % 2 === 0 ? '#fff' : '#f8f9fa' }}>
+											<div style={{ flex: '0 0 45%', fontSize: 13, fontWeight: 600, color: '#102540' }}>{safeRender(f.useCase || f.whenToUse || '')}</div>
+											<div style={{ flex: 1, fontFamily: "'Cambria Math', Georgia, serif", fontSize: 14, color: '#102540' }}><MathText text={f.formula} /></div>
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+
+						{/* DECISION RULES */}
+						{rules.length > 0 && (
+							<div style={{ marginBottom: 20 }}>
+								<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 1 }}>DECISION RULES</Typography.Text>
+								<div style={{ marginTop: 8, padding: '12px 16px', background: '#f8f9fa', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+									{rules.map((d, i) => (
+										<div key={i} style={{ fontSize: 12, color: '#374151', marginTop: i > 0 ? 6 : 0, lineHeight: 1.5 }}>
+											• <strong>{safeRender(d.scenario || d.left)}:</strong> {safeRender(d.rule || d.right)}
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+
+						{/* EXAM TRAPS */}
+						{traps.length > 0 && (
+							<div style={{ marginBottom: 20 }}>
+								<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 1 }}>EXAM TRAPS</Typography.Text>
+								<div style={{ marginTop: 8, padding: '12px 16px', background: '#fef3c7', borderRadius: 8, border: '1px solid #f59e0b' }}>
+									{traps.map((t, i) => (
+										<div key={i} style={{ fontSize: 12, color: '#92400e', marginTop: i > 0 ? 6 : 0, lineHeight: 1.5 }}>
+											• {safeRender(t.trap)}
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+					</div>
+				</div>
+
+				{/* FINAL CHECKLIST BEFORE QUESTIONS */}
+				{checks.length > 0 && (
+					<div style={{ margin: '0 28px 24px', padding: '16px 20px', background: '#f0f4f8', borderRadius: 10, border: '2px solid #102540' }}>
+						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 1 }}>FINAL CHECKLIST BEFORE QUESTIONS</Typography.Text>
+						<div style={{ marginTop: 10, fontSize: 13, color: '#374151', lineHeight: 1.7 }}>
+							Can you: {checks.map(c => safeRender(c.item)).join('; ')}?
+						</div>
+					</div>
+				)}
+
+				{/* Footer */}
+				<div style={{ padding: '12px 28px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', background: '#f8fafc' }}>
+					<Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>Milven Finance School | Diagrammatic Revision Dashboard {s.year}</Typography.Text>
+					<Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>Simplified. Exam-focused. Built to help you pass.</Typography.Text>
+				</div>
 			</div>
 		</div>
 	);
