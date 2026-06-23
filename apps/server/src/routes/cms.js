@@ -2445,6 +2445,41 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			}
 			if (!Array.isArray(items)) items = [];
 
+			// ── Answer consistency validation ──────────────────────────────
+			const validateAnswerConsistency = (item) => {
+				if (questionType === 'CONSTRUCTED_RESPONSE') return item;
+				const opts = Array.isArray(item.options) ? item.options : [];
+				const correct = opts.find(o => o.isCorrect);
+				const ws = (item.workedSolution || item.explanation || '').toLowerCase();
+				if (!correct || !ws || correct.text.length < 2) return item;
+				const optNum = parseFloat(correct.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
+				if (optNum == null || isNaN(optNum)) return item;
+				const wsNums = [...ws.matchAll(/-?\d+\.?\d*/g)].map(m => parseFloat(m[0])).filter(n => !isNaN(n));
+				const found = wsNums.some(n => Math.abs(n - optNum) < 0.01);
+				if (found) return item;
+				for (const opt of opts) {
+					if (opt === correct) continue;
+					const num = parseFloat(opt.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
+					if (num == null || isNaN(num)) continue;
+					if (wsNums.some(n => Math.abs(n - num) < 0.01)) {
+						opt.isCorrect = true;
+						correct.isCorrect = false;
+						console.warn(`[ai-generate] Auto-corrected answer: ${correct.text} → ${opt.text}`);
+						break;
+					}
+				}
+				return item;
+			};
+			if (questionType === 'VIGNETTE_MCQ') {
+				for (const item of items) {
+					if (Array.isArray(item.questions)) {
+						item.questions.forEach(sq => validateAnswerConsistency(sq));
+					}
+				}
+			} else {
+				items.forEach(it => validateAnswerConsistency(it));
+			}
+
 			const level = course.level || 'LEVEL1';
 			const created = [];
 			// For creation, spread questions across selected topics (round-robin)
@@ -2735,6 +2770,15 @@ Each object in the "items" array MUST have:
 
 DO NOT wrap questions inside "vignetteText" or "questions" sub-arrays. Each item is a standalone MCQ question at the top level of the "items" array.
 
+CRITICAL — CALCULATION CONSISTENCY RULE (MUST FOLLOW):
+For EVERY question that involves a numerical calculation:
+1. FIRST complete the full worked solution with every arithmetic step shown.
+2. DERIVE the final numerical answer from your worked solution.
+3. The correct MCQ option (isCorrect: true) MUST display the EXACT number you computed in the worked solution — NOT a different number.
+4. NEVER pick the correct answer first and then write the solution — always solve first, then set the matching option as correct.
+5. DOUBLE-CHECK: After generating the question, verify that the workedSolution's final value matches the correct option's text exactly. If they differ, fix the option to match the solution.
+6. The two distractor options must be plausible but numerically different from the correct answer (e.g. common errors like forgetting the square root, using wrong weights, omitting a term).
+
 ${metaFieldsBlock}`;
 		} else if (questionType === 'VIGNETTE_MCQ') {
 			formatBlock = `Return a JSON object with this EXACT shape:
@@ -2759,6 +2803,11 @@ Each object in "items" MUST follow this structure:
     • Each sub-question is worth 3 marks (do NOT include a "marks" field for vignette MCQ sub-questions)
 ${selectedTopics.length > 1 ? `    • TOPIC DISTRIBUTION: The selected topics are [${selectedTopics.map(t => t.name).join(', ')}]. You MUST spread these topics equally across the 4 sub-questions. Each sub-question should test a different topic from this list. Assign topics round-robin so all selected topics are covered.
 ` : ''}
+    • CRITICAL — CALCULATION CONSISTENCY RULE (MUST FOLLOW):
+      For sub-questions with numerical calculations:
+      1. FIRST complete the worked solution, compute the final answer.
+      2. The option with isCorrect: true MUST display the EXACT number from your worked solution.
+      3. DOUBLE-CHECK: Verify the correct option text matches the worked solution's final value. Fix if different.
     • Plus ALL metadata fields listed below
 }
 
@@ -2964,6 +3013,40 @@ ${formatBlock}`;
 				return [];
 			};
 
+			// ── Answer consistency validation ──────────────────────────────
+			// Detect hallucinated correct answers: if the option marked isCorrect
+			// has a number that does not appear in the workedSolution, auto-correct.
+			const validateAnswerConsistency = (item) => {
+				if (questionType === 'CONSTRUCTED_RESPONSE' && !isConstructedBundle) return item;
+				const opts = Array.isArray(item.options) ? item.options : [];
+				const correct = opts.find(o => o.isCorrect);
+				const ws = (item.workedSolution || item.explanation || '').toLowerCase();
+				if (!correct || !ws || correct.text.length < 2) return item;
+				// Extract the number from the correct option text (strip % and LaTeX)
+				const optNum = parseFloat(correct.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
+				if (optNum == null || isNaN(optNum)) return item;
+				// Extract all numbers from the worked solution
+				const wsNums = [...ws.matchAll(/-?\d+\.?\d*/g)].map(m => parseFloat(m[0])).filter(n => !isNaN(n));
+				const found = wsNums.some(n => Math.abs(n - optNum) < 0.01);
+				if (found) return item;
+				// The correct option's number wasn't found in the worked solution.
+				// Try to find the option whose number IS in the worked solution.
+				for (const opt of opts) {
+					if (opt === correct) continue;
+					const num = parseFloat(opt.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
+					if (num == null || isNaN(num)) continue;
+					if (wsNums.some(n => Math.abs(n - num) < 0.01)) {
+						opt.isCorrect = true;
+						correct.isCorrect = false;
+						if (process.env.NODE_ENV !== 'production') {
+							console.warn(`[ai-preview] Auto-corrected answer: ${correct.text} → ${opt.text} (worked solution contained ${num})`);
+						}
+						break;
+					}
+				}
+				return item;
+			};
+
 			if (questionType === 'VIGNETTE_MCQ' || isConstructedBundle) {
 				// Each item in the array is a separate case study bundle
 				const bundles = items.map((bundle) => {
@@ -2971,6 +3054,7 @@ ${formatBlock}`;
 					const sub = Array.isArray(bundle.questions) ? bundle.questions : [];
 					if (sub.length > 0) console.log('[preview] AI sub-question keys:', Object.keys(sub[0]), '| stem sample:', String(sub[0]?.stem || sub[0]?.question || sub[0]?.text || '').slice(0, 80));
 					const subQuestions = sub.map((sq) => {
+						validateAnswerConsistency(sq);
 						const t = nextTopic();
 						const useDifficulty = nextDifficulty();
 						const cIds = mapConceptIds(sq);
@@ -3002,6 +3086,7 @@ ${formatBlock}`;
 
 			items = items.slice(0, count);
 			const normalized = items.map((it) => {
+				validateAnswerConsistency(it);
 				const t = nextTopic();
 				const useDifficulty = nextDifficulty();
 				const cIds = mapConceptIds(it);
