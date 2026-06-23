@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Spin, Checkbox } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
-import MathText, { MathVariables } from '../../components/MathText';
+import MathText from '../../components/MathText';
+import { ModuleNotePreviewCard } from '../../components/ModuleNotePreviewCard';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -89,11 +90,11 @@ export function AdminModuleNotes() {
 
 	useEffect(() => { fetchNotes(); }, [fetchNotes]);
 
-	const openCreate = () => { setEditingId(null); form.resetFields(); form.setFieldsValue({ level: 'LEVEL1', order: 0, status: 'DRAFT', year: 2026 }); setFormCourseId(null); setFormVolumeId(null); setFormModuleId(null); setDrawerOpen(true); };
+	const openCreate = () => { setEditingId(null); form.resetFields(); form.setFieldsValue({ level: 'LEVEL1', order: 0, status: 'DRAFT', year: 2026, studyRoadmap: null }); setFormCourseId(null); setFormVolumeId(null); setFormModuleId(null); setDrawerOpen(true); };
 
 	const openEdit = (record) => {
 		setEditingId(record.id);
-		form.setFieldsValue({ title: record.title, level: record.level, courseId: record.courseId, volumeId: record.volumeId, moduleId: record.moduleId, topicId: record.topicId, year: record.year || 2026, studyTime: record.studyTime || '', difficulty: record.difficulty || '', calculatorUse: record.calculatorUse || '', overview: record.overview || '', moduleSummary: record.moduleSummary || '', order: record.order || 0, status: record.status || 'DRAFT' });
+		form.setFieldsValue({ title: record.title, level: record.level, courseId: record.courseId, volumeId: record.volumeId, moduleId: record.moduleId, topicId: record.topicId, year: record.year || 2026, studyTime: record.studyTime || '', difficulty: record.difficulty || '', calculatorUse: record.calculatorUse || '', overview: record.overview || '', studyRoadmap: record.studyRoadmap ? JSON.stringify(record.studyRoadmap) : '', moduleSummary: record.moduleSummary || '', order: record.order || 0, status: record.status || 'DRAFT' });
 		setFormCourseId(record.courseId); setFormVolumeId(record.volumeId); setFormModuleId(record.moduleId);
 		setDrawerOpen(true);
 	};
@@ -101,6 +102,9 @@ export function AdminModuleNotes() {
 	const handleSubmit = async () => {
 		try {
 			const values = await form.validateFields();
+			if (values.studyRoadmap) {
+				try { values.studyRoadmap = JSON.parse(values.studyRoadmap); } catch { message.warning('Study Roadmap must be valid JSON'); return; }
+			}
 			setSubmitting(true);
 			if (editingId) { await api.put(`/api/module-notes/${editingId}`, values); message.success('Module note updated'); }
 			else { await api.post('/api/module-notes', values); message.success('Module note created'); }
@@ -187,26 +191,6 @@ export function AdminModuleNotes() {
 		} finally { setAiAcceptLoading(false); }
 	};
 
-	const columns = [
-		{ title: 'Title', dataIndex: 'title', key: 'title', width: 260, render: (t) => <span style={{ fontWeight: 600, color: '#102540' }}>{t}</span> },
-		{ title: 'Level', dataIndex: 'level', key: 'level', width: 90, render: (l) => <Tag color={LEVEL_COLORS[l]}>{LEVEL_LABELS[l]}</Tag> },
-		{ title: 'Volume', key: 'volume', width: 140, render: (_, r) => r.volume?.name || <Typography.Text type="secondary">—</Typography.Text> },
-		{ title: 'Module', key: 'module', width: 160, render: (_, r) => r.module?.name || <Typography.Text type="secondary">—</Typography.Text> },
-		{ title: 'Difficulty', dataIndex: 'difficulty', key: 'difficulty', width: 110, render: (d) => d ? <Tag>{d}</Tag> : '—' },
-		{ title: 'Status', dataIndex: 'status', key: 'status', width: 100, render: (s) => <Tag color={STATUS_COLORS[s]}>{s}</Tag> },
-		{
-			title: 'Actions', key: 'actions', width: 180, fixed: 'right',
-			render: (_, record) => (
-				<Space size={4}>
-					<Tooltip title="Preview"><Button size="small" type="text" icon={<EyeOutlined />} onClick={() => { setPreviewNote(record); setPreviewOpen(true); }} /></Tooltip>
-					<Tooltip title="Edit"><Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} /></Tooltip>
-					<Tooltip title={record.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}><Button size="small" type="text" icon={record.status === 'PUBLISHED' ? <StarFilled style={{ color: '#22c55e' }} /> : <StarOutlined />} onClick={() => toggleStatus(record)} /></Tooltip>
-					<Tooltip title="Delete"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} /></Tooltip>
-				</Space>
-			),
-		},
-	];
-
 	return (
 		<div>
 			{/* Header */}
@@ -239,9 +223,70 @@ export function AdminModuleNotes() {
 			</Card>
 
 			{/* Table */}
-			<Card bodyStyle={{ padding: 0 }} style={{ borderRadius: 12, border: '1px solid #e2e8f0' }}>
-				<Table dataSource={notes} columns={columns} rowKey="id" loading={loading} scroll={{ x: 1000 }} pagination={{ current: page, pageSize, total, showSizeChanger: true, pageSizeOptions: ['10', '25', '50'], onChange: (p, ps) => { setPage(p); setPageSize(ps); }, showTotal: (t) => <span style={{ color: '#64748b' }}>{t} note{t !== 1 ? 's' : ''}</span> }} />
-			</Card>
+			{loading ? (
+				<div style={{ padding: 60, textAlign: 'center' }}><Spin size="large" /></div>
+			) : notes.length === 0 ? (
+				<Card style={{ borderRadius: 12, border: '1px solid #e2e8f0', textAlign: 'center', padding: 40 }}>
+					<Empty description="No module notes found" />
+				</Card>
+			) : (
+				<>
+					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16 }}>
+						{notes.map((record) => {
+							const losCount = Array.isArray(record.losStatements) ? record.losStatements.length : 0;
+							const conceptCount = Array.isArray(record.concepts) ? record.concepts.length : 0;
+							const formulaCount = Array.isArray(record.formulaRecap) ? record.formulaRecap.length : 0;
+							const practiceCount = Array.isArray(record.practiceSet) ? record.practiceSet.length : 0;
+							return (
+								<Card
+									key={record.id}
+									hoverable
+									style={{
+										borderRadius: 14,
+										border: '1px solid #e2e8f0',
+										boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+									}}
+									styles={{ body: { padding: 0 } }}
+								>
+									<div style={{ padding: 16 }}>
+										<div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+											<div style={{ flex: 1, minWidth: 0 }}>
+												<div style={{ fontWeight: 700, fontSize: 15, color: '#102540', lineHeight: 1.3 }}>{record.title}</div>
+												{record.module?.name && <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{record.module.name}</div>}
+											</div>
+											<Tag color={STATUS_COLORS[record.status]} style={{ flexShrink: 0, marginTop: 2 }}>{record.status}</Tag>
+										</div>
+										<div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap' }}>
+											<Tag color={LEVEL_COLORS[record.level]} style={{ fontSize: 11 }}>{LEVEL_LABELS[record.level]}</Tag>
+											{record.difficulty && <Tag style={{ fontSize: 11 }}>{record.difficulty}</Tag>}
+											{record.studyTime && <Tag color="geekblue" style={{ fontSize: 11 }}>{record.studyTime}</Tag>}
+										</div>
+										{record.overview && <div style={{ fontSize: 13, color: '#475569', marginTop: 8, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{record.overview}</div>}
+										<div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+											{losCount > 0 && <Tag color="blue" style={{ fontSize: 11, borderRadius: 6 }}>{losCount} LOS</Tag>}
+											{conceptCount > 0 && <Tag color="purple" style={{ fontSize: 11, borderRadius: 6 }}>{conceptCount} concepts</Tag>}
+											{formulaCount > 0 && <Tag color="cyan" style={{ fontSize: 11, borderRadius: 6 }}>{formulaCount} formulas</Tag>}
+											{practiceCount > 0 && <Tag color="green" style={{ fontSize: 11, borderRadius: 6 }}>{practiceCount} practice Qs</Tag>}
+										</div>
+									</div>
+									<div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 12px', display: 'flex', justifyContent: 'flex-end', gap: 2, background: '#fafafa' }}>
+										<Tooltip title="Preview"><Button size="small" type="text" icon={<EyeOutlined />} onClick={() => { setPreviewNote(record); setPreviewOpen(true); }} /></Tooltip>
+										<Tooltip title="Edit"><Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} /></Tooltip>
+										<Tooltip title={record.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}><Button size="small" type="text" icon={record.status === 'PUBLISHED' ? <StarFilled style={{ color: '#22c55e' }} /> : <StarOutlined />} onClick={() => toggleStatus(record)} /></Tooltip>
+										<Tooltip title="Delete"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} /></Tooltip>
+									</div>
+								</Card>
+							);
+						})}
+					</div>
+					<div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+						<Space>
+							<Typography.Text style={{ color: '#64748b', fontSize: 13 }}>{total} note{total !== 1 ? 's' : ''}</Typography.Text>
+							<Select value={pageSize} onChange={(v) => { setPageSize(v); setPage(1); }} options={[{ value: 10, label: '10/page' }, { value: 25, label: '25/page' }, { value: 50, label: '50/page' }]} style={{ width: 100 }} />
+						</Space>
+					</div>
+				</>
+			)}
 
 			{/* Create/Edit Drawer */}
 			<Drawer title={editingId ? 'Edit Module Note' : 'Create Module Note'} placement="right" width={Math.min(680, typeof window !== 'undefined' ? window.innerWidth * 0.9 : 680)} open={drawerOpen} onClose={() => setDrawerOpen(false)}
@@ -268,6 +313,7 @@ export function AdminModuleNotes() {
 						<Col span={8}><Form.Item name="calculatorUse" label="Calculator Use"><Select placeholder="Select" options={[{ value: 'Minimal', label: 'Minimal' }, { value: 'Moderate', label: 'Moderate' }, { value: 'Heavy', label: 'Heavy' }]} allowClear /></Form.Item></Col>
 					</Row>
 					<Form.Item name="overview" label="Overview"><Input.TextArea rows={3} placeholder="Why this module matters…" /></Form.Item>
+					<Form.Item name="studyRoadmap" label="Study Roadmap (JSON)"><Input.TextArea rows={3} placeholder='[{"step":"1","focus":"...","whyItMatters":"...","examTip":"..."}]' /></Form.Item>
 					<Form.Item name="moduleSummary" label="Module Summary"><Input.TextArea rows={3} placeholder="Key ideas, exam traps, memory triggers…" /></Form.Item>
 					<Form.Item name="status" label="Status"><Select options={[{ value: 'DRAFT', label: 'Draft' }, { value: 'PUBLISHED', label: 'Published' }]} /></Form.Item>
 				</Form>
@@ -331,158 +377,63 @@ function ModuleNotePreviewContent({ note, compact }) {
 	const formulas = Array.isArray(n.formulaRecap) ? n.formulaRecap : [];
 	const drills = Array.isArray(n.practiceSet) ? n.practiceSet : [];
 	const checks = Array.isArray(n.revisionCheck) ? n.revisionCheck : [];
+	const [expandedLos, setExpandedLos] = useState(false);
+	const [expandedConcepts, setExpandedConcepts] = useState(false);
 
 	return (
 		<div>
-			<Typography.Text strong style={{ fontSize: 16, color: '#102540' }}>{n.title}</Typography.Text>
-			<div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-				{n.studyTime && <Tag>{n.studyTime}</Tag>}
-				{n.difficulty && <Tag color="blue">{n.difficulty}</Tag>}
-				{n.calculatorUse && <Tag color="geekblue">Calc: {n.calculatorUse}</Tag>}
+			<Typography.Text strong style={{ fontSize: 15, color: '#102540' }}>{n.title}</Typography.Text>
+			{n.overview && <div style={{ color: '#475569', fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>{n.overview}</div>}
+			<div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+				{n.studyTime && <Tag color="geekblue" style={{ fontSize: 10 }}>{n.studyTime}</Tag>}
+				{n.difficulty && <Tag color="blue" style={{ fontSize: 10 }}>{n.difficulty}</Tag>}
+				{n.calculatorUse && <Tag color="cyan" style={{ fontSize: 10 }}>Calc: {n.calculatorUse}</Tag>}
+				{n.year && <Tag style={{ fontSize: 10 }}>{n.year} Ed.</Tag>}
+				{los.length > 0 && <Tag color="blue" style={{ fontSize: 10 }}>{los.length} LOS</Tag>}
+				{concepts.length > 0 && <Tag color="purple" style={{ fontSize: 10 }}>{concepts.length} concepts</Tag>}
+				{formulas.length > 0 && <Tag color="cyan" style={{ fontSize: 10 }}>{formulas.length} formulas</Tag>}
+				{drills.length > 0 && <Tag color="green" style={{ fontSize: 10 }}>{drills.length} practice</Tag>}
 			</div>
-			{n.overview && <div style={{ color: '#475569', fontSize: 13, marginTop: 6 }}>{n.overview}</div>}
-			{los.length > 0 && <div style={{ marginTop: 10 }}><Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540' }}>LOS ({los.length})</Typography.Text>{los.slice(0, compact ? 3 : 99).map((l, i) => (<div key={i} style={{ fontSize: 12, color: '#374151', padding: '3px 0', borderBottom: '1px solid #f0f0f0' }}><strong>{l.ref}:</strong> {l.statement} <Tag style={{ fontSize: 10 }}>{l.commandWord}</Tag></div>))}{compact && los.length > 3 && <div style={{ fontSize: 11, color: '#94a3b8' }}>+{los.length - 3} more</div>}</div>}
-			{concepts.length > 0 && <div style={{ marginTop: 10 }}><Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540' }}>Concepts ({concepts.length})</Typography.Text>{concepts.slice(0, compact ? 2 : 99).map((c, i) => (<div key={i} style={{ marginTop: 6, padding: '8px 10px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}><div style={{ fontWeight: 600, color: '#102540', fontSize: 13 }}>{c.title}</div><div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>{c.meaning}</div>{c.formula && <div style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 14, fontWeight: 600, color: '#102540', marginTop: 4, background: '#f0f4f8', padding: '6px 10px', borderRadius: 6 }}>{c.formula}</div>}</div>))}{compact && concepts.length > 2 && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>+{concepts.length - 2} more concepts</div>}</div>}
-			{formulas.length > 0 && <div style={{ marginTop: 10, padding: '8px 10px', background: '#f0f4f8', borderRadius: 8 }}><Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540' }}>Formula Recap ({formulas.length})</Typography.Text></div>}
-			<div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-				{drills.length > 0 && <Tag color="blue">{drills.length} practice Q</Tag>}
-				{checks.length > 0 && <Tag>{checks.length} revision items</Tag>}
-			</div>
-		</div>
-	);
-}
-
-// ─── Safe render: stringify objects that React can't render ──
-function safeRender(val) {
-	if (val === null || val === undefined) return '';
-	if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return String(val);
-	if (typeof val === 'object') {
-		try { return JSON.stringify(val); } catch { return String(val); }
-	}
-	return String(val);
-}
-
-// ─── Full preview card (premium styled) ───────────────────
-function ModuleNotePreviewCard({ note }) {
-	const n = note;
-	const los = Array.isArray(n.losStatements) ? n.losStatements : [];
-	const concepts = Array.isArray(n.concepts) ? n.concepts : [];
-	const formulas = Array.isArray(n.formulaRecap) ? n.formulaRecap : [];
-	const practiceSet = Array.isArray(n.practiceSet) ? n.practiceSet : [];
-	const solutions = Array.isArray(n.workedSolutions) ? n.workedSolutions : [];
-	const checks = Array.isArray(n.revisionCheck) ? n.revisionCheck : [];
-
-	return (
-		<div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden' }}>
-			{/* Module Divider */}
-			<div style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', padding: '28px 32px' }}>
-				<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5 }}>LEARNING MODULE</Typography.Text>
-				<Typography.Title level={2} style={{ margin: '4px 0 0', color: '#fff' }}>{n.title}</Typography.Title>
-				<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>{LEVEL_LABELS[n.level]} {n.volume?.name ? `| ${n.volume.name}` : ''} {n.module?.name ? `| ${n.module.name}` : ''}</Typography.Text>
-				<div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-					<Tag style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff' }}>{n.year} Edition</Tag>
-					<Tag color={n.status === 'PUBLISHED' ? 'green' : 'default'}>{n.status}</Tag>
-				</div>
-			</div>
-
-			{/* Identity Strip */}
-			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0, borderBottom: '1px solid #e2e8f0' }}>
-				{[{ label: 'Study Time', value: n.studyTime }, { label: 'Difficulty', value: n.difficulty }, { label: 'Calculator Use', value: n.calculatorUse }].map((item, i) => (
-					<div key={i} style={{ padding: '12px 20px', borderRight: i < 2 ? '1px solid #e2e8f0' : 'none', textAlign: 'center' }}>
-						<div style={{ fontSize: 10, textTransform: 'uppercase', color: '#94a3b8', letterSpacing: 1 }}>{item.label}</div>
-						<div style={{ fontSize: 14, fontWeight: 600, color: '#102540', marginTop: 2 }}>{item.value || '—'}</div>
+			{los.length > 0 && (
+				<div style={{ marginTop: 8 }}>
+					<div onClick={() => setExpandedLos(!expandedLos)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, userSelect: 'none' }}>
+						<span style={{ fontSize: 12, fontWeight: 600, color: '#102540' }}>LOS</span>
+						<span style={{ fontSize: 10, color: '#94a3b8' }}>{expandedLos ? '▲' : '▼'} {los.length} items</span>
 					</div>
-				))}
-			</div>
-
-			{/* Overview */}
-			{n.overview && <div style={{ padding: '16px 32px', background: '#f0f4f8', borderBottom: '1px solid #e2e8f0' }}><div style={{ color: '#374151', fontSize: 14, lineHeight: 1.6 }}>{safeRender(n.overview)}</div></div>}
-
-			<div style={{ padding: '24px 32px' }}>
-				{/* LOS */}
-				{los.length > 0 && (
-					<div style={{ marginBottom: 24 }}>
-						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>Learning Outcome Statements</Typography.Text>
-						<table style={{ width: '100%', marginTop: 10, borderCollapse: 'collapse' }}>
-							<thead><tr style={{ borderBottom: '2px solid #cbd5e1' }}><th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>LOS</th><th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>Statement</th><th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>Command</th></tr></thead>
-							<tbody>{los.map((l, i) => (<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px', fontWeight: 600, color: '#102540', fontSize: 13 }}>{safeRender(l.ref)}</td><td style={{ padding: '8px', fontSize: 13, color: '#374151' }}>{safeRender(l.statement)}</td><td style={{ padding: '8px' }}><Tag color="blue" style={{ fontSize: 11 }}>{safeRender(l.commandWord)}</Tag></td></tr>))}</tbody>
-						</table>
-					</div>
-				)}
-
-				{/* Concepts */}
-				{concepts.map((c, i) => (
-					<div key={i} style={{ marginBottom: 20, padding: '16px 20px', background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
-						<Typography.Text strong style={{ fontSize: 15, color: '#102540' }}>{i + 1}. {safeRender(c.title)}</Typography.Text>
-						<div style={{ marginTop: 8 }}>
-							<div style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}><strong>Plain-English meaning:</strong> {safeRender(c.meaning)}</div>
-							{c.explanation && <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>{safeRender(c.explanation)}</div>}
-							{c.formula && (
-								<div style={{ background: '#f0f4f8', borderRadius: 8, padding: '12px 16px', marginBottom: 8, border: '1px solid #e2e8f0' }}>
-									<Typography.Text style={{ fontSize: 10, textTransform: 'uppercase', color: '#64748b', letterSpacing: 1 }}>FORMULA</Typography.Text>
-									<MathText text={c.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 16, fontWeight: 600, color: '#102540', marginTop: 4 }} />
-									{c.formulaVariables && <MathText text={safeRender(c.formulaVariables)} tag="div" style={{ fontSize: 12, color: '#64748b', marginTop: 4 }} />}
-								</div>
-							)}
-							{c.interpretation && <div style={{ fontSize: 13, color: '#374151', marginBottom: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, borderLeft: '3px solid #3b82f6' }}><strong>Interpretation:</strong> {safeRender(c.interpretation)}</div>}
-							{c.workedExample && (
-								<div style={{ marginBottom: 8, padding: '10px 14px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
-									<Typography.Text strong style={{ fontSize: 12, color: '#1d4ed8' }}>Worked Example</Typography.Text>
-									<div style={{ fontSize: 13, marginTop: 4 }}><strong>Given:</strong> {safeRender(c.workedExample.given)}</div>
-									<div style={{ fontSize: 13 }}><strong>Required:</strong> {safeRender(c.workedExample.required)}</div>
-									<div style={{ fontSize: 13 }}><strong>Solution:</strong> {safeRender(c.workedExample.solution)}</div>
-									<div style={{ fontSize: 13 }}><strong>Conclusion:</strong> {safeRender(c.workedExample.conclusion)}</div>
-								</div>
-							)}
-							<Row gutter={12}>
-								{c.examTip && <Col span={12}><div style={{ padding: '8px 12px', background: '#f0fdf4', borderRadius: 6, borderLeft: '3px solid #22c55e' }}><Typography.Text strong style={{ fontSize: 11, color: '#166534' }}>EXAM TIP</Typography.Text><div style={{ fontSize: 12, color: '#166534', marginTop: 2 }}>{safeRender(c.examTip)}</div></div></Col>}
-								{c.commonMistake && <Col span={12}><div style={{ padding: '8px 12px', background: '#fef3c7', borderRadius: 6, borderLeft: '3px solid #f59e0b' }}><Typography.Text strong style={{ fontSize: 11, color: '#92400e' }}>COMMON MISTAKE</Typography.Text><div style={{ fontSize: 12, color: '#92400e', marginTop: 2 }}>{safeRender(c.commonMistake)}</div></div></Col>}
-							</Row>
+					{expandedLos && los.map((l, i) => (
+						<div key={i} style={{ fontSize: 12, color: '#374151', padding: '2px 0' }}>
+							<span style={{ fontWeight: 600, color: '#102540' }}>{l.ref}:</span> {l.statement}
+							{l.commandWord && <Tag style={{ fontSize: 9, marginLeft: 4 }}>{l.commandWord}</Tag>}
 						</div>
+					))}
+				</div>
+			)}
+			{concepts.length > 0 && (
+				<div style={{ marginTop: 6 }}>
+					<div onClick={() => setExpandedConcepts(!expandedConcepts)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, userSelect: 'none' }}>
+						<span style={{ fontSize: 12, fontWeight: 600, color: '#102540' }}>Concepts</span>
+						<span style={{ fontSize: 10, color: '#94a3b8' }}>{expandedConcepts ? '▲' : '▼'} {concepts.length} items</span>
 					</div>
-				))}
-
-				{/* Module Summary */}
-				{n.moduleSummary && <div style={{ marginBottom: 20, padding: '16px 20px', background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0' }}><Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540' }}>Module Summary</Typography.Text><div style={{ fontSize: 13, color: '#374151', marginTop: 8, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{safeRender(n.moduleSummary)}</div></div>}
-
-				{/* Formula Recap */}
-				{formulas.length > 0 && (
-					<div style={{ marginBottom: 20, background: '#f0f4f8', borderRadius: 12, padding: '16px 20px', border: '1px solid #e2e8f0' }}>
-						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540' }}>Formula Recap</Typography.Text>
-						{formulas.map((f, i) => (<div key={i} style={{ padding: '8px 0', borderBottom: i < formulas.length - 1 ? '1px solid #e2e8f0' : 'none' }}><div style={{ fontWeight: 600, color: '#102540', fontSize: 13 }}>{safeRender(f.name)}</div><MathText text={f.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 15, fontWeight: 600, color: '#102540', marginTop: 2 }} /><MathVariables text={safeRender(f.variables)} tag="div" style={{ fontSize: 12, color: '#64748b', marginTop: 1 }} /></div>))}
-					</div>
-				)}
-
-				{/* Practice Set */}
-				{practiceSet.length > 0 && (
-					<div style={{ marginBottom: 20, padding: '16px 20px', background: '#eff6ff', borderRadius: 12, borderLeft: '4px solid #3b82f6' }}>
-						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#1d4ed8' }}>Practice Set</Typography.Text>
-						{practiceSet.map((q, i) => (<div key={i} style={{ fontSize: 13, color: '#1e3a5a', marginTop: 6 }}><strong>{i + 1}.</strong> {safeRender(q.question)} {q.losRef && <Tag style={{ fontSize: 10 }}>{safeRender(q.losRef)}</Tag>}</div>))}
-					</div>
-				)}
-
-				{/* Worked Solutions */}
-				{solutions.length > 0 && (
-					<div style={{ marginBottom: 20 }}>
-						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540' }}>Worked Solutions</Typography.Text>
-						{solutions.map((s, i) => (<div key={i} style={{ marginTop: 8, padding: '10px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}><div style={{ fontWeight: 600, fontSize: 13, color: '#102540' }}>{i + 1}. {safeRender(s.question)}</div><div style={{ fontSize: 13, marginTop: 4 }}><strong>Answer:</strong> {safeRender(s.answer)}</div>{s.method && <div style={{ fontSize: 12, color: '#475569' }}><strong>Method:</strong> {safeRender(s.method)}</div>}{s.interpretation && <div style={{ fontSize: 12, color: '#3b82f6' }}><strong>Interpretation:</strong> {safeRender(s.interpretation)}</div>}{s.trap && <div style={{ fontSize: 12, color: '#92400e' }}><strong>Trap:</strong> {safeRender(s.trap)}</div>}</div>))}
-					</div>
-				)}
-
-				{/* Revision Checklist */}
-				{checks.length > 0 && (
-					<div style={{ padding: '14px 18px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
-						<Typography.Text strong style={{ fontSize: 12, textTransform: 'uppercase', color: '#102540' }}>Revision Checklist</Typography.Text>
-						<div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>{checks.map((c, i) => (<div key={i} style={{ padding: '6px 12px', background: '#fff', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13 }}>☐ {safeRender(c.item)}</div>))}</div>
-					</div>
-				)}
-			</div>
-
-			{/* Footer */}
-			<div style={{ padding: '12px 32px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', background: '#f8fafc' }}>
-				<Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>Milven Finance School | Module Notes {n.year}</Typography.Text>
-				<Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>Simplified. Exam-focused. Built to help you pass.</Typography.Text>
-			</div>
+					{expandedConcepts && concepts.map((c, i) => (
+						<div key={i} style={{ marginTop: 4, padding: '6px 8px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+							<div style={{ fontWeight: 600, color: '#102540', fontSize: 12 }}>{c.title}</div>
+							<div style={{ fontSize: 11, color: '#475569', marginTop: 1 }}>{c.meaning}</div>
+							{c.formula && <MathText text={c.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 13, fontWeight: 600, color: '#102540', marginTop: 2, background: '#f0f4f8', padding: '4px 8px', borderRadius: 4 }} />}
+						</div>
+					))}
+				</div>
+			)}
+			{formulas.length > 0 && !compact && (
+				<div style={{ marginTop: 6, padding: '6px 8px', background: '#f0f4f8', borderRadius: 6 }}>
+					<span style={{ fontSize: 11, fontWeight: 600, color: '#102540' }}>Formulas ({formulas.length})</span>
+					{formulas.map((f, i) => (
+						<div key={i} style={{ marginTop: 4 }}>
+							<span style={{ fontSize: 11, color: '#374151' }}>{f.name}: </span>
+							<MathText text={f.formula} tag="span" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 12, fontWeight: 600, color: '#102540' }} />
+						</div>
+					))}
+				</div>
+			)}
 		</div>
 	);
 }

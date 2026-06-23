@@ -807,10 +807,12 @@ model ModuleNote {
   calculatorUse   String?               // e.g. "Moderate", "Heavy", "Minimal"
   // Overview
   overview        String?               // Why the module matters, what success looks like
+  // Study Roadmap (JSON array)
+  studyRoadmap    Json?                 // [{step, focus, whyItMatters, examTip}]
   // Learning Outcome Statements (JSON array)
   losStatements   Json?                 // [{ref, statement, commandWord}]
-  // Concept Pages (JSON array)
-  concepts        Json?                 // [{title, meaning, explanation, formula, formulaVariables, interpretation, workedExample, examTip, commonMistake}]
+  // Topic-by-topic notes (JSON array) — rich concept pages
+  concepts        Json?                 // [{title, meaning, explanation, formula, formulaVariables, interpretation, workedExample, examTip, commonMistake, formulaUseCase, formulaExamTrap}]
   // End-of-module content
   moduleSummary   String?               // Key ideas, must-know distinctions, exam traps
   formulaRecap    Json?                 // [{name, formula, variables}]

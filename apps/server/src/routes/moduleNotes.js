@@ -27,6 +27,7 @@ export function moduleNotesRouter(prisma) {
 		difficulty: z.string().optional().nullable(),
 		calculatorUse: z.string().optional().nullable(),
 		overview: z.string().optional().nullable(),
+		studyRoadmap: z.any().optional().nullable(),
 		losStatements: z.any().optional().nullable(),
 		concepts: z.any().optional().nullable(),
 		moduleSummary: z.string().optional().nullable(),
@@ -248,57 +249,109 @@ export function moduleNotesRouter(prisma) {
 
 		const topicContext = topicNames.length > 0 ? `\nTopics to cover: ${topicNames.join(', ')}` : '';
 
-		const prompt = `You are a senior CFA curriculum expert at Milven Finance School. Generate 1 complete CFA Learning Module Note in JSON format.
+		const prompt = `You are the Milven Notes Generator for Milven Finance School. Generate one comprehensive CFA Learning Module Note in the Milven Notes format below.
 
-This module note is a PREMIUM, LONG-FORM, exam-focused learning document. It MUST be extremely detailed and comprehensive — equivalent to 10-15 printed pages. Do NOT summarize or abbreviate. Write FULL explanations for every concept.
+This is a PREMIUM study document — 10 to 15 printed pages. Do NOT summarize. Write FULL explanations. Do NOT copy curriculum wording or tuition-provider examples. Write in original Milven teaching language.
 
 ${hierarchyContext}
 Year: ${year}${topicContext}
 ${curriculumSection}
-LENGTH REQUIREMENTS (CRITICAL — the note MUST be long and detailed):
-- "overview": Write 5-8 sentences covering why this module matters, what the candidate will learn, how it connects to other topics, and what exam success looks like
-- "losStatements": Include ALL Learning Outcome Statements (typically 5-12 per module)
-- "concepts": Generate 10-20 concept pages. EVERY topic and sub-topic within the module MUST have its own concept page. This is the main body of the note — make each concept page LONG:
-  * "meaning": 3-5 sentences plain-English explanation
-  * "explanation": 8-15 sentences covering the full theory, relationships, edge cases, and exam relevance. Do NOT write short 1-2 sentence explanations.
-  * "workedExample": FULL numerical example with detailed step-by-step solution (at least 5 steps)
-  * "examTip": 2-3 sentences of specific exam advice
-  * "commonMistake": 2-3 sentences describing exactly what students get wrong and why
-- "moduleSummary": Write 5-8 paragraphs covering key ideas, must-know distinctions, exam traps, memory triggers, and how topics interconnect
-- "formulaRecap": List EVERY formula from the module (typically 8-20 formulas)
-- "practiceSet": Generate 8-12 exam-style questions covering ALL topics in the module
-- "workedSolutions": Detailed solutions for EVERY practice question with full method, interpretation, and trap explanation
-- "revisionCheck": 10-15 self-check items covering every key concept
 
-${LATEX_PROMPT_SECTION}
-- PRESERVE exact notation from the curriculum document but convert to valid LaTeX
+--- OUTPUT STRUCTURE ---
 
-For each concept page, use this structure:
-{"title": "...", "meaning": "LONG plain-English meaning (3-5 sentences)", "explanation": "VERY DETAILED core explanation (8-15 sentences minimum)", "formula": "exact equation with rich notation or null", "formulaVariables": "define EVERY variable or null", "interpretation": "what it measures and why it matters (3-5 sentences)", "workedExample": {"given": "detailed givens", "required": "what to find", "solution": "FULL step-by-step solution with calculations", "conclusion": "interpretation of result"}, "examTip": "2-3 sentences", "commonMistake": "2-3 sentences"}
+Return a JSON object with a "notes" array containing ONE note object with these fields:
 
-Return JSON:
 {
   "notes": [
     {
-      "title": "string",
-      "studyTime": "string (e.g. 2.5 hours)",
+      "title": "Learning Module title",
+      "studyTime": "string (e.g. 3 hours)",
       "difficulty": "Foundational|Intermediate|Advanced",
       "calculatorUse": "Minimal|Moderate|Heavy",
-      "overview": "LONG string (5-8 sentences)",
-      "losStatements": [{"ref": "LOS 1", "statement": "...", "commandWord": "..."}],
-      "concepts": [{...concept pages, 10-20 of them...}],
-      "moduleSummary": "LONG string (5-8 paragraphs)",
-      "formulaRecap": [{"name": "...", "formula": "...", "variables": "..."}],
-      "practiceSet": [{"question": "...", "losRef": "LOS 1"}, ...8-12 questions],
-      "workedSolutions": [{"question": "...", "answer": "...", "method": "DETAILED", "interpretation": "...", "trap": "..."}],
-      "revisionCheck": [{"item": "..."}, ...10-15 items]
+      "overview": "Module Overview and Learning Outcomes (see below)",
+      "studyRoadmap": [ ... Study Roadmap array (see below) ... ],
+      "losStatements": [ ... LOS array (see below) ... ],
+      "concepts": [ ... Topic-by-topic notes array (see below) ... ],
+      "moduleSummary": "Module Summary paragraph",
+      "formulaRecap": [ ... Formula Bank array (see below) ... ],
+      "practiceSet": [ ... Exam-Style Questions array (see below) ... ],
+      "workedSolutions": [ ... Worked Examples array (see below) ... ],
+      "revisionCheck": [ ... Final Exam Checklist array (see below) ... ]
     }
   ]
 }
 
-IMPORTANT: MAXIMIZE the length and detail of your response. Use ALL available tokens. Every field should be as detailed as possible. This is premium study material that students pay for — short or superficial content is unacceptable.
+--- FIELD SPECIFICATIONS ---
 
-Generate exactly 1 module note. Return ONLY valid JSON.`;
+1. "overview": Comprehensive string covering:
+   - What this learning module is about (2-3 sentences)
+   - What the candidate must be able to do after studying (list the key skills)
+   - How this module connects to other topics in the curriculum (1-2 sentences)
+   - Include a sub-section "LOS Covered" listing every LOS reference and statement
+
+2. "studyRoadmap": Array of objects, each with:
+   { "step": "number or short title", "focus": "what to study", "whyItMatters": "why this is important in the exam", "examTip": "specific exam advice for this step" }
+   Generate 5-8 steps that form a logical study sequence through the module.
+   Include a "Simple decision logic" section as the last item that shows when to use each formula/method.
+
+3. "losStatements": Array of ALL Learning Outcome Statements:
+   { "ref": "LOS 1", "statement": "full LOS text", "commandWord": "calculate|interpret|compare|etc" }
+
+4. "concepts": Array of topic-by-topic notes — THIS IS THE MAIN BODY (10-20 items).
+   EVERY topic and sub-topic in the module gets its own entry.
+   Each concept object:
+   {
+     "title": "Topic heading (e.g. 3. Interest Rates and Time Value of Money)",
+     "meaning": "3-5 sentences plain-English explanation of what this is and why it matters",
+     "explanation": "VERY DETAILED — 8-15 sentences minimum. Cover the full theory, relationships, edge cases, exam relevance, and practical application.",
+     "formula": "exact LaTeX formula or null",
+     "formulaVariables": "define EVERY variable in the formula or null",
+     "formulaUseCase": "When to use this formula (1-2 sentences) or null",
+     "formulaExamTrap": "Common mistake students make with this formula (1-2 sentences) or null",
+     "interpretation": "What the result means and why it matters (2-4 sentences) or null",
+     "workedExample": {
+       "given": "detailed givens",
+       "required": "what the question asks for",
+       "solution": "FULL step-by-step solution with all calculations shown",
+       "conclusion": "interpretation of the result"
+     } OR null,
+     "examTip": "2-3 sentences of specific exam strategy",
+     "commonMistake": "2-3 sentences about what candidates get wrong"
+   }
+
+   For each concept, include a FORMULA BOX with:
+   - The formula itself (rendered in LaTeX)
+   - "Use when" use case
+   - "Exam trap" warning
+
+5. "formulaRecap": Formula Bank array — EVERY formula from the module (8-20 items):
+   { "name": "formula name", "formula": "LaTeX formula", "variables": "variable definitions", "useCase": "when to use this formula", "examTrap": "common mistake" }
+
+6. "practiceSet": Array of 10 exam-style questions:
+   { "question": "full question text with answer options A, B, C", "correctAnswer": "A|B|C", "explanation": "detailed explanation of why this answer is correct and why the others are wrong", "losRef": "LOS reference" }
+
+7. "workedSolutions": Array of 4-6 detailed Worked Examples:
+   { "question": "full question", "answer": "final numeric answer", "method": "DETAILED step-by-step solution method", "interpretation": "what the result means", "trap": "what students might do wrong" }
+
+8. "revisionCheck": Array of 10-15 Final Exam Checklist items:
+   { "item": "Can I... [specific capability]?" }
+
+--- FORMAT REQUIREMENTS ---
+${LATEX_PROMPT_SECTION}
+- Wrap ALL formulas in \[...\] for display math or \\(...\\) for inline.
+- Every formula must include a "Use when" use case and an "Exam trap" warning.
+- PRESERVE exact notation from the curriculum but convert to valid LaTeX.
+
+--- QUALITY RULES ---
+- Cover EVERY LOS.
+- Cover EVERY topic and concept in the learning module.
+- Include original examples and original exam-style questions (do NOT copy from curriculum or tuition providers).
+- Every formula must have: formula itself, variable definitions, use case, and exam trap.
+- Worked examples must have step-by-step solutions with all calculations shown.
+- Exam-style questions must have correct answer + full explanation for right AND wrong answers.
+- Output must be suitable for premium study material — thorough, clear, and exam-focused.
+
+Generate exactly 1 module note. Return ONLY valid JSON. Use ALL available tokens for maximum detail.`;
 
 		// ── SSE: switch to streaming before the long OpenAI call ─────────────────
 		// Nginx / DigitalOcean / cloud proxies kill idle TCP connections after ~60 s.
@@ -320,7 +373,7 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. Generate detailed, comprehensive content. Every text field must be multiple sentences. The concepts array must have 8-15 items. Write full detailed content for every field.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are the Milven Notes Generator for Milven Finance School. You produce premium, exam-ready study notes in the Milven Notes format. Return valid JSON only. Generate extremely detailed, comprehensive content — each note must be 10-15 printed pages worth of material. Every text field must be multiple sentences. The concepts array must have 10-20 items covering every topic and sub-topic. Write full original content — do NOT copy curriculum wording or third-party tuition materials.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,
@@ -379,6 +432,7 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 							difficulty: item.difficulty || null,
 							calculatorUse: item.calculatorUse || null,
 							overview: item.overview || null,
+							studyRoadmap: item.studyRoadmap || null,
 							losStatements: item.losStatements || null,
 							concepts: item.concepts || null,
 							moduleSummary: item.moduleSummary || null,
