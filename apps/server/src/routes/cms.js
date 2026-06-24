@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
+import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, autoRepairLatex } from '../lib/openai.js';
 
 export function cmsRouter(prisma) {
 	const router = Router();
@@ -2445,6 +2445,13 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			}
 			if (!Array.isArray(items)) items = [];
 
+			// ── Auto-repair keyFormulas / workedSolution LaTeX ────────────
+			const repairLatexFields = (obj) => {
+				if (obj.keyFormulas) obj.keyFormulas = autoRepairLatex(String(obj.keyFormulas));
+				if (obj.workedSolution) obj.workedSolution = autoRepairLatex(String(obj.workedSolution));
+			};
+			items.forEach(it => { repairLatexFields(it); if (Array.isArray(it.questions)) it.questions.forEach(sq => repairLatexFields(sq)); });
+
 			// ── Answer consistency validation ──────────────────────────────
 			const validateAnswerConsistency = (item) => {
 				if (questionType === 'CONSTRUCTED_RESPONSE') return item;
@@ -3059,6 +3066,13 @@ ${formatBlock}`;
 				if (partial) return [partial.id];
 				return [];
 			};
+
+			// ── Auto-repair keyFormulas / workedSolution LaTeX ────────────
+			const repairLatexFields = (obj) => {
+				if (obj.keyFormulas) obj.keyFormulas = autoRepairLatex(String(obj.keyFormulas));
+				if (obj.workedSolution) obj.workedSolution = autoRepairLatex(String(obj.workedSolution));
+			};
+			items.forEach(it => { repairLatexFields(it); if (Array.isArray(it.questions)) it.questions.forEach(sq => repairLatexFields(sq)); });
 
 			// ── Answer consistency validation ──────────────────────────────
 			// Detect hallucinated correct answers: if the option marked isCorrect

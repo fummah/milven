@@ -304,14 +304,30 @@ function stripLatexCommands(text) {
 function renderRawLatex(text) {
 	if (!text) return '';
 
+	// Pre-balance braces: strip trailing unmatched closing braces
+	const balanceBraces = (s) => {
+		let depth = 0;
+		for (const ch of s) {
+			if (ch === '{') depth++;
+			else if (ch === '}') { if (depth > 0) depth--; else return s; }
+		}
+		// Remove excess trailing } chars that would cause KaTeX parse errors
+		let result = s;
+		let extra = depth < 0 ? -depth : 0;
+		while (extra > 0 && result.endsWith('}')) { result = result.slice(0, -1).trimEnd(); extra--; }
+		return result;
+	};
+
 	// Split by newlines first; each line may contain semicolons separating variables
 	const lines = text.split('\n').filter(l => l.trim());
 	const renderedLines = lines.map(line => {
+		const balanced = balanceBraces(line.trim());
+
 		// Try rendering the whole line as KaTeX first (most efficient)
 		try {
-			return katex.renderToString(line.trim(), {
+			return katex.renderToString(balanced, {
 				displayMode: false,
-				throwOnError: true,
+				throwOnError: false,
 				trust: true,
 				strict: false,
 			});
@@ -319,14 +335,14 @@ function renderRawLatex(text) {
 			// Whole line failed — split by semicolons (brace-aware) and try each segment
 		}
 
-		const segments = splitOutsideBraces(line, ';');
+		const segments = splitOutsideBraces(balanced, ';');
 		const renderedSegments = segments.map(segment => {
 			const trimmed = segment.trim();
 			if (!trimmed) return '';
 			try {
 				return katex.renderToString(trimmed, {
 					displayMode: false,
-					throwOnError: true,
+					throwOnError: false,
 					trust: true,
 					strict: false,
 				});
