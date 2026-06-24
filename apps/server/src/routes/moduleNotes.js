@@ -350,6 +350,7 @@ ${LATEX_PROMPT_SECTION}
 - Worked examples must have step-by-step solutions with all calculations shown.
 - Exam-style questions must have correct answer + full explanation for right AND wrong answers.
 - Output must be suitable for premium study material — thorough, clear, and exam-focused.
+- ANSWER CONSISTENCY (CRITICAL): The "correctAnswer" field MUST match the worked solution and explanation. If the math shows Portfolio B has higher utility, the correctAnswer MUST be "B", NOT "A". Double-check every question: calculate the answer yourself and verify correctAnswer matches. Never default to "A".
 
 Generate exactly 1 module note. Return ONLY valid JSON. Use ALL available tokens for maximum detail.`;
 
@@ -393,6 +394,72 @@ Generate exactly 1 module note. Return ONLY valid JSON. Use ALL available tokens
 			if (!items.length) {
 				sseSend('error', { error: 'AI returned no module notes' });
 				return sseEnd();
+			}
+
+			// ── Answer consistency validation for exam-style questions ─────────
+			for (const note of items) {
+				const ps = Array.isArray(note.practiceSet) ? note.practiceSet : [];
+				for (const q of ps) {
+					if (!q.correctAnswer || !q.explanation) continue;
+					const ca = String(q.correctAnswer).toUpperCase().trim();
+					const exp = String(q.explanation);
+					const found = [];
+					const letters = ['A', 'B', 'C'];
+					// Scan explanation for which letter is explicitly called correct
+					const patterns = [
+						new RegExp('correct\\s+answer\\s+is\\s+([A-C])', 'i'),
+						new RegExp('option\\s+([A-C])\\s+is\\s+(correct|right|preferred)', 'i'),
+						new RegExp('([A-C])\\s+is\\s+(correct|right|preferred)', 'i'),
+						new RegExp('([A-C])\\s+has\\s+higher', 'i'),
+						new RegExp('therefore,?\\s+([A-C])', 'i'),
+						new RegExp('([A-C])\\s+should\\s+be\\s+(chosen|selected|preferred)', 'i'),
+						new RegExp('choose\\s+([A-C])', 'i'),
+						new RegExp('select\\s+([A-C])', 'i'),
+					];
+					for (const pat of patterns) {
+						const m = exp.match(pat);
+						if (m) found.push(m[1].toUpperCase());
+					}
+					if (found.length > 0) {
+						// Pick the most common letter mentioned as correct
+						const counts = {};
+						for (const l of found) { counts[l] = (counts[l] || 0) + 1; }
+						let best = ca;
+						let bestCount = counts[ca] || 0;
+						for (const l of letters) {
+							if ((counts[l] || 0) > bestCount) { best = l; bestCount = counts[l]; }
+						}
+						if (best !== ca) {
+							console.warn(`[moduleNotes.ai.preview] Auto-corrected answer: ${ca} → ${best} for: ${(q.question || '').slice(0, 80)}...`);
+							q.correctAnswer = best;
+						}
+					}
+					// Numeric cross-check: extract numbers from explanation and option text
+					const optNums = {};
+					for (const l of letters) {
+						const optRegex = new RegExp(`${l}\\.\\s*[^\\n]*?(\\d+\\.?\\d*%?)`, 'i');
+						const m = q.question ? q.question.match(optRegex) : null;
+						if (m) optNums[l] = parseFloat(m[1].replace(/%/g, ''));
+					}
+					if (Object.keys(optNums).length >= 2) {
+						const expNums = [...exp.matchAll(/-?\d+\.?\d*/g)].map(m => parseFloat(m[0])).filter(n => !isNaN(n));
+						const numCorrect = optNums[ca];
+						if (numCorrect != null && expNums.length > 0) {
+							const foundNum = expNums.some(n => Math.abs(n - numCorrect) < 0.01);
+							if (!foundNum) {
+								for (const l of letters) {
+									if (l === ca) continue;
+									const n2 = optNums[l];
+									if (n2 != null && expNums.some(n => Math.abs(n - n2) < 0.01)) {
+										console.warn(`[moduleNotes.ai.preview] Numeric auto-correct: ${ca} → ${l} for: ${(q.question || '').slice(0, 80)}...`);
+										q.correctAnswer = l;
+										break;
+									}
+								}
+							}
+						}
+					}
+				}
 			}
 
 			sseSend('result', {

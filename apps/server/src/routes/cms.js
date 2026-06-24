@@ -2453,20 +2453,67 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				const ws = (item.workedSolution || item.explanation || '').toLowerCase();
 				if (!correct || !ws || correct.text.length < 2) return item;
 				const optNum = parseFloat(correct.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
-				if (optNum == null || isNaN(optNum)) return item;
-				const wsNums = [...ws.matchAll(/-?\d+\.?\d*/g)].map(m => parseFloat(m[0])).filter(n => !isNaN(n));
-				const found = wsNums.some(n => Math.abs(n - optNum) < 0.01);
-				if (found) return item;
-				for (const opt of opts) {
-					if (opt === correct) continue;
-					const num = parseFloat(opt.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
-					if (num == null || isNaN(num)) continue;
-					if (wsNums.some(n => Math.abs(n - num) < 0.01)) {
-						opt.isCorrect = true;
-						correct.isCorrect = false;
-						console.warn(`[ai-generate] Auto-corrected answer: ${correct.text} → ${opt.text}`);
-						break;
+				if (optNum != null && !isNaN(optNum)) {
+					const wsNums = [...ws.matchAll(/-?\d+\.?\d*/g)].map(m => parseFloat(m[0])).filter(n => !isNaN(n));
+					const found = wsNums.some(n => Math.abs(n - optNum) < 0.01);
+					if (found) return item;
+					for (const opt of opts) {
+						if (opt === correct) continue;
+						const num = parseFloat(opt.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
+						if (num == null || isNaN(num)) continue;
+						if (wsNums.some(n => Math.abs(n - num) < 0.01)) {
+							opt.isCorrect = true;
+							correct.isCorrect = false;
+							console.warn(`[ai-generate] Auto-corrected answer (numeric): ${correct.text} → ${opt.text}`);
+							break;
+						}
 					}
+					return item;
+				}
+				// ── Phrase-based fallback for text-only options (e.g. "Portfolio A") ──
+				const letters = ['A', 'B', 'C', 'D', 'E', 'F'].slice(0, opts.length);
+				const optByLetter = {};
+				opts.forEach((o, i) => { if (i < letters.length) optByLetter[letters[i]] = o; });
+				const findCurrentLetter = () => {
+					for (const [l, o] of Object.entries(optByLetter)) { if (o === correct) return l; }
+					return '';
+				};
+				const foundLetters = [];
+				const patterns = [
+					/correct\s+answer\s+is\s+([A-F])/i, /option\s+([A-F])\s+is\s+(correct|right|preferred)/i,
+					/([A-F])\s+is\s+(correct|right|preferred|better)/i, /([A-F])\s+has\s+higher/i,
+					/therefore,?\s+([A-F])/i, /([A-F])\s+should\s+be\s+(chosen|selected|preferred)/i,
+					/choose\s+([A-F])/i, /select\s+([A-F])/i,
+				];
+				for (const pat of patterns) {
+					const m = ws.match(pat);
+					if (m) foundLetters.push(m[1].toUpperCase());
+				}
+				if (foundLetters.length > 0) {
+					const counts = {};
+					for (const l of foundLetters) counts[l] = (counts[l] || 0) + 1;
+					const current = findCurrentLetter();
+					let best = current, bestCount = 0;
+					for (const l of Object.keys(optByLetter)) {
+						if ((counts[l] || 0) > bestCount) { best = l; bestCount = counts[l]; }
+					}
+					if (best && best !== current && optByLetter[best]) {
+						optByLetter[best].isCorrect = true;
+						correct.isCorrect = false;
+						console.warn(`[ai-generate] Auto-corrected answer (text): ${correct.text} → ${optByLetter[best].text}`);
+					}
+					return item;
+				}
+				// Last resort: if only one option's text appears in worked solution, trust it
+				const textsInWs = [];
+				for (const opt of opts) {
+					const t = opt.text.toLowerCase().trim();
+					if (t.length > 3 && ws.includes(t)) textsInWs.push(opt);
+				}
+				if (textsInWs.length === 1 && textsInWs[0] !== correct) {
+					textsInWs[0].isCorrect = true;
+					correct.isCorrect = false;
+					console.warn(`[ai-generate] Auto-corrected answer (text-match): ${correct.text} → ${textsInWs[0].text}`);
 				}
 				return item;
 			};
@@ -3024,24 +3071,75 @@ ${formatBlock}`;
 				if (!correct || !ws || correct.text.length < 2) return item;
 				// Extract the number from the correct option text (strip % and LaTeX)
 				const optNum = parseFloat(correct.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
-				if (optNum == null || isNaN(optNum)) return item;
-				// Extract all numbers from the worked solution
-				const wsNums = [...ws.matchAll(/-?\d+\.?\d*/g)].map(m => parseFloat(m[0])).filter(n => !isNaN(n));
-				const found = wsNums.some(n => Math.abs(n - optNum) < 0.01);
-				if (found) return item;
-				// The correct option's number wasn't found in the worked solution.
-				// Try to find the option whose number IS in the worked solution.
-				for (const opt of opts) {
-					if (opt === correct) continue;
-					const num = parseFloat(opt.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
-					if (num == null || isNaN(num)) continue;
-					if (wsNums.some(n => Math.abs(n - num) < 0.01)) {
-						opt.isCorrect = true;
+				if (optNum != null && !isNaN(optNum)) {
+					// Extract all numbers from the worked solution
+					const wsNums = [...ws.matchAll(/-?\d+\.?\d*/g)].map(m => parseFloat(m[0])).filter(n => !isNaN(n));
+					const found = wsNums.some(n => Math.abs(n - optNum) < 0.01);
+					if (found) return item;
+					// The correct option's number wasn't found in the worked solution.
+					// Try to find the option whose number IS in the worked solution.
+					for (const opt of opts) {
+						if (opt === correct) continue;
+						const num = parseFloat(opt.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
+						if (num == null || isNaN(num)) continue;
+						if (wsNums.some(n => Math.abs(n - num) < 0.01)) {
+							opt.isCorrect = true;
+							correct.isCorrect = false;
+							if (process.env.NODE_ENV !== 'production') {
+								console.warn(`[ai-preview] Auto-corrected answer (numeric): ${correct.text} → ${opt.text} (worked solution contained ${num})`);
+							}
+							break;
+						}
+					}
+					return item;
+				}
+				// ── Phrase-based fallback for text-only options (e.g. "Portfolio A") ──
+				const letters = ['A', 'B', 'C', 'D', 'E', 'F'].slice(0, opts.length);
+				const optByLetter = {};
+				opts.forEach((o, i) => { if (i < letters.length) optByLetter[letters[i]] = o; });
+				const findCurrentLetter = () => {
+					for (const [l, o] of Object.entries(optByLetter)) { if (o === correct) return l; }
+					return '';
+				};
+				const foundLetters = [];
+				const patterns = [
+					/correct\s+answer\s+is\s+([A-F])/i, /option\s+([A-F])\s+is\s+(correct|right|preferred)/i,
+					/([A-F])\s+is\s+(correct|right|preferred|better)/i, /([A-F])\s+has\s+higher/i,
+					/therefore,?\s+([A-F])/i, /([A-F])\s+should\s+be\s+(chosen|selected|preferred)/i,
+					/choose\s+([A-F])/i, /select\s+([A-F])/i,
+				];
+				for (const pat of patterns) {
+					const m = ws.match(pat);
+					if (m) foundLetters.push(m[1].toUpperCase());
+				}
+				if (foundLetters.length > 0) {
+					const counts = {};
+					for (const l of foundLetters) counts[l] = (counts[l] || 0) + 1;
+					const current = findCurrentLetter();
+					let best = current, bestCount = 0;
+					for (const l of Object.keys(optByLetter)) {
+						if ((counts[l] || 0) > bestCount) { best = l; bestCount = counts[l]; }
+					}
+					if (best && best !== current && optByLetter[best]) {
+						optByLetter[best].isCorrect = true;
 						correct.isCorrect = false;
 						if (process.env.NODE_ENV !== 'production') {
-							console.warn(`[ai-preview] Auto-corrected answer: ${correct.text} → ${opt.text} (worked solution contained ${num})`);
+							console.warn(`[ai-preview] Auto-corrected answer (text): ${correct.text} → ${optByLetter[best].text}`);
 						}
-						break;
+					}
+					return item;
+				}
+				// Last resort: if only one option's text appears in worked solution, trust it
+				const textsInWs = [];
+				for (const opt of opts) {
+					const t = opt.text.toLowerCase().trim();
+					if (t.length > 3 && ws.includes(t)) textsInWs.push(opt);
+				}
+				if (textsInWs.length === 1 && textsInWs[0] !== correct) {
+					textsInWs[0].isCorrect = true;
+					correct.isCorrect = false;
+					if (process.env.NODE_ENV !== 'production') {
+						console.warn(`[ai-preview] Auto-corrected answer (text-match): ${correct.text} → ${textsInWs[0].text}`);
 					}
 				}
 				return item;
