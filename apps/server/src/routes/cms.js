@@ -2409,14 +2409,17 @@ Return a JSON object with an "items" key. EVERY question/sub-question MUST inclu
 - "keyFormulas": string (key formula(s) using VALID LaTeX — e.g. "\\( PV = \\frac{CF_1}{(1+r)^{1}} + \\frac{CF_2}{(1+r)^{2}} \\)", "\\( WACC = w_{d} \\cdot r_{d} \\cdot (1-t) + w_{e} \\cdot r_{e} \\)". Use \\frac, \\sigma, \\beta, \\alpha etc. ALL braces must be balanced. Include variable definitions.)
 - "workedSolution": string (step-by-step worked solution using valid LaTeX for all math — be thorough)
 
-CRITICAL — CALCULATION CONSISTENCY RULE (MUST FOLLOW):
-For EVERY question that involves a numerical calculation:
-1. FIRST complete the full worked solution with every arithmetic step shown.
-2. DERIVE the final numerical answer from your worked solution.
-3. The correct MCQ option (isCorrect: true) MUST display the EXACT number you computed in the worked solution — NOT a different number.
+CRITICAL — ANSWER CONSISTENCY RULE (MUST FOLLOW — VIOLATIONS PRODUCE HALLUCINATED ANSWERS):
+For EVERY question (numerical OR text-based):
+1. FIRST write the complete workedSolution with every step shown.
+2. DERIVE the final answer (number or conclusion) from your worked solution.
+3. The correct MCQ option (isCorrect: true) MUST match EXACTLY what your worked solution concludes.
 4. NEVER pick the correct answer first and then write the solution — always solve first, then set the matching option as correct.
-5. DOUBLE-CHECK: After generating the question, verify that the workedSolution's final value matches the correct option's text exactly. If they differ, fix the option to match the solution.
-6. The two distractor options must be plausible but numerically different from the correct answer (e.g. common errors like forgetting the square root, using wrong weights, omitting a term).
+5. DOUBLE-CHECK: After generating each question, re-read the workedSolution's final line and verify the option marked isCorrect matches it. If the solution says "Portfolio B is preferred" then "Portfolio B" must be correct, NOT "Portfolio A".
+6. DO NOT default to option A. The correct answer should be randomly distributed across positions A, B, and C. Roughly 1/3 should be A, 1/3 B, 1/3 C.
+7. For numerical questions: verify the exact number in the correct option appears in the worked solution. Common error: computing 12.17% in the solution but marking 11.16% as correct — this is WRONG.
+8. For comparison questions (e.g. "which portfolio?"): the workedSolution must explicitly state which option wins, and THAT option must be marked isCorrect.
+9. Distractor options must be plausible but different from the correct answer (e.g. common calculation errors, or the "losing" alternative in comparisons).
 Violating this rule produces hallucinated answers that damage student trust. Accuracy is mandatory.
 
 For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of 4-5 MCQ sub-questions with same fields }.
@@ -2427,7 +2430,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. Always return valid JSON only.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers evenly across A, B, C.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.4,
@@ -2477,7 +2480,39 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 					}
 					return item;
 				}
-				// ── Phrase-based fallback for text-only options (e.g. "Portfolio A") ──
+				// ── Conclusion-aware text matching ──
+				// Check the LAST portion of the worked solution for which option text is endorsed
+				const conclusion = ws.slice(-Math.min(ws.length, 300));
+				const conclusionPatterns = [
+					/hence\s+(.+?)\s+is\s+(preferred|correct|better|optimal|chosen|selected)/,
+					/therefore,?\s+(.+?)\s+is\s+(preferred|correct|better|optimal|chosen|selected)/,
+					/(.+?)\s+is\s+the\s+(preferred|correct|better|optimal)\s+(choice|answer|option|portfolio|investment|strategy)/,
+					/(.+?)\s+should\s+be\s+(chosen|selected|preferred)/,
+					/(.+?)\s+maximizes?\s+(utility|return|value|wealth)/,
+					/(.+?)\s+provides?\s+(higher|greater|more|maximum)\s+(utility|return|value)/,
+					/select\s+(.+?)(?:\.|$)/,
+					/choose\s+(.+?)(?:\.|$)/,
+					/the\s+answer\s+is\s+(.+?)(?:\.|$)/,
+					/correct\s+answer\s+is\s+(.+?)(?:\.|$)/,
+				];
+				for (const pat of conclusionPatterns) {
+					const m = conclusion.match(pat);
+					if (m) {
+						const mentioned = m[1].trim();
+						// Find which option's text is contained in this mention
+						for (const opt of opts) {
+							if (opt === correct) continue;
+							const optLower = opt.text.toLowerCase().trim();
+							if (optLower.length > 2 && (mentioned.includes(optLower) || optLower.includes(mentioned))) {
+								opt.isCorrect = true;
+								correct.isCorrect = false;
+								console.warn(`[ai-generate] Auto-corrected answer (conclusion): ${correct.text} → ${opt.text}`);
+								return item;
+							}
+						}
+					}
+				}
+				// ── Phrase-based fallback for standalone letter references ──
 				const letters = ['A', 'B', 'C', 'D', 'E', 'F'].slice(0, opts.length);
 				const optByLetter = {};
 				opts.forEach((o, i) => { if (i < letters.length) optByLetter[letters[i]] = o; });
@@ -2486,13 +2521,13 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 					return '';
 				};
 				const foundLetters = [];
-				const patterns = [
+				const letterPatterns = [
 					/correct\s+answer\s+is\s+([A-F])/i, /option\s+([A-F])\s+is\s+(correct|right|preferred)/i,
 					/([A-F])\s+is\s+(correct|right|preferred|better)/i, /([A-F])\s+has\s+higher/i,
 					/therefore,?\s+([A-F])/i, /([A-F])\s+should\s+be\s+(chosen|selected|preferred)/i,
 					/choose\s+([A-F])/i, /select\s+([A-F])/i,
 				];
-				for (const pat of patterns) {
+				for (const pat of letterPatterns) {
 					const m = ws.match(pat);
 					if (m) foundLetters.push(m[1].toUpperCase());
 				}
@@ -2507,11 +2542,23 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 					if (best && best !== current && optByLetter[best]) {
 						optByLetter[best].isCorrect = true;
 						correct.isCorrect = false;
-						console.warn(`[ai-generate] Auto-corrected answer (text): ${correct.text} → ${optByLetter[best].text}`);
+						console.warn(`[ai-generate] Auto-corrected answer (letter): ${correct.text} → ${optByLetter[best].text}`);
 					}
 					return item;
 				}
-				// Last resort: if only one option's text appears in worked solution, trust it
+				// ── Last resort: check which option text appears in the conclusion ──
+				const textsInConclusion = [];
+				for (const opt of opts) {
+					const t = opt.text.toLowerCase().trim();
+					if (t.length > 2 && conclusion.includes(t)) textsInConclusion.push(opt);
+				}
+				if (textsInConclusion.length === 1 && textsInConclusion[0] !== correct) {
+					textsInConclusion[0].isCorrect = true;
+					correct.isCorrect = false;
+					console.warn(`[ai-generate] Auto-corrected answer (conclusion-text): ${correct.text} → ${textsInConclusion[0].text}`);
+					return item;
+				}
+				// Broader fallback: if only one option's text appears anywhere in ws
 				const textsInWs = [];
 				for (const opt of opts) {
 					const t = opt.text.toLowerCase().trim();
@@ -2824,14 +2871,17 @@ Each object in the "items" array MUST have:
 
 DO NOT wrap questions inside "vignetteText" or "questions" sub-arrays. Each item is a standalone MCQ question at the top level of the "items" array.
 
-CRITICAL — CALCULATION CONSISTENCY RULE (MUST FOLLOW):
-For EVERY question that involves a numerical calculation:
-1. FIRST complete the full worked solution with every arithmetic step shown.
-2. DERIVE the final numerical answer from your worked solution.
-3. The correct MCQ option (isCorrect: true) MUST display the EXACT number you computed in the worked solution — NOT a different number.
+CRITICAL — ANSWER CONSISTENCY RULE (MUST FOLLOW — VIOLATIONS PRODUCE HALLUCINATED ANSWERS):
+For EVERY question (numerical OR text-based):
+1. FIRST write the complete workedSolution with every step shown.
+2. DERIVE the final answer (number or conclusion) from your worked solution.
+3. The correct MCQ option (isCorrect: true) MUST match EXACTLY what your worked solution concludes.
 4. NEVER pick the correct answer first and then write the solution — always solve first, then set the matching option as correct.
-5. DOUBLE-CHECK: After generating the question, verify that the workedSolution's final value matches the correct option's text exactly. If they differ, fix the option to match the solution.
-6. The two distractor options must be plausible but numerically different from the correct answer (e.g. common errors like forgetting the square root, using wrong weights, omitting a term).
+5. DOUBLE-CHECK: After generating each question, re-read the workedSolution's final line and verify the option marked isCorrect matches it. If the solution says "Portfolio B is preferred" then "Portfolio B" must be correct, NOT "Portfolio A".
+6. DO NOT default to option A. The correct answer should be randomly distributed across positions A, B, and C. Roughly 1/3 should be A, 1/3 B, 1/3 C.
+7. For numerical questions: verify the exact number in the correct option appears in the worked solution. Common error: computing 12.17% in the solution but marking 11.16% as correct — this is WRONG.
+8. For comparison questions (e.g. "which portfolio?"): the workedSolution must explicitly state which option wins, and THAT option must be marked isCorrect.
+9. Distractor options must be plausible but different from the correct answer (e.g. common calculation errors, or the "losing" alternative in comparisons).
 
 ${metaFieldsBlock}`;
 		} else if (questionType === 'VIGNETTE_MCQ') {
@@ -2857,11 +2907,13 @@ Each object in "items" MUST follow this structure:
     • Each sub-question is worth 3 marks (do NOT include a "marks" field for vignette MCQ sub-questions)
 ${selectedTopics.length > 1 ? `    • TOPIC DISTRIBUTION: The selected topics are [${selectedTopics.map(t => t.name).join(', ')}]. You MUST spread these topics equally across the 4 sub-questions. Each sub-question should test a different topic from this list. Assign topics round-robin so all selected topics are covered.
 ` : ''}
-    • CRITICAL — CALCULATION CONSISTENCY RULE (MUST FOLLOW):
-      For sub-questions with numerical calculations:
-      1. FIRST complete the worked solution, compute the final answer.
-      2. The option with isCorrect: true MUST display the EXACT number from your worked solution.
-      3. DOUBLE-CHECK: Verify the correct option text matches the worked solution's final value. Fix if different.
+    • CRITICAL — ANSWER CONSISTENCY RULE (MUST FOLLOW):
+      For EVERY sub-question (numerical OR text-based):
+      1. FIRST complete the worked solution, compute the final answer or conclusion.
+      2. The option with isCorrect: true MUST match EXACTLY what your worked solution concludes.
+      3. DOUBLE-CHECK: Verify the correct option text matches the worked solution's final value/conclusion. If the solution says "Portfolio B is preferred", then "Portfolio B" must be isCorrect, NOT "Portfolio A".
+      4. DO NOT default to option A. Distribute correct answers across A, B, C positions.
+      5. For comparison questions: the workedSolution must explicitly state which wins, and THAT must be marked correct.
     • Plus ALL metadata fields listed below
 }
 
@@ -2988,10 +3040,10 @@ ${formatBlock}`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. You produce high-quality, exam-standard questions. Always return valid JSON only.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. You produce high-quality, exam-standard questions. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers evenly across A, B, C.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
-				temperature: 0.75,
+				temperature: 0.4,
 				response_format: { type: 'json_object' }
 			});
 			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
@@ -3107,7 +3159,41 @@ ${formatBlock}`;
 					}
 					return item;
 				}
-				// ── Phrase-based fallback for text-only options (e.g. "Portfolio A") ──
+				// ── Conclusion-aware text matching ──
+				// Check the LAST portion of the worked solution for which option text is endorsed
+				const conclusion = ws.slice(-Math.min(ws.length, 300));
+				const conclusionPatterns = [
+					/hence\s+(.+?)\s+is\s+(preferred|correct|better|optimal|chosen|selected)/,
+					/therefore,?\s+(.+?)\s+is\s+(preferred|correct|better|optimal|chosen|selected)/,
+					/(.+?)\s+is\s+the\s+(preferred|correct|better|optimal)\s+(choice|answer|option|portfolio|investment|strategy)/,
+					/(.+?)\s+should\s+be\s+(chosen|selected|preferred)/,
+					/(.+?)\s+maximizes?\s+(utility|return|value|wealth)/,
+					/(.+?)\s+provides?\s+(higher|greater|more|maximum)\s+(utility|return|value)/,
+					/select\s+(.+?)(?:\.|$)/,
+					/choose\s+(.+?)(?:\.|$)/,
+					/the\s+answer\s+is\s+(.+?)(?:\.|$)/,
+					/correct\s+answer\s+is\s+(.+?)(?:\.|$)/,
+				];
+				for (const pat of conclusionPatterns) {
+					const m = conclusion.match(pat);
+					if (m) {
+						const mentioned = m[1].trim();
+						// Find which option's text is contained in this mention
+						for (const opt of opts) {
+							if (opt === correct) continue;
+							const optLower = opt.text.toLowerCase().trim();
+							if (optLower.length > 2 && (mentioned.includes(optLower) || optLower.includes(mentioned))) {
+								opt.isCorrect = true;
+								correct.isCorrect = false;
+								if (process.env.NODE_ENV !== 'production') {
+									console.warn(`[ai-preview] Auto-corrected answer (conclusion): ${correct.text} → ${opt.text}`);
+								}
+								return item;
+							}
+						}
+					}
+				}
+				// ── Phrase-based fallback for standalone letter references ──
 				const letters = ['A', 'B', 'C', 'D', 'E', 'F'].slice(0, opts.length);
 				const optByLetter = {};
 				opts.forEach((o, i) => { if (i < letters.length) optByLetter[letters[i]] = o; });
@@ -3116,13 +3202,13 @@ ${formatBlock}`;
 					return '';
 				};
 				const foundLetters = [];
-				const patterns = [
+				const letterPatterns = [
 					/correct\s+answer\s+is\s+([A-F])/i, /option\s+([A-F])\s+is\s+(correct|right|preferred)/i,
 					/([A-F])\s+is\s+(correct|right|preferred|better)/i, /([A-F])\s+has\s+higher/i,
 					/therefore,?\s+([A-F])/i, /([A-F])\s+should\s+be\s+(chosen|selected|preferred)/i,
 					/choose\s+([A-F])/i, /select\s+([A-F])/i,
 				];
-				for (const pat of patterns) {
+				for (const pat of letterPatterns) {
 					const m = ws.match(pat);
 					if (m) foundLetters.push(m[1].toUpperCase());
 				}
@@ -3138,12 +3224,26 @@ ${formatBlock}`;
 						optByLetter[best].isCorrect = true;
 						correct.isCorrect = false;
 						if (process.env.NODE_ENV !== 'production') {
-							console.warn(`[ai-preview] Auto-corrected answer (text): ${correct.text} → ${optByLetter[best].text}`);
+							console.warn(`[ai-preview] Auto-corrected answer (letter): ${correct.text} → ${optByLetter[best].text}`);
 						}
 					}
 					return item;
 				}
-				// Last resort: if only one option's text appears in worked solution, trust it
+				// ── Last resort: check which option text appears in the conclusion ──
+				const textsInConclusion = [];
+				for (const opt of opts) {
+					const t = opt.text.toLowerCase().trim();
+					if (t.length > 2 && conclusion.includes(t)) textsInConclusion.push(opt);
+				}
+				if (textsInConclusion.length === 1 && textsInConclusion[0] !== correct) {
+					textsInConclusion[0].isCorrect = true;
+					correct.isCorrect = false;
+					if (process.env.NODE_ENV !== 'production') {
+						console.warn(`[ai-preview] Auto-corrected answer (conclusion-text): ${correct.text} → ${textsInConclusion[0].text}`);
+					}
+					return item;
+				}
+				// Broader fallback: if only one option's text appears anywhere in ws
 				const textsInWs = [];
 				for (const opt of opts) {
 					const t = opt.text.toLowerCase().trim();
