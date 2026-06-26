@@ -249,110 +249,117 @@ export function moduleNotesRouter(prisma) {
 
 		const topicContext = topicNames.length > 0 ? `\nTopics to cover: ${topicNames.join(', ')}` : '';
 
-		const prompt = `You are the Milven Notes Generator for Milven Finance School. Generate one comprehensive CFA Learning Module Note in the Milven Notes format below.
+		const prompt = `You are the Milven Notes Generator for Milven Finance School.
 
-This is a PREMIUM study document — 10 to 15 printed pages. Do NOT summarize. Write FULL explanations. Do NOT copy curriculum wording or tuition-provider examples. Write in original Milven teaching language.
+Generate exam-ready study notes for the supplied learning module. Use the official curriculum extract only as the coverage control source. Do not copy the curriculum wording. Do not reproduce examples from the curriculum or from tuition providers. Write in original Milven teaching language.
 
-${hierarchyContext}
-Year: ${year}${topicContext}
+Inputs:
+- Programme: CFA
+- Exam level: ${levelLabel}
+- Topic area: ${course.name}
+- Volume: ${volumeName || 'N/A'}
+- Learning module: ${moduleName || n.title || 'N/A'}
+- Learning Outcome Statements: ${topicNames.join(', ') || 'All in module'}
+- Year: ${year}
 ${curriculumSection}
 
 --- OUTPUT STRUCTURE ---
 
-Return a JSON object with a "notes" array containing ONE note object with these fields:
+Return a JSON object: { "notes": [ ONE note object ] }
 
 {
-  "notes": [
-    {
-      "title": "Learning Module title",
-      "studyTime": "string (e.g. 3 hours)",
-      "difficulty": "Foundational|Intermediate|Advanced",
-      "calculatorUse": "Minimal|Moderate|Heavy",
-      "overview": "Module Overview and Learning Outcomes (see below)",
-      "studyRoadmap": [ ... Study Roadmap array (see below) ... ],
-      "losStatements": [ ... LOS array (see below) ... ],
-      "concepts": [ ... Topic-by-topic notes array (see below) ... ],
-      "moduleSummary": "Module Summary paragraph",
-      "formulaRecap": [ ... Formula Bank array (see below) ... ],
-      "practiceSet": [ ... Exam-Style Questions array (see below) ... ],
-      "workedSolutions": [ ... Worked Examples array (see below) ... ],
-      "revisionCheck": [ ... Final Exam Checklist array (see below) ... ]
-    }
-  ]
+  "notes": [{
+    "title": "Learning Module title (e.g. Rates and Returns)",
+    "studyTime": "e.g. 3 hours",
+    "difficulty": "Foundational|Intermediate|Advanced",
+    "calculatorUse": "Minimal|Moderate|Heavy",
+    "overview": "string — 3-5 sentences on what this module covers and why it matters",
+    "moduleSummary": "string — bullet-point list of what this module must help you do (skills)",
+    "studyRoadmap": [array],
+    "losStatements": [array],
+    "concepts": [array — 10-20 items, THIS IS THE MAIN BODY],
+    "formulaRecap": [array — Formula Bank],
+    "practiceSet": [array — 10 Exam-Style Questions],
+    "workedSolutions": [array — 4-6 Worked Examples],
+    "revisionCheck": [array — Final Exam Checklist]
+  }]
 }
 
 --- FIELD SPECIFICATIONS ---
 
-1. "overview": Comprehensive string covering:
-   - What this learning module is about (2-3 sentences)
-   - What the candidate must be able to do after studying (list the key skills)
-   - How this module connects to other topics in the curriculum (1-2 sentences)
-   - Include a sub-section "LOS Covered" listing every LOS reference and statement
+1. "overview": 3-5 sentences explaining what this module is about, why it matters for the exam, and how it connects to other topics.
 
-2. "studyRoadmap": Array of objects, each with:
-   { "step": "number or short title", "focus": "what to study", "whyItMatters": "why this is important in the exam", "examTip": "specific exam advice for this step" }
-   Generate 5-8 steps that form a logical study sequence through the module.
-   Include a "Simple decision logic" section as the last item that shows when to use each formula/method.
+2. "moduleSummary": A bullet-point list (newline-separated) of what this module must help the candidate do. Example:
+   "• Interpret an interest rate as a required return, a discount rate and an opportunity cost.\\n• Break down an interest rate into the real risk-free rate and risk premiums.\\n• Calculate and interpret holding period returns and average returns."
 
-3. "losStatements": Array of ALL Learning Outcome Statements:
+3. "studyRoadmap": 5-8 objects forming a logical study sequence:
+   { "step": "1", "focus": "Interest rate meaning", "whyItMatters": "Explains the economic role of discount rates and required returns." }
+   The last item should be a "Simple decision logic" entry listing when to use each formula/method.
+
+4. "losStatements": ALL Learning Outcome Statements:
    { "ref": "LOS 1", "statement": "full LOS text", "commandWord": "calculate|interpret|compare|etc" }
 
-4. "concepts": Array of topic-by-topic notes — THIS IS THE MAIN BODY (10-20 items).
-   EVERY topic and sub-topic in the module gets its own entry.
-   Each concept object:
+5. "concepts": 10-20 topic-by-topic notes — THIS IS THE MAIN BODY.
+   EVERY topic and sub-topic in the module gets its own entry with numbered section titles.
+   Each object:
    {
-     "title": "Topic heading (e.g. 3. Interest Rates and Time Value of Money)",
-     "meaning": "3-5 sentences plain-English explanation of what this is and why it matters",
-     "explanation": "VERY DETAILED — 8-15 sentences minimum. Cover the full theory, relationships, edge cases, exam relevance, and practical application.",
-     "formula": "exact LaTeX formula or null",
-     "formulaVariables": "define EVERY variable in the formula or null",
+     "sectionNumber": "3.1",
+     "title": "What an Interest Rate Means",
+     "meaning": "Plain-English explanation (3-5 sentences) of the concept.",
+     "explanation": "DETAILED explanation (8-15 sentences). Cover theory, relationships, edge cases, exam relevance, practical application. Use bold key terms inline.",
+     "formula": "LaTeX formula string or null",
+     "formulaVariables": "variable definitions (semicolons or newlines) or null",
      "formulaUseCase": "When to use this formula (1-2 sentences) or null",
-     "formulaExamTrap": "Common mistake students make with this formula (1-2 sentences) or null",
-     "interpretation": "What the result means and why it matters (2-4 sentences) or null",
-     "workedExample": {
-       "given": "detailed givens",
-       "required": "what the question asks for",
-       "solution": "FULL step-by-step solution with all calculations shown",
-       "conclusion": "interpretation of the result"
-     } OR null,
-     "examTip": "2-3 sentences of specific exam strategy",
-     "commonMistake": "2-3 sentences about what candidates get wrong"
+     "formulaExamTrap": "Common mistake with this formula (1-2 sentences) or null",
+     "interpretation": "What the result means (2-4 sentences) or null",
+     "workedExample": { "title": "Example title", "given": "Question text with all givens", "solution": "Step 1\\nStep 2\\nStep 3 (each step on new line)", "conclusion": "Final answer and interpretation" } OR null,
+     "examTip": "Specific exam strategy (2-3 sentences) or null",
+     "commonMistake": "What candidates get wrong (2-3 sentences) or null"
    }
 
-   For each concept, include a FORMULA BOX with:
-   - The formula itself (rendered in LaTeX)
-   - "Use when" use case
-   - "Exam trap" warning
+   IMPORTANT: For EVERY formula in a concept, fill formulaUseCase and formulaExamTrap. These render as a table:
+   | Formula | [the formula] |
+   | Use when | [formulaUseCase] |
+   | Exam trap | [formulaExamTrap] |
 
-5. "formulaRecap": Formula Bank array — EVERY formula from the module (8-20 items):
-   { "name": "formula name", "formula": "LaTeX formula", "variables": "variable definitions", "useCase": "when to use this formula", "examTrap": "common mistake" }
+6. "formulaRecap": Formula Bank — EVERY formula from the module (8-20 items):
+   { "name": "formula area name", "formula": "LaTeX formula", "useCase": "one-line description of when to use" }
 
-6. "practiceSet": Array of 10 exam-style questions:
-   { "question": "full question text with answer options A, B, C", "correctAnswer": "A|B|C", "explanation": "detailed explanation of why this answer is correct and why the others are wrong", "losRef": "LOS reference" }
+7. "practiceSet": 10 exam-style MCQ questions. MUST include "options" array:
+   {
+     "question": "Full question stem text",
+     "options": ["option A text", "option B text", "option C text"],
+     "correctAnswer": "A. [answer text with explanation]",
+     "explanation": "Detailed explanation of why this is correct",
+     "losRef": "LOS reference"
+   }
 
-7. "workedSolutions": Array of 4-6 detailed Worked Examples:
-   { "question": "full question", "answer": "final numeric answer", "method": "DETAILED step-by-step solution method", "interpretation": "what the result means", "trap": "what students might do wrong" }
+8. "workedSolutions": 4-6 detailed Worked Examples (lettered A-F):
+   { "label": "A", "title": "Short title (e.g. Interest Rate Premiums)", "question": "Full question text", "method": "Step 1\\nStep 2\\nStep 3 (newline-separated steps)", "interpretation": "What the result means", "trap": "What students might do wrong" }
 
-8. "revisionCheck": Array of 10-15 Final Exam Checklist items:
-   { "item": "Can I... [specific capability]?" }
+9. "revisionCheck": 10-15 Final Exam Checklist items:
+   { "item": "explain the three meanings of an interest rate" }
+   (Each item completes the sentence "Can I ___?")
 
 --- FORMAT REQUIREMENTS ---
 ${LATEX_PROMPT_SECTION}
-- Wrap ALL formulas in \[...\] for display math or \\(...\\) for inline.
-- Every formula must include a "Use when" use case and an "Exam trap" warning.
+- Wrap ALL formulas in \\[...\\] for display math or \\(...\\) for inline.
+- Every formula must include a "Use when" and "Exam trap".
 - PRESERVE exact notation from the curriculum but convert to valid LaTeX.
 
 --- QUALITY RULES ---
 - Cover EVERY LOS.
 - Cover EVERY topic and concept in the learning module.
-- Include original examples and original exam-style questions (do NOT copy from curriculum or tuition providers).
-- Every formula must have: formula itself, variable definitions, use case, and exam trap.
-- Worked examples must have step-by-step solutions with all calculations shown.
-- Exam-style questions must have correct answer + full explanation for right AND wrong answers.
-- Output must be suitable for premium study material — thorough, clear, and exam-focused.
-- ANSWER CONSISTENCY (CRITICAL): The "correctAnswer" field MUST match the worked solution and explanation. If the math shows Portfolio B has higher utility, the correctAnswer MUST be "B", NOT "A". Double-check every question: calculate the answer yourself and verify correctAnswer matches. Never default to "A".
+- Keep the structure easy to follow.
+- Include original examples and original exam-style questions.
+- Explain formulas, variables, use cases and traps.
+- Flag gaps as "Instructor Review Required" if the source extract is incomplete.
+- No curriculum text or third-party tuition notes copied.
+- The notes must be sufficient for a candidate to study, practise and revise the learning module.
+- ANSWER CONSISTENCY (CRITICAL): The "correctAnswer" MUST match the explanation. If your solution calculates Portfolio B is better, correctAnswer MUST reference B, NOT A. Double-check every question. Never default to "A".
+- Make sure content is optimised so generation completes within token limits without timeout.
 
-Generate exactly 1 module note. Return ONLY valid JSON. Use ALL available tokens for maximum detail.`;
+Generate exactly 1 module note. Return ONLY valid JSON.`;
 
 		// ── SSE: switch to streaming before the long OpenAI call ─────────────────
 		// Nginx / DigitalOcean / cloud proxies kill idle TCP connections after ~60 s.

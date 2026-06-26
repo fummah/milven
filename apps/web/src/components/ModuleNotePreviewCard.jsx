@@ -11,40 +11,25 @@ function prose(val) {
 	return <MathProse text={str} />;
 }
 
-function SectionHeader({ number, title, style, children }) {
-	return (
-		<div style={{ marginBottom: 16, ...style }}>
-			<div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-				<div style={{ width: 32, height: 32, borderRadius: 8, background: '#102540', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-					<Typography.Text style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>{number}</Typography.Text>
-				</div>
-				<Typography.Title level={4} style={{ margin: 0, color: '#102540' }}>{title}</Typography.Title>
-			</div>
-			{children}
-		</div>
-	);
-}
-
+/* ─── Document-style formula box matching the images ─── */
 function FormulaBox({ formula, variables, useCase, examTrap }) {
 	if (!formula) return null;
+	const rows = [
+		{ label: 'Formula', content: <MathText text={formula} tag="span" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 14, color: '#000' }} /> },
+		...(useCase ? [{ label: 'Use when', content: prose(useCase) }] : []),
+		...(examTrap ? [{ label: 'Exam trap', content: prose(examTrap) }] : []),
+	];
 	return (
-		<div style={{ background: '#f0f4f8', borderRadius: 10, padding: '14px 18px', margin: '12px 0', border: '1px solid #e2e8f0', borderLeft: '4px solid #3b82f6' }}>
-			<div style={{ fontSize: 9, textTransform: 'uppercase', color: '#3b82f6', letterSpacing: 1.5, fontWeight: 700 }}>Formula</div>
-			<MathText text={formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 17, fontWeight: 700, color: '#102540', marginTop: 4 }} />
-			{variables && <MathVariables text={typeof variables === 'object' ? JSON.stringify(variables) : String(variables)} tag="div" style={{ fontSize: 12, color: '#64748b', marginTop: 3 }} />}
-			<div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-				{useCase && (
-					<div style={{ flex: 1, minWidth: 200, padding: '6px 10px', background: '#e0f2fe', borderRadius: 6, fontSize: 12, color: '#0369a1' }}>
-						<strong>Use when:</strong> {prose(useCase)}
-					</div>
-				)}
-				{examTrap && (
-					<div style={{ flex: 1, minWidth: 200, padding: '6px 10px', background: '#fef3c7', borderRadius: 6, fontSize: 12, color: '#92400e' }}>
-						<strong>Exam trap:</strong> {prose(examTrap)}
-					</div>
-				)}
-			</div>
-		</div>
+		<table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0', border: '1px solid #cbd5e1' }}>
+			<tbody>
+				{rows.map((r, i) => (
+					<tr key={i} style={{ borderBottom: i < rows.length - 1 ? '1px solid #cbd5e1' : 'none' }}>
+						<td style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 12, padding: '8px 14px', width: 100, verticalAlign: 'top' }}>{r.label}</td>
+						<td style={{ padding: '8px 14px', fontSize: 13, color: '#1e293b', verticalAlign: 'top' }}>{r.content}</td>
+					</tr>
+				))}
+			</tbody>
+		</table>
 	);
 }
 
@@ -59,235 +44,331 @@ export function ModuleNotePreviewCard({ note }) {
 	const checks = Array.isArray(n.revisionCheck) ? n.revisionCheck : [];
 
 	const tocItems = [
+		'Module Overview and Learning Outcomes',
 		...(roadmap.length ? ['Study Roadmap'] : []),
-		...(los.length ? ['Learning Outcome Statements'] : []),
-		...(concepts.length ? ['Topic-by-topic Notes'] : []),
+		...concepts.map(c => typeof c.title === 'string' ? c.title : 'Topic Notes'),
 		...(solutions.length ? ['Worked Examples'] : []),
-		...(practiceSet.length ? ['Exam-Style Questions'] : []),
+		...(practiceSet.length ? ['Exam-Style Questions with Answers'] : []),
 		...(formulas.length ? ['Formula Bank'] : []),
 		...(checks.length ? ['Final Exam Checklist'] : []),
 	];
 
 	return (
 		<div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden' }}>
-			<div style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', padding: '28px 32px' }}>
-				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
-					<div>
-						<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5 }}>MILVEN FINANCE SCHOOL</Typography.Text>
-						<Typography.Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, display: 'block', marginTop: 2 }}>Exam-Ready Notes</Typography.Text>
-						<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, display: 'block', marginTop: 10 }}>
-							CFA Program {LEVEL_LABELS[n.level]} {n.volume?.name ? `| ${n.volume.name}` : ''}
-						</Typography.Text>
-						<Typography.Title level={2} style={{ margin: '0', color: '#fff', fontSize: 28 }}>{n.title}</Typography.Title>
-						{n.module?.name && <Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>{n.module.name}</Typography.Text>}
-						<div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-							<Tag style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff', fontSize: 10, borderRadius: 4, padding: '0 10px' }}>NOTES</Tag>
-							<Tag style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff', fontSize: 10, borderRadius: 4, padding: '0 10px' }}>EXAMPLES</Tag>
-							<Tag style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff', fontSize: 10, borderRadius: 4, padding: '0 10px' }}>EXAM PRACTICE</Tag>
+			{/* Cover page header matching Milven branding */}
+			<div style={{ background: '#fff', padding: '24px 32px 0' }}>
+				{/* Top-right branding */}
+				<div style={{ textAlign: 'right', marginBottom: 40 }}>
+					<div style={{ fontWeight: 700, fontSize: 14, color: '#102540' }}>MILVEN FINANCE SCHOOL</div>
+					<div style={{ fontSize: 12, color: '#475569' }}>
+						CFA {LEVEL_LABELS[n.level]}{n.volume?.name ? ` | ${n.volume.name}` : ''}{n.module?.name ? ` | ${n.module.name}` : ''}
+					</div>
+				</div>
+
+				{/* Centered title block */}
+				<div style={{ textAlign: 'center', paddingBottom: 24 }}>
+					<Typography.Title level={1} style={{ margin: 0, color: '#102540', fontSize: 32, fontWeight: 800, letterSpacing: -0.5 }}>
+						MILVEN FINANCE SCHOOL
+					</Typography.Title>
+					<div style={{ fontSize: 22, color: '#c9a227', fontStyle: 'italic', fontWeight: 600, marginTop: 8 }}>
+						Exam-Ready Notes
+					</div>
+					<div style={{ marginTop: 28 }}>
+						<div style={{ fontSize: 18, fontWeight: 700, color: '#102540' }}>
+							CFA Program {LEVEL_LABELS[n.level]}
+						</div>
+						{n.volume?.name && (
+							<div style={{ fontSize: 18, fontWeight: 700, color: '#102540', marginTop: 4 }}>
+								{n.volume.name}
+							</div>
+						)}
+						<div style={{ fontSize: 18, fontWeight: 700, color: '#102540', marginTop: 4 }}>
+							{n.module?.name ? `${n.module.name}: ` : ''}{n.title}
 						</div>
 					</div>
-					<div style={{ textAlign: 'right', flexShrink: 0 }}>
-						<Tag style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff' }}>{n.year} Edition</Tag>
-						{n.status && <Tag color={n.status === 'PUBLISHED' ? 'green' : 'default'} style={{ marginLeft: 4 }}>{n.status}</Tag>}
+
+					<div style={{ marginTop: 32, fontSize: 13, color: '#c9a227', fontStyle: 'italic' }}>
+						Original Milven learning material | Structured for study, revision and exam practice
+					</div>
+				</div>
+
+				{/* Navy bar with NOTES | EXAMPLES | EXAM PRACTICE */}
+				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', marginTop: 8 }}>
+					<div style={{ background: '#102540', padding: '10px 0', textAlign: 'center' }}>
+						<span style={{ color: '#fff', fontWeight: 700, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase' }}>NOTES</span>
+					</div>
+					<div style={{ background: '#c9a227', padding: '10px 0', textAlign: 'center' }}>
+						<span style={{ color: '#fff', fontWeight: 700, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase' }}>EXAMPLES</span>
+					</div>
+					<div style={{ background: '#102540', padding: '10px 0', textAlign: 'center' }}>
+						<span style={{ color: '#fff', fontWeight: 700, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase' }}>EXAM PRACTICE</span>
 					</div>
 				</div>
 			</div>
 
-			<div style={{ padding: '10px 32px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#64748b', fontStyle: 'italic' }}>
-				Original Milven learning material | Structured for study, revision and exam practice
+			{/* Disclaimer */}
+			<div style={{ padding: '14px 32px', background: '#fff', borderBottom: '1px solid #e2e8f0', fontSize: 12, color: '#64748b', fontStyle: 'italic', textAlign: 'center', lineHeight: 1.6 }}>
+				<strong style={{ fontStyle: 'italic' }}>Important:</strong> This is an original Milven study aid. It summarises and teaches the examinable ideas in Milven's own words. It is not a reproduction of the curriculum and is not copied from any tuition provider.
 			</div>
 
-			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0, borderBottom: '1px solid #e2e8f0' }}>
-				{[{ label: 'Study Time', value: n.studyTime }, { label: 'Difficulty', value: n.difficulty }, { label: 'Calculator Use', value: n.calculatorUse }].map((item, i) => (
-					<div key={i} style={{ padding: '12px 20px', borderRight: i < 2 ? '1px solid #e2e8f0' : 'none', textAlign: 'center' }}>
-						<div style={{ fontSize: 10, textTransform: 'uppercase', color: '#94a3b8', letterSpacing: 1 }}>{item.label}</div>
-						<div style={{ fontSize: 14, fontWeight: 600, color: '#102540', marginTop: 2 }}>{item.value || '—'}</div>
-					</div>
-				))}
-			</div>
+			{/* ═══ CONTENT BODY ═══ */}
+			<div style={{ padding: '28px 40px' }}>
 
-			{n.overview && (
-				<div style={{ padding: '16px 32px', background: '#f0f4f8', borderBottom: '1px solid #e2e8f0' }}>
-					<div style={{ color: '#374151', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{prose(n.overview)}</div>
-				</div>
-			)}
-
-			<div style={{ padding: '24px 32px' }}>
-
-				{/* Disclaimer */}
-				<div style={{ padding: '10px 14px', background: '#fefce8', borderRadius: 8, border: '1px solid #fde68a', marginBottom: 24, fontSize: 12, color: '#92400e', lineHeight: 1.5 }}>
-					<strong>Important:</strong> This is an original Milven study aid. It summarises and teaches the examinable ideas in Milven's own words. It is not a reproduction of the curriculum and is not copied from any tuition provider.
-				</div>
-
-				{/* Navigation Guide */}
+				{/* ─── Navigation Guide ─── */}
 				{tocItems.length > 0 && (
-					<div style={{ marginBottom: 28, padding: '16px 20px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
-						<Typography.Text strong style={{ fontSize: 13, textTransform: 'uppercase', color: '#102540', letterSpacing: 0.5 }}>Navigation Guide</Typography.Text>
-						<div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+					<div style={{ marginBottom: 32 }}>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 8px', fontStyle: 'italic' }}>Navigation Guide</h2>
+						<p style={{ fontSize: 13, color: '#374151', margin: '0 0 12px', lineHeight: 1.6 }}>
+							Use the headings in this document to open the Microsoft Word Navigation Pane: View &gt; Navigation Pane. The headings below are also the study sequence for this Learning Module.
+						</p>
+						<ul style={{ listStyle: 'disc', paddingLeft: 24, margin: 0 }}>
 							{tocItems.map((item, i) => (
-								<div key={i} style={{ fontSize: 13, color: '#2563eb', padding: '2px 0' }}>
-									• {i + 1}. {item}
-								</div>
+								<li key={i} style={{ fontSize: 13, color: '#1e293b', padding: '2px 0' }}>{i + 1}. {item}</li>
 							))}
-						</div>
+						</ul>
 					</div>
 				)}
 
-				{/* Study Roadmap */}
+				{/* ─── 1. Module Overview and Learning Outcomes ─── */}
+				{(n.overview || los.length > 0) && (
+					<div style={{ marginBottom: 32 }}>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 12px' }}>1. Module Overview and Learning Outcomes</h2>
+						{n.overview && <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap', margin: '0 0 16px' }}>{prose(n.overview)}</p>}
+
+						{/* What this module must help you do box */}
+						{n.moduleSummary && (
+							<div style={{ border: '2px solid #102540', padding: '12px 16px', marginBottom: 16 }}>
+								<div style={{ fontWeight: 700, fontSize: 13, color: '#102540', marginBottom: 6 }}>What this module must help you do</div>
+								<div style={{ fontSize: 13, color: '#374151', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{prose(n.moduleSummary)}</div>
+							</div>
+						)}
+
+						{/* 1.1 LOS Covered */}
+						{los.length > 0 && (
+							<div style={{ marginTop: 16 }}>
+								<h3 style={{ fontSize: 16, fontWeight: 700, color: '#102540', margin: '0 0 10px' }}>1.1 LOS Covered</h3>
+								<ul style={{ listStyle: 'disc', paddingLeft: 24, margin: 0 }}>
+									{los.map((l, i) => (
+										<li key={i} style={{ fontSize: 13, color: '#374151', padding: '3px 0', lineHeight: 1.5 }}>
+											{prose(l.statement)}
+										</li>
+									))}
+								</ul>
+							</div>
+						)}
+					</div>
+				)}
+
+				{/* ─── 2. Study Roadmap ─── */}
 				{roadmap.length > 0 && (
-					<SectionHeader number="1" title="Study Roadmap">
-						<table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+					<div style={{ marginBottom: 32 }}>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 12px' }}>2. Study Roadmap</h2>
+						<table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, border: '1px solid #cbd5e1' }}>
 							<thead>
-								<tr style={{ borderBottom: '2px solid #cbd5e1' }}>
-									<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b', width: 60 }}>Step</th>
-									<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>Study Focus</th>
-									<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>Why It Matters</th>
-									<th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>Exam Tip</th>
+								<tr>
+									<th style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 12, padding: '8px 12px', textAlign: 'left', borderRight: '1px solid #1b3a5b' }}>Step</th>
+									<th style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 12, padding: '8px 12px', textAlign: 'left', borderRight: '1px solid #1b3a5b' }}>Study Focus</th>
+									<th style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 12, padding: '8px 12px', textAlign: 'left' }}>Why it matters in the exam</th>
 								</tr>
 							</thead>
 							<tbody>
 								{roadmap.map((s, i) => (
 									<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
-										<td style={{ padding: '8px', fontWeight: 700, color: '#102540' }}>{prose(s.step)}</td>
-										<td style={{ padding: '8px', color: '#374151' }}>{prose(s.focus)}</td>
-										<td style={{ padding: '8px', color: '#475569' }}>{prose(s.whyItMatters)}</td>
-										<td style={{ padding: '8px', color: '#92400e', fontSize: 12 }}>{s.examTip}</td>
+										<td style={{ padding: '8px 12px', fontWeight: 600, color: '#102540', borderRight: '1px solid #e2e8f0' }}>{prose(s.step)}</td>
+										<td style={{ padding: '8px 12px', color: '#374151', borderRight: '1px solid #e2e8f0' }}>{prose(s.focus)}</td>
+										<td style={{ padding: '8px 12px', color: '#475569' }}>{prose(s.whyItMatters || s.examTip)}</td>
 									</tr>
 								))}
 							</tbody>
 						</table>
-					</SectionHeader>
+					</div>
 				)}
 
-				{/* Learning Outcome Statements */}
-				{los.length > 0 && (
-					<SectionHeader number={roadmap.length > 0 ? '2' : '1'} title="Learning Outcome Statements">
-						<div style={{ fontSize: 13, color: '#475569', marginBottom: 10 }}>LOS Covered</div>
-						<table style={{ width: '100%', borderCollapse: 'collapse' }}>
-							<thead><tr style={{ borderBottom: '2px solid #cbd5e1' }}><th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>LOS</th><th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>Statement</th><th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: '#64748b' }}>Command</th></tr></thead>
-							<tbody>{los.map((l, i) => (<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '8px', fontWeight: 600, color: '#102540', fontSize: 13 }}>{prose(l.ref)}</td><td style={{ padding: '8px', fontSize: 13, color: '#374151' }}>{prose(l.statement)}</td><td style={{ padding: '8px' }}><Tag color="blue" style={{ fontSize: 11 }}>{prose(l.commandWord)}</Tag></td></tr>))}</tbody>
-						</table>
-					</SectionHeader>
-				)}
+				{/* ─── 3+ Topic-by-topic Notes ─── */}
+				{concepts.length > 0 && concepts.map((c, i) => {
+					const sectionNum = 3 + i;
+					return (
+						<div key={i} style={{ marginBottom: 32 }}>
+							<h2 style={{ fontSize: 22, fontWeight: 800, color: '#102540', margin: '0 0 10px' }}>
+								{c.sectionNumber || `${sectionNum}.`} {prose(c.title)}
+							</h2>
 
-				{/* Topic-by-topic Notes */}
-				{concepts.length > 0 && (
-					<SectionHeader number={(() => { let i = 1; if (roadmap.length) i++; if (los.length) i++; return i; })()} title="Topic-by-topic Notes">
-						{concepts.map((c, i) => (
-							<div key={i} style={{ marginBottom: 20, padding: '16px 20px', background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
-								<Typography.Text strong style={{ fontSize: 15, color: '#102540' }}>{prose(c.title)}</Typography.Text>
-								<div style={{ marginTop: 8 }}>
-									{c.meaning && <div style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}><strong>Plain-English meaning:</strong> {prose(c.meaning)}</div>}
-									{c.explanation && <div style={{ fontSize: 13, color: '#374151', marginBottom: 8, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{prose(c.explanation)}</div>}
-									<FormulaBox formula={c.formula} variables={c.formulaVariables} useCase={c.formulaUseCase} examTrap={c.formulaExamTrap} />
-									{c.interpretation && <div style={{ fontSize: 13, color: '#374151', marginBottom: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, borderLeft: '3px solid #3b82f6' }}><strong>Interpretation:</strong> {prose(c.interpretation)}</div>}
-									{c.workedExample && (
-										<div style={{ marginBottom: 8, padding: '10px 14px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
-											<Typography.Text strong style={{ fontSize: 12, color: '#1d4ed8' }}>Worked Example</Typography.Text>
-											<div style={{ fontSize: 13, marginTop: 4 }}><strong>Given:</strong> {prose(c.workedExample.given)}</div>
-											<div style={{ fontSize: 13 }}><strong>Required:</strong> {prose(c.workedExample.required)}</div>
-											<div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}><strong>Solution:</strong> {prose(c.workedExample.solution)}</div>
-											<div style={{ fontSize: 13 }}><strong>Conclusion:</strong> {prose(c.workedExample.conclusion)}</div>
+							{c.meaning && (
+								<p style={{ fontSize: 13, color: '#374151', lineHeight: 1.7, margin: '0 0 12px' }}>
+									{prose(c.meaning)}
+								</p>
+							)}
+
+							{c.explanation && (
+								<div style={{ fontSize: 13, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap', marginBottom: 12 }}>
+									{prose(c.explanation)}
+								</div>
+							)}
+
+							<FormulaBox formula={c.formula} variables={c.formulaVariables} useCase={c.formulaUseCase} examTrap={c.formulaExamTrap} />
+
+							{c.interpretation && (
+								<p style={{ fontSize: 13, color: '#374151', lineHeight: 1.6, margin: '8px 0' }}>
+									<strong>Interpretation:</strong> {prose(c.interpretation)}
+								</p>
+							)}
+
+							{/* Inline worked example */}
+							{c.workedExample && (
+								<div style={{ marginTop: 16, marginBottom: 12 }}>
+									<h4 style={{ fontSize: 14, fontWeight: 700, color: '#102540', margin: '0 0 4px' }}>
+										Example {i + 1}: {prose(c.workedExample.title || c.title)}
+									</h4>
+									<p style={{ fontSize: 13, color: '#374151', margin: '0 0 6px' }}>
+										<strong>Question:</strong> {prose(c.workedExample.given || c.workedExample.question)}
+									</p>
+									<p style={{ fontSize: 13, fontWeight: 600, color: '#102540', margin: '0 0 4px' }}>Solution:</p>
+									<ul style={{ listStyle: 'disc', paddingLeft: 24, margin: '0 0 8px' }}>
+										{(c.workedExample.solution || c.workedExample.steps || '').split('\n').filter(Boolean).map((step, si) => (
+											<li key={si} style={{ fontSize: 13, color: '#374151', padding: '2px 0' }}>{prose(step)}</li>
+										))}
+									</ul>
+									{c.workedExample.conclusion && (
+										<p style={{ fontSize: 13, color: '#374151', margin: 0 }}>
+											<strong>Conclusion:</strong> {prose(c.workedExample.conclusion)}
+										</p>
+									)}
+								</div>
+							)}
+
+							{/* Decision logic / tips box */}
+							{(c.examTip || c.commonMistake) && (
+								<div style={{ border: '2px solid #102540', padding: '12px 16px', marginTop: 12 }}>
+									{c.examTip && (
+										<div style={{ fontSize: 13, color: '#374151', marginBottom: c.commonMistake ? 6 : 0 }}>
+											<strong>Exam tip:</strong> {prose(c.examTip)}
 										</div>
 									)}
-									<Row gutter={12}>
-										{c.examTip && <Col span={12}><div style={{ padding: '8px 12px', background: '#f0fdf4', borderRadius: 6, borderLeft: '3px solid #22c55e' }}><Typography.Text strong style={{ fontSize: 11, color: '#166534' }}>EXAM TIP</Typography.Text><div style={{ fontSize: 12, color: '#166534', marginTop: 2 }}>{prose(c.examTip)}</div></div></Col>}
-										{c.commonMistake && <Col span={12}><div style={{ padding: '8px 12px', background: '#fef3c7', borderRadius: 6, borderLeft: '3px solid #f59e0b' }}><Typography.Text strong style={{ fontSize: 11, color: '#92400e' }}>COMMON MISTAKE</Typography.Text><div style={{ fontSize: 12, color: '#92400e', marginTop: 2 }}>{prose(c.commonMistake)}</div></div></Col>}
-									</Row>
+									{c.commonMistake && (
+										<div style={{ fontSize: 13, color: '#374151' }}>
+											<strong>Common mistake:</strong> {prose(c.commonMistake)}
+										</div>
+									)}
 								</div>
-							</div>
-						))}
-					</SectionHeader>
-				)}
-
-				{/* Module Summary */}
-				{n.moduleSummary && (
-					<SectionHeader number="9" title="Module Summary">
-						<div style={{ fontSize: 13, color: '#374151', marginTop: 8, whiteSpace: 'pre-wrap', lineHeight: 1.6, padding: '14px 18px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
-							{prose(n.moduleSummary)}
+							)}
 						</div>
-					</SectionHeader>
-				)}
+					);
+				})}
 
-				{/* Worked Examples */}
+				{/* ─── Worked Examples (standalone section) ─── */}
 				{solutions.length > 0 && (
-					<SectionHeader number="10" title="Worked Examples">
+					<div style={{ marginBottom: 32 }}>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 16px' }}>
+							{concepts.length + 3}. Worked Examples
+						</h2>
 						{solutions.map((s, i) => (
-							<div key={i} style={{ marginBottom: 16, padding: '12px 16px', background: '#eff6ff', borderRadius: 10, border: '1px solid #bfdbfe' }}>
-								<div style={{ fontWeight: 700, fontSize: 14, color: '#1d4ed8' }}>Worked Example {s.label || String.fromCharCode(65 + i)}</div>
-								<div style={{ fontSize: 13, marginTop: 6 }}><strong>Question:</strong> {prose(s.question)}</div>
-								<div style={{ fontSize: 13, marginTop: 4, padding: '8px 12px', background: '#fff', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-									<strong>Answer:</strong> <span style={{ fontWeight: 600, color: '#16a34a' }}>{prose(s.answer)}</span>
-								</div>
-								{s.method && <div style={{ fontSize: 13, marginTop: 4, whiteSpace: 'pre-wrap' }}><strong>Method:</strong> {prose(s.method)}</div>}
-								{s.interpretation && <div style={{ fontSize: 12, color: '#3b82f6', marginTop: 4 }}><strong>Interpretation:</strong> {prose(s.interpretation)}</div>}
-								{s.trap && <div style={{ fontSize: 12, color: '#92400e', marginTop: 2, padding: '4px 8px', background: '#fef3c7', borderRadius: 4, display: 'inline-block' }}><strong>Trap:</strong> {prose(s.trap)}</div>}
-							</div>
-						))}
-					</SectionHeader>
-				)}
-
-				{/* Exam-Style Questions with Answers */}
-				{practiceSet.length > 0 && (
-					<SectionHeader number="11" title="Exam-Style Questions with Answers">
-						{practiceSet.map((q, i) => (
-							<div key={i} style={{ marginBottom: 14, padding: '12px 16px', background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0' }}>
-								<div style={{ fontSize: 14, fontWeight: 600, color: '#102540' }}>Question {i + 1}. {q.losRef && <Tag style={{ fontSize: 10 }}>{prose(q.losRef)}</Tag>}</div>
-								<div style={{ fontSize: 13, color: '#374151', marginTop: 4 }}>{prose(q.question)}</div>
-								{q.correctAnswer && (
-									<div style={{ marginTop: 8, padding: '8px 12px', background: '#f0fdf4', borderRadius: 6, border: '1px solid #86efac' }}>
-										<div style={{ fontSize: 12, fontWeight: 700, color: '#166534' }}>Correct answer: {prose(q.correctAnswer)}</div>
-										{q.explanation && <div style={{ fontSize: 12, color: '#15803d', marginTop: 2 }}>{prose(q.explanation)}</div>}
-									</div>
+							<div key={i} style={{ marginBottom: 20 }}>
+								<h4 style={{ fontSize: 14, fontWeight: 700, color: '#102540', margin: '0 0 4px' }}>
+									Worked Example {s.label || String.fromCharCode(65 + i)}: {prose(s.title || s.topic || '')}
+								</h4>
+								<p style={{ fontSize: 13, color: '#374151', margin: '0 0 6px' }}>
+									<strong>Question:</strong> {prose(s.question)}
+								</p>
+								<p style={{ fontSize: 13, fontWeight: 600, color: '#102540', margin: '0 0 4px' }}>Solution:</p>
+								<ul style={{ listStyle: 'disc', paddingLeft: 24, margin: '0 0 8px' }}>
+									{(s.method || s.answer || '').split('\n').filter(Boolean).map((step, si) => (
+										<li key={si} style={{ fontSize: 13, color: '#374141', padding: '2px 0' }}>{prose(step)}</li>
+									))}
+								</ul>
+								{s.interpretation && (
+									<p style={{ fontSize: 13, color: '#374151', margin: 0 }}>• {prose(s.interpretation)}</p>
+								)}
+								{s.trap && (
+									<p style={{ fontSize: 13, color: '#374151', margin: '4px 0 0' }}>• <strong>Trap:</strong> {prose(s.trap)}</p>
 								)}
 							</div>
 						))}
-					</SectionHeader>
+					</div>
 				)}
 
-				{/* Formula Bank */}
+				{/* ─── Exam-Style Questions with Answers ─── */}
+				{practiceSet.length > 0 && (
+					<div style={{ marginBottom: 32 }}>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 16px' }}>
+							{concepts.length + (solutions.length > 0 ? 4 : 3)}. Exam-Style Questions with Answers
+						</h2>
+						{practiceSet.map((q, i) => (
+							<div key={i} style={{ marginBottom: 16 }}>
+								<p style={{ fontSize: 13, color: '#102540', margin: '0 0 6px' }}>
+									<strong>Question {i + 1}.</strong> {prose(q.question)}
+								</p>
+								{Array.isArray(q.options) && q.options.length > 0 && (
+									<ul style={{ listStyle: 'disc', paddingLeft: 24, margin: '0 0 6px' }}>
+										{q.options.map((opt, oi) => (
+											<li key={oi} style={{ fontSize: 13, color: '#374151', padding: '1px 0' }}>
+												{String.fromCharCode(65 + oi)}. {prose(typeof opt === 'string' ? opt : opt.text || opt)}
+											</li>
+										))}
+									</ul>
+								)}
+								{q.correctAnswer && (
+									<p style={{ fontSize: 13, color: '#dc2626', fontWeight: 600, margin: '0 0 4px' }}>
+										Correct answer: {prose(q.correctAnswer)}
+									</p>
+								)}
+								{q.explanation && (
+									<p style={{ fontSize: 12, color: '#475569', margin: 0 }}>{prose(q.explanation)}</p>
+								)}
+							</div>
+						))}
+					</div>
+				)}
+
+				{/* ─── Formula Bank ─── */}
 				{formulas.length > 0 && (
-					<SectionHeader number="12" title="Formula Bank">
+					<div style={{ marginBottom: 32 }}>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 16px' }}>
+							{concepts.length + (solutions.length > 0 ? 1 : 0) + (practiceSet.length > 0 ? 1 : 0) + 3}. Formula Bank
+						</h2>
 						<div style={{ overflowX: 'auto' }}>
-							<table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-								<thead><tr style={{ borderBottom: '2px solid #cbd5e1' }}>
-									<th style={{ textAlign: 'left', padding: '6px 8px', color: '#64748b', fontSize: 10 }}>Formula</th>
-									<th style={{ textAlign: 'left', padding: '6px 8px', color: '#64748b', fontSize: 10 }}>Expression</th>
-									<th style={{ textAlign: 'left', padding: '6px 8px', color: '#64748b', fontSize: 10 }}>Variables</th>
-									<th style={{ textAlign: 'left', padding: '6px 8px', color: '#64748b', fontSize: 10 }}>Use Case</th>
-									<th style={{ textAlign: 'left', padding: '6px 8px', color: '#64748b', fontSize: 10 }}>Exam Trap</th>
-								</tr></thead>
-								<tbody>{formulas.map((f, i) => (
-									<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
-										<td style={{ padding: '8px', fontWeight: 600, color: '#102540' }}>{prose(f.name)}</td>
-										<td style={{ padding: '8px' }}><MathText text={f.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 14, fontWeight: 600, color: '#102540' }} /></td>
-										<td style={{ padding: '8px', color: '#64748b' }}>{f.variables ? <MathVariables text={typeof f.variables === 'object' ? JSON.stringify(f.variables) : String(f.variables || '')} tag="div" /> : '—'}</td>
-										<td style={{ padding: '8px', color: '#0369a1', fontSize: 11 }}>{prose(f.useCase) || '—'}</td>
-										<td style={{ padding: '8px', color: '#92400e', fontSize: 11 }}>{prose(f.examTrap) || '—'}</td>
+							<table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, border: '1px solid #cbd5e1' }}>
+								<thead>
+									<tr>
+										<th style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 11, padding: '8px 10px', textAlign: 'left', borderRight: '1px solid #1b3a5b' }}>Formula area</th>
+										<th style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 11, padding: '8px 10px', textAlign: 'left', borderRight: '1px solid #1b3a5b' }}>Formula</th>
+										<th style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 11, padding: '8px 10px', textAlign: 'left' }}>Use</th>
 									</tr>
-								))}</tbody>
+								</thead>
+								<tbody>
+									{formulas.map((f, i) => (
+										<tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
+											<td style={{ padding: '6px 10px', fontWeight: 600, color: '#102540', fontSize: 12, borderRight: '1px solid #e2e8f0' }}>{prose(f.name)}</td>
+											<td style={{ padding: '6px 10px', borderRight: '1px solid #e2e8f0' }}>
+												<MathText text={f.formula} tag="span" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 13, color: '#102540' }} />
+											</td>
+											<td style={{ padding: '6px 10px', color: '#475569', fontSize: 12 }}>{prose(f.useCase) || '—'}</td>
+										</tr>
+									))}
+								</tbody>
 							</table>
 						</div>
-					</SectionHeader>
+					</div>
 				)}
 
-				{/* Final Exam Checklist */}
+				{/* ─── Final Exam Checklist ─── */}
 				{checks.length > 0 && (
-					<SectionHeader number="13" title="Final Exam Checklist">
-						<div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+					<div style={{ marginBottom: 32 }}>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 12px' }}>Final exam checklist</h2>
+						<ul style={{ listStyle: 'none', paddingLeft: 0, margin: 0 }}>
 							{checks.map((c, i) => (
-								<div key={i} style={{ padding: '8px 14px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, color: '#374151' }}>
-									☐ {prose(c.item)}
-								</div>
+								<li key={i} style={{ fontSize: 13, color: '#374151', padding: '3px 0' }}>
+									• Can I {prose(c.item || c)}
+								</li>
 							))}
-						</div>
-					</SectionHeader>
+						</ul>
+					</div>
 				)}
 			</div>
 
-			<div style={{ padding: '12px 32px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', background: '#f8fafc' }}>
-				<Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>Milven Finance School | Module Notes {n.year}</Typography.Text>
-				<Typography.Text style={{ fontSize: 11, color: '#94a3b8' }}>Simplified. Exam-focused. Built to help you pass.</Typography.Text>
+			{/* Footer */}
+			<div style={{ padding: '12px 40px', borderTop: '1px solid #e2e8f0', textAlign: 'center' }}>
+				<span style={{ fontSize: 12, color: '#c9a227', fontWeight: 600 }}>Milven</span>
+				<span style={{ fontSize: 12, color: '#64748b' }}> Finance School | Exam-Ready Notes</span>
 			</div>
 		</div>
 	);
