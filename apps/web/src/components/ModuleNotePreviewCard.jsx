@@ -16,6 +16,7 @@ function FormulaBox({ formula, variables, useCase, examTrap }) {
 	if (!formula) return null;
 	const rows = [
 		{ label: 'Formula', content: <MathText text={formula} tag="span" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 14, color: '#000' }} /> },
+		...(variables ? [{ label: 'Where', content: <MathVariables text={variables} /> }] : []),
 		...(useCase ? [{ label: 'Use when', content: prose(useCase) }] : []),
 		...(examTrap ? [{ label: 'Exam trap', content: prose(examTrap) }] : []),
 	];
@@ -150,7 +151,9 @@ export function ModuleNotePreviewCard({ note }) {
 								<ul style={{ listStyle: 'disc', paddingLeft: 24, margin: 0 }}>
 									{los.map((l, i) => (
 										<li key={i} style={{ fontSize: 13, color: '#374151', padding: '3px 0', lineHeight: 1.5 }}>
-											{prose(l.statement)}
+											{l.ref && <strong style={{ color: '#102540' }}>{l.ref}: </strong>}
+											{prose(l.statement || l)}
+											{l.commandWord && <span style={{ marginLeft: 6, fontSize: 11, color: '#64748b', fontStyle: 'italic' }}>({l.commandWord})</span>}
 										</li>
 									))}
 								</ul>
@@ -353,7 +356,9 @@ export function ModuleNotePreviewCard({ note }) {
 				{/* ─── Final Exam Checklist ─── */}
 				{checks.length > 0 && (
 					<div style={{ marginBottom: 32 }}>
-						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 12px' }}>Final exam checklist</h2>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 12px' }}>
+							{concepts.length + (solutions.length > 0 ? 1 : 0) + (practiceSet.length > 0 ? 1 : 0) + (formulas.length > 0 ? 1 : 0) + 3}. Final Exam Checklist
+						</h2>
 						<ul style={{ listStyle: 'none', paddingLeft: 0, margin: 0 }}>
 							{checks.map((c, i) => (
 								<li key={i} style={{ fontSize: 13, color: '#374151', padding: '3px 0' }}>

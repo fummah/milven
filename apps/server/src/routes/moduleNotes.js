@@ -258,7 +258,7 @@ Inputs:
 - Exam level: ${levelLabel}
 - Topic area: ${course.name}
 - Volume: ${volumeName || 'N/A'}
-- Learning module: ${moduleName || n.title || 'N/A'}
+- Learning module: ${moduleName || 'N/A'}
 - Learning Outcome Statements: ${topicNames.join(', ') || 'All in module'}
 - Year: ${year}
 ${curriculumSection}
@@ -375,7 +375,7 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 		const sseEnd = () => { clearInterval(sseHeartbeat); try { res.end(); } catch {} };
 
 		try {
-			const openai = new OpenAI({ apiKey, timeout: 120_000 });
+			const openai = new OpenAI({ apiKey, timeout: 180_000 });
 
 			// Generate exactly 1 note per preview request to avoid timeout
 			const completion = await openai.chat.completions.create({
@@ -385,7 +385,7 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,
-				max_tokens: 16384,
+				max_tokens: 32768,
 				response_format: { type: 'json_object' }
 			});
 
