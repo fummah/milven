@@ -2293,7 +2293,7 @@ export function cmsRouter(prisma) {
 		// Load and validate topics
 		const selectedTopics = await prisma.topic.findMany({
 			where: { id: { in: topicIdList } },
-			select: { id: true, name: true, courseId: true, moduleId: true, module: { select: { volumeId: true } } }
+			select: { id: true, name: true, courseId: true, moduleId: true, module: { select: { name: true, volumeId: true } } }
 		});
 		if (selectedTopics.length !== topicIdList.length) return res.status(400).json({ error: 'One or more topics not found' });
 		for (const t of selectedTopics) {
@@ -2339,12 +2339,17 @@ export function cmsRouter(prisma) {
 		}
 		const legacyConceptLabel = legacyConcepts.length > 0 ? legacyConcepts.map(c => c.name).join(', ') : 'All concepts under the selected topics';
 		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
+		const topicLabel = selectedTopics.map(t => t.name).join(', ');
+
+		// Detect ethics topics — ethics questions must NEVER include tables (check volume, module, and topic names)
+		const isEthics = [volumeName, ...selectedTopics.map(t => t.module?.name).filter(Boolean), ...selectedTopics.map(t => t.name)].some(n => n && /ethics/i.test(n));
 		const typeLabel = questionType === 'MCQ'
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
-			? 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist, multiple financial scenarios, AT LEAST ONE HTML table as a CFA Exhibit, and 4-5 MCQ sub-questions that reference specific exhibits'
+			? isEthics
+				? 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist. This is an ETHICS vignette — it MUST be purely narrative with NO tables, NO exhibits, NO charts. All information must be presented as prose within the passage. Sub-questions should reference specific details from the narrative. 4-5 MCQ sub-questions.'
+				: 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist, multiple financial scenarios, AT LEAST ONE HTML table as a CFA Exhibit, and 4-5 MCQ sub-questions that reference specific exhibits'
 			: 'Constructed response (written answer requiring calculations or explanations)';
-		const topicLabel = selectedTopics.map(t => t.name).join(', ');
 		const difficultyLabel = diffList.join(', ');
 		const curriculumSection = curriculumExcerpt
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
@@ -2374,7 +2379,7 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles):
 - Introduce a named protagonist (e.g. "Rebecca Jones is a financial advisor at Apex Capital Management. She is evaluating...")
 - Present multiple related financial scenarios, each with specific data, dates, company names
 - Open the vignetteText with: "<p><strong>TOPIC: [TOPIC NAME]</strong></p><p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
-- VARY THE EXHIBIT FORMAT across case studies — do NOT give every case study a table. Distribute formats roughly equally:
+${isEthics ? `- ETHICS VIGNETTE RULE: Because this is an ETHICS topic, the vignette MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines, data points) must be woven naturally into the prose paragraph text. Sub-questions should reference specific details from the narrative (e.g. "Regarding Jones's recommendation to the board...").` : `- VARY THE EXHIBIT FORMAT across case studies — do NOT give every case study a table. Distribute formats roughly equally:
   FORMAT A — TABLE: Include 1-2 HTML tables as CFA Exhibits with realistic financial data.
     CRITICAL TABLE STYLING: All tables MUST use SOLID borders only — never dashed, dotted, or broken lines.
     Use this EXACT format (do not modify the style attributes):
@@ -2385,7 +2390,7 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles):
   FORMAT C — CHART: Include a text-based chart or graph as a CFA Exhibit using a <pre> block:
     <p><strong>Exhibit 1 – [Chart Title]</strong></p>
     <pre style="font-family:monospace;font-size:12px;background:#f8f8f8;padding:8px;border-radius:4px;">[ASCII bar chart, trend line, or labelled data series with specific values]</pre>
-    Chart must show meaningful financial data (e.g. portfolio return over quarters, yield curve points, performance attribution bars)
+    Chart must show meaningful financial data (e.g. portfolio return over quarters, yield curve points, performance attribution bars)`}
 - Sub-questions must reference specific exhibits or narrative sections (e.g. "Based on Exhibit 1..." or "Regarding Jones's evaluation of...")
 
 Context:
@@ -2837,14 +2842,22 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
 		const isConstructedBundle = questionType === 'CONSTRUCTED_RESPONSE' && constructedMode === 'bundle';
+		const topicLabel = selectedTopics.map(t => t.name).join(', ');
+
+		// Detect ethics topics — ethics questions must NEVER include tables (check volume, module, and topic names)
+		const moduleNames = selectedTopics.map(t => t.module?.name).filter(Boolean);
+		const isEthics = [volumeName, ...moduleNames, ...selectedTopics.map(t => t.name)].some(n => n && /ethics/i.test(n));
 		const typeLabel = questionType === 'MCQ'
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
-				? 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist (financial analyst/advisor), multiple financial scenarios, and at least one HTML data table formatted as a CFA Exhibit. Sub-questions reference specific exhibits and test different aspects of the scenario. Each sub-question has exactly 3 MCQ options.'
+				? isEthics
+					? 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist. This is an ETHICS vignette — it MUST be purely narrative with NO tables, NO exhibits, NO charts, NO <table> tags, NO <pre> tags. All information must be presented as prose within the passage. 4-5 MCQ sub-questions referencing narrative details.'
+					: 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist (financial analyst/advisor), multiple financial scenarios, and at least one HTML data table formatted as a CFA Exhibit. Sub-questions reference specific exhibits and test different aspects of the scenario. Each sub-question has exactly 3 MCQ options.'
 				: isConstructedBundle
-					? 'Constructed response case study: a detailed realistic scenario/case study passage (400-600 words) with a named protagonist and at least one HTML data table as an Exhibit, followed by multiple constructed-response sub-questions requiring calculations, analysis, or written explanations'
+					? isEthics
+						? 'Constructed response case study: a detailed realistic scenario/case study passage (400-600 words) with a named protagonist. This is an ETHICS case study — PURELY NARRATIVE, NO tables, NO exhibits, NO charts. Followed by multiple constructed-response sub-questions requiring analysis or written explanations.'
+						: 'Constructed response case study: a detailed realistic scenario/case study passage (400-600 words) with a named protagonist and at least one HTML data table as an Exhibit, followed by multiple constructed-response sub-questions requiring calculations, analysis, or written explanations'
 					: 'Constructed response (written answer requiring calculations or explanations)';
-		const topicLabel = selectedTopics.map(t => t.name).join(', ');
 		const conceptLabel = selectedConcepts.length > 0 ? selectedConcepts.map(c => c.name).join(', ') : 'All concepts under the selected topics';
 		const difficultyLabel = diffList.join(', ');
 
@@ -2894,14 +2907,14 @@ Each object in "items" MUST follow this structure:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
     • Introduce a named protagonist with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
-    • IMPORTANT — VARY THE EXHIBIT FORMAT across case studies. Do NOT always use tables. Mix approaches:
+${isEthics ? `    • ETHICS TOPIC: This is an ETHICS vignette — it MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines) must be woven naturally into prose paragraphs. No Exhibit labels.` : `    • IMPORTANT — VARY THE EXHIBIT FORMAT across case studies. Do NOT always use tables. Mix approaches:
       FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits (use this for ~40% of case studies)
       FORMAT B (NARRATIVE ONLY): No exhibit at all — weave ALL specific numbers, ratios, dates, names richly into the prose only. Sub-questions reference the narrative directly. (use this for ~30% of case studies)
       FORMAT C (CHART/GRAPH): Include a text-based chart as a CFA Exhibit using <pre> with ASCII/labelled data (use this for ~30% of case studies)
     • The passage should weave naturally between narrative context and any numerical exhibits
-    • Different case studies MUST use different formats — do not repeat the same format for every case study
+    • Different case studies MUST use different formats — do not repeat the same format for every case study`}
   "questions": array of EXACTLY 4 MCQ sub-questions (no more, no less). Each sub-question MUST:
-    • Reference specific information or exhibit data from the vignetteText (e.g. "Based on Exhibit 1..." or "Regarding Jones's evaluation of XYZ...")
+    • Reference specific information ${isEthics ? 'from the narrative passage' : 'or exhibit data from the vignetteText'} (e.g. ${isEthics ? '"Regarding Jones\'s recommendation to the board..."' : '"Based on Exhibit 1..." or "Regarding Jones\'s evaluation of XYZ..."'})
     • Have "stem": string, "options": exactly 3 objects { "text": string, "isCorrect": boolean } with exactly ONE correct
     • Cover a different aspect of the scenario/topic than the other sub-questions
     • Each sub-question is worth 3 marks (do NOT include a "marks" field for vignette MCQ sub-questions)
@@ -2928,14 +2941,14 @@ Each object in "items" MUST follow this structure:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
     • Introduce a named protagonist with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Michael Torres, Rebecca Jones, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]..."
     • Present multiple related financial scenarios with specific data, dates, company names, and context
-    • IMPORTANT — VARY THE EXHIBIT FORMAT across case studies. Do NOT always use tables. Mix approaches:
+${isEthics ? `    • ETHICS TOPIC: This is an ETHICS case study — it MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information must be woven naturally into prose paragraphs.` : `    • IMPORTANT — VARY THE EXHIBIT FORMAT across case studies. Do NOT always use tables. Mix approaches:
       FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits with realistic financial data (use for ~40% of case studies)
       FORMAT B (NARRATIVE ONLY): No exhibit at all — embed ALL specific numbers, ratios, and data richly in the prose only (use for ~30% of case studies)
       FORMAT C (CHART/GRAPH): Include a text-based chart as a CFA Exhibit using <pre> with ASCII/labelled data (use for ~30% of case studies)
     • Different case studies MUST use different formats — do not repeat the same format for every case study
-    • The passage should weave naturally between narrative context and any numerical exhibits
+    • The passage should weave naturally between narrative context and any numerical exhibits`}
   "questions": array of 3 to 5 constructed-response sub-questions (vary the count between case studies). Each MUST:
-    • Reference specific data or exhibits from the vignetteText
+    • Reference specific ${isEthics ? 'details from the narrative passage' : 'data or exhibits from the vignetteText'}
     • Have "stem" — clearly state what to calculate/explain. In SOME sub-questions (not all), include roman-numeral sub-points within the stem when it makes sense, e.g.:
       "Determine whether the stock market is overvalued using the:\ni. Fed model.\nii. Yardeni model.\nJustify each response with one reason."
       Only use sub-points when the question naturally breaks into distinct parts. Other sub-questions should be single direct prompts.
@@ -3001,7 +3014,7 @@ IMPORTANT GUIDELINES:
   * The vignette MUST be 400–600 words — rich, narrative, CFA-exam-quality
   * Use a named protagonist with a UNIQUE randomly generated name and company — NEVER repeat names like Sarah Chen, Apex Capital, or Meridian Asset Management. Each case study MUST have completely different character and firm names. Vary ethnicity, gender, and company naming style
   * Include multiple related financial scenarios and data points within the passage
-  * VARY exhibit formats across case studies: some with HTML tables, some narrative-only (no exhibits), some with text-based charts. Do NOT use tables in every single case study — mix approaches for realism
+${isEthics ? `  * ETHICS TOPIC RULE: Because this is an ETHICS topic, ALL vignettes MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information must be woven naturally into prose paragraphs. Sub-questions reference narrative details directly.` : `  * VARY exhibit formats across case studies: some with HTML tables, some narrative-only (no exhibits), some with text-based charts. Do NOT use tables in every single case study — mix approaches for realism`}
   * Sub-questions should reference specific exhibits or narrative details by name and test different aspects of the scenario
   * Open the vignetteText with the Volume name header: "<p><strong>${volumeName}</strong></p>"
 ${previewCurriculumExcerpt ? `CRITICAL — CURRICULUM DOCUMENT RULES:
