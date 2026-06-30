@@ -1315,7 +1315,10 @@ export function AdminQuestions() {
 										setAiGenerateCourseId(v || '');
 										setAiGenerateVolumeId('');
 										setAiGenerateModuleId('');
-										aiForm.setFieldsValue({ volumeId: undefined, aiModuleId: undefined, topicIds: undefined, topicId: undefined });
+										const selectedCourse = (courses || []).find(c => c.id === v);
+										const lvl = selectedCourse?.level;
+										const defaultType = (lvl === 'LEVEL2' || lvl === 'LEVEL3') ? 'VIGNETTE_MCQ' : 'MCQ';
+										aiForm.setFieldsValue({ volumeId: undefined, aiModuleId: undefined, topicIds: undefined, topicId: undefined, questionType: defaultType });
 									}}
 								/>
 							</Form.Item>

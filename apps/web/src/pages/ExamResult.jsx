@@ -111,8 +111,21 @@ export function ExamResult() {
 	}, [attemptId, isSelfMarkMode]);
 
 	const correctOption = (opts) => (opts || []).find((o) => o.isCorrect);
-	const yourOptionText = (a) => a?.selectedOption?.text ?? '—';
-	const correctOptionText = (a) => (correctOption(a?.question?.options)?.text) ?? '—';
+	const yourOptionText = (a) => {
+		const opts = a?.question?.options || [];
+		const selectedId = a?.selectedOptionId;
+		const idx = opts.findIndex(o => o.id === selectedId);
+		const text = a?.selectedOption?.text ?? '—';
+		if (idx >= 0) return `${String.fromCharCode(65 + idx)}. ${text}`;
+		return text;
+	};
+	const correctOptionText = (a) => {
+		const opts = a?.question?.options || [];
+		const idx = opts.findIndex(o => o.isCorrect);
+		if (idx < 0) return '—';
+		const letter = String.fromCharCode(65 + idx);
+		return `${letter}. ${opts[idx].text}`;
+	};
 	const isConstructed = (a) => a?.question?.type === 'CONSTRUCTED_RESPONSE';
 
 	// Group answers by case study (parent question) for vignette display

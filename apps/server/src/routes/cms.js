@@ -2421,13 +2421,14 @@ For EVERY question (numerical OR text-based):
 3. The correct MCQ option (isCorrect: true) MUST match EXACTLY what your worked solution concludes.
 4. NEVER pick the correct answer first and then write the solution — always solve first, then set the matching option as correct.
 5. DOUBLE-CHECK: After generating each question, re-read the workedSolution's final line and verify the option marked isCorrect matches it. If the solution says "Portfolio B is preferred" then "Portfolio B" must be correct, NOT "Portfolio A".
-6. DO NOT default to option A. The correct answer should be randomly distributed across positions A, B, and C. Roughly 1/3 should be A, 1/3 B, 1/3 C.
+6. DO NOT default to option A. The correct answer MUST be randomly distributed across positions A, B, and C. Aim for roughly 1/3 A, 1/3 B, 1/3 C across all questions. NEVER place the correct answer in position A for more than 2 consecutive questions. Vary the position deliberately.
 7. For numerical questions: verify the exact number in the correct option appears in the worked solution. Common error: computing 12.17% in the solution but marking 11.16% as correct — this is WRONG.
 8. For comparison questions (e.g. "which portfolio?"): the workedSolution must explicitly state which option wins, and THAT option must be marked isCorrect.
 9. Distractor options must be plausible but different from the correct answer (e.g. common calculation errors, or the "losing" alternative in comparisons).
+10. RANDOMIZATION CHECK: Before finalizing, count how many questions have A correct, B correct, C correct. If any letter has more than 50% of the correct answers, redistribute by reordering options in some questions.
 Violating this rule produces hallucinated answers that damage student trust. Accuracy is mandatory.
 
-For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of 4-5 MCQ sub-questions with same fields }.
+For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of 4-5 MCQ sub-questions }. EVERY sub-question MUST include ALL these fields: "stem", "options", "qid", "los", "traceSection", "tracePage", "keyFormulas", "workedSolution", "explanation". These fields are REQUIRED on each sub-question — not just on the parent.
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		try {
@@ -2435,7 +2436,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers evenly across A, B, C.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.4,
@@ -2891,10 +2892,11 @@ For EVERY question (numerical OR text-based):
 3. The correct MCQ option (isCorrect: true) MUST match EXACTLY what your worked solution concludes.
 4. NEVER pick the correct answer first and then write the solution — always solve first, then set the matching option as correct.
 5. DOUBLE-CHECK: After generating each question, re-read the workedSolution's final line and verify the option marked isCorrect matches it. If the solution says "Portfolio B is preferred" then "Portfolio B" must be correct, NOT "Portfolio A".
-6. DO NOT default to option A. The correct answer should be randomly distributed across positions A, B, and C. Roughly 1/3 should be A, 1/3 B, 1/3 C.
+6. DO NOT default to option A. The correct answer MUST be randomly distributed across positions A, B, and C. Aim for roughly 1/3 A, 1/3 B, 1/3 C. NEVER place the correct answer in position A for more than 2 consecutive questions. Vary deliberately.
 7. For numerical questions: verify the exact number in the correct option appears in the worked solution. Common error: computing 12.17% in the solution but marking 11.16% as correct — this is WRONG.
 8. For comparison questions (e.g. "which portfolio?"): the workedSolution must explicitly state which option wins, and THAT option must be marked isCorrect.
 9. Distractor options must be plausible but different from the correct answer (e.g. common calculation errors, or the "losing" alternative in comparisons).
+10. RANDOMIZATION CHECK: Before finalizing, count how many questions have A correct, B correct, C correct. If any letter has more than 50% of the correct answers, redistribute by reordering options in some questions.
 
 ${metaFieldsBlock}`;
 		} else if (questionType === 'VIGNETTE_MCQ') {
@@ -2925,9 +2927,10 @@ ${selectedTopics.length > 1 ? `    • TOPIC DISTRIBUTION: The selected topics a
       1. FIRST complete the worked solution, compute the final answer or conclusion.
       2. The option with isCorrect: true MUST match EXACTLY what your worked solution concludes.
       3. DOUBLE-CHECK: Verify the correct option text matches the worked solution's final value/conclusion. If the solution says "Portfolio B is preferred", then "Portfolio B" must be isCorrect, NOT "Portfolio A".
-      4. DO NOT default to option A. Distribute correct answers across A, B, C positions.
+      4. DO NOT default to option A. The correct answer MUST be randomly distributed across A, B, C positions. NEVER place correct in position A for more than 2 consecutive sub-questions. Aim for roughly equal distribution.
       5. For comparison questions: the workedSolution must explicitly state which wins, and THAT must be marked correct.
-    • Plus ALL metadata fields listed below
+      6. RANDOMIZATION CHECK: Across the 4 sub-questions, ensure at least 2 different positions (A/B/C) are used for correct answers. If all correct answers are in the same position, reorder the options.
+    • EVERY sub-question MUST include ALL metadata fields listed below (los, traceSection, tracePage, keyFormulas, workedSolution, explanation). These are REQUIRED on EACH sub-question individually — students need them for revision.
 }
 
 ${metaFieldsBlock}`;
@@ -3053,7 +3056,7 @@ ${formatBlock}`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. You produce high-quality, exam-standard questions. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers evenly across A, B, C.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. You produce high-quality, exam-standard questions. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.4,
