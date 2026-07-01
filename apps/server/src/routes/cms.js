@@ -2514,13 +2514,40 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 					const m = t.match(new RegExp(`(-?\\d+\\.?\\d*)\\s*${word}`));
 					if (m) return parseFloat(m[1]) * mult;
 				}
-				// Also check for % sign
 				const pctMatch = t.match(/(-?\d+\.?\d*)\s*%/);
 				if (pctMatch) return parseFloat(pctMatch[1]);
-				// Plain number
 				const plainMatch = t.match(/(-?\d[\d,]*\.?\d*)/);
 				if (plainMatch) return parseFloat(plainMatch[1].replace(/,/g, ''));
 				return null;
+			};
+			// Check if the option text is a percentage value
+			const isPercentOption = (text) => /\d+\.?\d*\s*%/.test(text);
+			// Extract only percentage numbers from worked solution
+			const extractWsPercentages = (ws) => {
+				const pcts = new Set();
+				for (const m of ws.matchAll(/(-?\d+\.?\d*)\s*%/g)) {
+					pcts.add(parseFloat(m[1]));
+				}
+				// Also match "= 0.04 or 4.00%" style — the decimal before "or X%"
+				for (const m of ws.matchAll(/=\s*(-?0?\.\d+)/g)) {
+					pcts.add(parseFloat(m[1]) * 100);
+				}
+				return [...pcts].filter(n => !isNaN(n));
+			};
+			// Extract final answer from worked solution (text after "thus", "therefore", last "= X")
+			const extractFinalAnswer = (ws) => {
+				const finals = new Set();
+				const conclusionMatch = ws.match(/(?:thus|therefore|hence|the (?:answer|result|return|value|price) is)[^.]*?(-?\d+\.?\d*)\s*%?/i);
+				if (conclusionMatch) finals.add(parseFloat(conclusionMatch[1]));
+				// Last "= number" in the WS
+				const eqMatches = [...ws.matchAll(/=\s*(-?\d+\.?\d*)\s*%?/g)];
+				if (eqMatches.length > 0) {
+					const lastEq = eqMatches[eqMatches.length - 1];
+					finals.add(parseFloat(lastEq[1]));
+				}
+				// "or X%" pattern
+				for (const m of ws.matchAll(/(-?\d+\.?\d*)\s*%/g)) finals.add(parseFloat(m[1]));
+				return [...finals].filter(n => !isNaN(n));
 			};
 			// Helper: extract ALL normalized numbers from worked solution
 			const extractAllWsNums = (ws) => {
@@ -2539,7 +2566,6 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			// Helper: check if two numbers match (within tolerance or proportional)
 			const numsMatch = (a, b) => {
 				if (Math.abs(a - b) < 0.015) return true;
-				// Percentage tolerance for large numbers
 				if (a !== 0 && Math.abs((a - b) / a) < 0.005) return true;
 				return false;
 			};
@@ -2551,15 +2577,24 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				if (!correct || !ws || correct.text.length < 2) return item;
 				const optNum = extractNormNum(correct.text);
 				if (optNum != null && !isNaN(optNum)) {
-					const wsNums = extractAllWsNums(ws);
-					const found = wsNums.some(n => numsMatch(n, optNum));
+					// For percentage options, ONLY match against percentages/final answer in the WS
+					// This prevents matching "5.00%" against "$5.00" (a price) in intermediate calculations
+					let targetNums;
+					if (isPercentOption(correct.text)) {
+						targetNums = extractWsPercentages(ws);
+						if (targetNums.length === 0) targetNums = extractFinalAnswer(ws);
+					} else {
+						targetNums = extractAllWsNums(ws);
+					}
+					const found = targetNums.some(n => numsMatch(n, optNum));
 					if (found) return item;
 					// The current correct option's number is NOT in the worked solution — try to find the right one
 					for (const opt of opts) {
 						if (opt === correct) continue;
 						const num = extractNormNum(opt.text);
 						if (num == null || isNaN(num)) continue;
-						if (wsNums.some(n => numsMatch(n, num))) {
+						const checkNums = isPercentOption(opt.text) ? (extractWsPercentages(ws).length > 0 ? extractWsPercentages(ws) : extractFinalAnswer(ws)) : targetNums;
+						if (checkNums.some(n => numsMatch(n, num))) {
 							opt.isCorrect = true;
 							correct.isCorrect = false;
 							console.warn(`[ai-generate] Auto-corrected answer (numeric): ${correct.text} → ${opt.text}`);
@@ -3304,6 +3339,22 @@ ${formatBlock}`;
 				if (plainMatch) return parseFloat(plainMatch[1].replace(/,/g, ''));
 				return null;
 			};
+			const isPercentOption = (text) => /\d+\.?\d*\s*%/.test(text);
+			const extractWsPercentages = (ws) => {
+				const pcts = new Set();
+				for (const m of ws.matchAll(/(-?\d+\.?\d*)\s*%/g)) pcts.add(parseFloat(m[1]));
+				for (const m of ws.matchAll(/=\s*(-?0?\.\d+)/g)) pcts.add(parseFloat(m[1]) * 100);
+				return [...pcts].filter(n => !isNaN(n));
+			};
+			const extractFinalAnswer = (ws) => {
+				const finals = new Set();
+				const conclusionMatch = ws.match(/(?:thus|therefore|hence|the (?:answer|result|return|value|price) is)[^.]*?(-?\d+\.?\d*)\s*%?/i);
+				if (conclusionMatch) finals.add(parseFloat(conclusionMatch[1]));
+				const eqMatches = [...ws.matchAll(/=\s*(-?\d+\.?\d*)\s*%?/g)];
+				if (eqMatches.length > 0) finals.add(parseFloat(eqMatches[eqMatches.length - 1][1]));
+				for (const m of ws.matchAll(/(-?\d+\.?\d*)\s*%/g)) finals.add(parseFloat(m[1]));
+				return [...finals].filter(n => !isNaN(n));
+			};
 			const extractAllWsNums = (ws) => {
 				const nums = new Set();
 				const magnitudes = { trillion: 1e12, billion: 1e9, million: 1e6, thousand: 1e3 };
@@ -3330,14 +3381,21 @@ ${formatBlock}`;
 				if (!correct || !ws || correct.text.length < 2) return item;
 				const optNum = extractNormNum(correct.text);
 				if (optNum != null && !isNaN(optNum)) {
-					const wsNums = extractAllWsNums(ws);
-					const found = wsNums.some(n => numsMatch(n, optNum));
+					let targetNums;
+					if (isPercentOption(correct.text)) {
+						targetNums = extractWsPercentages(ws);
+						if (targetNums.length === 0) targetNums = extractFinalAnswer(ws);
+					} else {
+						targetNums = extractAllWsNums(ws);
+					}
+					const found = targetNums.some(n => numsMatch(n, optNum));
 					if (found) return item;
 					for (const opt of opts) {
 						if (opt === correct) continue;
 						const num = extractNormNum(opt.text);
 						if (num == null || isNaN(num)) continue;
-						if (wsNums.some(n => numsMatch(n, num))) {
+						const checkNums = isPercentOption(opt.text) ? (extractWsPercentages(ws).length > 0 ? extractWsPercentages(ws) : extractFinalAnswer(ws)) : targetNums;
+						if (checkNums.some(n => numsMatch(n, num))) {
 							opt.isCorrect = true;
 							correct.isCorrect = false;
 							if (process.env.NODE_ENV !== 'production') {

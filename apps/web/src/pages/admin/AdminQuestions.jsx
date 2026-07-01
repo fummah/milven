@@ -426,6 +426,17 @@ export function AdminQuestions() {
 		];
 	}, [courses, aiGenerateCourseId]);
 
+	// Sync form questionType when available options change (ensures value matches label)
+	useEffect(() => {
+		if (aiQuestionTypeOptions.length > 0) {
+			const currentVal = aiForm.getFieldValue('questionType');
+			const validValues = aiQuestionTypeOptions.map(o => o.value);
+			if (!validValues.includes(currentVal)) {
+				aiForm.setFieldsValue({ questionType: validValues[0] });
+			}
+		}
+	}, [aiQuestionTypeOptions, aiForm]);
+
 	const submit = async (values, mode = 'close') => {
 		try {
 			setSubmitting(true);
@@ -741,6 +752,40 @@ export function AdminQuestions() {
 		} finally {
 			setAiGenerateLoading(false);
 		}
+	};
+
+	// Helper: change which option is correct in the AI preview
+	const changePreviewCorrectOption = (bundleIdx, qIdx, optIdx) => {
+		setAiPreview(prev => {
+			if (!prev?.generated) return prev;
+			const gen = JSON.parse(JSON.stringify(prev.generated));
+			let opts;
+			if (bundleIdx != null && gen.bundles?.[bundleIdx]?.questions?.[qIdx]) {
+				opts = gen.bundles[bundleIdx].questions[qIdx].options;
+			} else if (gen.items?.[qIdx]) {
+				opts = gen.items[qIdx].options;
+			}
+			if (!Array.isArray(opts)) return prev;
+			opts.forEach((o, i) => { o.isCorrect = i === optIdx; });
+			return { ...prev, generated: gen };
+		});
+	};
+
+	// Helper: edit option text in the AI preview
+	const editPreviewOptionText = (bundleIdx, qIdx, optIdx, newText) => {
+		setAiPreview(prev => {
+			if (!prev?.generated) return prev;
+			const gen = JSON.parse(JSON.stringify(prev.generated));
+			let opts;
+			if (bundleIdx != null && gen.bundles?.[bundleIdx]?.questions?.[qIdx]) {
+				opts = gen.bundles[bundleIdx].questions[qIdx].options;
+			} else if (gen.items?.[qIdx]) {
+				opts = gen.items[qIdx].options;
+			}
+			if (!Array.isArray(opts) || !opts[optIdx]) return prev;
+			opts[optIdx].text = newText;
+			return { ...prev, generated: gen };
+		});
 	};
 
 	const acceptAiPreview = async (indices) => {
@@ -1551,12 +1596,21 @@ export function AdminQuestions() {
 												{Array.isArray(q?.options) && q.options.length > 0 && (
 													<div style={{ marginTop: 8 }}>
 														{q.options.map((o, oi) => (
-															<div key={oi} style={{ display: 'flex', gap: 8, padding: '2px 0', color: o.isCorrect ? '#389e0d' : undefined, fontWeight: o.isCorrect ? 600 : 400 }}>
+															<div key={oi} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', color: o.isCorrect ? '#389e0d' : undefined, fontWeight: o.isCorrect ? 600 : 400, cursor: 'pointer', borderRadius: 4 }}
+																onClick={() => changePreviewCorrectOption(bIdx, qIdx, oi)}
+																title="Click to set as correct answer"
+															>
+																<Radio checked={o.isCorrect} style={{ marginRight: 0 }} />
 																<span style={{ width: 20, flexShrink: 0 }}>{String.fromCharCode(65 + oi)}.</span>
-																<span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(o.text || '') }} />
-																{o.isCorrect && <CheckCircleOutlined style={{ color: '#389e0d', marginLeft: 4 }} />}
+																<span className="question-preview-content" style={{ flex: 1 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(o.text || '') }} />
+																<EditOutlined style={{ fontSize: 12, color: '#999', marginLeft: 4 }} onClick={(e) => {
+																	e.stopPropagation();
+																	const newText = prompt('Edit option text:', o.text || '');
+																	if (newText !== null && newText.trim()) editPreviewOptionText(bIdx, qIdx, oi, newText.trim());
+																}} />
 															</div>
 														))}
+														<div style={{ marginTop: 4, fontSize: 11, color: '#999' }}>Click an option to change the correct answer. Click ✏️ to edit text.</div>
 													</div>
 												)}
 												{q?.explanation && (
@@ -1619,12 +1673,21 @@ export function AdminQuestions() {
 												{Array.isArray(q?.options) && q.options.length > 0 && (
 													<div style={{ marginTop: 8 }}>
 														{q.options.map((o, oi) => (
-															<div key={oi} style={{ display: 'flex', gap: 8, padding: '2px 0', color: o.isCorrect ? '#389e0d' : undefined, fontWeight: o.isCorrect ? 600 : 400 }}>
+															<div key={oi} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', color: o.isCorrect ? '#389e0d' : undefined, fontWeight: o.isCorrect ? 600 : 400, cursor: 'pointer', borderRadius: 4 }}
+																onClick={() => changePreviewCorrectOption(null, idx, oi)}
+																title="Click to set as correct answer"
+															>
+																<Radio checked={o.isCorrect} style={{ marginRight: 0 }} />
 																<span style={{ width: 20, flexShrink: 0 }}>{String.fromCharCode(65 + oi)}.</span>
-																<span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(o.text || '') }} />
-																{o.isCorrect && <CheckCircleOutlined style={{ color: '#389e0d', marginLeft: 4 }} />}
+																<span className="question-preview-content" style={{ flex: 1 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(o.text || '') }} />
+																<EditOutlined style={{ fontSize: 12, color: '#999', marginLeft: 4 }} onClick={(e) => {
+																	e.stopPropagation();
+																	const newText = prompt('Edit option text:', o.text || '');
+																	if (newText !== null && newText.trim()) editPreviewOptionText(null, idx, oi, newText.trim());
+																}} />
 															</div>
 														))}
+														<div style={{ marginTop: 4, fontSize: 11, color: '#999' }}>Click an option to change the correct answer. Click ✏️ to edit text.</div>
 													</div>
 												)}
 												{q?.explanation && (
