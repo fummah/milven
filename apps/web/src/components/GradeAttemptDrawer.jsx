@@ -137,7 +137,7 @@ export function GradeAttemptDrawer({ attemptId, open, onClose, onSaved }) {
               <div key={groupIdx}>
                 {group.vignetteText && (
                   <Card size="small" style={{ marginBottom: 12, background: '#f0f9ff', borderColor: '#bae6fd' }} title={<Typography.Text strong style={{ color: '#0369a1' }}>Case Study</Typography.Text>}>
-                    <div className="prose max-w-none text-sm" dangerouslySetInnerHTML={{ __html: group.vignetteText }} />
+                    <div className="prose max-w-none text-sm" dangerouslySetInnerHTML={{ __html: formatProseWithMath(group.vignetteText || '') }} />
                   </Card>
                 )}
                 {group.answers.map((a) => {

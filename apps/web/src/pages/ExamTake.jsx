@@ -1665,7 +1665,7 @@ export function ExamTake() {
 												<div className="p-6">
 													<div
 														className="text-slate-800 text-base md:text-lg prose max-w-none"
-														dangerouslySetInnerHTML={{ __html: vignetteText || q?.parent?.vignetteText || '' }}
+														dangerouslySetInnerHTML={{ __html: formatProseWithMath(vignetteText || q?.parent?.vignetteText || '') }}
 													/>
 
 													<div className="mt-6 border-t border-slate-200" />

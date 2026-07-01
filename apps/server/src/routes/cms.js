@@ -2381,7 +2381,7 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles):
 - Open the vignetteText with: "<p><strong>TOPIC: [TOPIC NAME]</strong></p><p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
 ${isEthics ? `- ETHICS VIGNETTE RULE: Because this is an ETHICS topic, the vignette MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines, data points) must be woven naturally into the prose paragraph text. Sub-questions should reference specific details from the narrative (e.g. "Regarding Jones's recommendation to the board...").` : `- VARY THE EXHIBIT FORMAT across case studies — do NOT give every case study a table. Distribute formats roughly equally:
   FORMAT A — TABLE: Include 1-2 HTML tables as CFA Exhibits with realistic financial data.
-    CRITICAL TABLE STYLING: All tables MUST use SOLID borders only — never dashed, dotted, or broken lines.
+    CRITICAL TABLE STYLING: All tables MUST use SOLID borders only — never dashed, dotted, or broken lines. NEVER use markdown pipe tables (| col | col |) or ASCII tables — ONLY use HTML <table> tags.
     Use this EXACT format (do not modify the style attributes):
     <p><strong>Exhibit 1</strong></p>
     <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;border:1px solid #000;"><thead><tr><th style="border:1px solid #000;padding:6px;">Column</th><th style="border:1px solid #000;padding:6px;">Column</th></tr></thead><tbody><tr><td style="border:1px solid #000;padding:6px;">Value</td><td style="border:1px solid #000;padding:6px;">Value</td></tr></tbody></table>
@@ -2429,6 +2429,7 @@ For EVERY question (numerical OR text-based):
 Violating this rule produces hallucinated answers that damage student trust. Accuracy is mandatory.
 
 For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of 4-5 MCQ sub-questions }. EVERY sub-question MUST include ALL these fields: "stem", "options", "qid", "los", "traceSection", "tracePage", "keyFormulas", "workedSolution", "explanation". These fields are REQUIRED on each sub-question — not just on the parent.
+MATH IN vignetteText: If the vignetteText contains any mathematical expressions, formulas, or variables, ALWAYS wrap them in LaTeX delimiters \\\\( ... \\\\). NEVER put raw LaTeX like \\times, CF_{SGD}, e^{-r} in prose without delimiters.
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		try {
@@ -2461,23 +2462,104 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			};
 			items.forEach(it => { repairLatexFields(it); if (Array.isArray(it.questions)) it.questions.forEach(sq => repairLatexFields(sq)); });
 
-			// ── Answer consistency validation ──────────────────────────────
+			// ── Auto-wrap bare LaTeX in vignetteText with \( ... \) delimiters ──
+			const wrapBareLatexInText = (text) => {
+				if (!text || typeof text !== 'string') return text;
+				if (/\\\(/.test(text) || /\\\[/.test(text)) return text;
+				return text.replace(
+					/(?<!\\\()([A-Za-z0-9_]*(?:[\\][a-zA-Z]+|[_^]\{[^}]*\})[^\s,.<)*]*(?:\s*[=+\-×*/]\s*[A-Za-z0-9_]*(?:[\\][a-zA-Z]+|[_^]\{[^}]*\})[^\s,.<)*]*)*)(?!\\\))/g,
+					(match) => {
+						if (/[\\][a-zA-Z]|[_^]\{/.test(match)) return `\\(${match.trim()}\\)`;
+						return match;
+					}
+				);
+			};
+			items.forEach(it => { if (it.vignetteText) it.vignetteText = wrapBareLatexInText(it.vignetteText); });
+
+			// ── Convert markdown pipe tables to HTML tables ──────────────
+			const convertPipeTablesToHtml = (text) => {
+				if (!text || typeof text !== 'string') return text;
+				// Match markdown pipe table blocks (header | separator | rows)
+				return text.replace(
+					/((?:^|\n)\|[^\n]+\|\s*\n\|[\s:|-]+\|\s*\n(?:\|[^\n]+\|\s*\n?)+)/g,
+					(tableBlock) => {
+						const lines = tableBlock.trim().split('\n').map(l => l.trim()).filter(l => l.startsWith('|'));
+						if (lines.length < 2) return tableBlock;
+						const parseRow = (line) => line.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+						const isSeparator = (line) => /^\|[\s:|-]+\|$/.test(line);
+						const headerCells = parseRow(lines[0]);
+						const dataLines = lines.filter((l, i) => i > 0 && !isSeparator(l));
+						const style = 'border:1px solid #d1d5db;padding:8px 12px;text-align:left';
+						const thStyle = `${style};background:#f3f4f6;font-weight:600`;
+						let html = '<table style="border-collapse:collapse;width:100%;margin:12px 0;font-size:14px">';
+						html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
+						html += '<tbody>';
+						dataLines.forEach(line => {
+							const cells = parseRow(line);
+							html += '<tr>' + cells.map(c => `<td style="${style}">${c}</td>`).join('') + '</tr>';
+						});
+						html += '</tbody></table>';
+						return html;
+					}
+				);
+			};
+			items.forEach(it => { if (it.vignetteText) it.vignetteText = convertPipeTablesToHtml(it.vignetteText); });
+
+			// ── Answer consistency validation (generate) ─────────────────
+			// Helper: extract a normalized number from text, accounting for "million", "billion", "$2.24 million" → 2240000
+			const extractNormNum = (text) => {
+				const t = text.toLowerCase().replace(/[,$]/g, '');
+				const magnitudes = { trillion: 1e12, billion: 1e9, million: 1e6, thousand: 1e3 };
+				for (const [word, mult] of Object.entries(magnitudes)) {
+					const m = t.match(new RegExp(`(-?\\d+\\.?\\d*)\\s*${word}`));
+					if (m) return parseFloat(m[1]) * mult;
+				}
+				// Also check for % sign
+				const pctMatch = t.match(/(-?\d+\.?\d*)\s*%/);
+				if (pctMatch) return parseFloat(pctMatch[1]);
+				// Plain number
+				const plainMatch = t.match(/(-?\d[\d,]*\.?\d*)/);
+				if (plainMatch) return parseFloat(plainMatch[1].replace(/,/g, ''));
+				return null;
+			};
+			// Helper: extract ALL normalized numbers from worked solution
+			const extractAllWsNums = (ws) => {
+				const nums = new Set();
+				const magnitudes = { trillion: 1e12, billion: 1e9, million: 1e6, thousand: 1e3 };
+				for (const [word, mult] of Object.entries(magnitudes)) {
+					for (const m of ws.matchAll(new RegExp(`(-?\\d+\\.?\\d*)\\s*${word}`, 'g'))) {
+						nums.add(parseFloat(m[1]) * mult);
+					}
+				}
+				for (const m of ws.matchAll(/(-?\d[\d,]*\.?\d*)/g)) {
+					nums.add(parseFloat(m[1].replace(/,/g, '')));
+				}
+				return [...nums].filter(n => !isNaN(n));
+			};
+			// Helper: check if two numbers match (within tolerance or proportional)
+			const numsMatch = (a, b) => {
+				if (Math.abs(a - b) < 0.015) return true;
+				// Percentage tolerance for large numbers
+				if (a !== 0 && Math.abs((a - b) / a) < 0.005) return true;
+				return false;
+			};
 			const validateAnswerConsistency = (item) => {
 				if (questionType === 'CONSTRUCTED_RESPONSE') return item;
 				const opts = Array.isArray(item.options) ? item.options : [];
 				const correct = opts.find(o => o.isCorrect);
 				const ws = (item.workedSolution || item.explanation || '').toLowerCase();
 				if (!correct || !ws || correct.text.length < 2) return item;
-				const optNum = parseFloat(correct.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
+				const optNum = extractNormNum(correct.text);
 				if (optNum != null && !isNaN(optNum)) {
-					const wsNums = [...ws.matchAll(/-?\d+\.?\d*/g)].map(m => parseFloat(m[0])).filter(n => !isNaN(n));
-					const found = wsNums.some(n => Math.abs(n - optNum) < 0.01);
+					const wsNums = extractAllWsNums(ws);
+					const found = wsNums.some(n => numsMatch(n, optNum));
 					if (found) return item;
+					// The current correct option's number is NOT in the worked solution — try to find the right one
 					for (const opt of opts) {
 						if (opt === correct) continue;
-						const num = parseFloat(opt.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
+						const num = extractNormNum(opt.text);
 						if (num == null || isNaN(num)) continue;
-						if (wsNums.some(n => Math.abs(n - num) < 0.01)) {
+						if (wsNums.some(n => numsMatch(n, num))) {
 							opt.isCorrect = true;
 							correct.isCorrect = false;
 							console.warn(`[ai-generate] Auto-corrected answer (numeric): ${correct.text} → ${opt.text}`);
@@ -2585,6 +2667,27 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				}
 			} else {
 				items.forEach(it => validateAnswerConsistency(it));
+			}
+
+			// ── Server-side random shuffle of MCQ options ──────────────────
+			// This guarantees true randomization of correct answer position (A/B/C)
+			// regardless of AI bias toward any particular position.
+			const shuffleOptions = (item) => {
+				const opts = Array.isArray(item.options) ? item.options : [];
+				if (opts.length < 2) return;
+				// Fisher-Yates shuffle
+				for (let i = opts.length - 1; i > 0; i--) {
+					const j = Math.floor(Math.random() * (i + 1));
+					[opts[i], opts[j]] = [opts[j], opts[i]];
+				}
+				item.options = opts;
+			};
+			if (questionType === 'VIGNETTE_MCQ') {
+				for (const item of items) {
+					if (Array.isArray(item.questions)) item.questions.forEach(sq => shuffleOptions(sq));
+				}
+			} else if (questionType !== 'CONSTRUCTED_RESPONSE') {
+				items.forEach(it => shuffleOptions(it));
 			}
 
 			const level = course.level || 'LEVEL1';
@@ -2909,6 +3012,8 @@ Each object in "items" MUST follow this structure:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
     • Introduce a named protagonist with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
+    • MATH FORMATTING: If the vignetteText contains ANY mathematical expressions, formulas, variables, or equations, wrap them in LaTeX delimiters \\( ... \\). For example: "The value is \\( V = CF_{SGD} \\times e^{-r_{SGD}T} \\)" — NEVER put raw LaTeX like \times, CF_{SGD}, e^{-r} directly in prose without \\( \\) delimiters. Variable definitions should also use \\( ... \\) for the variable symbol, e.g. "where \\( CF_{SGD} \\) = Cash Flow in SGD"
+    • TABLE FORMATTING: When including tables in vignetteText, ALWAYS use proper HTML <table> tags with <thead>, <tbody>, <tr>, <th>, <td>. Style with border-collapse. NEVER use markdown pipe tables (| col1 | col2 |), ASCII tables, or <pre> blocks for tabular data. Example: <table style="border-collapse:collapse;width:100%"><thead><tr><th style="border:1px solid #ccc;padding:6px">Parameter</th><th style="border:1px solid #ccc;padding:6px">Value</th></tr></thead><tbody><tr><td style="border:1px solid #ccc;padding:6px">Rate</td><td style="border:1px solid #ccc;padding:6px">5%</td></tr></tbody></table>
 ${isEthics ? `    • ETHICS TOPIC: This is an ETHICS vignette — it MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines) must be woven naturally into prose paragraphs. No Exhibit labels.` : `    • IMPORTANT — VARY THE EXHIBIT FORMAT across case studies. Do NOT always use tables. Mix approaches:
       FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits (use this for ~40% of case studies)
       FORMAT B (NARRATIVE ONLY): No exhibit at all — weave ALL specific numbers, ratios, dates, names richly into the prose only. Sub-questions reference the narrative directly. (use this for ~30% of case studies)
@@ -3142,33 +3247,101 @@ ${formatBlock}`;
 			};
 			items.forEach(it => { repairLatexFields(it); if (Array.isArray(it.questions)) it.questions.forEach(sq => repairLatexFields(sq)); });
 
-			// ── Answer consistency validation ──────────────────────────────
-			// Detect hallucinated correct answers: if the option marked isCorrect
-			// has a number that does not appear in the workedSolution, auto-correct.
+			// ── Auto-wrap bare LaTeX in vignetteText with \( ... \) delimiters (preview) ──
+			const wrapBareLatexInText = (text) => {
+				if (!text || typeof text !== 'string') return text;
+				if (/\\\(/.test(text) || /\\\[/.test(text)) return text;
+				return text.replace(
+					/(?<!\\\()([A-Za-z0-9_]*(?:[\\][a-zA-Z]+|[_^]\{[^}]*\})[^\s,.<)*]*(?:\s*[=+\-×*/]\s*[A-Za-z0-9_]*(?:[\\][a-zA-Z]+|[_^]\{[^}]*\})[^\s,.<)*]*)*)(?!\\\))/g,
+					(match) => {
+						if (/[\\][a-zA-Z]|[_^]\{/.test(match)) return `\\(${match.trim()}\\)`;
+						return match;
+					}
+				);
+			};
+			items.forEach(it => { if (it.vignetteText) it.vignetteText = wrapBareLatexInText(it.vignetteText); });
+
+			// ── Convert markdown pipe tables to HTML tables (preview) ────
+			const convertPipeTablesToHtml = (text) => {
+				if (!text || typeof text !== 'string') return text;
+				return text.replace(
+					/((?:^|\n)\|[^\n]+\|\s*\n\|[\s:|-]+\|\s*\n(?:\|[^\n]+\|\s*\n?)+)/g,
+					(tableBlock) => {
+						const lines = tableBlock.trim().split('\n').map(l => l.trim()).filter(l => l.startsWith('|'));
+						if (lines.length < 2) return tableBlock;
+						const parseRow = (line) => line.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+						const isSeparator = (line) => /^\|[\s:|-]+\|$/.test(line);
+						const headerCells = parseRow(lines[0]);
+						const dataLines = lines.filter((l, i) => i > 0 && !isSeparator(l));
+						const style = 'border:1px solid #d1d5db;padding:8px 12px;text-align:left';
+						const thStyle = `${style};background:#f3f4f6;font-weight:600`;
+						let html = '<table style="border-collapse:collapse;width:100%;margin:12px 0;font-size:14px">';
+						html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
+						html += '<tbody>';
+						dataLines.forEach(line => {
+							const cells = parseRow(line);
+							html += '<tr>' + cells.map(c => `<td style="${style}">${c}</td>`).join('') + '</tr>';
+						});
+						html += '</tbody></table>';
+						return html;
+					}
+				);
+			};
+			items.forEach(it => { if (it.vignetteText) it.vignetteText = convertPipeTablesToHtml(it.vignetteText); });
+
+			// ── Answer consistency validation (preview) ──────────────────
+			// Helper: extract a normalized number from text, accounting for "million", "billion", "$2.24 million" → 2240000
+			const extractNormNum = (text) => {
+				const t = text.toLowerCase().replace(/[,$]/g, '');
+				const magnitudes = { trillion: 1e12, billion: 1e9, million: 1e6, thousand: 1e3 };
+				for (const [word, mult] of Object.entries(magnitudes)) {
+					const m = t.match(new RegExp(`(-?\\d+\\.?\\d*)\\s*${word}`));
+					if (m) return parseFloat(m[1]) * mult;
+				}
+				const pctMatch = t.match(/(-?\d+\.?\d*)\s*%/);
+				if (pctMatch) return parseFloat(pctMatch[1]);
+				const plainMatch = t.match(/(-?\d[\d,]*\.?\d*)/);
+				if (plainMatch) return parseFloat(plainMatch[1].replace(/,/g, ''));
+				return null;
+			};
+			const extractAllWsNums = (ws) => {
+				const nums = new Set();
+				const magnitudes = { trillion: 1e12, billion: 1e9, million: 1e6, thousand: 1e3 };
+				for (const [word, mult] of Object.entries(magnitudes)) {
+					for (const m of ws.matchAll(new RegExp(`(-?\\d+\\.?\\d*)\\s*${word}`, 'g'))) {
+						nums.add(parseFloat(m[1]) * mult);
+					}
+				}
+				for (const m of ws.matchAll(/(-?\d[\d,]*\.?\d*)/g)) {
+					nums.add(parseFloat(m[1].replace(/,/g, '')));
+				}
+				return [...nums].filter(n => !isNaN(n));
+			};
+			const numsMatch = (a, b) => {
+				if (Math.abs(a - b) < 0.015) return true;
+				if (a !== 0 && Math.abs((a - b) / a) < 0.005) return true;
+				return false;
+			};
 			const validateAnswerConsistency = (item) => {
 				if (questionType === 'CONSTRUCTED_RESPONSE' && !isConstructedBundle) return item;
 				const opts = Array.isArray(item.options) ? item.options : [];
 				const correct = opts.find(o => o.isCorrect);
 				const ws = (item.workedSolution || item.explanation || '').toLowerCase();
 				if (!correct || !ws || correct.text.length < 2) return item;
-				// Extract the number from the correct option text (strip % and LaTeX)
-				const optNum = parseFloat(correct.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
+				const optNum = extractNormNum(correct.text);
 				if (optNum != null && !isNaN(optNum)) {
-					// Extract all numbers from the worked solution
-					const wsNums = [...ws.matchAll(/-?\d+\.?\d*/g)].map(m => parseFloat(m[0])).filter(n => !isNaN(n));
-					const found = wsNums.some(n => Math.abs(n - optNum) < 0.01);
+					const wsNums = extractAllWsNums(ws);
+					const found = wsNums.some(n => numsMatch(n, optNum));
 					if (found) return item;
-					// The correct option's number wasn't found in the worked solution.
-					// Try to find the option whose number IS in the worked solution.
 					for (const opt of opts) {
 						if (opt === correct) continue;
-						const num = parseFloat(opt.text.replace(/[,$%]/g, '').match(/-?\d+\.?\d*/)?.[0]);
+						const num = extractNormNum(opt.text);
 						if (num == null || isNaN(num)) continue;
-						if (wsNums.some(n => Math.abs(n - num) < 0.01)) {
+						if (wsNums.some(n => numsMatch(n, num))) {
 							opt.isCorrect = true;
 							correct.isCorrect = false;
 							if (process.env.NODE_ENV !== 'production') {
-								console.warn(`[ai-preview] Auto-corrected answer (numeric): ${correct.text} → ${opt.text} (worked solution contained ${num})`);
+								console.warn(`[ai-preview] Auto-corrected answer (numeric): ${correct.text} → ${opt.text}`);
 							}
 							break;
 						}
@@ -3275,6 +3448,16 @@ ${formatBlock}`;
 				return item;
 			};
 
+			// ── Server-side random shuffle of MCQ options ──────────────────
+			const shuffleOptions = (opts) => {
+				if (!Array.isArray(opts) || opts.length < 2) return opts;
+				for (let i = opts.length - 1; i > 0; i--) {
+					const j = Math.floor(Math.random() * (i + 1));
+					[opts[i], opts[j]] = [opts[j], opts[i]];
+				}
+				return opts;
+			};
+
 			if (questionType === 'VIGNETTE_MCQ' || isConstructedBundle) {
 				// Each item in the array is a separate case study bundle
 				const bundles = items.map((bundle) => {
@@ -3283,6 +3466,7 @@ ${formatBlock}`;
 					if (sub.length > 0) console.log('[preview] AI sub-question keys:', Object.keys(sub[0]), '| stem sample:', String(sub[0]?.stem || sub[0]?.question || sub[0]?.text || '').slice(0, 80));
 					const subQuestions = sub.map((sq) => {
 						validateAnswerConsistency(sq);
+						if (!isConstructedBundle && Array.isArray(sq.options)) shuffleOptions(sq.options);
 						const t = nextTopic();
 						const useDifficulty = nextDifficulty();
 						const cIds = mapConceptIds(sq);
@@ -3315,6 +3499,7 @@ ${formatBlock}`;
 			items = items.slice(0, count);
 			const normalized = items.map((it) => {
 				validateAnswerConsistency(it);
+				if (questionType !== 'CONSTRUCTED_RESPONSE' && Array.isArray(it.options)) shuffleOptions(it.options);
 				const t = nextTopic();
 				const useDifficulty = nextDifficulty();
 				const cIds = mapConceptIds(it);

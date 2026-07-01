@@ -312,7 +312,7 @@ export default function StudentMistakes() {
 													</Typography.Text>
 													<div
 														className="text-slate-700 text-sm prose max-w-none question-preview-content"
-														dangerouslySetInnerHTML={{ __html: safeHtml(q.parent.vignetteText) }}
+														dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.parent.vignetteText || '') }}
 													/>
 												</div>
 											)}

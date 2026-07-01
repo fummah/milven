@@ -475,7 +475,7 @@ export function ExamResult() {
 												</div>
 											</div>
 											<div className="p-6 bg-slate-50 border-b border-slate-200">
-												<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: safeHtml(group.vignetteText) }} />
+												<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: formatProseWithMath(group.vignetteText || '') }} />
 											</div>
 										</>
 									)}
@@ -689,7 +689,7 @@ export function ExamResult() {
 												</div>
 											</div>
 											<div className="p-6 bg-slate-50 border-b border-slate-200">
-												<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: safeHtml(group.vignetteText) }} />
+												<div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: formatProseWithMath(group.vignetteText || '') }} />
 											</div>
 										</>
 									)}

@@ -936,7 +936,7 @@ export function AdminExams() {
                       {q.vignetteText && !q.vignette?.text && (
                         <div style={{ margin: 0, padding: '8px', background: '#f5f5f5', borderRadius: 4 }}>
                           <Typography.Text strong>Vignette: </Typography.Text>
-                          <div className="prose question-preview-content" dangerouslySetInnerHTML={{ __html: safeHtml(q.vignetteText) }} />
+                          <div className="prose question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.vignetteText || '') }} />
                         </div>
                       )}
                       <div className="prose question-preview-content" style={{ margin: 0 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.stem || '') }} />

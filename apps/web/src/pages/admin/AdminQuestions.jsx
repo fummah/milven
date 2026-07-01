@@ -1537,7 +1537,7 @@ export function AdminQuestions() {
 										</div>
 										<Card size="small" style={{ borderRadius: 10, background: '#f0f5ff', borderColor: '#adc6ff', marginBottom: 12 }}>
 											<Typography.Text strong style={{ color: '#1d39c4' }}>{isVignette ? 'Case Study Passage' : 'Case Study Scenario'}</Typography.Text>
-											<div className="prose prose-sm question-preview-content" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: safeHtml(bundle.vignetteText || '') }} />
+											<div className="prose prose-sm question-preview-content" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(bundle.vignetteText || '') }} />
 										</Card>
 										{(bundle.questions || []).map((q, qIdx) => (
 											<div key={qIdx} style={{ padding: '10px 12px', borderRadius: 10, background: '#fafafa', border: '1px solid #f0f0f0', marginBottom: 8 }}>
@@ -2189,7 +2189,7 @@ export function AdminQuestions() {
 												<div
 													className="prose question-preview-content"
 													style={{ margin: 0, padding: '8px', background: '#f5f5f5', borderRadius: 4 }}
-													dangerouslySetInnerHTML={{ __html: safeHtml(previewQuestion.vignetteText) }}
+													dangerouslySetInnerHTML={{ __html: formatProseWithMath(previewQuestion.vignetteText || '') }}
 												/>
 											</>
 										)}
@@ -2250,7 +2250,7 @@ export function AdminQuestions() {
 												<div
 													className="prose question-preview-content"
 													style={{ margin: 0, padding: '8px', background: '#f5f5f5', borderRadius: 4 }}
-													dangerouslySetInnerHTML={{ __html: safeHtml(previewQuestion.vignetteText) }}
+													dangerouslySetInnerHTML={{ __html: formatProseWithMath(previewQuestion.vignetteText || '') }}
 												/>
 											</>
 										)}
@@ -2304,7 +2304,7 @@ export function AdminQuestions() {
 												<div
 													className="prose question-preview-content"
 													style={{ margin: 0, padding: '8px', background: '#f5f5f5', borderRadius: 4 }}
-													dangerouslySetInnerHTML={{ __html: safeHtml(previewQuestion.question.vignetteText) }}
+													dangerouslySetInnerHTML={{ __html: formatProseWithMath(previewQuestion.question.vignetteText || '') }}
 												/>
 											</>
 										)}
