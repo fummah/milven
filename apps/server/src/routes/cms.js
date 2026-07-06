@@ -2527,10 +2527,13 @@ export function cmsRouter(prisma) {
 			});
 			if (currDoc?.extractedText) {
 				// Use topic-aware windowed extraction so relevant sections are found even in large PDFs
+				// Reduce excerpt size for VIGNETTE_MCQ to speed up generation
+				const excerptMaxChars = questionType === 'VIGNETTE_MCQ' ? 15000 : 40000;
 				curriculumExcerpt = buildCurriculumExcerpt(
 					currDoc.extractedText,
 					selectedTopics.map(t => t.name),
-					legacyConcepts.map(c => c.name)
+					legacyConcepts.map(c => c.name),
+					excerptMaxChars
 				);
 			}
 		}
@@ -2552,76 +2555,48 @@ export function cmsRouter(prisma) {
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
 			: '';
 		const volPrompt = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName) : null;
-		const prompt = `You are a senior Vignette MCQ exam writer and curriculum expert.
-Generate ORIGINAL CFA Level II exam-style item sets that DO NOT copy, paraphrase, or imitate CFA Institute, Kaplan, Wiley, Schweser, Fitch, Mark Meldrum, AnalystPrep, Salt Solutions, or any third-party material.
-Generate professional, exam-quality questions in JSON format.
+		const prompt = `You are a senior CFA Level II exam writer. Generate ORIGINAL exam-quality questions in JSON format. DO NOT copy third-party material.
 
-CORE QUALITY REQUIREMENTS:
-- Professional exam quality — the finished item set must read like a real CFA Level II examination
-- Questions must assess application, analysis, valuation, judgement, and interpretation — NOT simple recall
-- Avoid trick questions
-- Avoid "All of the above" and "None of the above"
-- Numerical answers must reconcile exactly with the worked solution
-- ALL metadata fields below are REQUIRED — always populate every single one to help students during revision
-For VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles: a single case study/vignette may span MULTIPLE learning modules, topics, or concepts within the same volume. Sub-questions should draw from different topics/concepts where appropriate to create a rich, integrative scenario.
-${curriculumExcerpt ? `CRITICAL — CURRICULUM DOCUMENT RULES:
-A curriculum reference document has been provided below. You MUST:
-1. BASE every question on the content, terminology, and examples from this document.
-2. For "los": Copy the EXACT Learning Outcome Statement (LOS) from the document — these are statements starting with verbs like "describe", "explain", "calculate", etc. that appear just below each topic heading. Do NOT paraphrase or invent LOS — use the exact wording from the document.
-3. For "tracePage": Use the EXACT page numbers from the [PAGE N] markers in the document. Format as "p. X" or "p. X-Y" for ranges.
-4. For "traceSection": Use the EXACT section/reading/topic heading as it appears in the document. CRITICAL: The traceSection MUST match the assigned topic — if the question is assigned to "Standard I: Professionalism", the traceSection MUST reference a section within Standard I, NEVER a section from Standard VI or any other standard/topic. Consistency between the topic assignment and the traceSection is mandatory.
-5. For "keyFormulas" and "workedSolution": ALWAYS use valid LaTeX notation:
-   - Inline formulas: \\( ... \\)   Block formulas: \\[ ... \\]
-   - Fractions: \\frac{a}{b}   Exponents: x^{2}, k^{\\alpha}
-   - Subscripts: P_{0}, CF_{t}, R_{equity}   Greek: \\alpha, \\beta, \\sigma, \\mu, \\rho, \\delta, \\lambda
-   - Roots: \\sqrt{x}   Sums: \\sum_{i=1}^{n}   Multiply: \\cdot
-   - ALL braces must be balanced. NEVER output broken LaTeX or mix markdown with LaTeX.
-   Copy formulas from the document but ALWAYS convert them to valid LaTeX notation.
-6. Questions that involve calculations MUST use the exact formulas from the document with correct variable names.` : ''}
+CORE REQUIREMENTS:
+- Professional exam quality — assess application, analysis, valuation, judgement
+- Avoid trick questions, "All of the above", "None of the above"
+- Numerical answers must match worked solution exactly
+- Use UNIQUE fictional company names (invent fresh names each time)
+- ALL metadata fields below are REQUIRED
 
-VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles):
-- The vignetteText MUST be 350-650 words — long, rich, CFA-exam-quality narrative
-- Total question value: 12 points (4 sub-questions × 3 marks each)
-- Introduce a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional such as a portfolio manager, equity analyst, credit analyst, CFO, wealth manager, consultant, trader, or risk manager'}
-- Use a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style)
-- All information required to answer the questions must be contained within the vignette
-- Present multiple related financial scenarios, each with specific data, dates, company names
-- Open the vignetteText with: "<p><strong>TOPIC: [TOPIC NAME]</strong></p><p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
-${isEthics ? `- ETHICS VIGNETTE RULE: Because this is an ETHICS topic, the vignette MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines, data points) must be woven naturally into the prose paragraph text. Sub-questions should reference specific details from the narrative (e.g. "Regarding Jones's recommendation to the board...").` : `- EXHIBIT REQUIREMENTS:
-${volPrompt ? volPrompt.exhibits : `Include realistic exhibits where appropriate: financial statements, regression output, yield curves, valuation tables, client constraints, analyst notes, assumptions, market data.`}
-  CRITICAL TABLE STYLING: All tables MUST use SOLID borders only — never dashed, dotted, or broken lines. NEVER use markdown pipe tables (| col | col |) or ASCII tables — ONLY use HTML <table> tags.
-  Use this EXACT format (do not modify the style attributes):
-  <p><strong>Exhibit 1</strong></p>
-  <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;border:1px solid #000;"><thead><tr><th style="border:1px solid #000;padding:6px;">Column</th><th style="border:1px solid #000;padding:6px;">Column</th></tr></thead><tbody><tr><td style="border:1px solid #000;padding:6px;">Value</td><td style="border:1px solid #000;padding:6px;">Value</td></tr></tbody></table>
-  Every <th> and <td> MUST have inline style="border:1px solid #000;padding:6px;"
-  Also supported: <pre> blocks for regression output, ASCII charts, or structured data where a table format is not appropriate.`}
-- Sub-questions must reference specific exhibits or narrative sections (e.g. "Based on Exhibit 1..." or "Regarding Jones's evaluation of...")
-${volPrompt ? `
-VOLUME-SPECIFIC QUESTION DESIGN:
-${volPrompt.questionDesign}
-
-VOLUME-SPECIFIC DISTRACTOR RULES:
-${volPrompt.distractors}
-` : ''}
+VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
+- 350–650 word vignette, 4 sub-questions (3 marks each), total 12 points
+- Protagonist: ${volPrompt ? volPrompt.roles : 'a financial professional'}
+- UNIQUE randomly generated name and company — NEVER repeat names
+- All information required to answer must be in the vignette
+${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
+- Tables MUST use HTML with style="border:1px solid #000;padding:6px;" — NO markdown pipe tables`}
+${volPrompt ? `${volPrompt.questionDesign}\n${volPrompt.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
+${curriculumExcerpt ? `CURRICULUM DOCUMENT RULES:
+1. "los": Copy EXACT Learning Outcome Statement from document (verbs: describe, explain, calculate, etc.)
+2. "tracePage": Use EXACT page from [PAGE N] markers (e.g. "p. 145")
+3. "traceSection": EXACT section heading matching the assigned topic
+4. LaTeX: Use \\( ... \\) for inline, \\[ ... \\] for block. \\frac, \\sigma, \\beta, \\alpha, \\sqrt, \\sum, \\cdot` : ''}
 
 Context:
-- Course: ${course.name}
-- Course level: ${levelLabel}
+- Course: ${course.name} (${levelLabel})
 - Volume: ${volumeName}
 - Topics: ${topicLabel}
 - Concepts: ${legacyConceptLabel}
-- Question type: ${typeLabel}
+- Type: ${typeLabel}
 - Difficulty: ${difficultyLabel}
 - Count: ${count}
 ${curriculumSection}
-Return a JSON object with an "items" key. EVERY question/sub-question MUST include ALL of these fields (never null):
-- "stem": string (question text, may include simple HTML)
-- "options": for MCQ only: array of exactly 3 objects { "text": string, "isCorrect": boolean } with exactly one isCorrect true
-- "explanation": string (concise explanation of the correct answer and common mistakes)
-- "qid": string (short unique ID like "Q-TOPIC-001")
-- "los": string (the EXACT learning outcome statement from the curriculum document — copy it verbatim)
-- "traceSection": string (EXACT section/reading heading from the document that MATCHES the assigned topic. CRITICAL: traceSection MUST correspond to the specific topic — e.g. if topic is "Standard I: Professionalism", traceSection MUST reference Standard I content only, NEVER Standard VI or any other topic.)
-- "tracePage": string (EXACT page from the document [PAGE N] markers, e.g. "p. 145" or "p. 145-148")
+traceSection MUST match the assigned topic (e.g. "Standard I" topic → "Standard I(A)" section).
+
+Return JSON with "items" key. Each question/sub-question MUST include:
+- "stem": string (question text, may include HTML)
+- "options": for MCQ: array of 3 objects { "text": string, "isCorrect": boolean }
+- "explanation": string
+- "qid": string (unique ID like "Q-TOPIC-001")
+- "los": string (EXACT learning outcome from document)
+- "traceSection": string (EXACT section heading matching topic)
+- "tracePage": string (EXACT page from [PAGE N] markers)
 - "keyFormulas": string (key formula(s) using VALID LaTeX — e.g. "\\( PV = \\frac{CF_1}{(1+r)^{1}} + \\frac{CF_2}{(1+r)^{2}} \\)", "\\( WACC = w_{d} \\cdot r_{d} \\cdot (1-t) + w_{e} \\cdot r_{e} \\)". Use \\frac, \\sigma, \\beta, \\alpha etc. ALL braces must be balanced. Include variable definitions.)
 - "workedSolution": string (step-by-step worked solution using valid LaTeX for all math — be thorough)
 
@@ -3165,10 +3140,13 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			});
 			if (currDoc?.extractedText) {
 				// Use topic-aware windowed extraction so relevant sections are found even in large PDFs
+				// Reduce excerpt size for VIGNETTE_MCQ to speed up generation
+				const excerptMaxChars = questionType === 'VIGNETTE_MCQ' ? 15000 : 40000;
 				previewCurriculumExcerpt = buildCurriculumExcerpt(
 					currDoc.extractedText,
 					selectedTopics.map(t => t.name),
-					selectedConcepts.map(c => c.name)
+					selectedConcepts.map(c => c.name),
+					excerptMaxChars
 				);
 			}
 		}
@@ -3359,68 +3337,40 @@ ${metaFieldsBlock}`;
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${previewCurriculumExcerpt}\n---\n`
 			: '';
 		const volPrompt = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName) : null;
-		const prompt = `You are a senior Vignette MCQ exam writer and curriculum expert.
-Generate ORIGINAL CFA Level II exam-style item sets that DO NOT copy, paraphrase, or imitate CFA Institute, Kaplan, Wiley, Schweser, Fitch, Mark Meldrum, AnalystPrep, Salt Solutions, or any third-party material.
-Generate professional, exam-quality questions in JSON format.
+		const prompt = `You are a senior CFA Level II exam writer. Generate ORIGINAL exam-quality questions in JSON format. DO NOT copy third-party material.
 
-CORE QUALITY REQUIREMENTS:
-- Professional exam quality — the finished item set must read like a real CFA Level II examination
-- Questions must assess application, analysis, valuation, judgement, and interpretation — NOT simple recall
-- Avoid trick questions
-- Avoid "All of the above" and "None of the above"
-- Numerical answers must reconcile exactly with the worked solution
-- Include realistic numerical examples, UNIQUE fictional company names (invent fresh names each time — NEVER reuse Apex Capital, Meridian Asset Management, or any previously used names), market scenarios, and specific dates
-- For calculations, ALWAYS provide the key formulas and a detailed step-by-step worked solution — this is critical for student revision
-- Each question should test a specific learning outcome related to the topic
-- Vary the difficulty: MODERATE = multi-step analysis; DIFFICULT = complex scenario requiring synthesis; VERY DIFFICULT = integrative scenario with multiple concepts
-- ALL metadata fields below are REQUIRED — populate every single one to help students during revision
-- For VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles:
-  * The vignette MUST be 350–650 words — rich, narrative, CFA-exam-quality
-  * Total question value: 12 points (4 sub-questions × 3 marks each)
-  * Use a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional such as a portfolio manager, equity analyst, credit analyst, CFO, wealth manager, consultant, trader, or risk manager'}
-  * Use a UNIQUE randomly generated name and company — NEVER repeat names like Sarah Chen, Apex Capital, or Meridian Asset Management. Each case study MUST have completely different character and firm names. Vary ethnicity, gender, and company naming style
-  * All information required to answer the questions must be contained within the vignette
-  * Include multiple related financial scenarios and data points within the passage
-${isEthics ? `  * ETHICS TOPIC RULE: Because this is an ETHICS topic, ALL vignettes MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information must be woven naturally into prose paragraphs. Sub-questions reference narrative details directly.` : `  * EXHIBIT REQUIREMENTS:
-${volPrompt ? volPrompt.exhibits : `Include realistic exhibits where appropriate: financial statements, regression output, yield curves, valuation tables, client constraints, analyst notes, assumptions, market data.`}
-  CRITICAL TABLE STYLING: All tables MUST use SOLID borders only — never dashed, dotted, or broken lines. NEVER use markdown pipe tables (| col | col |) or ASCII tables — ONLY use HTML <table> tags. Every <th> and <td> MUST have inline style="border:1px solid #000;padding:6px;"`}
-  * Sub-questions should reference specific exhibits or narrative details by name and test different aspects of the scenario
-  * Open the vignetteText with the Volume name header: "<p><strong>${volumeName}</strong></p>"
-${volPrompt ? `
-VOLUME-SPECIFIC QUESTION DESIGN:
-${volPrompt.questionDesign}
+CORE REQUIREMENTS:
+- Professional exam quality — assess application, analysis, valuation, judgement
+- Avoid trick questions, "All of the above", "None of the above"
+- Numerical answers must match worked solution exactly
+- Use UNIQUE fictional company names (invent fresh names each time)
+- ALL metadata fields below are REQUIRED
 
-VOLUME-SPECIFIC DISTRACTOR RULES:
-${volPrompt.distractors}
-` : ''}
-${previewCurriculumExcerpt ? `CRITICAL — CURRICULUM DOCUMENT RULES:
-A curriculum reference document has been provided below. You MUST:
-1. BASE every question on the content, terminology, and examples from this document.
-2. For "los": Copy the EXACT Learning Outcome Statement (LOS) from the document — these are statements starting with verbs like "describe", "explain", "calculate", etc. that appear just below each topic heading. Do NOT paraphrase or invent LOS — use the exact wording from the document.
-3. For "tracePage": Use the EXACT page numbers from the [PAGE N] markers in the document. Format as "p. X" or "p. X-Y" for ranges.
-4. For "traceSection": Use the EXACT section/reading/topic heading as it appears in the document. CRITICAL: The traceSection MUST match the assigned topic — if the question is assigned to "Standard I: Professionalism", the traceSection MUST reference a section within Standard I, NEVER a section from Standard VI or any other standard/topic. Consistency between the topic assignment and the traceSection is mandatory.
-5. For "keyFormulas" and "workedSolution": ALWAYS use valid LaTeX notation:
-   - Inline formulas: \\\\( ... \\\\)   Block formulas: \\\\[ ... \\\\]
-   - Fractions: \\\\frac{a}{b}   Exponents: x^{2}, k^{\\\\alpha}
-   - Subscripts: P_{0}, CF_{t}, R_{equity}   Greek: \\\\alpha, \\\\beta, \\\\sigma, \\\\mu, \\\\rho, \\\\delta, \\\\lambda
-   - Roots: \\\\sqrt{x}   Sums: \\\\sum_{i=1}^{n}   Multiply: \\\\cdot
-   - ALL braces must be balanced. NEVER output broken LaTeX or mix markdown with LaTeX.
-   Copy formulas from the document but ALWAYS convert them to valid LaTeX notation.
-6. Questions that involve calculations MUST use the exact formulas from the document with correct variable names.` : ''}
+VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
+- 350–650 word vignette, 4 sub-questions (3 marks each), total 12 points
+- Protagonist: ${volPrompt ? volPrompt.roles : 'a financial professional'}
+- UNIQUE randomly generated name and company — NEVER repeat names
+- All information required to answer must be in the vignette
+${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
+- Tables MUST use HTML with style="border:1px solid #000;padding:6px;" — NO markdown pipe tables`}
+${volPrompt ? `${volPrompt.questionDesign}\n${volPrompt.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
+${previewCurriculumExcerpt ? `CURRICULUM DOCUMENT RULES:
+1. "los": Copy EXACT Learning Outcome Statement from document (verbs: describe, explain, calculate, etc.)
+2. "tracePage": Use EXACT page from [PAGE N] markers (e.g. "p. 145")
+3. "traceSection": EXACT section heading matching the assigned topic
+4. LaTeX: Use \\( ... \\) for inline, \\[ ... \\] for block. \\frac, \\sigma, \\beta, \\alpha, \\sqrt, \\sum, \\cdot` : ''}
 
 Context:
-- Course: ${course.name}
-- Course level: ${levelLabel}
+- Course: ${course.name} (${levelLabel})
 - Volume: ${volumeName}
 - Topics: ${topicLabel}
 - Concepts: ${conceptLabel}
-- Question type: ${typeLabel}
-- Difficulty levels: ${difficultyLabel}
-- Number of ${isBundleType ? 'case studies' : 'questions'}: ${count}
+- Type: ${typeLabel}
+- Difficulty: ${difficultyLabel}
+- Count: ${count}
 ${previewCurriculumSection}${existingStemsBlock}
-IMPORTANT: Each question MUST include a "conceptName" field — the name of the specific concept it tests, chosen from the Concepts list above (or a close match if the list says "All concepts"). This is used to map questions back to our curriculum database.
-
-CONSISTENCY RULE: Each question's "traceSection" MUST be a section that falls WITHIN the topic the question is testing. If Topics = "${topicLabel}", then traceSection must reference content from ONLY those topics. For example, if the topic is "Standard I: Professionalism", the traceSection MUST say "Standard I(A) ...", "Standard I(B) ...", etc. — NEVER "Standard VI(A) ..." or content from any other topic. The question content, LOS, traceSection, and topic assignment must ALL be consistent with each other.
+Each question MUST include "conceptName" from the Concepts list above.
+traceSection MUST match the assigned topic (e.g. "Standard I" topic → "Standard I(A)" section).
 
 ${formatBlock}`;
 
