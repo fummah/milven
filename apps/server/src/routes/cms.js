@@ -2653,7 +2653,7 @@ MATH IN vignetteText: If the vignetteText contains any mathematical expressions,
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		try {
-			const openai = new OpenAI({ apiKey, timeout: 180_000 });
+			const openai = new OpenAI({ apiKey });
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
@@ -3167,15 +3167,23 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				previewCurriculumExcerpt = buildCurriculumExcerpt(
 					currDoc.extractedText,
 					selectedTopics.map(t => t.name),
-					selectedConcepts.map(c => c.name),
-					12000   // keep preview prompts lean for faster generation
+					selectedConcepts.map(c => c.name)
 				);
 			}
 		}
 
-		// ── Regular JSON response (SSE caused buffering issues behind WAMP/Apache — the
-		// OpenAI call typically completes within 60s now with the trimmed curriculum excerpt,
-		// so heartbeats are unnecessary). ─────────────────────────────────────
+		// ── SSE: switch to streaming before the long OpenAI call ─────────────────
+		// DigitalOcean (and most cloud networks) kill TCP connections with no data
+		// flowing for ~60 s. SSE heartbeats every 15 s keep the pipe alive.
+		res.writeHead(200, {
+			'Content-Type': 'text/event-stream',
+			'Cache-Control': 'no-cache, no-transform',
+			'X-Accel-Buffering': 'no',
+			'Connection': 'keep-alive',
+		});
+		const sseHeartbeat = setInterval(() => { try { res.write(':heartbeat\n\n'); } catch {} }, 15000);
+		const sseSend = (event, payload) => { try { res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`); } catch {} };
+		const sseEnd = () => { clearInterval(sseHeartbeat); try { res.end(); } catch {} };
 
 		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
 		const isConstructedBundle = questionType === 'CONSTRUCTED_RESPONSE' && constructedMode === 'bundle';
@@ -3416,7 +3424,7 @@ CONSISTENCY RULE: Each question's "traceSection" MUST be a section that falls WI
 ${formatBlock}`;
 
 		try {
-			const openai = new OpenAI({ apiKey, timeout: 180_000 });
+			const openai = new OpenAI({ apiKey });
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
@@ -3431,7 +3439,8 @@ ${formatBlock}`;
 			try {
 				parsed = JSON.parse(raw);
 			} catch {
-				return res.status(400).json({ error: 'AI returned invalid JSON' });
+				sseSend('error', { error: 'AI returned invalid JSON' });
+				return sseEnd();
 			}
 			let items = Array.isArray(parsed?.items) ? parsed.items : (Array.isArray(parsed?.questions) ? parsed.questions : []);
 
@@ -3759,7 +3768,8 @@ ${formatBlock}`;
 					});
 					return { vignetteText, questions: subQuestions };
 				}).filter(b => b.vignetteText && b.questions.length > 0);
-				return res.json({ course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { bundles } });
+				sseSend('result', { course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { bundles } });
+				return sseEnd();
 			}
 
 			items = items.slice(0, count);
@@ -3790,10 +3800,12 @@ ${formatBlock}`;
 				};
 			});
 
-			return res.json({ course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { items: normalized } });
+			sseSend('result', { course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { items: normalized } });
+			return sseEnd();
 		} catch (err) {
 			const msg = err?.message || err?.error?.message || 'OpenAI request failed';
-			return res.status(500).json({ error: msg });
+			sseSend('error', { error: msg });
+			return sseEnd();
 		}
 	});
 
@@ -4291,5 +4303,4 @@ function computeEstimatedSeconds(kind, payload) {
   // PDFs/Links/Images default small slot unless provided
   return 2 * 60;
 }
-
 
