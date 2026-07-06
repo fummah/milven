@@ -682,6 +682,8 @@ export function AdminQuestions() {
 
 			// Prefer preview flow (admin review before save)
 			// Uses fetch+SSE so heartbeats keep the connection alive on DigitalOcean
+			const previewController = new AbortController();
+			const previewTimeout = setTimeout(() => previewController.abort(), 210_000);
 			try {
 				const response = await fetch(`${API_URL}/api/cms/questions/generate-ai/preview`, {
 					method: 'POST',
@@ -690,6 +692,7 @@ export function AdminQuestions() {
 						'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
 					},
 					body: JSON.stringify(payload),
+					signal: previewController.signal,
 				});
 				if (!response.ok) {
 					const errBody = await response.json().catch(() => ({}));
@@ -733,15 +736,17 @@ export function AdminQuestions() {
 					: (gen?.items || []).length;
 				setAiSelectedIndices(Array.from({ length: itemCount }, (_, i) => i));
 				setAiPreviewOpen(true);
+				clearTimeout(previewTimeout);
 				return;
 			} catch (previewErr) {
+				clearTimeout(previewTimeout);
 				// If the SSE preview fails, fall through to legacy direct-save endpoint
 				if (previewErr?.message && previewErr.message !== 'No response received from server') {
 					throw previewErr;
 				}
 			}
 
-			const { data } = await api.post('/api/cms/questions/generate-ai', payload);
+			const { data } = await api.post('/api/cms/questions/generate-ai', payload, { timeout: 190000 });
 			message.success(`Generated ${data?.created ?? 0} question(s)`);
 			setAiGenerateModalOpen(false);
 			setListTab('ai');
