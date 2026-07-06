@@ -681,49 +681,9 @@ export function AdminQuestions() {
 			};
 
 			// Prefer preview flow (admin review before save)
-			// Uses fetch+SSE so heartbeats keep the connection alive on DigitalOcean
-			const previewController = new AbortController();
-			const previewTimeout = setTimeout(() => previewController.abort(), 210_000);
+			// Regular JSON response — no longer SSE (Apache buffers SSE proxied responses)
 			try {
-				const response = await fetch(`${API_URL}/api/cms/questions/generate-ai/preview`, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
-					},
-					body: JSON.stringify(payload),
-					signal: previewController.signal,
-				});
-				if (!response.ok) {
-					const errBody = await response.json().catch(() => ({}));
-					throw new Error(errBody?.error || `Server error ${response.status}`);
-				}
-				// Read the SSE stream: ignore :heartbeat comments, handle result/error events
-				const reader = response.body.getReader();
-				const decoder = new TextDecoder();
-				let buffer = '';
-				let data = null;
-				let sseError = null;
-				outer: while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-					buffer += decoder.decode(value, { stream: true });
-					const parts = buffer.split('\n\n');
-					buffer = parts.pop() ?? '';
-					for (const part of parts) {
-						if (part.startsWith('event: result\ndata: ')) {
-							data = JSON.parse(part.slice('event: result\ndata: '.length));
-							break outer;
-						} else if (part.startsWith('event: error\ndata: ')) {
-							const errObj = JSON.parse(part.slice('event: error\ndata: '.length));
-							sseError = errObj?.error || 'AI generation failed';
-							break outer;
-						}
-						// :heartbeat lines are ignored
-					}
-				}
-				if (sseError) throw new Error(sseError);
-				if (!data) throw new Error('No response received from server');
+				const { data } = await api.post('/api/cms/questions/generate-ai/preview', payload, { timeout: 190000 });
 				const gen = data?.generated || null;
 				setAiPreview({
 					questionType: values.questionType,
@@ -736,14 +696,9 @@ export function AdminQuestions() {
 					: (gen?.items || []).length;
 				setAiSelectedIndices(Array.from({ length: itemCount }, (_, i) => i));
 				setAiPreviewOpen(true);
-				clearTimeout(previewTimeout);
 				return;
 			} catch (previewErr) {
-				clearTimeout(previewTimeout);
-				// If the SSE preview fails (timeout or empty response), fall through to legacy direct-save endpoint
-				if (previewErr?.message && previewErr.message !== 'No response received from server' && previewErr?.name !== 'AbortError') {
-					throw previewErr;
-				}
+				// If the preview call fails, fall through to legacy direct-save endpoint
 			}
 
 			const { data } = await api.post('/api/cms/questions/generate-ai', payload, { timeout: 190000 });

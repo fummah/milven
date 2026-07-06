@@ -3173,23 +3173,9 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			}
 		}
 
-		// ── SSE: switch to streaming before the long OpenAI call ─────────────────
-		// DigitalOcean (and most cloud networks) kill TCP connections with no data
-		// flowing for ~60 s. SSE heartbeats every 15 s keep the pipe alive.
-		// WAMP/Apache's mod_proxy buffers proxied responses by default — we disable
-		// Nagle's algorithm and send padding data to force Apache to flush.
-		if (res.socket) res.socket.setNoDelay(true);
-		res.writeHead(200, {
-			'Content-Type': 'text/event-stream',
-			'Cache-Control': 'no-cache, no-transform',
-			'X-Accel-Buffering': 'no',
-			'Connection': 'keep-alive',
-		});
-		// Pad 8 KB of leading whitespace (SSE comments) to fill Apache's output buffer
-		res.write(': ' + ' '.repeat(8190) + '\n\n');
-		const sseHeartbeat = setInterval(() => { try { res.write(':heartbeat\n\n'); } catch {} }, 15000);
-		const sseSend = (event, payload) => { try { res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`); } catch {} };
-		const sseEnd = () => { clearInterval(sseHeartbeat); try { res.end(); } catch {} };
+		// ── Regular JSON response (SSE caused buffering issues behind WAMP/Apache — the
+		// OpenAI call typically completes within 60s now with the trimmed curriculum excerpt,
+		// so heartbeats are unnecessary). ─────────────────────────────────────
 
 		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
 		const isConstructedBundle = questionType === 'CONSTRUCTED_RESPONSE' && constructedMode === 'bundle';
@@ -3445,8 +3431,7 @@ ${formatBlock}`;
 			try {
 				parsed = JSON.parse(raw);
 			} catch {
-				sseSend('error', { error: 'AI returned invalid JSON' });
-				return sseEnd();
+				return res.status(400).json({ error: 'AI returned invalid JSON' });
 			}
 			let items = Array.isArray(parsed?.items) ? parsed.items : (Array.isArray(parsed?.questions) ? parsed.questions : []);
 
@@ -3774,8 +3759,7 @@ ${formatBlock}`;
 					});
 					return { vignetteText, questions: subQuestions };
 				}).filter(b => b.vignetteText && b.questions.length > 0);
-				sseSend('result', { course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { bundles } });
-				return sseEnd();
+				return res.json({ course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { bundles } });
 			}
 
 			items = items.slice(0, count);
@@ -3806,12 +3790,10 @@ ${formatBlock}`;
 				};
 			});
 
-			sseSend('result', { course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { items: normalized } });
-			return sseEnd();
+			return res.json({ course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { items: normalized } });
 		} catch (err) {
 			const msg = err?.message || err?.error?.message || 'OpenAI request failed';
-			sseSend('error', { error: msg });
-			return sseEnd();
+			return res.status(500).json({ error: msg });
 		}
 	});
 
