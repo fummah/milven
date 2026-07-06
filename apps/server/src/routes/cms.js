@@ -2653,7 +2653,7 @@ MATH IN vignetteText: If the vignetteText contains any mathematical expressions,
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		try {
-			const openai = new OpenAI({ apiKey });
+			const openai = new OpenAI({ apiKey, timeout: 120000 });
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
@@ -2661,6 +2661,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
+				max_tokens: questionType === 'VIGNETTE_MCQ' ? 8000 : 4000,
 				response_format: { type: 'json_object' }
 			});
 			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
@@ -3424,7 +3425,7 @@ CONSISTENCY RULE: Each question's "traceSection" MUST be a section that falls WI
 ${formatBlock}`;
 
 		try {
-			const openai = new OpenAI({ apiKey });
+			const openai = new OpenAI({ apiKey, timeout: 120000 });
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
@@ -3432,6 +3433,7 @@ ${formatBlock}`;
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
+				max_tokens: questionType === 'VIGNETTE_MCQ' ? 8000 : 4000,
 				response_format: { type: 'json_object' }
 			});
 			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
