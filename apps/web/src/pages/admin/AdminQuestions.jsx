@@ -681,9 +681,14 @@ export function AdminQuestions() {
 			};
 
 			// Prefer preview flow (admin review before save)
-			// Regular JSON response — no longer SSE (Apache buffers SSE proxied responses)
 			try {
-				const { data } = await api.post('/api/cms/questions/generate-ai/preview', payload, { timeout: 190000 });
+				const resp = await fetch(`${API_URL}/api/cms/questions/generate-ai/preview`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` },
+					body: JSON.stringify(payload)
+				});
+				if (!resp.ok) { const err = await resp.json().catch(() => ({error:'Server error'})); throw new Error(err.error); }
+				const data = await resp.json();
 				const gen = data?.generated || null;
 				setAiPreview({
 					questionType: values.questionType,
