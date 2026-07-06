@@ -3167,7 +3167,8 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				previewCurriculumExcerpt = buildCurriculumExcerpt(
 					currDoc.extractedText,
 					selectedTopics.map(t => t.name),
-					selectedConcepts.map(c => c.name)
+					selectedConcepts.map(c => c.name),
+					12000   // keep preview prompts lean for faster generation
 				);
 			}
 		}

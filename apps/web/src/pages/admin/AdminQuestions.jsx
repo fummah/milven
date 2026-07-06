@@ -740,8 +740,8 @@ export function AdminQuestions() {
 				return;
 			} catch (previewErr) {
 				clearTimeout(previewTimeout);
-				// If the SSE preview fails, fall through to legacy direct-save endpoint
-				if (previewErr?.message && previewErr.message !== 'No response received from server') {
+				// If the SSE preview fails (timeout or empty response), fall through to legacy direct-save endpoint
+				if (previewErr?.message && previewErr.message !== 'No response received from server' && previewErr?.name !== 'AbortError') {
 					throw previewErr;
 				}
 			}
@@ -753,7 +753,12 @@ export function AdminQuestions() {
 			setPage(1);
 			loadQuestions();
 		} catch (e) {
-			message.error(e?.response?.data?.error || 'AI generation failed');
+			const detail = e?.response?.data?.error || e?.message || '';
+			if (e?.name === 'AbortError') {
+				message.error('Request timed out after 210 seconds. Try selecting fewer topics or a smaller curriculum excerpt.');
+			} else {
+				message.error(`AI generation failed: ${detail}`);
+			}
 		} finally {
 			setAiGenerateLoading(false);
 		}
