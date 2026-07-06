@@ -2528,7 +2528,7 @@ export function cmsRouter(prisma) {
 			if (currDoc?.extractedText) {
 				// Use topic-aware windowed extraction so relevant sections are found even in large PDFs
 				// Reduce excerpt size for VIGNETTE_MCQ to speed up generation
-				const excerptMaxChars = questionType === 'VIGNETTE_MCQ' ? 15000 : 40000;
+				const excerptMaxChars = questionType === 'VIGNETTE_MCQ' ? 8000 : 40000;
 				curriculumExcerpt = buildCurriculumExcerpt(
 					currDoc.extractedText,
 					selectedTopics.map(t => t.name),
@@ -2632,7 +2632,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
@@ -3141,7 +3141,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			if (currDoc?.extractedText) {
 				// Use topic-aware windowed extraction so relevant sections are found even in large PDFs
 				// Reduce excerpt size for VIGNETTE_MCQ to speed up generation
-				const excerptMaxChars = questionType === 'VIGNETTE_MCQ' ? 15000 : 40000;
+				const excerptMaxChars = questionType === 'VIGNETTE_MCQ' ? 8000 : 40000;
 				previewCurriculumExcerpt = buildCurriculumExcerpt(
 					currDoc.extractedText,
 					selectedTopics.map(t => t.name),
@@ -3345,15 +3345,6 @@ CORE REQUIREMENTS:
 - Numerical answers must match worked solution exactly
 - Use UNIQUE fictional company names (invent fresh names each time)
 - ALL metadata fields below are REQUIRED
-
-VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
-- 350–650 word vignette, 4 sub-questions (3 marks each), total 12 points
-- Protagonist: ${volPrompt ? volPrompt.roles : 'a financial professional'}
-- UNIQUE randomly generated name and company — NEVER repeat names
-- All information required to answer must be in the vignette
-${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
-- Tables MUST use HTML with style="border:1px solid #000;padding:6px;" — NO markdown pipe tables`}
-${volPrompt ? `${volPrompt.questionDesign}\n${volPrompt.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
 ${previewCurriculumExcerpt ? `CURRICULUM DOCUMENT RULES:
 1. "los": Copy EXACT Learning Outcome Statement from document (verbs: describe, explain, calculate, etc.)
 2. "tracePage": Use EXACT page from [PAGE N] markers (e.g. "p. 145")
@@ -3375,22 +3366,28 @@ traceSection MUST match the assigned topic (e.g. "Standard I" topic → "Standar
 ${formatBlock}`;
 
 		try {
+			console.log('[AI Preview] Starting OpenAI call for questionType:', questionType);
 			const openai = new OpenAI({ apiKey, timeout: 120000 });
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
 				max_tokens: questionType === 'VIGNETTE_MCQ' ? 8000 : 4000,
 				response_format: { type: 'json_object' }
 			});
+			console.log('[AI Preview] OpenAI call completed');
 			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+			console.log('[AI Preview] Raw response length:', raw.length);
 			let parsed;
 			try {
 				parsed = JSON.parse(raw);
-			} catch {
+				console.log('[AI Preview] JSON parsed successfully, items count:', Array.isArray(parsed?.items) ? parsed.items.length : (Array.isArray(parsed?.questions) ? parsed.questions.length : 0));
+			} catch (e) {
+				console.error('[AI Preview] JSON parse error:', e.message);
+				console.error('[AI Preview] Raw response (first 500 chars):', raw.substring(0, 500));
 				sseSend('error', { error: 'AI returned invalid JSON' });
 				return sseEnd();
 			}
