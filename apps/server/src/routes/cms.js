@@ -2682,6 +2682,20 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			};
 			items.forEach(it => { repairLatexFields(it); if (Array.isArray(it.questions)) it.questions.forEach(sq => repairLatexFields(sq)); });
 
+			// ── Auto-wrap bare LaTeX in vignetteText with \( ... \) delimiters ──
+			const wrapBareLatexInText = (text) => {
+				if (!text || typeof text !== 'string') return text;
+				if (/\\\(/.test(text) || /\\\[/.test(text)) return text;
+				return text.replace(
+					/(?<!\\\()([A-Za-z0-9_]*(?:[\\][a-zA-Z]+|[_^]\{[^}]*\})[^\s,.<)*]*(?:\s*[=+\-×*/]\s*[A-Za-z0-9_]*(?:[\\][a-zA-Z]+|[_^]\{[^}]*\})[^\s,.<)*]*)*)(?!\\\))/g,
+					(match) => {
+						if (/[\\][a-zA-Z]|[_^]\{/.test(match)) return `\\(${match.trim()}\\)`;
+						return match;
+					}
+				);
+			};
+			items.forEach(it => { if (it.vignetteText) it.vignetteText = wrapBareLatexInText(it.vignetteText); });
+
 			// ── Convert markdown pipe tables to HTML tables ──────────────
 			const convertPipeTablesToHtml = (text) => {
 				if (!text || typeof text !== 'string') return text;
@@ -3513,6 +3527,20 @@ ${formatBlock}`;
 				if (obj.workedSolution) obj.workedSolution = autoRepairLatex(String(obj.workedSolution));
 			};
 			items.forEach(it => { repairLatexFields(it); if (Array.isArray(it.questions)) it.questions.forEach(sq => repairLatexFields(sq)); });
+
+			// ── Auto-wrap bare LaTeX in vignetteText with \( ... \) delimiters (preview) ──
+			const wrapBareLatexInText = (text) => {
+				if (!text || typeof text !== 'string') return text;
+				if (/\\\(/.test(text) || /\\\[/.test(text)) return text;
+				return text.replace(
+					/(?<!\\\()([A-Za-z0-9_]*(?:[\\][a-zA-Z]+|[_^]\{[^}]*\})[^\s,.<)*]*(?:\s*[=+\-×*/]\s*[A-Za-z0-9_]*(?:[\\][a-zA-Z]+|[_^]\{[^}]*\})[^\s,.<)*]*)*)(?!\\\))/g,
+					(match) => {
+						if (/[\\][a-zA-Z]|[_^]\{/.test(match)) return `\\(${match.trim()}\\)`;
+						return match;
+					}
+				);
+			};
+			items.forEach(it => { if (it.vignetteText) it.vignetteText = wrapBareLatexInText(it.vignetteText); });
 
 			// ── Convert markdown pipe tables to HTML tables (preview) ────
 			const convertPipeTablesToHtml = (text) => {
