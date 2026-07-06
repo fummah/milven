@@ -13,6 +13,203 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, autoRepairLatex } from '../lib/openai.js';
 
+// ── Volume-specific vignette MCQ prompt builder ──────────────────────────────
+// Returns { roles, exhibits, questionDesign, distractors } tailored to the volume.
+function getVolumeVignettePrompt(volumeName) {
+	const vn = (volumeName || '').toLowerCase();
+
+	// Volume 1: Ethics, Quantitative Methods, and Economics
+	if (/volume\s*1|ethics.*quantitative|quantitative.*economics/i.test(vn) || /ethics/i.test(vn) || /quantitative/i.test(vn)) {
+		return {
+			roles: 'a professional analyst or portfolio manager applying quantitative or economic analysis in a realistic investment setting',
+			exhibits: `Include at least one of the following exhibits where appropriate:
+- Regression output (coefficients, t-statistics, R-squared, adjusted R-squared, standard errors, p-values, F-statistic)
+- Correlation/covariance matrices
+- Time-series model output (AR, MA, ARCH/GARCH diagnostics)
+- Machine-learning model comparison or model-risk notes
+- Currency parity data (spot rates, forward rates, interest differentials)
+- Inflation, interest rate, or macroeconomic forecasts
+- Analyst statements requiring evaluation for correctness
+- Ethical scenarios involving performance presentation, model disclosure, suitability, confidentiality, or reasonable basis`,
+			questionDesign: `Question design requirements:
+- One question MUST require a calculation from an exhibit (e.g. computing a predicted value from regression, testing significance, or currency arbitrage)
+- One question MUST test interpretation of statistical or economic results (e.g. significance of a coefficient, model validity, economic forecast implication)
+- One question MUST test whether a specific statement or action is correct or incorrect (e.g. analyst statement evaluation, model assumption check)
+- One question may test ethics, model limitations, market expectations, currency parity, or policy interpretation`,
+			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+- Treating correlation as causation
+- Ignoring non-stationarity or serial correlation
+- Using sample R-squared instead of adjusted R-squared
+- Confusing one-tailed and two-tailed tests
+- Misinterpreting p-values or critical values
+- Using the wrong bid/ask side in currency calculations
+- Confusing uncovered interest parity, covered interest parity, purchasing power parity, and the international Fisher effect
+- Failing to distinguish fact from opinion in investment communications
+- Misapplying the duties under the Standards of Professional Conduct`
+		};
+	}
+
+	// Volume 2: Financial Statement Analysis
+	if (/volume\s*2|financial\s*statement/i.test(vn)) {
+		return {
+			roles: 'an equity analyst, credit analyst, or portfolio manager reviewing financial statements, forecasts, or accounting policy choices',
+			exhibits: `Include at least one exhibit with:
+- Financial statement extracts (income statement, balance sheet, cash flow statement)
+- Accounting assumptions or policy notes
+- Reconciliation data (e.g. pension, lease, investment adjustments)
+- Segment or geographic data
+- Ratio computations or comparative financial data
+Acceptable themes: pension accounting, multinational operations and translation, intercorporate investments, business combinations, revenue recognition, quality of earnings, cash flow classification, inventory and long-lived assets, financial statement adjustments for valuation`,
+			questionDesign: `Question design requirements:
+- At least TWO questions MUST require calculations (e.g. adjusting ratios, computing pension cost components, translating financial statements, consolidation entries)
+- At least one question MUST test IFRS vs US GAAP treatment or accounting classification differences
+- At least one question MUST test analytical interpretation — impact on ratios, earnings quality, leverage, cash flow, or comparability`,
+			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+- Using actual return on plan assets instead of interest income/expected return
+- Confusing OCI and profit/loss treatment
+- Using current rate method instead of temporal method (or vice versa)
+- Failing to eliminate intercompany transactions in consolidation
+- Confusing fair value method and equity method
+- Classifying cash flows incorrectly (operating vs investing vs financing)
+- Calculating ratios before making necessary adjustments
+- Misidentifying the remeasurement vs translation approach`
+		};
+	}
+
+	// Volume 3: Corporate Issuers
+	if (/volume\s*3|corporate\s*issuer/i.test(vn)) {
+		return {
+			roles: 'a CFO, corporate finance consultant, board committee member, or analyst evaluating capital structure, payout policy, corporate governance, project financing, capital budgeting, cost of capital, ESG risk, or restructuring',
+			exhibits: `Include at least one exhibit with:
+- Capital structure assumptions (debt/equity weights, costs, tax rates)
+- Debt terms and covenant details
+- Project cash flows and NPV/IRR data
+- Dividend history, repurchase data, or payout assumptions
+- Governance observations, board composition, or ESG metrics
+- Marginal cost of capital schedule`,
+			questionDesign: `Question design requirements:
+- One question MUST calculate cost of equity, WACC, residual dividend, value impact, project NPV, or share repurchase effect
+- One question MUST test a capital structure or payout interpretation (e.g. optimal structure, MM propositions, signalling)
+- One question MUST test governance, stakeholder, ESG, or agency-risk implications
+- One question MUST require selecting the best recommendation based on the data`,
+			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+- Using book-value weights instead of market-value weights for WACC
+- Ignoring tax shields on debt
+- Assuming EPS accretion equals value creation
+- Confusing residual dividend policy with stable dividend policy
+- Ignoring flotation costs or marginal cost of capital
+- Treating governance compliance as value creation without considering substance
+- Confusing static tradeoff theory with pecking order theory`
+		};
+	}
+
+	// Volume 4: Equity Valuation
+	if (/volume\s*4|equity\s*valuation/i.test(vn)) {
+		return {
+			roles: 'an equity analyst valuing a listed company, private company, industry peer group, or cross-border equity',
+			exhibits: `Include at least one exhibit with:
+- Forecast financials (revenue, EBITDA, net income, free cash flow projections)
+- Peer company multiples (P/E, EV/EBITDA, P/B, P/S)
+- Required return inputs (CAPM, build-up, bond yield plus risk premium)
+- Dividend/FCFE/FCFF assumptions and discount rates
+- Residual income model data
+- Industry or sector data for relative valuation`,
+			questionDesign: `Question design requirements:
+- At least TWO questions MUST involve valuation calculations (e.g. DDM, FCFE, FCFF, residual income, justified multiple)
+- One question MUST test model selection: DDM vs FCFE vs FCFF vs residual income vs market multiples vs asset-based vs private-company valuation
+- One question MUST test interpretation of valuation assumptions, sensitivity, control premium, marketability discount, or country risk
+- One question should ask for the conclusion most supported by the data`,
+			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+- Using FCFF discount rate (WACC) for FCFE model (or vice versa)
+- Using trailing instead of forward multiples
+- Double-counting debt in enterprise-to-equity conversion
+- Confusing enterprise value and equity value
+- Ignoring non-operating assets or excess cash
+- Using book value when market value is required
+- Applying a justified multiple with the wrong growth or payout variable
+- Mixing up one-stage and multi-stage model terminal values`
+		};
+	}
+
+	// Volume 5: Fixed Income and Derivatives
+	if (/volume\s*5|fixed\s*income|derivatives/i.test(vn)) {
+		return {
+			roles: 'a credit analyst, bond portfolio manager, derivatives strategist, risk manager, or trader',
+			exhibits: `Include exhibits with:
+- Yield curves (par, spot, forward rates)
+- Bond prices, coupon data, and call/put features
+- Credit spread data, CDS assumptions, transition matrices
+- Duration/convexity scenarios
+- Forward/futures prices and cost-of-carry data
+- Options data (Greeks, payoff tables, binomial trees)
+- Swap terms, notional amounts, and valuation dates
+- Hedging details and strategy descriptions`,
+			questionDesign: `Question design requirements:
+- At least TWO questions MUST require calculations
+- One fixed income question should test valuation, yield spread, duration, convexity, credit risk, or embedded options
+- One derivatives question should test no-arbitrage pricing, valuation, hedging, payoff, swap valuation, or option strategy
+- One question MUST test interpretation of a risk-management recommendation`,
+			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+- Using par value instead of market price in duration calculations
+- Ignoring convexity adjustment for large yield changes
+- Confusing effective duration and modified duration
+- Using yield spread where OAS is required (or vice versa)
+- Confusing price and value of a forward contract
+- Using the wrong sign for a long/short derivative position
+- Applying European option rules to American options without checking early exercise logic
+- Confusing receive-fixed and pay-fixed swap positions
+- Misapplying put-call parity`
+		};
+	}
+
+	// Volume 6: Alternative Investments and Portfolio Management
+	if (/volume\s*6|alternative|portfolio\s*management/i.test(vn)) {
+		return {
+			roles: 'a portfolio manager, allocator, investment committee member, fund-of-funds analyst, REIT analyst, private markets analyst, or risk consultant',
+			exhibits: `Include exhibits with:
+- Real estate data (NOI, cap rates, FFO, AFFO, NAV)
+- Private equity fund data (IRR, TVPI, DPI, vintage year, J-curve)
+- Hedge fund strategies, returns, and risk metrics
+- Commodity futures data (roll yield, spot, forward curves, backwardation/contango)
+- ETF tracking data and fund structure
+- Factor model output (exposures, factor returns, residuals)
+- Active risk, information ratio, Sharpe ratio data
+- Portfolio construction constraints and IPS extracts
+- Performance evaluation and attribution data`,
+			questionDesign: `Question design requirements:
+- At least one question MUST require a real estate, private markets, hedge fund, commodity, or portfolio calculation
+- At least one question MUST test portfolio interpretation — active risk, information ratio, factor exposure, rebalancing, liquidity, or benchmark fit
+- At least one question MUST test suitability or allocation judgment
+- One question should require selecting the recommendation most consistent with the client's objective or risk constraint`,
+			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+- Confusing FFO and AFFO in REIT valuation
+- Using accounting book value instead of NAV
+- Confusing backwardation and contango in commodity markets
+- Assuming higher return always improves suitability without considering risk
+- Using total risk instead of active risk for active management evaluation
+- Confusing factor exposure with alpha
+- Ignoring liquidity constraints in private assets
+- Misinterpreting the J-curve effect in private equity
+- Confusing gross and net IRR`
+		};
+	}
+
+	// Default fallback — generic professional exam quality
+	return {
+		roles: 'a financial professional such as a portfolio manager, equity analyst, credit analyst, CFO, wealth manager, consultant, trader, or risk manager',
+		exhibits: `Include realistic exhibits where appropriate:
+- Financial statements, valuation tables, or ratio computations
+- Regression output, yield curves, or market data
+- Client constraints, analyst notes, or assumptions
+- Any relevant quantitative data in proper HTML table format`,
+		questionDesign: `Question design requirements:
+- At least two questions should require calculations whenever appropriate
+- At least one question should test interpretation of assumptions, recommendations, or professional judgement
+- Questions must assess application, analysis, valuation, judgement, and interpretation — not simple recall`,
+		distractors: `Distractors should represent common CFA calculation and conceptual mistakes — plausible but clearly wrong upon careful analysis`
+	};
+}
+
 export function cmsRouter(prisma) {
 	const router = Router();
 
@@ -2347,17 +2544,25 @@ export function cmsRouter(prisma) {
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 			? isEthics
-				? 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist. This is an ETHICS vignette — it MUST be purely narrative with NO tables, NO exhibits, NO charts. All information must be presented as prose within the passage. Sub-questions should reference specific details from the narrative. 4-5 MCQ sub-questions.'
-				: 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist, multiple financial scenarios, AT LEAST ONE HTML table as a CFA Exhibit, and 4-5 MCQ sub-questions that reference specific exhibits'
+				? 'Vignette / item-set (CFA Level II exam style): 350-650 word case study with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+				: 'Vignette / item-set (CFA Level II exam style): 350-650 word case study with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 			: 'Constructed response (written answer requiring calculations or explanations)';
 		const difficultyLabel = diffList.join(', ');
 		const curriculumSection = curriculumExcerpt
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
 			: '';
-		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions in JSON format.
+		const volPrompt = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName) : null;
+		const prompt = `You are a senior Vignette MCQ exam writer and curriculum expert.
+Generate ORIGINAL CFA Level II exam-style item sets that DO NOT copy, paraphrase, or imitate CFA Institute, Kaplan, Wiley, Schweser, Fitch, Mark Meldrum, AnalystPrep, Salt Solutions, or any third-party material.
+Generate professional, exam-quality questions in JSON format.
 
-Draw directly from past CFA exam question styles and real-world financial scenarios. Questions must be precise, unambiguous, and test genuine understanding.
-ALL metadata fields below are REQUIRED - always populate every single one to help students during revision.
+CORE QUALITY REQUIREMENTS:
+- Professional exam quality — the finished item set must read like a real CFA Level II examination
+- Questions must assess application, analysis, valuation, judgement, and interpretation — NOT simple recall
+- Avoid trick questions
+- Avoid "All of the above" and "None of the above"
+- Numerical answers must reconcile exactly with the worked solution
+- ALL metadata fields below are REQUIRED — always populate every single one to help students during revision
 For VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles: a single case study/vignette may span MULTIPLE learning modules, topics, or concepts within the same volume. Sub-questions should draw from different topics/concepts where appropriate to create a rich, integrative scenario.
 ${curriculumExcerpt ? `CRITICAL — CURRICULUM DOCUMENT RULES:
 A curriculum reference document has been provided below. You MUST:
@@ -2375,23 +2580,29 @@ A curriculum reference document has been provided below. You MUST:
 6. Questions that involve calculations MUST use the exact formulas from the document with correct variable names.` : ''}
 
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles):
-- The vignetteText MUST be 400-600 words — long, rich, CFA-exam-quality narrative
-- Introduce a named protagonist (e.g. "Rebecca Jones is a financial advisor at Apex Capital Management. She is evaluating...")
+- The vignetteText MUST be 350-650 words — long, rich, CFA-exam-quality narrative
+- Total question value: 12 points (4 sub-questions × 3 marks each)
+- Introduce a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional such as a portfolio manager, equity analyst, credit analyst, CFO, wealth manager, consultant, trader, or risk manager'}
+- Use a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style)
+- All information required to answer the questions must be contained within the vignette
 - Present multiple related financial scenarios, each with specific data, dates, company names
-- Open the vignetteText with: "<p><strong>TOPIC: [TOPIC NAME]</strong></p><p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS [N] POINTS</strong></p>"
-${isEthics ? `- ETHICS VIGNETTE RULE: Because this is an ETHICS topic, the vignette MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines, data points) must be woven naturally into the prose paragraph text. Sub-questions should reference specific details from the narrative (e.g. "Regarding Jones's recommendation to the board...").` : `- VARY THE EXHIBIT FORMAT across case studies — do NOT give every case study a table. Distribute formats roughly equally:
-  FORMAT A — TABLE: Include 1-2 HTML tables as CFA Exhibits with realistic financial data.
-    CRITICAL TABLE STYLING: All tables MUST use SOLID borders only — never dashed, dotted, or broken lines. NEVER use markdown pipe tables (| col | col |) or ASCII tables — ONLY use HTML <table> tags.
-    Use this EXACT format (do not modify the style attributes):
-    <p><strong>Exhibit 1</strong></p>
-    <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;border:1px solid #000;"><thead><tr><th style="border:1px solid #000;padding:6px;">Column</th><th style="border:1px solid #000;padding:6px;">Column</th></tr></thead><tbody><tr><td style="border:1px solid #000;padding:6px;">Value</td><td style="border:1px solid #000;padding:6px;">Value</td></tr></tbody></table>
-    Every <th> and <td> MUST have inline style="border:1px solid #000;padding:6px;" — this guarantees solid borders in all renderings. NEVER use border-style:dashed or border-style:dotted.
-  FORMAT B — NARRATIVE ONLY: No exhibit element — all data (specific numbers, ratios, dates, company names) must be woven naturally and richly into the prose. Sub-questions reference the narrative directly.
-  FORMAT C — CHART: Include a text-based chart or graph as a CFA Exhibit using a <pre> block:
-    <p><strong>Exhibit 1 – [Chart Title]</strong></p>
-    <pre style="font-family:monospace;font-size:12px;background:#f8f8f8;padding:8px;border-radius:4px;">[ASCII bar chart, trend line, or labelled data series with specific values]</pre>
-    Chart must show meaningful financial data (e.g. portfolio return over quarters, yield curve points, performance attribution bars)`}
+- Open the vignetteText with: "<p><strong>TOPIC: [TOPIC NAME]</strong></p><p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
+${isEthics ? `- ETHICS VIGNETTE RULE: Because this is an ETHICS topic, the vignette MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines, data points) must be woven naturally into the prose paragraph text. Sub-questions should reference specific details from the narrative (e.g. "Regarding Jones's recommendation to the board...").` : `- EXHIBIT REQUIREMENTS:
+${volPrompt ? volPrompt.exhibits : `Include realistic exhibits where appropriate: financial statements, regression output, yield curves, valuation tables, client constraints, analyst notes, assumptions, market data.`}
+  CRITICAL TABLE STYLING: All tables MUST use SOLID borders only — never dashed, dotted, or broken lines. NEVER use markdown pipe tables (| col | col |) or ASCII tables — ONLY use HTML <table> tags.
+  Use this EXACT format (do not modify the style attributes):
+  <p><strong>Exhibit 1</strong></p>
+  <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;border:1px solid #000;"><thead><tr><th style="border:1px solid #000;padding:6px;">Column</th><th style="border:1px solid #000;padding:6px;">Column</th></tr></thead><tbody><tr><td style="border:1px solid #000;padding:6px;">Value</td><td style="border:1px solid #000;padding:6px;">Value</td></tr></tbody></table>
+  Every <th> and <td> MUST have inline style="border:1px solid #000;padding:6px;"
+  Also supported: <pre> blocks for regression output, ASCII charts, or structured data where a table format is not appropriate.`}
 - Sub-questions must reference specific exhibits or narrative sections (e.g. "Based on Exhibit 1..." or "Regarding Jones's evaluation of...")
+${volPrompt ? `
+VOLUME-SPECIFIC QUESTION DESIGN:
+${volPrompt.questionDesign}
+
+VOLUME-SPECIFIC DISTRACTOR RULES:
+${volPrompt.distractors}
+` : ''}
 
 Context:
 - Course: ${course.name}
@@ -2428,7 +2639,16 @@ For EVERY question (numerical OR text-based):
 10. RANDOMIZATION CHECK: Before finalizing, count how many questions have A correct, B correct, C correct. If any letter has more than 50% of the correct answers, redistribute by reordering options in some questions.
 Violating this rule produces hallucinated answers that damage student trust. Accuracy is mandatory.
 
-For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of 4-5 MCQ sub-questions }. EVERY sub-question MUST include ALL these fields: "stem", "options", "qid", "los", "traceSection", "tracePage", "keyFormulas", "workedSolution", "explanation". These fields are REQUIRED on each sub-question — not just on the parent.
+For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vignetteText": string, "questions": array of EXACTLY 4 MCQ sub-questions }. EVERY sub-question MUST include ALL these fields: "stem", "options", "qid", "los", "traceSection", "tracePage", "keyFormulas", "workedSolution", "explanation". These fields are REQUIRED on each sub-question — not just on the parent.
+VIGNETTE MCQ QUALITY RULES:
+- Exactly FOUR multiple-choice questions per vignette, three answer choices only (A, B, C)
+- Total question value: 12 points
+- Approximately 350–650 word vignette
+- All information required to answer must be contained within the vignette
+- At least two questions should require calculations whenever the topic allows
+- At least one question should test interpretation of assumptions, recommendations, or professional judgement
+- Distractors should represent common CFA mistakes — NOT trick answers
+- After the questions, provide: answer key, full solution, formula used, explanation of each incorrect answer
 MATH IN vignetteText: If the vignetteText contains any mathematical expressions, formulas, or variables, ALWAYS wrap them in LaTeX delimiters \\\\( ... \\\\). NEVER put raw LaTeX like \\times, CF_{SGD}, e^{-r} in prose without delimiters.
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
@@ -2437,10 +2657,10 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
-				temperature: 0.4,
+				temperature: 0.5,
 				response_format: { type: 'json_object' }
 			});
 			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
@@ -2990,8 +3210,8 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 				? isEthics
-					? 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist. This is an ETHICS vignette — it MUST be purely narrative with NO tables, NO exhibits, NO charts, NO <table> tags, NO <pre> tags. All information must be presented as prose within the passage. 4-5 MCQ sub-questions referencing narrative details.'
-					: 'Vignette / item-set (CFA exam style): a long, rich case study passage (400-600 words) with a named protagonist (financial analyst/advisor), multiple financial scenarios, and at least one HTML data table formatted as a CFA Exhibit. Sub-questions reference specific exhibits and test different aspects of the scenario. Each sub-question has exactly 3 MCQ options.'
+					? 'Vignette / item-set (CFA Level II exam style): 350-650 word case study with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+					: 'Vignette / item-set (CFA Level II exam style): 350-650 word case study with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 				: isConstructedBundle
 					? isEthics
 						? 'Constructed response case study: a detailed realistic scenario/case study passage (400-600 words) with a named protagonist. This is an ETHICS case study — PURELY NARRATIVE, NO tables, NO exhibits, NO charts. Followed by multiple constructed-response sub-questions requiring analysis or written explanations.'
@@ -3043,18 +3263,16 @@ ${metaFieldsBlock}`;
 
 Each object in "items" MUST follow this structure:
 {
-  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (400-600 words). Requirements:
+  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (350-650 words). Requirements:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
-    • Introduce a named protagonist with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
+    • Introduce a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional'} with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
+    • All information required to answer the questions MUST be contained within the vignette
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
-    • MATH FORMATTING: If the vignetteText contains ANY mathematical expressions, formulas, variables, or equations, wrap them in LaTeX delimiters \\( ... \\). For example: "The value is \\( V = CF_{SGD} \\times e^{-r_{SGD}T} \\)" — NEVER put raw LaTeX like \times, CF_{SGD}, e^{-r} directly in prose without \\( \\) delimiters. Variable definitions should also use \\( ... \\) for the variable symbol, e.g. "where \\( CF_{SGD} \\) = Cash Flow in SGD"
-    • TABLE FORMATTING: When including tables in vignetteText, ALWAYS use proper HTML <table> tags with <thead>, <tbody>, <tr>, <th>, <td>. Style with border-collapse. NEVER use markdown pipe tables (| col1 | col2 |), ASCII tables, or <pre> blocks for tabular data. Example: <table style="border-collapse:collapse;width:100%"><thead><tr><th style="border:1px solid #ccc;padding:6px">Parameter</th><th style="border:1px solid #ccc;padding:6px">Value</th></tr></thead><tbody><tr><td style="border:1px solid #ccc;padding:6px">Rate</td><td style="border:1px solid #ccc;padding:6px">5%</td></tr></tbody></table>
-${isEthics ? `    • ETHICS TOPIC: This is an ETHICS vignette — it MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines) must be woven naturally into prose paragraphs. No Exhibit labels.` : `    • IMPORTANT — VARY THE EXHIBIT FORMAT across case studies. Do NOT always use tables. Mix approaches:
-      FORMAT A (TABLE): Include 1-2 HTML tables as CFA Exhibits (use this for ~40% of case studies)
-      FORMAT B (NARRATIVE ONLY): No exhibit at all — weave ALL specific numbers, ratios, dates, names richly into the prose only. Sub-questions reference the narrative directly. (use this for ~30% of case studies)
-      FORMAT C (CHART/GRAPH): Include a text-based chart as a CFA Exhibit using <pre> with ASCII/labelled data (use this for ~30% of case studies)
-    • The passage should weave naturally between narrative context and any numerical exhibits
-    • Different case studies MUST use different formats — do not repeat the same format for every case study`}
+    • MATH FORMATTING: If the vignetteText contains ANY mathematical expressions, formulas, variables, or equations, wrap them in LaTeX delimiters \\( ... \\). For example: "The value is \\( V = CF_{SGD} \\times e^{-r_{SGD}T} \\)" — NEVER put raw LaTeX like \\times, CF_{SGD}, e^{-r} directly in prose without \\( \\) delimiters.
+    • TABLE FORMATTING: When including tables in vignetteText, ALWAYS use proper HTML <table> tags with <thead>, <tbody>, <tr>, <th>, <td>. Every <th> and <td> MUST have inline style="border:1px solid #000;padding:6px;". NEVER use markdown pipe tables or ASCII tables.
+${isEthics ? `    • ETHICS TOPIC: This is an ETHICS vignette — it MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines) must be woven naturally into prose paragraphs. No Exhibit labels.` : `    • EXHIBIT REQUIREMENTS:
+${volPrompt ? volPrompt.exhibits : `Include realistic exhibits where appropriate: financial statements, regression output, yield curves, valuation tables, client constraints, analyst notes, assumptions, market data.`}
+      Also supported: <pre> blocks for regression output, ASCII charts, or structured data where a table format is not appropriate.`}
   "questions": array of EXACTLY 4 MCQ sub-questions (no more, no less). Each sub-question MUST:
     • Reference specific information ${isEthics ? 'from the narrative passage' : 'or exhibit data from the vignetteText'} (e.g. ${isEthics ? '"Regarding Jones\'s recommendation to the board..."' : '"Based on Exhibit 1..." or "Regarding Jones\'s evaluation of XYZ..."'})
     • Have "stem": string, "options": exactly 3 objects { "text": string, "isCorrect": boolean } with exactly ONE correct
@@ -3062,6 +3280,15 @@ ${isEthics ? `    • ETHICS TOPIC: This is an ETHICS vignette — it MUST be PU
     • Each sub-question is worth 3 marks (do NOT include a "marks" field for vignette MCQ sub-questions)
 ${selectedTopics.length > 1 ? `    • TOPIC DISTRIBUTION: The selected topics are [${selectedTopics.map(t => t.name).join(', ')}]. You MUST spread these topics equally across the 4 sub-questions. Each sub-question should test a different topic from this list. Assign topics round-robin so all selected topics are covered.
 ` : ''}
+${volPrompt ? `    • VOLUME-SPECIFIC QUESTION DESIGN:
+${volPrompt.questionDesign}
+
+    • VOLUME-SPECIFIC DISTRACTORS:
+${volPrompt.distractors}
+` : `    • At least two questions should require calculations whenever appropriate
+    • At least one question should test interpretation of assumptions, recommendations, or professional judgement
+    • Distractors should represent common CFA mistakes — NOT trick answers
+`}
     • CRITICAL — ANSWER CONSISTENCY RULE (MUST FOLLOW):
       For EVERY sub-question (numerical OR text-based):
       1. FIRST complete the worked solution, compute the final answer or conclusion.
@@ -3071,6 +3298,7 @@ ${selectedTopics.length > 1 ? `    • TOPIC DISTRIBUTION: The selected topics a
       5. For comparison questions: the workedSolution must explicitly state which wins, and THAT must be marked correct.
       6. RANDOMIZATION CHECK: Across the 4 sub-questions, ensure at least 2 different positions (A/B/C) are used for correct answers. If all correct answers are in the same position, reorder the options.
     • EVERY sub-question MUST include ALL metadata fields listed below (los, traceSection, tracePage, keyFormulas, workedSolution, explanation). These are REQUIRED on EACH sub-question individually — students need them for revision.
+    • Each "explanation" MUST include: (1) the answer key, (2) full solution, (3) formula used, (4) explanation of why EACH incorrect answer is wrong, (5) key concepts tested.
 }
 
 ${metaFieldsBlock}`;
@@ -3143,23 +3371,41 @@ ${metaFieldsBlock}`;
 		const previewCurriculumSection = previewCurriculumExcerpt
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${previewCurriculumExcerpt}\n---\n`
 			: '';
-		const prompt = `You are a senior CFA exam question writer and curriculum expert. Generate professional, exam-quality questions that could appear on actual CFA Level I, II, or III examinations.
+		const volPrompt = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName) : null;
+		const prompt = `You are a senior Vignette MCQ exam writer and curriculum expert.
+Generate ORIGINAL CFA Level II exam-style item sets that DO NOT copy, paraphrase, or imitate CFA Institute, Kaplan, Wiley, Schweser, Fitch, Mark Meldrum, AnalystPrep, Salt Solutions, or any third-party material.
+Generate professional, exam-quality questions in JSON format.
 
-IMPORTANT GUIDELINES:
-- Draw directly from past CFA exam question styles and real-world financial scenarios
-- Questions must be precise, unambiguous, and test genuine understanding — not memorization
+CORE QUALITY REQUIREMENTS:
+- Professional exam quality — the finished item set must read like a real CFA Level II examination
+- Questions must assess application, analysis, valuation, judgement, and interpretation — NOT simple recall
+- Avoid trick questions
+- Avoid "All of the above" and "None of the above"
+- Numerical answers must reconcile exactly with the worked solution
 - Include realistic numerical examples, UNIQUE fictional company names (invent fresh names each time — NEVER reuse Apex Capital, Meridian Asset Management, or any previously used names), market scenarios, and specific dates
 - For calculations, ALWAYS provide the key formulas and a detailed step-by-step worked solution — this is critical for student revision
 - Each question should test a specific learning outcome related to the topic
-- Vary the difficulty: EASY = straightforward recall/application; MEDIUM = multi-step analysis; HARD = complex scenario requiring synthesis of multiple concepts
+- Vary the difficulty: MODERATE = multi-step analysis; DIFFICULT = complex scenario requiring synthesis; VERY DIFFICULT = integrative scenario with multiple concepts
 - ALL metadata fields below are REQUIRED — populate every single one to help students during revision
 - For VIGNETTE_MCQ or CONSTRUCTED_RESPONSE bundles:
-  * The vignette MUST be 400–600 words — rich, narrative, CFA-exam-quality
-  * Use a named protagonist with a UNIQUE randomly generated name and company — NEVER repeat names like Sarah Chen, Apex Capital, or Meridian Asset Management. Each case study MUST have completely different character and firm names. Vary ethnicity, gender, and company naming style
+  * The vignette MUST be 350–650 words — rich, narrative, CFA-exam-quality
+  * Total question value: 12 points (4 sub-questions × 3 marks each)
+  * Use a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional such as a portfolio manager, equity analyst, credit analyst, CFO, wealth manager, consultant, trader, or risk manager'}
+  * Use a UNIQUE randomly generated name and company — NEVER repeat names like Sarah Chen, Apex Capital, or Meridian Asset Management. Each case study MUST have completely different character and firm names. Vary ethnicity, gender, and company naming style
+  * All information required to answer the questions must be contained within the vignette
   * Include multiple related financial scenarios and data points within the passage
-${isEthics ? `  * ETHICS TOPIC RULE: Because this is an ETHICS topic, ALL vignettes MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information must be woven naturally into prose paragraphs. Sub-questions reference narrative details directly.` : `  * VARY exhibit formats across case studies: some with HTML tables, some narrative-only (no exhibits), some with text-based charts. Do NOT use tables in every single case study — mix approaches for realism`}
+${isEthics ? `  * ETHICS TOPIC RULE: Because this is an ETHICS topic, ALL vignettes MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information must be woven naturally into prose paragraphs. Sub-questions reference narrative details directly.` : `  * EXHIBIT REQUIREMENTS:
+${volPrompt ? volPrompt.exhibits : `Include realistic exhibits where appropriate: financial statements, regression output, yield curves, valuation tables, client constraints, analyst notes, assumptions, market data.`}
+  CRITICAL TABLE STYLING: All tables MUST use SOLID borders only — never dashed, dotted, or broken lines. NEVER use markdown pipe tables (| col | col |) or ASCII tables — ONLY use HTML <table> tags. Every <th> and <td> MUST have inline style="border:1px solid #000;padding:6px;"`}
   * Sub-questions should reference specific exhibits or narrative details by name and test different aspects of the scenario
   * Open the vignetteText with the Volume name header: "<p><strong>${volumeName}</strong></p>"
+${volPrompt ? `
+VOLUME-SPECIFIC QUESTION DESIGN:
+${volPrompt.questionDesign}
+
+VOLUME-SPECIFIC DISTRACTOR RULES:
+${volPrompt.distractors}
+` : ''}
 ${previewCurriculumExcerpt ? `CRITICAL — CURRICULUM DOCUMENT RULES:
 A curriculum reference document has been provided below. You MUST:
 1. BASE every question on the content, terminology, and examples from this document.
@@ -3196,10 +3442,10 @@ ${formatBlock}`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are an expert CFA curriculum and exam question writer. You produce high-quality, exam-standard questions. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
-				temperature: 0.4,
+				temperature: 0.5,
 				response_format: { type: 'json_object' }
 			});
 			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
