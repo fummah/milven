@@ -2632,7 +2632,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.` },
+					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
@@ -3195,6 +3195,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 - "keyFormulas": string (key formula(s) using VALID LaTeX — e.g. "\\( PV = \\frac{CF_1}{(1+r)^{1}} + \\frac{CF_2}{(1+r)^{2}} \\)", "\\( WACC = w_{d} \\cdot r_{d} \\cdot (1-t) + w_{e} \\cdot r_{e} \\)". Use \\frac, \\sigma, \\beta, \\alpha etc. ALL braces must be balanced. Include variable definitions.)
 - "workedSolution": string (step-by-step worked solution using valid LaTeX for all math — be thorough so students can learn from it)
 - "explanation": string (concise explanation of why the answer is correct and common mistakes to avoid)`;
+		const volPrompt = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName) : null;
 
 		let formatBlock;
 		if (questionType === 'MCQ') {
@@ -3336,7 +3337,6 @@ ${metaFieldsBlock}`;
 		const previewCurriculumSection = previewCurriculumExcerpt
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${previewCurriculumExcerpt}\n---\n`
 			: '';
-		const volPrompt = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName) : null;
 		const prompt = `You are a senior CFA Level II exam writer. Generate ORIGINAL exam-quality questions in JSON format. DO NOT copy third-party material.
 
 CORE REQUIREMENTS:
