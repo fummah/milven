@@ -740,7 +740,7 @@ function renderProseSegment(prose) {
 	// - \frac{...}{...} (with optional trailing = number)
 	// - \sqrt{...} (with optional trailing = number)
 	// Does NOT capture leading prose — only the math command and its arguments.
-	const inlineLatexPattern = /\\(?:frac|dfrac|tfrac|cfrac)\{[^}]*\}\{[^}]*\}(?:\s*=\s*[0-9.,]+)?|\\sqrt\{[^}]*\}(?:\s*=\s*[0-9.,]+)?/g;
+	const inlineLatexPattern = /\\(?:frac|dfrac|tfrac|cfrac)\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}(?:\s*=\s*[0-9.,]+)?|\\sqrt\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}(?:\s*=\s*[0-9.,]+)?/g;
 
 	let result = '';
 	let idx = 0;
@@ -762,7 +762,7 @@ function renderProseSegment(prose) {
 			});
 		} catch {
 			// If KaTeX fails on the full match, try just the \frac/\sqrt part
-			const cmdMatch = expr.match(/\\(?:frac|sqrt|dfrac|tfrac|cfrac)\{[^}]*\}(?:\{[^}]*\})?/);
+			const cmdMatch = expr.match(/\\(?:frac|sqrt|dfrac|tfrac|cfrac)\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})?/);
 			if (cmdMatch) {
 				const beforeCmd = expr.slice(0, expr.indexOf(cmdMatch[0]));
 				const afterCmd = expr.slice(expr.indexOf(cmdMatch[0]) + cmdMatch[0].length);

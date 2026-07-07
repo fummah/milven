@@ -2547,8 +2547,8 @@ export function cmsRouter(prisma) {
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 			? isEthics
-				? 'Vignette / item-set (CFA Level II exam style): 350-650 word case study with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
-				: 'Vignette / item-set (CFA Level II exam style): 350-650 word case study with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
+				? 'Vignette / item-set (CFA Level II exam style): 350-600 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+				: 'Vignette / item-set (CFA Level II exam style): 350-600 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 			: 'Constructed response (written answer requiring calculations or explanations)';
 		const difficultyLabel = diffList.join(', ');
 		const curriculumSection = curriculumExcerpt
@@ -2565,7 +2565,7 @@ CORE REQUIREMENTS:
 - ALL metadata fields below are REQUIRED
 
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
-- 350–650 word vignette, 4 sub-questions (3 marks each), total 12 points
+- 350–600 word vignette, 4 sub-questions (3 marks each), total 12 points
 - Protagonist: ${volPrompt ? volPrompt.roles : 'a financial professional'}
 - UNIQUE randomly generated name and company — NEVER repeat names
 - All information required to answer must be in the vignette
@@ -2618,7 +2618,7 @@ For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vigne
 VIGNETTE MCQ QUALITY RULES:
 - Exactly FOUR multiple-choice questions per vignette, three answer choices only (A, B, C)
 - Total question value: 12 points
-- Approximately 350–650 word vignette
+- Approximately 350–600 word vignette
 - All information required to answer must be contained within the vignette
 - At least two questions should require calculations whenever the topic allows
 - At least one question should test interpretation of assumptions, recommendations, or professional judgement
@@ -3175,8 +3175,8 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 				? isEthics
-					? 'Vignette / item-set (CFA Level II exam style): 350-650 word case study with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
-					: 'Vignette / item-set (CFA Level II exam style): 350-650 word case study with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
+					? 'Vignette / item-set (CFA Level II exam style): 350-600 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+					: 'Vignette / item-set (CFA Level II exam style): 350-600 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 				: isConstructedBundle
 					? isEthics
 						? 'Constructed response case study: a detailed realistic scenario/case study passage (400-600 words) with a named protagonist. This is an ETHICS case study — PURELY NARRATIVE, NO tables, NO exhibits, NO charts. Followed by multiple constructed-response sub-questions requiring analysis or written explanations.'
@@ -3229,7 +3229,7 @@ ${metaFieldsBlock}`;
 
 Each object in "items" MUST follow this structure:
 {
-  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (350-650 words). Requirements:
+  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (350-600 words). Requirements:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
     • Introduce a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional'} with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
     • All information required to answer the questions MUST be contained within the vignette
