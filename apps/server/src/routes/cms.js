@@ -2563,7 +2563,7 @@ export function cmsRouter(prisma) {
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
 			: '';
 		const volPrompt = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName) : null;
-		const prompt = `You are a senior CFA Level II exam writer. Generate ORIGINAL exam-quality questions in JSON format. DO NOT copy third-party material.
+		const prompt = `You are a senior CFA Level II exam writer. Generate ORIGINAL exam-quality questions in JSON format. DO NOT copy third-party material..
 
 CORE REQUIREMENTS:
 - Professional exam quality — assess application, analysis, valuation, judgement
@@ -3345,6 +3345,8 @@ ${metaFieldsBlock}`;
 		const previewCurriculumSection = previewCurriculumExcerpt
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${previewCurriculumExcerpt}\n---\n`
 			: '';
+			const testVol = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName) : null;
+	
 		const prompt = `You are a senior CFA Level II exam writer. Generate ORIGINAL exam-quality questions in JSON format. DO NOT copy third-party material.
 
 CORE REQUIREMENTS:
@@ -3353,6 +3355,15 @@ CORE REQUIREMENTS:
 - Numerical answers must match worked solution exactly
 - Use UNIQUE fictional company names (invent fresh names each time)
 - ALL metadata fields below are REQUIRED
+VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
+- 350–600 word vignette, 4 sub-questions (3 marks each), total 12 points
+- Protagonist: ${testVol ? testVol.roles : 'a financial professional'}
+- UNIQUE randomly generated name and company — NEVER repeat names
+- All information required to answer must be in the vignette
+${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
+- Tables MUST use HTML with style="border:1px solid #000;padding:6px;" — NO markdown pipe tables`}
+${testVol ? `${testVol.questionDesign}\n${testVol.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
+
 ${previewCurriculumExcerpt ? `CURRICULUM DOCUMENT RULES:
 1. "los": Copy EXACT Learning Outcome Statement from document (verbs: describe, explain, calculate, etc.)
 2. "tracePage": Use EXACT page from [PAGE N] markers (e.g. "p. 145")
