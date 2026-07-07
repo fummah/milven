@@ -20,6 +20,7 @@ function getVolumeVignettePrompt(volumeName) {
 
 	// Volume 1: Ethics, Quantitative Methods, and Economics
 	if (/volume\s*1|ethics.*quantitative|quantitative.*economics/i.test(vn) || /ethics/i.test(vn) || /quantitative/i.test(vn)) {
+		console.log('----->',1);
 		return {
 			roles: 'a professional analyst or portfolio manager applying quantitative or economic analysis in a realistic investment setting',
 			exhibits: `Include at least one of the following exhibits where appropriate:
@@ -51,6 +52,7 @@ function getVolumeVignettePrompt(volumeName) {
 
 	// Volume 2: Financial Statement Analysis
 	if (/volume\s*2|financial\s*statement/i.test(vn)) {
+		console.log('----->',2);
 		return {
 			roles: 'an equity analyst, credit analyst, or portfolio manager reviewing financial statements, forecasts, or accounting policy choices',
 			exhibits: `Include at least one exhibit with:
@@ -78,6 +80,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 
 	// Volume 3: Corporate Issuers
 	if (/volume\s*3|corporate\s*issuer/i.test(vn)) {
+		console.log('----->',3);
 		return {
 			roles: 'a CFO, corporate finance consultant, board committee member, or analyst evaluating capital structure, payout policy, corporate governance, project financing, capital budgeting, cost of capital, ESG risk, or restructuring',
 			exhibits: `Include at least one exhibit with:
@@ -105,6 +108,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 
 	// Volume 4: Equity Valuation
 	if (/volume\s*4|equity\s*valuation/i.test(vn)) {
+		console.log('----->',4);
 		return {
 			roles: 'an equity analyst valuing a listed company, private company, industry peer group, or cross-border equity',
 			exhibits: `Include at least one exhibit with:
@@ -129,10 +133,12 @@ Acceptable themes: pension accounting, multinational operations and translation,
 - Applying a justified multiple with the wrong growth or payout variable
 - Mixing up one-stage and multi-stage model terminal values`
 		};
+
 	}
 
 	// Volume 5: Fixed Income and Derivatives
 	if (/volume\s*5|fixed\s*income|derivatives/i.test(vn)) {
+		console.log('----->',5);
 		return {
 			roles: 'a credit analyst, bond portfolio manager, derivatives strategist, risk manager, or trader',
 			exhibits: `Include exhibits with:
@@ -164,6 +170,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 
 	// Volume 6: Alternative Investments and Portfolio Management
 	if (/volume\s*6|alternative|portfolio\s*management/i.test(vn)) {
+		console.log('----->',6);
 		return {
 			roles: 'a portfolio manager, allocator, investment committee member, fund-of-funds analyst, REIT analyst, private markets analyst, or risk consultant',
 			exhibits: `Include exhibits with:
@@ -194,6 +201,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 		};
 	}
 
+	console.log('----->',99);
 	// Default fallback — generic professional exam quality
 	return {
 		roles: 'a financial professional such as a portfolio manager, equity analyst, credit analyst, CFO, wealth manager, consultant, trader, or risk manager',
@@ -3366,6 +3374,10 @@ traceSection MUST match the assigned topic (e.g. "Standard I" topic → "Standar
 ${formatBlock}`;
 
 		try {
+			console.log([
+					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.` },
+					{ role: 'user', content: prompt }
+				]);
 			console.log('[AI Preview] Starting OpenAI call for questionType:', questionType);
 			const openai = new OpenAI({ apiKey, timeout: 120000 });
 			const completion = await openai.chat.completions.create({
