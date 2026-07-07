@@ -2577,6 +2577,13 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
 - Protagonist: ${volPrompt ? volPrompt.roles : 'a financial professional'}
 - UNIQUE randomly generated name and company — NEVER repeat names
 - All information required to answer must be in the vignette
+Before producing your final VIGNETTE JSON:
+- Count the words in vignetteText only.
+- If fewer than 350 words, continue expanding the case study.
+- If more than 600 words, shorten it.
+- Do not count the questions or explanations.
+- Return the JSON only after vignetteText is between 350 and 600 words.
+
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
 - Tables MUST use HTML with style="border:1px solid #000;padding:6px;" — NO markdown pipe tables`}
 ${volPrompt ? `${volPrompt.questionDesign}\n${volPrompt.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
@@ -3360,6 +3367,13 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
 - Protagonist: ${testVol ? testVol.roles : 'a financial professional'}
 - UNIQUE randomly generated name and company — NEVER repeat names
 - All information required to answer must be in the vignette
+Before producing your final VIGNETTE JSON:
+- Count the words in vignetteText only.
+- If fewer than 350 words, continue expanding the case study.
+- If more than 600 words, shorten it.
+- Do not count the questions or explanations.
+- Return the JSON only after vignetteText is between 350 and 600 words.
+
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
 - Tables MUST use HTML with style="border:1px solid #000;padding:6px;" — NO markdown pipe tables`}
 ${testVol ? `${testVol.questionDesign}\n${testVol.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
