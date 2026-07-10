@@ -2555,8 +2555,8 @@ export function cmsRouter(prisma) {
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 			? isEthics
-				? 'Vignette / item-set (CFA Level II exam style): 350-600 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
-				: 'Vignette / item-set (CFA Level II exam style): 350-600 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
+				? 'Vignette / item-set (CFA Level II exam style): 450-700 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+				: 'Vignette / item-set (CFA Level II exam style): 450-700 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 			: 'Constructed response (written answer requiring calculations or explanations)';
 		const difficultyLabel = diffList.join(', ');
 		const curriculumSection = curriculumExcerpt
@@ -2573,16 +2573,20 @@ CORE REQUIREMENTS:
 - ALL metadata fields below are REQUIRED
 
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
-- 350–600 word vignette, 4 sub-questions (3 marks each), total 12 points
+- 450–700 word vignette, 4 sub-questions (3 marks each), total 12 points
 - Protagonist: ${volPrompt ? volPrompt.roles : 'a financial professional'}
 - UNIQUE randomly generated name and company — NEVER repeat names
 - All information required to answer must be in the vignette
+- Generate ONE realistic business scenario.
+- Generate all exhibits where necessary
+- Never create questions before the vignette is complete.
+- Do NOT shorten vignette.
 Before producing your final VIGNETTE JSON:
 - Count the words in vignetteText only.
-- If fewer than 350 words, continue expanding the case study.
-- If more than 600 words, shorten it.
+- If fewer than 450 words, continue expanding the case study.
+- If more than 700 words, shorten it.
 - Do not count the questions or explanations.
-- Return the JSON only after vignetteText is between 350 and 600 words.
+- Return the JSON only after vignetteText is between 450 and 700 words.
 
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
 - Tables MUST use HTML with style="border:1px solid #000;padding:6px;" — NO markdown pipe tables`}
@@ -2633,7 +2637,7 @@ For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vigne
 VIGNETTE MCQ QUALITY RULES:
 - Exactly FOUR multiple-choice questions per vignette, three answer choices only (A, B, C)
 - Total question value: 12 points
-- Approximately 350–600 word vignette
+- Approximately 450–700 word vignette
 - All information required to answer must be contained within the vignette
 - At least two questions should require calculations whenever the topic allows
 - At least one question should test interpretation of assumptions, recommendations, or professional judgement
@@ -3190,12 +3194,12 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 				? isEthics
-					? 'Vignette / item-set (CFA Level II exam style): 350-600 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
-					: 'Vignette / item-set (CFA Level II exam style): 350-600 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
+					? 'Vignette / item-set (CFA Level II exam style): 450-700 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+					: 'Vignette / item-set (CFA Level II exam style): 450-700 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 				: isConstructedBundle
 					? isEthics
-						? 'Constructed response case study: a detailed realistic scenario/case study passage (400-600 words) with a named protagonist. This is an ETHICS case study — PURELY NARRATIVE, NO tables, NO exhibits, NO charts. Followed by multiple constructed-response sub-questions requiring analysis or written explanations.'
-						: 'Constructed response case study: a detailed realistic scenario/case study passage (400-600 words) with a named protagonist and at least one HTML data table as an Exhibit, followed by multiple constructed-response sub-questions requiring calculations, analysis, or written explanations'
+						? 'Constructed response case study: a detailed realistic scenario/case study passage (400-700 words) with a named protagonist. This is an ETHICS case study — PURELY NARRATIVE, NO tables, NO exhibits, NO charts. Followed by multiple constructed-response sub-questions requiring analysis or written explanations.'
+						: 'Constructed response case study: a detailed realistic scenario/case study passage (400-700 words) with a named protagonist and at least one HTML data table as an Exhibit, followed by multiple constructed-response sub-questions requiring calculations, analysis, or written explanations'
 					: 'Constructed response (written answer requiring calculations or explanations)';
 		const conceptLabel = selectedConcepts.length > 0 ? selectedConcepts.map(c => c.name).join(', ') : 'All concepts under the selected topics';
 		const difficultyLabel = diffList.join(', ');
@@ -3244,7 +3248,7 @@ ${metaFieldsBlock}`;
 
 Each object in "items" MUST follow this structure:
 {
-  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (350-600 words). Requirements:
+  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (450-700 words). Requirements:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
     • Introduce a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional'} with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
     • All information required to answer the questions MUST be contained within the vignette
@@ -3289,7 +3293,7 @@ ${metaFieldsBlock}`;
 
 Each object in "items" MUST follow this structure:
 {
-  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (400-600 words). Requirements:
+  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (400-700 words). Requirements:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
     • Introduce a named protagonist with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Michael Torres, Rebecca Jones, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]..."
     • Present multiple related financial scenarios with specific data, dates, company names, and context
@@ -3363,16 +3367,20 @@ CORE REQUIREMENTS:
 - Use UNIQUE fictional company names (invent fresh names each time)
 - ALL metadata fields below are REQUIRED
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
-- 350–600 word vignette, 4 sub-questions (3 marks each), total 12 points
+- 450–700 word vignette, 4 sub-questions (3 marks each), total 12 points
 - Protagonist: ${testVol ? testVol.roles : 'a financial professional'}
 - UNIQUE randomly generated name and company — NEVER repeat names
 - All information required to answer must be in the vignette
+- Generate ONE realistic business scenario.
+- Generate all exhibits where necessary
+- Never create questions before the vignette is complete.
+- Do NOT shorten vignette.
 Before producing your final VIGNETTE JSON:
 - Count the words in vignetteText only.
-- If fewer than 350 words, continue expanding the case study.
-- If more than 600 words, shorten it.
+- If fewer than 450 words, continue expanding the case study.
+- If more than 700 words, shorten it.
 - Do not count the questions or explanations.
-- Return the JSON only after vignetteText is between 350 and 600 words.
+- Return the JSON only after vignetteText is between 450 and 700 words.
 
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
 - Tables MUST use HTML with style="border:1px solid #000;padding:6px;" — NO markdown pipe tables`}
