@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -
 COPY package*.json ./
 # copy prisma early so postinstall/generate can find schema
 COPY prisma ./prisma
-RUN npm i -g npm@latest && npm install --include=dev
+RUN npm install --include=dev
 COPY . .
 # ensure client is generated with schema path
 RUN npx prisma generate --schema=./prisma/schema.prisma
