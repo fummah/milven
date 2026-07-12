@@ -385,7 +385,7 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,
-				max_tokens: 32768,
+				max_tokens: 16384,
 				response_format: { type: 'json_object' }
 			});
 
