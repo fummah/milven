@@ -2657,11 +2657,11 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\\\( \\\\), \\\\[ \\\\], or mathematical symbols like \\\\frac, \\\\sigma, \\\\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\\\( E(R) \\\\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 500 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 500 prose words are unacceptable.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
-				max_tokens: questionType === 'VIGNETTE_MCQ' ? 8000 : 4000,
+				max_tokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
 				response_format: { type: 'json_object' }
 			});
 			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
@@ -2683,10 +2683,30 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			};
 			items.forEach(it => { repairLatexFields(it); if (Array.isArray(it.questions)) it.questions.forEach(sq => repairLatexFields(sq)); });
 
+			// ── Strip LaTeX/formulas from stems and options (safety net) ────
+			const stripLatexFromText = (text) => {
+				if (!text || typeof text !== 'string') return text;
+				// Remove \( ... \) and \[ ... \] delimited blocks, replace with inner text stripped of commands
+				let result = text.replace(/\\\((.+?)\\\)/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').trim());
+				result = result.replace(/\\\[(.+?)\\\]/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').trim());
+				// Remove standalone LaTeX commands that shouldn't be in plain text
+				result = result.replace(/\\(frac|sigma|beta|alpha|sqrt|sum|cdot|times|left|right|text)\b/g, '');
+				return result;
+			};
+			const cleanStemAndOptions = (obj) => {
+				if (obj.stem) obj.stem = stripLatexFromText(obj.stem);
+				if (Array.isArray(obj.options)) {
+					obj.options.forEach(opt => { if (opt.text) opt.text = stripLatexFromText(opt.text); });
+				}
+			};
+			items.forEach(it => {
+				cleanStemAndOptions(it);
+				if (Array.isArray(it.questions)) it.questions.forEach(sq => cleanStemAndOptions(sq));
+			});
+
 			// ── Convert markdown pipe tables to HTML tables ──────────────
 			const convertPipeTablesToHtml = (text) => {
 				if (!text || typeof text !== 'string') return text;
-				// Match markdown pipe table blocks (header | separator | rows)
 				return text.replace(
 					/((?:^|\n)\|[^\n]+\|\s*\n\|[\s:|-]+\|\s*\n(?:\|[^\n]+\|\s*\n?)+)/g,
 					(tableBlock) => {
@@ -2696,15 +2716,32 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 						const isSeparator = (line) => /^\|[\s:|-]+\|$/.test(line);
 						const headerCells = parseRow(lines[0]);
 						const dataLines = lines.filter((l, i) => i > 0 && !isSeparator(l));
-						const style = 'border:1px solid #d1d5db;padding:3px 5px;text-align:left';
-						const thStyle = `${style};background:#f3f4f6;font-weight:600`;
-						let html = '<table style="border-collapse:collapse;width:100%;margin:12px 0;font-size:14px">';
-						html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
-						html += '<tbody>';
-						dataLines.forEach(line => {
-							const cells = parseRow(line);
-							html += '<tr>' + cells.map(c => `<td style="${style}">${c}</td>`).join('') + '</tr>';
-						});
+						// Randomly choose between full borders and top/bottom only (CFA exam style)
+						const useFullBorders = Math.random() < 0.5;
+						let html;
+						if (useFullBorders) {
+							const style = 'border:1px solid #000;padding:6px;text-align:left';
+							const thStyle = `${style};font-weight:600`;
+							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #000;margin:12px 0;">';
+							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
+							html += '<tbody>';
+							dataLines.forEach(line => {
+								const cells = parseRow(line);
+								html += '<tr>' + cells.map(c => `<td style="${style}">${c}</td>`).join('') + '</tr>';
+							});
+						} else {
+							const thStyle = 'border-bottom:2px solid #000;padding:8px 12px;font-weight:600;text-align:left';
+							const tdStyle = 'padding:8px 12px;text-align:left;border:none';
+							const tdLastStyle = 'padding:8px 12px;text-align:left;border-bottom:1px solid #000';
+							html = '<table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:12px 0;">';
+							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
+							html += '<tbody>';
+							dataLines.forEach((line, idx) => {
+								const cells = parseRow(line);
+								const isLast = idx === dataLines.length - 1;
+								html += '<tr>' + cells.map(c => `<td style="${isLast ? tdLastStyle : tdStyle}">${c}</td>`).join('') + '</tr>';
+							});
+						}
 						html += '</tbody></table>';
 						return html;
 					}
@@ -3432,11 +3469,11 @@ ${formatBlock}`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.` },
+					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\( \\), \\[ \\], or mathematical symbols like \\frac, \\sigma, \\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\( E(R) \\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 500 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 500 prose words are unacceptable.` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
-				max_tokens: questionType === 'VIGNETTE_MCQ' ? 8000 : 4000,
+				max_tokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
 				response_format: { type: 'json_object' }
 			});
 			console.log('[AI Preview] OpenAI call completed');
@@ -3524,6 +3561,25 @@ ${formatBlock}`;
 			};
 			items.forEach(it => { repairLatexFields(it); if (Array.isArray(it.questions)) it.questions.forEach(sq => repairLatexFields(sq)); });
 
+			// ── Strip LaTeX/formulas from stems and options (safety net) ────
+			const stripLatexFromText = (text) => {
+				if (!text || typeof text !== 'string') return text;
+				let result = text.replace(/\\\((.+?)\\\)/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').trim());
+				result = result.replace(/\\\[(.+?)\\\]/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').trim());
+				result = result.replace(/\\(frac|sigma|beta|alpha|sqrt|sum|cdot|times|left|right|text)\b/g, '');
+				return result;
+			};
+			const cleanStemAndOptions = (obj) => {
+				if (obj.stem) obj.stem = stripLatexFromText(obj.stem);
+				if (Array.isArray(obj.options)) {
+					obj.options.forEach(opt => { if (opt.text) opt.text = stripLatexFromText(opt.text); });
+				}
+			};
+			items.forEach(it => {
+				cleanStemAndOptions(it);
+				if (Array.isArray(it.questions)) it.questions.forEach(sq => cleanStemAndOptions(sq));
+			});
+
 			// ── Convert markdown pipe tables to HTML tables (preview) ────
 			const convertPipeTablesToHtml = (text) => {
 				if (!text || typeof text !== 'string') return text;
@@ -3536,15 +3592,32 @@ ${formatBlock}`;
 						const isSeparator = (line) => /^\|[\s:|-]+\|$/.test(line);
 						const headerCells = parseRow(lines[0]);
 						const dataLines = lines.filter((l, i) => i > 0 && !isSeparator(l));
-						const style = 'border:1px solid #d1d5db;padding:3px 5px;text-align:left';
-						const thStyle = `${style};background:#f3f4f6;font-weight:600`;
-						let html = '<table style="border-collapse:collapse;width:100%;margin:12px 0;font-size:14px">';
-						html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
-						html += '<tbody>';
-						dataLines.forEach(line => {
-							const cells = parseRow(line);
-							html += '<tr>' + cells.map(c => `<td style="${style}">${c}</td>`).join('') + '</tr>';
-						});
+						// Randomly choose between full borders and top/bottom only (CFA exam style)
+						const useFullBorders = Math.random() < 0.5;
+						let html;
+						if (useFullBorders) {
+							const style = 'border:1px solid #000;padding:6px;text-align:left';
+							const thStyle = `${style};font-weight:600`;
+							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #000;margin:12px 0;">';
+							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
+							html += '<tbody>';
+							dataLines.forEach(line => {
+								const cells = parseRow(line);
+								html += '<tr>' + cells.map(c => `<td style="${style}">${c}</td>`).join('') + '</tr>';
+							});
+						} else {
+							const thStyle = 'border-bottom:2px solid #000;padding:8px 12px;font-weight:600;text-align:left';
+							const tdStyle = 'padding:8px 12px;text-align:left;border:none';
+							const tdLastStyle = 'padding:8px 12px;text-align:left;border-bottom:1px solid #000';
+							html = '<table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:12px 0;">';
+							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
+							html += '<tbody>';
+							dataLines.forEach((line, idx) => {
+								const cells = parseRow(line);
+								const isLast = idx === dataLines.length - 1;
+								html += '<tr>' + cells.map(c => `<td style="${isLast ? tdLastStyle : tdStyle}">${c}</td>`).join('') + '</tr>';
+							});
+						}
 						html += '</tbody></table>';
 						return html;
 					}
