@@ -2555,8 +2555,8 @@ export function cmsRouter(prisma) {
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 			? isEthics
-				? 'Vignette / item-set (CFA Level II exam style): 450-700 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
-				: 'Vignette / item-set (CFA Level II exam style): 450-700 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
+				? 'Vignette / item-set (CFA Level II exam style): 500-800 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+				: 'Vignette / item-set (CFA Level II exam style): 500-800 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 			: 'Constructed response (written answer requiring calculations or explanations)';
 		const difficultyLabel = diffList.join(', ');
 		const curriculumSection = curriculumExcerpt
@@ -2573,23 +2573,28 @@ CORE REQUIREMENTS:
 - ALL metadata fields below are REQUIRED
 
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
-- 450–700 word vignette, 4 sub-questions (3 marks each), total 12 points
+- MINIMUM 500 PROSE words in vignetteText (target 500–800 words of actual prose text). HTML tags, table markup, and exhibit labels do NOT count toward this minimum — only narrative prose words count.
+- 4 sub-questions (3 marks each), total 12 points
 - Protagonist: ${volPrompt ? volPrompt.roles : 'a financial professional'}
 - UNIQUE randomly generated name and company — NEVER repeat names
 - All information required to answer must be in the vignette
-- Generate ONE realistic business scenario.
+- Generate ONE realistic business scenario with rich detail — include background context, market conditions, specific dates, multiple data points, and professional reasoning.
 - Generate all exhibits where necessary
+- EXTRACT OF STATEMENTS (use in SOME vignettes — about 40% of the time, NOT every vignette): Occasionally include labeled "Extract" blocks that present company policies, investment guidelines, compliance requirements, or professional standards. Format as: <p><strong>Extract 1: [Title]</strong></p> followed by a <blockquote style="border-left:3px solid #333;padding-left:12px;margin:12px 0;"> containing a descriptive paragraph and numbered requirements (e.g. <p><strong>Requirement 1:</strong> [text]</p>). Include 1-3 extracts when used. Sub-questions should reference these extracts.
 - Never create questions before the vignette is complete.
-- Do NOT shorten vignette.
-Before producing your final VIGNETTE JSON:
-- Count the words in vignetteText only.
-- If fewer than 450 words, continue expanding the case study.
-- If more than 700 words, shorten it.
-- Do not count the questions or explanations.
-- Return the JSON only after vignetteText is between 450 and 700 words.
+- Do NOT shorten vignette. Vignettes under 500 prose words are REJECTED.
+WORD COUNT VERIFICATION (do this before returning JSON):
+- Strip all HTML tags from vignetteText mentally and count only the remaining prose words.
+- If fewer than 500 prose words, EXPAND the case study by adding more background, additional scenarios, analyst observations, market context, or client constraints.
+- If more than 800 prose words, trim slightly.
+- Vignettes with tables: tables reduce visible prose — compensate by writing MORE narrative paragraphs around and between tables.
+- Return the JSON only after vignetteText has at least 500 prose words.
 
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
-- Tables MUST use HTML with style="border:1px solid #000;padding:6px;" — NO markdown pipe tables`}
+- Tables MUST use HTML <table> tags — NO markdown pipe tables. Randomly choose between these two styles per table:
+  Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #000;" with <th>/<td> style="border:1px solid #000;padding:6px;"
+  Style B (Top/bottom only — CFA exam style): style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:2px solid #000;padding:8px 12px;" and <td> style="padding:8px 12px;border:none;"`}
+- IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
 ${volPrompt ? `${volPrompt.questionDesign}\n${volPrompt.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
 ${curriculumExcerpt ? `CURRICULUM DOCUMENT RULES:
 1. "los": Copy EXACT Learning Outcome Statement from document (verbs: describe, explain, calculate, etc.)
@@ -2609,14 +2614,14 @@ ${curriculumSection}
 traceSection MUST match the assigned topic (e.g. "Standard I" topic → "Standard I(A)" section).
 
 Return JSON with "items" key. Each question/sub-question MUST include:
-- "stem": string (question text, may include HTML)
-- "options": for MCQ: array of 3 objects { "text": string, "isCorrect": boolean }
+- "stem": string (question text in plain language — NO LaTeX formulas, NO math notation. Use words like "calculate the present value" instead of showing the formula)
+- "options": for MCQ: array of 3 objects { "text": string, "isCorrect": boolean } (plain text only — no formulas)
 - "explanation": string
 - "qid": string (unique ID like "Q-TOPIC-001")
 - "los": string (EXACT learning outcome from document)
 - "traceSection": string (EXACT section heading matching topic)
 - "tracePage": string (EXACT page from [PAGE N] markers)
-- "keyFormulas": string (key formula(s) using VALID LaTeX — e.g. "\\( PV = \\frac{CF_1}{(1+r)^{1}} + \\frac{CF_2}{(1+r)^{2}} \\)", "\\( WACC = w_{d} \\cdot r_{d} \\cdot (1-t) + w_{e} \\cdot r_{e} \\)". Use \\frac, \\sigma, \\beta, \\alpha etc. ALL braces must be balanced. Include variable definitions.)
+- "keyFormulas": string (key formula(s) using VALID LaTeX — e.g. "\\( PV = \\frac{CF_1}{(1+r)^{1}} + \\frac{CF_2}{(1+r)^{2}} \\)". ALL braces must be balanced.)
 - "workedSolution": string (step-by-step worked solution using valid LaTeX for all math — be thorough)
 
 CRITICAL — ANSWER CONSISTENCY RULE (MUST FOLLOW — VIOLATIONS PRODUCE HALLUCINATED ANSWERS):
@@ -2637,12 +2642,13 @@ For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vigne
 VIGNETTE MCQ QUALITY RULES:
 - Exactly FOUR multiple-choice questions per vignette, three answer choices only (A, B, C)
 - Total question value: 12 points
-- Approximately 450–700 word vignette
+- MINIMUM 500 prose words in vignetteText (target 500–800). HTML tags and table markup do NOT count — only prose words count. Vignettes under 500 prose words are REJECTED.
 - All information required to answer must be contained within the vignette
 - At least two questions should require calculations whenever the topic allows
 - At least one question should test interpretation of assumptions, recommendations, or professional judgement
 - Distractors should represent common CFA mistakes — NOT trick answers
 - After the questions, provide: answer key, full solution, formula used, explanation of each incorrect answer
+- IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
 MATH IN vignetteText: If the vignetteText contains any mathematical expressions, formulas, or variables, ALWAYS wrap them in LaTeX delimiters \\\\( ... \\\\). NEVER put raw LaTeX like \\times, CF_{SGD}, e^{-r} in prose without delimiters.
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
@@ -2690,7 +2696,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 						const isSeparator = (line) => /^\|[\s:|-]+\|$/.test(line);
 						const headerCells = parseRow(lines[0]);
 						const dataLines = lines.filter((l, i) => i > 0 && !isSeparator(l));
-						const style = 'border:1px solid #d1d5db;padding:8px 12px;text-align:left';
+						const style = 'border:1px solid #d1d5db;padding:3px 5px;text-align:left';
 						const thStyle = `${style};background:#f3f4f6;font-weight:600`;
 						let html = '<table style="border-collapse:collapse;width:100%;margin:12px 0;font-size:14px">';
 						html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
@@ -3194,8 +3200,8 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 				? isEthics
-					? 'Vignette / item-set (CFA Level II exam style): 450-700 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
-					: 'Vignette / item-set (CFA Level II exam style): 450-700 word case study passage (vignetteText only, not including sub-questions) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
+					? 'Vignette / item-set (CFA Level II exam style): 500-800 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+					: 'Vignette / item-set (CFA Level II exam style): 500-800 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 				: isConstructedBundle
 					? isEthics
 						? 'Constructed response case study: a detailed realistic scenario/case study passage (400-700 words) with a named protagonist. This is an ETHICS case study — PURELY NARRATIVE, NO tables, NO exhibits, NO charts. Followed by multiple constructed-response sub-questions requiring analysis or written explanations.'
@@ -3248,19 +3254,24 @@ ${metaFieldsBlock}`;
 
 Each object in "items" MUST follow this structure:
 {
-  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (450-700 words). Requirements:
+  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (MINIMUM 500 prose words, target 500-800). IMPORTANT: word count means PROSE words only — HTML tags, table markup, style attributes, and exhibit labels do NOT count. When tables are included, write MORE narrative prose around them to compensate. Requirements:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
     • Introduce a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional'} with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
     • All information required to answer the questions MUST be contained within the vignette
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
+    • EXTRACT OF STATEMENTS (use in SOME vignettes — about 40% of the time, NOT every vignette): Occasionally include labeled "Extract" blocks presenting company policies, investment guidelines, or professional standards. Format: <p><strong>Extract 1: [Title]</strong></p> followed by <blockquote style="border-left:3px solid #333;padding-left:12px;margin:12px 0;"> with a paragraph and numbered requirements. Sub-questions should reference these extracts.
     • MATH FORMATTING: If the vignetteText contains ANY mathematical expressions, formulas, variables, or equations, wrap them in LaTeX delimiters \\( ... \\). For example: "The value is \\( V = CF_{SGD} \\times e^{-r_{SGD}T} \\)" — NEVER put raw LaTeX like \\times, CF_{SGD}, e^{-r} directly in prose without \\( \\) delimiters.
-    • TABLE FORMATTING: When including tables in vignetteText, ALWAYS use proper HTML <table> tags with <thead>, <tbody>, <tr>, <th>, <td>. Every <th> and <td> MUST have inline style="border:1px solid #000;padding:6px;". NEVER use markdown pipe tables or ASCII tables.
+    • TABLE FORMATTING: When including tables in vignetteText, ALWAYS use proper HTML <table> tags with <thead>, <tbody>, <tr>, <th>, <td>. NEVER use markdown pipe tables or ASCII tables.
+      IMPORTANT — Randomly choose ONE of these two table styles for EACH exhibit table (vary across tables within the same vignette):
+      Style A (Full borders): <table style="border-collapse:collapse;width:100%;border:1px solid #000;"> with every <th> and <td> having style="border:1px solid #000;padding:6px;"
+      Style B (Top/bottom only — CFA exam style): <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;"> with <th> having style="border-bottom:2px solid #000;padding:8px 12px;font-weight:600;text-align:left;" and <td> having style="padding:8px 12px;text-align:left;border:none;". The last <tr> in <tbody> should have style="border-bottom:1px solid #000;" on its <td> elements.
 ${isEthics ? `    • ETHICS TOPIC: This is an ETHICS vignette — it MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines) must be woven naturally into prose paragraphs. No Exhibit labels.` : `    • EXHIBIT REQUIREMENTS:
 ${volPrompt ? volPrompt.exhibits : `Include realistic exhibits where appropriate: financial statements, regression output, yield curves, valuation tables, client constraints, analyst notes, assumptions, market data.`}
       Also supported: <pre> blocks for regression output, ASCII charts, or structured data where a table format is not appropriate.`}
   "questions": array of EXACTLY 4 MCQ sub-questions (no more, no less). Each sub-question MUST:
     • Reference specific information ${isEthics ? 'from the narrative passage' : 'or exhibit data from the vignetteText'} (e.g. ${isEthics ? '"Regarding Jones\'s recommendation to the board..."' : '"Based on Exhibit 1..." or "Regarding Jones\'s evaluation of XYZ..."'})
     • Have "stem": string, "options": exactly 3 objects { "text": string, "isCorrect": boolean } with exactly ONE correct
+    • IMPORTANT: The "stem" and "options" text must be plain language — do NOT include LaTeX formulas, \\( \\), or mathematical notation in question stems or option text. Formulas belong ONLY in "keyFormulas" and "workedSolution".
     • Cover a different aspect of the scenario/topic than the other sub-questions
     • Each sub-question is worth 3 marks (do NOT include a "marks" field for vignette MCQ sub-questions)
 ${selectedTopics.length > 1 ? `    • TOPIC DISTRIBUTION: The selected topics are [${selectedTopics.map(t => t.name).join(', ')}]. You MUST spread these topics equally across the 4 sub-questions. Each sub-question should test a different topic from this list. Assign topics round-robin so all selected topics are covered.
@@ -3367,23 +3378,28 @@ CORE REQUIREMENTS:
 - Use UNIQUE fictional company names (invent fresh names each time)
 - ALL metadata fields below are REQUIRED
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
-- 450–700 word vignette, 4 sub-questions (3 marks each), total 12 points
+- MINIMUM 500 PROSE words in vignetteText (target 500–800 words of actual prose text). HTML tags, table markup, and exhibit labels do NOT count toward this minimum — only narrative prose words count.
+- 4 sub-questions (3 marks each), total 12 points
 - Protagonist: ${testVol ? testVol.roles : 'a financial professional'}
 - UNIQUE randomly generated name and company — NEVER repeat names
 - All information required to answer must be in the vignette
-- Generate ONE realistic business scenario.
+- Generate ONE realistic business scenario with rich detail — include background context, market conditions, specific dates, multiple data points, and professional reasoning.
 - Generate all exhibits where necessary
+- EXTRACT OF STATEMENTS (use in SOME vignettes — about 40% of the time, NOT every vignette): Occasionally include labeled "Extract" blocks that present company policies, investment guidelines, compliance requirements, or professional standards. Format as: <p><strong>Extract 1: [Title]</strong></p> followed by a <blockquote style="border-left:3px solid #333;padding-left:12px;margin:12px 0;"> containing a descriptive paragraph and numbered requirements (e.g. <p><strong>Requirement 1:</strong> [text]</p>). Include 1-3 extracts when used. Sub-questions should reference these extracts.
 - Never create questions before the vignette is complete.
-- Do NOT shorten vignette.
-Before producing your final VIGNETTE JSON:
-- Count the words in vignetteText only.
-- If fewer than 450 words, continue expanding the case study.
-- If more than 700 words, shorten it.
-- Do not count the questions or explanations.
-- Return the JSON only after vignetteText is between 450 and 700 words.
+- Do NOT shorten vignette. Vignettes under 500 prose words are REJECTED.
+WORD COUNT VERIFICATION (do this before returning JSON):
+- Strip all HTML tags from vignetteText mentally and count only the remaining prose words.
+- If fewer than 500 prose words, EXPAND the case study by adding more background, additional scenarios, analyst observations, market context, or client constraints.
+- If more than 800 prose words, trim slightly.
+- Vignettes with tables: tables reduce visible prose — compensate by writing MORE narrative paragraphs around and between tables.
+- Return the JSON only after vignetteText has at least 500 prose words.
 
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
-- Tables MUST use HTML with style="border:1px solid #000;padding:6px;" — NO markdown pipe tables`}
+- Tables MUST use HTML <table> tags — NO markdown pipe tables. Randomly choose between these two styles per table:
+  Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #000;" with <th>/<td> style="border:1px solid #000;padding:6px;"
+  Style B (Top/bottom only — CFA exam style): style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:2px solid #000;padding:8px 12px;" and <td> style="padding:8px 12px;border:none;"`}
+- IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
 ${testVol ? `${testVol.questionDesign}\n${testVol.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
 
 ${previewCurriculumExcerpt ? `CURRICULUM DOCUMENT RULES:
@@ -3520,7 +3536,7 @@ ${formatBlock}`;
 						const isSeparator = (line) => /^\|[\s:|-]+\|$/.test(line);
 						const headerCells = parseRow(lines[0]);
 						const dataLines = lines.filter((l, i) => i > 0 && !isSeparator(l));
-						const style = 'border:1px solid #d1d5db;padding:8px 12px;text-align:left';
+						const style = 'border:1px solid #d1d5db;padding:3px 5px;text-align:left';
 						const thStyle = `${style};background:#f3f4f6;font-weight:600`;
 						let html = '<table style="border-collapse:collapse;width:100%;margin:12px 0;font-size:14px">';
 						html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';

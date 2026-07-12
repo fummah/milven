@@ -411,7 +411,16 @@ ${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You 
 - "calculatorCue" MUST be plain readable English sentences with SPACES between every word. Example: "Calculate expected market return and beta, then apply the formula." NEVER merge words (WRONG: Calculateexpectedmarketreturnandβ, CORRECT: Calculate expected market return and beta). Greek letters may use Unicode (β, σ, α) but all prose must have proper word spacing.
 - "losTag" should reference the specific CFA Learning Outcome Statement
 - "highYield" should be true if this formula is very frequently tested on CFA exams
-- "workedExample" must be a JSON object with a step-by-step numeric example showing how to use the formula. Include: given values, substitution, intermediate calculations, final answer, and interpretation.
+- "workedExample" must be a JSON object with a FULL, COMPLETE worked example from START to END — not just substitutions. It must walk through EVERY calculation step as if teaching a student who has never seen the formula before.
+  CRITICAL: The worked example must include:
+  (a) A realistic scenario with context (e.g. "An analyst is evaluating Company XYZ...")
+  (b) All given values clearly stated
+  (c) The formula written out with variable names
+  (d) Substitution of values into the formula
+  (e) EVERY intermediate arithmetic step shown (e.g. compute numerator, compute denominator, compute each term separately)
+  (f) The final numeric answer with units/percentage
+  (g) Interpretation of what the answer means in practice
+  Do NOT skip steps or jump from substitution to final answer. Show ALL intermediate calculations.
 - Do NOT duplicate formulas — each must be unique and cover a different concept within the topic area
 - Order formulas logically (foundational concepts first, then build complexity)
 - Use ONLY the latest ${year} CFA curriculum formulas. Do NOT use outdated or deprecated formula versions. If the curriculum document is provided, match its exact formulations.
@@ -432,11 +441,11 @@ Return a JSON object:
       "order": number,
       "topicName": "string (the exact topic name from the list above that this formula belongs to, or null if no match)",
       "workedExample": {
-        "given": "string (list of given values, e.g. 'z_2 = 4%, z_5 = 6%')",
-        "formula": "string (the formula with variables shown)",
-        "steps": ["string (step 1)", "string (step 2)", "..."],
-        "answer": "string (final numeric answer)",
-        "interpretation": "string (what the answer means in context)"
+        "given": "string (realistic scenario context + all given values, e.g. 'An analyst is evaluating Bond X. Face value = $1,000, coupon rate = 5%, market yield = 6%, maturity = 10 years.')",
+        "formula": "string (the formula with variable names shown)",
+        "steps": ["string (Step 1: Identify what we need to find — e.g. the present value of the bond)", "string (Step 2: Write out the formula with substituted values)", "string (Step 3: Calculate the first component — e.g. PV of coupons = 50 × [1 - (1.06)^{-10}] / 0.06 = 50 × 7.3601 = 368.00)", "string (Step 4: Calculate the second component — e.g. PV of face value = 1000 / (1.06)^{10} = 1000 / 1.7908 = 558.39)", "string (Step 5: Sum all components — 368.00 + 558.39 = 926.39)"],
+        "answer": "string (final answer with units, e.g. 'The bond price is $926.39')",
+        "interpretation": "string (what the answer means, e.g. 'The bond trades at a discount because the coupon rate (5%) is below the market yield (6%).')"
       }
     }
   ]
@@ -739,6 +748,16 @@ ${curriculumExcerpt ? `- CRITICAL: A curriculum document has been provided. You 
 - "calculatorCue" MUST be plain readable English with SPACES between every word (WRONG: Calculateexpectedmarketreturnandβ, CORRECT: Calculate expected market return and beta). Greek letters may use Unicode (β, σ).
 - "losTag" should reference the specific CFA Learning Outcome Statement (e.g. "Calculate and interpret holding period return")
 - "highYield" should be true if this formula is very frequently tested on CFA exams
+- "workedExample" must be a JSON object with a FULL, COMPLETE worked example from START to END — not just substitutions. It must walk through EVERY calculation step as if teaching a student who has never seen the formula before.
+  CRITICAL: The worked example must include:
+  (a) A realistic scenario with context (e.g. "An analyst is evaluating Company XYZ...")
+  (b) All given values clearly stated
+  (c) The formula written out with variable names
+  (d) Substitution of values into the formula
+  (e) EVERY intermediate arithmetic step shown (e.g. compute numerator, compute denominator, compute each term separately)
+  (f) The final numeric answer with units/percentage
+  (g) Interpretation of what the answer means in practice
+  Do NOT skip steps or jump from substitution to final answer. Show ALL intermediate calculations.
 - Do NOT duplicate formulas — each must be unique and cover a different concept within the topic area
 - Order formulas logically (foundational concepts first, then build complexity)
 
@@ -756,7 +775,14 @@ Return a JSON object:
       "losTag": "string (CFA LOS reference)",
       "highYield": boolean,
       "order": number (starting from 1),
-      "topicName": "string (the exact topic name from the list above that this formula belongs to, or null if no match)"
+      "topicName": "string (the exact topic name from the list above that this formula belongs to, or null if no match)",
+      "workedExample": {
+        "given": "string (realistic scenario context + all given values)",
+        "formula": "string (the formula with variable names shown)",
+        "steps": ["string (Step 1: ...)", "string (Step 2: ...)", "string (Step 3: ...)"],
+        "answer": "string (final answer with units)",
+        "interpretation": "string (what the answer means in context)"
+      }
     }
   ]
 }
