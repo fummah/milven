@@ -2591,11 +2591,11 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     • Tasks: e.g. "Task 1: systems are in place to detect violations of laws, rules, regulations, and firm policies;" / "Task 2: the firm has adequate documented compliance policies and procedures;" / "Task 3: inadequate procedures are identified and recommendations submitted to senior management"
   A vignette can have MULTIPLE blocks with DIFFERENT types — for example, one block lists Requirements for investment recommendations, and another block lists Tasks that a committee proposes. Sub-questions can ask about specific items from either block (e.g. "Which requirement is most appropriate to prevent..." or "Which task would least likely conform to...").
   FORMAT: Use a heading <p><strong>Exhibit N: [Title]</strong></p>, then present items in a CLEAN TABLE with NO cell borders — only a top header line and bottom footer line. Use this exact style:
-    <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:8px 0;">
-    <thead><tr><th style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
-    <tbody><tr><td style="padding:8px 12px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
-    <tr><td style="padding:8px 12px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
-    The table must have NO internal cell borders, NO vertical lines — only the horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
+    <table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
+    <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
+    <tbody><tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
+    <tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
+    The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
 - Never create questions before the vignette is complete.
 - Do NOT shorten vignette. Vignettes under 500 prose words are REJECTED.
 WORD COUNT VERIFICATION (do this before returning JSON):
@@ -2608,10 +2608,10 @@ WORD COUNT VERIFICATION (do this before returning JSON):
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
 - TWO TABLE TYPES — choose the right style based on content:
   DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags — randomly choose between these two styles per data table:
-    Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #000;" with <th>/<td> style="border:1px solid #000;padding:6px;"
-    Style B (Top/bottom only): style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:2px solid #000;padding:8px 12px;" and <td> style="padding:8px 12px;border:none;"
+    Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #999;" with <th>/<td> style="border:1px solid #999;padding:4px 8px;"
+    Style B (Top/bottom only): style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;" and <td> style="padding:4px 8px;border:none;"
   EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations, Tasks): ALWAYS use clean style with NO cell borders — only header line and footer line:
-    style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;" and <td> style="padding:8px 12px;text-align:left;border:none;"
+    style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;" and <td> style="padding:4px 8px;text-align:left;border:none;"
 - NO markdown pipe tables`}
 - IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
 ${volPrompt ? `${volPrompt.questionDesign}\n${volPrompt.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
@@ -2739,9 +2739,9 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 						const useFullBorders = Math.random() < 0.5;
 						let html;
 						if (useFullBorders) {
-							const style = 'border:1px solid #000;padding:6px;text-align:left';
+							const style = 'border:1px solid #999;padding:4px 8px;text-align:left';
 							const thStyle = `${style};font-weight:600`;
-							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #000;margin:6px 0;">';
+							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #999;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
 							dataLines.forEach(line => {
@@ -2749,10 +2749,10 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 								html += '<tr>' + cells.map(c => `<td style="${style}">${c}</td>`).join('') + '</tr>';
 							});
 						} else {
-							const thStyle = 'border-bottom:2px solid #000;padding:8px 12px;font-weight:600;text-align:left';
-							const tdStyle = 'padding:8px 12px;text-align:left;border:none';
-							const tdLastStyle = 'padding:8px 12px;text-align:left;border-bottom:1px solid #000';
-							html = '<table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:2px solid #000;margin:6px 0;">';
+							const thStyle = 'border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left';
+							const tdStyle = 'padding:4px 8px;text-align:left;border:none';
+							const tdLastStyle = 'padding:4px 8px;text-align:left;border-bottom:1px solid #000';
+							html = '<table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
 							dataLines.forEach((line, idx) => {
@@ -3316,15 +3316,15 @@ Each object in "items" MUST follow this structure:
     • All information required to answer the questions MUST be contained within the vignette
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
     • EXHIBITS / STATEMENTS (use in SOME vignettes — about 50% of the time, NOT every vignette): Include labeled Exhibit or Statement blocks. At least 1-2 sub-questions MUST reference them (e.g. "Based on Statement 2..." or "Which of the factors in Exhibit 2..." or "Which task would least likely conform to..."). Randomly vary the content type: Statements, Factors, Requirements, Recommendations, Observations, Tasks. A single vignette can mix MULTIPLE types (e.g. one block with Requirements and another with Tasks). Format: <p><strong>Exhibit N: [Title]</strong></p> then present items in a CLEAN TABLE with NO cell borders — only header line and footer line:
-      <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:8px 0;">
-      <thead><tr><th style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;">[Title]</th></tr></thead>
-      <tbody><tr><td style="padding:8px 12px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr></tbody></table>
+      <table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
+      <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Title]</th></tr></thead>
+      <tbody><tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr></tbody></table>
       NO internal cell borders, NO vertical lines. Include 1-3 blocks when used.
     • MATH FORMATTING: If the vignetteText contains ANY mathematical expressions, formulas, variables, or equations, wrap them in LaTeX delimiters \\( ... \\). For example: "The value is \\( V = CF_{SGD} \\times e^{-r_{SGD}T} \\)" — NEVER put raw LaTeX like \\times, CF_{SGD}, e^{-r} directly in prose without \\( \\) delimiters.
     • TABLE FORMATTING — TWO TABLE TYPES based on content:
       DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags. Randomly choose between:
-        Style A (Full borders): <table style="border-collapse:collapse;width:100%;border:1px solid #000;"> with every <th> and <td> having style="border:1px solid #000;padding:6px;"
-        Style B (Top/bottom only): <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;"> with <th> style="border-bottom:2px solid #000;padding:8px 12px;font-weight:600;text-align:left;" and <td> style="padding:8px 12px;text-align:left;border:none;"
+        Style A (Full borders): <table style="border-collapse:collapse;width:100%;border:1px solid #999;"> with every <th> and <td> having style="border:1px solid #999;padding:4px 8px;"
+        Style B (Top/bottom only): <table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;"> with <th> style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;" and <td> style="padding:4px 8px;text-align:left;border:none;"
       EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations, Tasks): ALWAYS use the clean no-border style described above (only header and footer lines, NO cell borders).
       NEVER use markdown pipe tables or ASCII tables.
 ${isEthics ? `    • ETHICS TOPIC: This is an ETHICS vignette — it MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines) must be woven naturally into prose paragraphs. No Exhibit labels.` : `    • EXHIBIT REQUIREMENTS:
@@ -3458,11 +3458,11 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     • Tasks: e.g. "Task 1: systems are in place to detect violations of laws, rules, regulations, and firm policies;" / "Task 2: the firm has adequate documented compliance policies and procedures;" / "Task 3: inadequate procedures are identified and recommendations submitted to senior management"
   A vignette can have MULTIPLE blocks with DIFFERENT types — for example, one block lists Requirements for investment recommendations, and another block lists Tasks that a committee proposes. Sub-questions can ask about specific items from either block (e.g. "Which requirement is most appropriate to prevent..." or "Which task would least likely conform to...").
   FORMAT: Use a heading <p><strong>Exhibit N: [Title]</strong></p>, then present items in a CLEAN TABLE with NO cell borders — only a top header line and bottom footer line. Use this exact style:
-    <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:8px 0;">
-    <thead><tr><th style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
-    <tbody><tr><td style="padding:8px 12px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
-    <tr><td style="padding:8px 12px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
-    The table must have NO internal cell borders, NO vertical lines — only the horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
+    <table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
+    <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
+    <tbody><tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
+    <tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
+    The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
 - Never create questions before the vignette is complete.
 - Do NOT shorten vignette. Vignettes under 500 prose words are REJECTED.
 WORD COUNT VERIFICATION (do this before returning JSON):
@@ -3475,10 +3475,10 @@ WORD COUNT VERIFICATION (do this before returning JSON):
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
 - TWO TABLE TYPES — choose the right style based on content:
   DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags — randomly choose between these two styles per data table:
-    Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #000;" with <th>/<td> style="border:1px solid #000;padding:6px;"
-    Style B (Top/bottom only): style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:2px solid #000;padding:8px 12px;" and <td> style="padding:8px 12px;border:none;"
+    Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #999;" with <th>/<td> style="border:1px solid #999;padding:4px 8px;"
+    Style B (Top/bottom only): style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;" and <td> style="padding:4px 8px;border:none;"
   EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations, Tasks): ALWAYS use clean style with NO cell borders — only header line and footer line:
-    style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;" and <td> style="padding:8px 12px;text-align:left;border:none;"
+    style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;" and <td> style="padding:4px 8px;text-align:left;border:none;"
 - NO markdown pipe tables`}
 - IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
 ${testVol ? `${testVol.questionDesign}\n${testVol.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
@@ -3640,9 +3640,9 @@ ${formatBlock}`;
 						const useFullBorders = Math.random() < 0.5;
 						let html;
 						if (useFullBorders) {
-							const style = 'border:1px solid #000;padding:6px;text-align:left';
+							const style = 'border:1px solid #999;padding:4px 8px;text-align:left';
 							const thStyle = `${style};font-weight:600`;
-							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #000;margin:6px 0;">';
+							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #999;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
 							dataLines.forEach(line => {
@@ -3650,9 +3650,9 @@ ${formatBlock}`;
 								html += '<tr>' + cells.map(c => `<td style="${style}">${c}</td>`).join('') + '</tr>';
 							});
 						} else {
-							const thStyle = 'border-bottom:2px solid #000;padding:8px 12px;font-weight:600;text-align:left';
-							const tdStyle = 'padding:8px 12px;text-align:left;border:none';
-							const tdLastStyle = 'padding:8px 12px;text-align:left;border-bottom:1px solid #000';
+							const thStyle = 'border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left';
+							const tdStyle = 'padding:4px 8px;text-align:left;border:none';
+							const tdLastStyle = 'padding:4px 8px;text-align:left;border-bottom:1px solid #000';
 							html = '<table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
