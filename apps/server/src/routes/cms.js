@@ -2581,13 +2581,15 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
 - Generate ONE realistic business scenario with rich detail — include background context, market conditions, specific dates, multiple data points, and professional reasoning.
 - Generate all exhibits where necessary
 - EXHIBITS / STATEMENTS (use in SOME vignettes — about 50% of the time, NOT every vignette):
-  In some vignettes, include labeled Exhibit or Statement blocks within the vignetteText. These provide structured information that sub-questions can then ask about. At least 1-2 sub-questions MUST directly reference these exhibits/statements (e.g. "Based on Statement 2..." or "Which of the factors listed in Exhibit 2..." or "Is Recommendation 1 consistent with...").
-  CONTENT TYPES — randomly vary the type used in each vignette:
+  In some vignettes, include labeled Exhibit or Statement blocks within the vignetteText. These provide structured information that sub-questions can then ask about. At least 1-2 sub-questions MUST directly reference these exhibits/statements (e.g. "Based on Statement 2..." or "Which of the factors listed in Exhibit 2..." or "Which task would least likely conform to...").
+  CONTENT TYPES — randomly vary the type used. A single vignette can mix multiple types (e.g. Requirements in one block and Tasks in another):
     • Statements: e.g. "Statement 1: The portfolio manager believes that..." / "Statement 2: Interest rates are expected to..."
     • Factors: e.g. "Factor 1: Credit spread volatility" / "Factor 2: Duration mismatch"
     • Requirements: e.g. "Requirement 1: All trades must be pre-approved..." / "Requirement 2: Client suitability must be documented..."
     • Recommendations: e.g. "Recommendation 1: Increase allocation to fixed income" / "Recommendation 2: Hedge currency exposure using forwards"
     • Observations: e.g. "Observation 1: The fund underperformed its benchmark by 200 bps" / "Observation 2: Tracking error has increased over the past quarter"
+    • Tasks: e.g. "Task 1: systems are in place to detect violations of laws, rules, regulations, and firm policies;" / "Task 2: the firm has adequate documented compliance policies and procedures;" / "Task 3: inadequate procedures are identified and recommendations submitted to senior management"
+  A vignette can have MULTIPLE blocks with DIFFERENT types — for example, one block lists Requirements for investment recommendations, and another block lists Tasks that a committee proposes. Sub-questions can ask about specific items from either block (e.g. "Which requirement is most appropriate to prevent..." or "Which task would least likely conform to...").
   FORMAT: Use a heading <p><strong>Exhibit N: [Title]</strong></p>, then present items in a CLEAN TABLE with NO cell borders — only a top header line and bottom footer line. Use this exact style:
     <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:8px 0;">
     <thead><tr><th style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
@@ -2608,7 +2610,7 @@ ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table
   DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags — randomly choose between these two styles per data table:
     Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #000;" with <th>/<td> style="border:1px solid #000;padding:6px;"
     Style B (Top/bottom only): style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:2px solid #000;padding:8px 12px;" and <td> style="padding:8px 12px;border:none;"
-  EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations): ALWAYS use clean style with NO cell borders — only header line and footer line:
+  EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations, Tasks): ALWAYS use clean style with NO cell borders — only header line and footer line:
     style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;" and <td> style="padding:8px 12px;text-align:left;border:none;"
 - NO markdown pipe tables`}
 - IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
@@ -3313,7 +3315,7 @@ Each object in "items" MUST follow this structure:
     • Introduce a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional'} with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
     • All information required to answer the questions MUST be contained within the vignette
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
-    • EXHIBITS / STATEMENTS (use in SOME vignettes — about 50% of the time, NOT every vignette): Include labeled Exhibit or Statement blocks. At least 1-2 sub-questions MUST reference them (e.g. "Based on Statement 2..." or "Which of the factors in Exhibit 2..."). Randomly vary the content type: Statements, Factors, Requirements, Recommendations, Observations. Format: <p><strong>Exhibit N: [Title]</strong></p> then present items in a CLEAN TABLE with NO cell borders — only header line and footer line:
+    • EXHIBITS / STATEMENTS (use in SOME vignettes — about 50% of the time, NOT every vignette): Include labeled Exhibit or Statement blocks. At least 1-2 sub-questions MUST reference them (e.g. "Based on Statement 2..." or "Which of the factors in Exhibit 2..." or "Which task would least likely conform to..."). Randomly vary the content type: Statements, Factors, Requirements, Recommendations, Observations, Tasks. A single vignette can mix MULTIPLE types (e.g. one block with Requirements and another with Tasks). Format: <p><strong>Exhibit N: [Title]</strong></p> then present items in a CLEAN TABLE with NO cell borders — only header line and footer line:
       <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:8px 0;">
       <thead><tr><th style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;">[Title]</th></tr></thead>
       <tbody><tr><td style="padding:8px 12px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr></tbody></table>
@@ -3323,7 +3325,7 @@ Each object in "items" MUST follow this structure:
       DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags. Randomly choose between:
         Style A (Full borders): <table style="border-collapse:collapse;width:100%;border:1px solid #000;"> with every <th> and <td> having style="border:1px solid #000;padding:6px;"
         Style B (Top/bottom only): <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;"> with <th> style="border-bottom:2px solid #000;padding:8px 12px;font-weight:600;text-align:left;" and <td> style="padding:8px 12px;text-align:left;border:none;"
-      EXHIBIT/STATEMENT TABLES: ALWAYS use the clean no-border style described above (only header and footer lines, NO cell borders).
+      EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations, Tasks): ALWAYS use the clean no-border style described above (only header and footer lines, NO cell borders).
       NEVER use markdown pipe tables or ASCII tables.
 ${isEthics ? `    • ETHICS TOPIC: This is an ETHICS vignette — it MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines) must be woven naturally into prose paragraphs. No Exhibit labels.` : `    • EXHIBIT REQUIREMENTS:
 ${volPrompt ? volPrompt.exhibits : `Include realistic exhibits where appropriate: financial statements, regression output, yield curves, valuation tables, client constraints, analyst notes, assumptions, market data.`}
@@ -3446,13 +3448,15 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
 - Generate ONE realistic business scenario with rich detail — include background context, market conditions, specific dates, multiple data points, and professional reasoning.
 - Generate all exhibits where necessary
 - EXHIBITS / STATEMENTS (use in SOME vignettes — about 50% of the time, NOT every vignette):
-  In some vignettes, include labeled Exhibit or Statement blocks within the vignetteText. These provide structured information that sub-questions can then ask about. At least 1-2 sub-questions MUST directly reference these exhibits/statements (e.g. "Based on Statement 2..." or "Which of the factors listed in Exhibit 2..." or "Is Recommendation 1 consistent with...").
-  CONTENT TYPES — randomly vary the type used in each vignette:
+  In some vignettes, include labeled Exhibit or Statement blocks within the vignetteText. These provide structured information that sub-questions can then ask about. At least 1-2 sub-questions MUST directly reference these exhibits/statements (e.g. "Based on Statement 2..." or "Which of the factors listed in Exhibit 2..." or "Which task would least likely conform to...").
+  CONTENT TYPES — randomly vary the type used. A single vignette can mix multiple types (e.g. Requirements in one block and Tasks in another):
     • Statements: e.g. "Statement 1: The portfolio manager believes that..." / "Statement 2: Interest rates are expected to..."
     • Factors: e.g. "Factor 1: Credit spread volatility" / "Factor 2: Duration mismatch"
     • Requirements: e.g. "Requirement 1: All trades must be pre-approved..." / "Requirement 2: Client suitability must be documented..."
     • Recommendations: e.g. "Recommendation 1: Increase allocation to fixed income" / "Recommendation 2: Hedge currency exposure using forwards"
     • Observations: e.g. "Observation 1: The fund underperformed its benchmark by 200 bps" / "Observation 2: Tracking error has increased over the past quarter"
+    • Tasks: e.g. "Task 1: systems are in place to detect violations of laws, rules, regulations, and firm policies;" / "Task 2: the firm has adequate documented compliance policies and procedures;" / "Task 3: inadequate procedures are identified and recommendations submitted to senior management"
+  A vignette can have MULTIPLE blocks with DIFFERENT types — for example, one block lists Requirements for investment recommendations, and another block lists Tasks that a committee proposes. Sub-questions can ask about specific items from either block (e.g. "Which requirement is most appropriate to prevent..." or "Which task would least likely conform to...").
   FORMAT: Use a heading <p><strong>Exhibit N: [Title]</strong></p>, then present items in a CLEAN TABLE with NO cell borders — only a top header line and bottom footer line. Use this exact style:
     <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:8px 0;">
     <thead><tr><th style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
@@ -3473,7 +3477,7 @@ ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table
   DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags — randomly choose between these two styles per data table:
     Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #000;" with <th>/<td> style="border:1px solid #000;padding:6px;"
     Style B (Top/bottom only): style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:2px solid #000;padding:8px 12px;" and <td> style="padding:8px 12px;border:none;"
-  EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations): ALWAYS use clean style with NO cell borders — only header line and footer line:
+  EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations, Tasks): ALWAYS use clean style with NO cell borders — only header line and footer line:
     style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;" and <td> style="padding:8px 12px;text-align:left;border:none;"
 - NO markdown pipe tables`}
 - IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
