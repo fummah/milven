@@ -2580,7 +2580,20 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
 - All information required to answer must be in the vignette
 - Generate ONE realistic business scenario with rich detail — include background context, market conditions, specific dates, multiple data points, and professional reasoning.
 - Generate all exhibits where necessary
-- EXTRACT OF STATEMENTS (use in SOME vignettes — about 40% of the time, NOT every vignette): Occasionally include labeled "Extract" blocks that present company policies, investment guidelines, compliance requirements, or professional standards. Format as: <p><strong>Extract 1: [Title]</strong></p> followed by a <blockquote style="border-left:3px solid #333;padding-left:12px;margin:12px 0;"> containing a descriptive paragraph and numbered requirements (e.g. <p><strong>Requirement 1:</strong> [text]</p>). Include 1-3 extracts when used. Sub-questions should reference these extracts.
+- EXHIBITS / STATEMENTS (use in SOME vignettes — about 50% of the time, NOT every vignette):
+  In some vignettes, include labeled Exhibit or Statement blocks within the vignetteText. These provide structured information that sub-questions can then ask about. At least 1-2 sub-questions MUST directly reference these exhibits/statements (e.g. "Based on Statement 2..." or "Which of the factors listed in Exhibit 2..." or "Is Recommendation 1 consistent with...").
+  CONTENT TYPES — randomly vary the type used in each vignette:
+    • Statements: e.g. "Statement 1: The portfolio manager believes that..." / "Statement 2: Interest rates are expected to..."
+    • Factors: e.g. "Factor 1: Credit spread volatility" / "Factor 2: Duration mismatch"
+    • Requirements: e.g. "Requirement 1: All trades must be pre-approved..." / "Requirement 2: Client suitability must be documented..."
+    • Recommendations: e.g. "Recommendation 1: Increase allocation to fixed income" / "Recommendation 2: Hedge currency exposure using forwards"
+    • Observations: e.g. "Observation 1: The fund underperformed its benchmark by 200 bps" / "Observation 2: Tracking error has increased over the past quarter"
+  FORMAT: Use a heading <p><strong>Exhibit N: [Title]</strong></p>, then present items in a CLEAN TABLE with NO cell borders — only a top header line and bottom footer line. Use this exact style:
+    <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:8px 0;">
+    <thead><tr><th style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
+    <tbody><tr><td style="padding:8px 12px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
+    <tr><td style="padding:8px 12px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
+    The table must have NO internal cell borders, NO vertical lines — only the horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
 - Never create questions before the vignette is complete.
 - Do NOT shorten vignette. Vignettes under 500 prose words are REJECTED.
 WORD COUNT VERIFICATION (do this before returning JSON):
@@ -2591,9 +2604,13 @@ WORD COUNT VERIFICATION (do this before returning JSON):
 - Return the JSON only after vignetteText has at least 500 prose words.
 
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
-- Tables MUST use HTML <table> tags — NO markdown pipe tables. Randomly choose between these two styles per table:
-  Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #000;" with <th>/<td> style="border:1px solid #000;padding:6px;"
-  Style B (Top/bottom only — CFA exam style): style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:2px solid #000;padding:8px 12px;" and <td> style="padding:8px 12px;border:none;"`}
+- TWO TABLE TYPES — choose the right style based on content:
+  DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags — randomly choose between these two styles per data table:
+    Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #000;" with <th>/<td> style="border:1px solid #000;padding:6px;"
+    Style B (Top/bottom only): style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:2px solid #000;padding:8px 12px;" and <td> style="padding:8px 12px;border:none;"
+  EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations): ALWAYS use clean style with NO cell borders — only header line and footer line:
+    style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;" and <td> style="padding:8px 12px;text-align:left;border:none;"
+- NO markdown pipe tables`}
 - IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
 ${volPrompt ? `${volPrompt.questionDesign}\n${volPrompt.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
 ${curriculumExcerpt ? `CURRICULUM DOCUMENT RULES:
@@ -2722,7 +2739,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 						if (useFullBorders) {
 							const style = 'border:1px solid #000;padding:6px;text-align:left';
 							const thStyle = `${style};font-weight:600`;
-							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #000;margin:12px 0;">';
+							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #000;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
 							dataLines.forEach(line => {
@@ -2733,7 +2750,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 							const thStyle = 'border-bottom:2px solid #000;padding:8px 12px;font-weight:600;text-align:left';
 							const tdStyle = 'padding:8px 12px;text-align:left;border:none';
 							const tdLastStyle = 'padding:8px 12px;text-align:left;border-bottom:1px solid #000';
-							html = '<table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:12px 0;">';
+							html = '<table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:2px solid #000;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
 							dataLines.forEach((line, idx) => {
@@ -3296,12 +3313,18 @@ Each object in "items" MUST follow this structure:
     • Introduce a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional'} with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
     • All information required to answer the questions MUST be contained within the vignette
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
-    • EXTRACT OF STATEMENTS (use in SOME vignettes — about 40% of the time, NOT every vignette): Occasionally include labeled "Extract" blocks presenting company policies, investment guidelines, or professional standards. Format: <p><strong>Extract 1: [Title]</strong></p> followed by <blockquote style="border-left:3px solid #333;padding-left:12px;margin:12px 0;"> with a paragraph and numbered requirements. Sub-questions should reference these extracts.
+    • EXHIBITS / STATEMENTS (use in SOME vignettes — about 50% of the time, NOT every vignette): Include labeled Exhibit or Statement blocks. At least 1-2 sub-questions MUST reference them (e.g. "Based on Statement 2..." or "Which of the factors in Exhibit 2..."). Randomly vary the content type: Statements, Factors, Requirements, Recommendations, Observations. Format: <p><strong>Exhibit N: [Title]</strong></p> then present items in a CLEAN TABLE with NO cell borders — only header line and footer line:
+      <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:8px 0;">
+      <thead><tr><th style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;">[Title]</th></tr></thead>
+      <tbody><tr><td style="padding:8px 12px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr></tbody></table>
+      NO internal cell borders, NO vertical lines. Include 1-3 blocks when used.
     • MATH FORMATTING: If the vignetteText contains ANY mathematical expressions, formulas, variables, or equations, wrap them in LaTeX delimiters \\( ... \\). For example: "The value is \\( V = CF_{SGD} \\times e^{-r_{SGD}T} \\)" — NEVER put raw LaTeX like \\times, CF_{SGD}, e^{-r} directly in prose without \\( \\) delimiters.
-    • TABLE FORMATTING: When including tables in vignetteText, ALWAYS use proper HTML <table> tags with <thead>, <tbody>, <tr>, <th>, <td>. NEVER use markdown pipe tables or ASCII tables.
-      IMPORTANT — Randomly choose ONE of these two table styles for EACH exhibit table (vary across tables within the same vignette):
-      Style A (Full borders): <table style="border-collapse:collapse;width:100%;border:1px solid #000;"> with every <th> and <td> having style="border:1px solid #000;padding:6px;"
-      Style B (Top/bottom only — CFA exam style): <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;"> with <th> having style="border-bottom:2px solid #000;padding:8px 12px;font-weight:600;text-align:left;" and <td> having style="padding:8px 12px;text-align:left;border:none;". The last <tr> in <tbody> should have style="border-bottom:1px solid #000;" on its <td> elements.
+    • TABLE FORMATTING — TWO TABLE TYPES based on content:
+      DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags. Randomly choose between:
+        Style A (Full borders): <table style="border-collapse:collapse;width:100%;border:1px solid #000;"> with every <th> and <td> having style="border:1px solid #000;padding:6px;"
+        Style B (Top/bottom only): <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;"> with <th> style="border-bottom:2px solid #000;padding:8px 12px;font-weight:600;text-align:left;" and <td> style="padding:8px 12px;text-align:left;border:none;"
+      EXHIBIT/STATEMENT TABLES: ALWAYS use the clean no-border style described above (only header and footer lines, NO cell borders).
+      NEVER use markdown pipe tables or ASCII tables.
 ${isEthics ? `    • ETHICS TOPIC: This is an ETHICS vignette — it MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines) must be woven naturally into prose paragraphs. No Exhibit labels.` : `    • EXHIBIT REQUIREMENTS:
 ${volPrompt ? volPrompt.exhibits : `Include realistic exhibits where appropriate: financial statements, regression output, yield curves, valuation tables, client constraints, analyst notes, assumptions, market data.`}
       Also supported: <pre> blocks for regression output, ASCII charts, or structured data where a table format is not appropriate.`}
@@ -3422,7 +3445,20 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
 - All information required to answer must be in the vignette
 - Generate ONE realistic business scenario with rich detail — include background context, market conditions, specific dates, multiple data points, and professional reasoning.
 - Generate all exhibits where necessary
-- EXTRACT OF STATEMENTS (use in SOME vignettes — about 40% of the time, NOT every vignette): Occasionally include labeled "Extract" blocks that present company policies, investment guidelines, compliance requirements, or professional standards. Format as: <p><strong>Extract 1: [Title]</strong></p> followed by a <blockquote style="border-left:3px solid #333;padding-left:12px;margin:12px 0;"> containing a descriptive paragraph and numbered requirements (e.g. <p><strong>Requirement 1:</strong> [text]</p>). Include 1-3 extracts when used. Sub-questions should reference these extracts.
+- EXHIBITS / STATEMENTS (use in SOME vignettes — about 50% of the time, NOT every vignette):
+  In some vignettes, include labeled Exhibit or Statement blocks within the vignetteText. These provide structured information that sub-questions can then ask about. At least 1-2 sub-questions MUST directly reference these exhibits/statements (e.g. "Based on Statement 2..." or "Which of the factors listed in Exhibit 2..." or "Is Recommendation 1 consistent with...").
+  CONTENT TYPES — randomly vary the type used in each vignette:
+    • Statements: e.g. "Statement 1: The portfolio manager believes that..." / "Statement 2: Interest rates are expected to..."
+    • Factors: e.g. "Factor 1: Credit spread volatility" / "Factor 2: Duration mismatch"
+    • Requirements: e.g. "Requirement 1: All trades must be pre-approved..." / "Requirement 2: Client suitability must be documented..."
+    • Recommendations: e.g. "Recommendation 1: Increase allocation to fixed income" / "Recommendation 2: Hedge currency exposure using forwards"
+    • Observations: e.g. "Observation 1: The fund underperformed its benchmark by 200 bps" / "Observation 2: Tracking error has increased over the past quarter"
+  FORMAT: Use a heading <p><strong>Exhibit N: [Title]</strong></p>, then present items in a CLEAN TABLE with NO cell borders — only a top header line and bottom footer line. Use this exact style:
+    <table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:8px 0;">
+    <thead><tr><th style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
+    <tbody><tr><td style="padding:8px 12px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
+    <tr><td style="padding:8px 12px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
+    The table must have NO internal cell borders, NO vertical lines — only the horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
 - Never create questions before the vignette is complete.
 - Do NOT shorten vignette. Vignettes under 500 prose words are REJECTED.
 WORD COUNT VERIFICATION (do this before returning JSON):
@@ -3433,9 +3469,13 @@ WORD COUNT VERIFICATION (do this before returning JSON):
 - Return the JSON only after vignetteText has at least 500 prose words.
 
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
-- Tables MUST use HTML <table> tags — NO markdown pipe tables. Randomly choose between these two styles per table:
-  Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #000;" with <th>/<td> style="border:1px solid #000;padding:6px;"
-  Style B (Top/bottom only — CFA exam style): style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:2px solid #000;padding:8px 12px;" and <td> style="padding:8px 12px;border:none;"`}
+- TWO TABLE TYPES — choose the right style based on content:
+  DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags — randomly choose between these two styles per data table:
+    Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #000;" with <th>/<td> style="border:1px solid #000;padding:6px;"
+    Style B (Top/bottom only): style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:2px solid #000;padding:8px 12px;" and <td> style="padding:8px 12px;border:none;"
+  EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations): ALWAYS use clean style with NO cell borders — only header line and footer line:
+    style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;" with <th> style="border-bottom:1px solid #000;padding:8px 12px;font-weight:600;text-align:left;" and <td> style="padding:8px 12px;text-align:left;border:none;"
+- NO markdown pipe tables`}
 - IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
 ${testVol ? `${testVol.questionDesign}\n${testVol.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
 
@@ -3598,7 +3638,7 @@ ${formatBlock}`;
 						if (useFullBorders) {
 							const style = 'border:1px solid #000;padding:6px;text-align:left';
 							const thStyle = `${style};font-weight:600`;
-							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #000;margin:12px 0;">';
+							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #000;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
 							dataLines.forEach(line => {
@@ -3609,7 +3649,7 @@ ${formatBlock}`;
 							const thStyle = 'border-bottom:2px solid #000;padding:8px 12px;font-weight:600;text-align:left';
 							const tdStyle = 'padding:8px 12px;text-align:left;border:none';
 							const tdLastStyle = 'padding:8px 12px;text-align:left;border-bottom:1px solid #000';
-							html = '<table style="border-collapse:collapse;width:100%;border-top:2px solid #000;border-bottom:2px solid #000;margin:12px 0;">';
+							html = '<table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
 							dataLines.forEach((line, idx) => {
