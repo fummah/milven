@@ -753,6 +753,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Tables in displayed question content (exam take, preview, review) */
+/* Default table layout — applies to all tables */
 .prose table,
 .rich-content-display table,
 .question-preview-content table {
@@ -760,32 +761,22 @@ h1, h2, h3, h4, h5, h6 {
   width: 100%;
   margin: 0.5rem 0;
 }
-.prose table td,
-.prose table th,
-.rich-content-display table td,
-.rich-content-display table th,
-.question-preview-content table td,
-.question-preview-content table th {
+/* Default cell styles — only for cells WITHOUT inline styles (so AI-generated inline styles are respected) */
+.prose table td:not([style]),
+.prose table th:not([style]),
+.rich-content-display table td:not([style]),
+.rich-content-display table th:not([style]),
+.question-preview-content table td:not([style]),
+.question-preview-content table th:not([style]) {
   border: 1px solid #94a3b8;
   padding: 6px 10px;
   text-align: left;
 }
-.prose table th,
-.rich-content-display table th,
-.question-preview-content table th {
+.prose table th:not([style]),
+.rich-content-display table th:not([style]),
+.question-preview-content table th:not([style]) {
   background: #f1f5f9;
   font-weight: 600;
-}
-/* Force solid borders on ALL tables in rendered content — override any AI-generated dashed/dotted inline styles */
-.prose table td,
-.prose table th,
-.rich-content-display table td,
-.rich-content-display table th,
-.question-preview-content table td,
-.question-preview-content table th,
-[dangerouslysetinnerhtml] table td,
-[dangerouslysetinnerhtml] table th {
-  border-style: solid !important;
 }
 
 /* ========================================

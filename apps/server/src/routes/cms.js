@@ -20,7 +20,7 @@ function getVolumeVignettePrompt(volumeName) {
 
 	// Volume 1: Ethics, Quantitative Methods, and Economics
 	if (/volume\s*1|ethics.*quantitative|quantitative.*economics/i.test(vn) || /ethics/i.test(vn) || /quantitative/i.test(vn)) {
-		console.log('----->',1);
+		
 		return {
 			roles: 'a professional analyst or portfolio manager applying quantitative or economic analysis in a realistic investment setting',
 			exhibits: `Include at least one of the following exhibits where appropriate:
@@ -52,7 +52,7 @@ function getVolumeVignettePrompt(volumeName) {
 
 	// Volume 2: Financial Statement Analysis
 	if (/volume\s*2|financial\s*statement/i.test(vn)) {
-		console.log('----->',2);
+		
 		return {
 			roles: 'an equity analyst, credit analyst, or portfolio manager reviewing financial statements, forecasts, or accounting policy choices',
 			exhibits: `Include at least one exhibit with:
@@ -80,7 +80,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 
 	// Volume 3: Corporate Issuers
 	if (/volume\s*3|corporate\s*issuer/i.test(vn)) {
-		console.log('----->',3);
+		
 		return {
 			roles: 'a CFO, corporate finance consultant, board committee member, or analyst evaluating capital structure, payout policy, corporate governance, project financing, capital budgeting, cost of capital, ESG risk, or restructuring',
 			exhibits: `Include at least one exhibit with:
@@ -108,7 +108,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 
 	// Volume 4: Equity Valuation
 	if (/volume\s*4|equity\s*valuation/i.test(vn)) {
-		console.log('----->',4);
+		
 		return {
 			roles: 'an equity analyst valuing a listed company, private company, industry peer group, or cross-border equity',
 			exhibits: `Include at least one exhibit with:
@@ -138,7 +138,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 
 	// Volume 5: Fixed Income and Derivatives
 	if (/volume\s*5|fixed\s*income|derivatives/i.test(vn)) {
-		console.log('----->',5);
+		
 		return {
 			roles: 'a credit analyst, bond portfolio manager, derivatives strategist, risk manager, or trader',
 			exhibits: `Include exhibits with:
@@ -170,7 +170,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 
 	// Volume 6: Alternative Investments and Portfolio Management
 	if (/volume\s*6|alternative|portfolio\s*management/i.test(vn)) {
-		console.log('----->',6);
+		
 		return {
 			roles: 'a portfolio manager, allocator, investment committee member, fund-of-funds analyst, REIT analyst, private markets analyst, or risk consultant',
 			exhibits: `Include exhibits with:
@@ -201,7 +201,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 		};
 	}
 
-	console.log('----->',99);
+	
 	// Default fallback — generic professional exam quality
 	return {
 		roles: 'a financial professional such as a portfolio manager, equity analyst, credit analyst, CFO, wealth manager, consultant, trader, or risk manager',
@@ -2590,6 +2590,14 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     • Observations: e.g. "Observation 1: The fund underperformed its benchmark by 200 bps" / "Observation 2: Tracking error has increased over the past quarter"
     • Tasks: e.g. "Task 1: systems are in place to detect violations of laws, rules, regulations, and firm policies;" / "Task 2: the firm has adequate documented compliance policies and procedures;" / "Task 3: inadequate procedures are identified and recommendations submitted to senior management"
   A vignette can have MULTIPLE blocks with DIFFERENT types — for example, one block lists Requirements for investment recommendations, and another block lists Tasks that a committee proposes. Sub-questions can ask about specific items from either block (e.g. "Which requirement is most appropriate to prevent..." or "Which task would least likely conform to...").
+  SUB-QUESTION DESIGN FOR EXHIBITS/STATEMENTS: When exhibits/statements are included, at least 2 of the 4 sub-questions MUST directly ask about the labeled items. The answer options (A, B, C) should reference the items BY THEIR LABEL. Examples:
+    - "Which of Kingfisher's proposed requirements is most appropriate?" → A. Requirement 1 / B. Requirement 2 / C. Requirement 3
+    - "Which statement made by Chen is least accurate?" → A. Statement 1 / B. Statement 2 / C. Statement 3
+    - "Which task would least likely conform to Standard IV(C)?" → A. Task 1 / B. Task 2 / C. Task 3
+    - "Which factor is most relevant to the portfolio's underperformance?" → A. Factor 1 / B. Factor 2 / C. Factor 3
+    - "Which recommendation is most consistent with the IPS?" → A. Recommendation 1 / B. Recommendation 2 / C. Recommendation 3
+    - "Which observation best supports the analyst's conclusion?" → A. Observation 1 / B. Observation 2 / C. Observation 3
+    The stem asks about correctness, accuracy, appropriateness, or conformity, and the options are the labeled items (e.g. "Statement 1", "Task 2", "Requirement 3"). This tests whether the student can evaluate each item against the relevant standard, concept, or principle.
   FORMAT: Use a heading <p><strong>Exhibit N: [Title]</strong></p>, then present items in a CLEAN TABLE with NO cell borders — only a top header line and bottom footer line. Use this exact style:
     <table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
     <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
@@ -3315,11 +3323,12 @@ Each object in "items" MUST follow this structure:
     • Introduce a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional'} with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
     • All information required to answer the questions MUST be contained within the vignette
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
-    • EXHIBITS / STATEMENTS (use in SOME vignettes — about 50% of the time, NOT every vignette): Include labeled Exhibit or Statement blocks. At least 1-2 sub-questions MUST reference them (e.g. "Based on Statement 2..." or "Which of the factors in Exhibit 2..." or "Which task would least likely conform to..."). Randomly vary the content type: Statements, Factors, Requirements, Recommendations, Observations, Tasks. A single vignette can mix MULTIPLE types (e.g. one block with Requirements and another with Tasks). Format: <p><strong>Exhibit N: [Title]</strong></p> then present items in a CLEAN TABLE with NO cell borders — only header line and footer line:
+    • EXHIBITS / STATEMENTS (use in SOME vignettes — about 50% of the time, NOT every vignette): Include labeled Exhibit or Statement blocks. Randomly vary the content type: Statements, Factors, Requirements, Recommendations, Observations, Tasks. A single vignette can mix MULTIPLE types (e.g. one block with Requirements and another with Tasks). Format: <p><strong>Exhibit N: [Title]</strong></p> then present items in a CLEAN TABLE with NO cell borders — only header line and footer line:
       <table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
       <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Title]</th></tr></thead>
       <tbody><tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr></tbody></table>
       NO internal cell borders, NO vertical lines. Include 1-3 blocks when used.
+      SUB-QUESTION DESIGN: When exhibits/statements are included, at least 2 sub-questions MUST ask about the labeled items with answer options referencing items BY LABEL (e.g. stem: "Which statement is least accurate?" options: A. Statement 1 / B. Statement 2 / C. Statement 3). This tests if the student can evaluate each item against the relevant standard or concept.
     • MATH FORMATTING: If the vignetteText contains ANY mathematical expressions, formulas, variables, or equations, wrap them in LaTeX delimiters \\( ... \\). For example: "The value is \\( V = CF_{SGD} \\times e^{-r_{SGD}T} \\)" — NEVER put raw LaTeX like \\times, CF_{SGD}, e^{-r} directly in prose without \\( \\) delimiters.
     • TABLE FORMATTING — TWO TABLE TYPES based on content:
       DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags. Randomly choose between:
@@ -3457,6 +3466,14 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     • Observations: e.g. "Observation 1: The fund underperformed its benchmark by 200 bps" / "Observation 2: Tracking error has increased over the past quarter"
     • Tasks: e.g. "Task 1: systems are in place to detect violations of laws, rules, regulations, and firm policies;" / "Task 2: the firm has adequate documented compliance policies and procedures;" / "Task 3: inadequate procedures are identified and recommendations submitted to senior management"
   A vignette can have MULTIPLE blocks with DIFFERENT types — for example, one block lists Requirements for investment recommendations, and another block lists Tasks that a committee proposes. Sub-questions can ask about specific items from either block (e.g. "Which requirement is most appropriate to prevent..." or "Which task would least likely conform to...").
+  SUB-QUESTION DESIGN FOR EXHIBITS/STATEMENTS: When exhibits/statements are included, at least 2 of the 4 sub-questions MUST directly ask about the labeled items. The answer options (A, B, C) should reference the items BY THEIR LABEL. Examples:
+    - "Which of Kingfisher's proposed requirements is most appropriate?" → A. Requirement 1 / B. Requirement 2 / C. Requirement 3
+    - "Which statement made by Chen is least accurate?" → A. Statement 1 / B. Statement 2 / C. Statement 3
+    - "Which task would least likely conform to Standard IV(C)?" → A. Task 1 / B. Task 2 / C. Task 3
+    - "Which factor is most relevant to the portfolio's underperformance?" → A. Factor 1 / B. Factor 2 / C. Factor 3
+    - "Which recommendation is most consistent with the IPS?" → A. Recommendation 1 / B. Recommendation 2 / C. Recommendation 3
+    - "Which observation best supports the analyst's conclusion?" → A. Observation 1 / B. Observation 2 / C. Observation 3
+    The stem asks about correctness, accuracy, appropriateness, or conformity, and the options are the labeled items (e.g. "Statement 1", "Task 2", "Requirement 3"). This tests whether the student can evaluate each item against the relevant standard, concept, or principle.
   FORMAT: Use a heading <p><strong>Exhibit N: [Title]</strong></p>, then present items in a CLEAN TABLE with NO cell borders — only a top header line and bottom footer line. Use this exact style:
     <table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
     <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
