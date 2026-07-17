@@ -2714,10 +2714,17 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const stripLatexFromText = (text) => {
 				if (!text || typeof text !== 'string') return text;
 				// Remove \( ... \) and \[ ... \] delimited blocks, replace with inner text stripped of commands
-				let result = text.replace(/\\\((.+?)\\\)/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').trim());
-				result = result.replace(/\\\[(.+?)\\\]/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').trim());
+				let result = text.replace(/\\\((.+?)\\\)/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').replace(/\s{2,}/g, ' ').trim());
+				result = result.replace(/\\\[(.+?)\\\]/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').replace(/\s{2,}/g, ' ').trim());
+				// Remove $...$ and $$...$$ delimited LaTeX
+				result = result.replace(/\$\$(.+?)\$\$/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').replace(/\s{2,}/g, ' ').trim());
+				result = result.replace(/\$(.+?)\$/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').replace(/\s{2,}/g, ' ').trim());
 				// Remove standalone LaTeX commands that shouldn't be in plain text
-				result = result.replace(/\\(frac|sigma|beta|alpha|sqrt|sum|cdot|times|left|right|text)\b/g, '');
+				result = result.replace(/\\(frac|sigma|beta|alpha|gamma|delta|epsilon|theta|lambda|mu|rho|phi|psi|omega|sqrt|sum|prod|int|cdot|times|div|pm|mp|leq|geq|neq|approx|infty|partial|nabla|left|right|text|mathrm|mathbf|mathit|overline|underline|hat|bar|tilde|vec|log|ln|exp|sin|cos|tan)\b/g, '');
+				// Remove remaining backslash-prefixed commands
+				result = result.replace(/\\[a-zA-Z]{2,}/g, '');
+				// Clean up leftover braces and carets
+				result = result.replace(/[{}]/g, '').replace(/\s{2,}/g, ' ').trim();
 				return result;
 			};
 			const cleanStemAndOptions = (obj) => {
@@ -3014,6 +3021,30 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				diffCursor++;
 				return d;
 			};
+
+			// ── Validate vignette items have sub-questions ──────────────
+			if (questionType === 'VIGNETTE_MCQ') {
+				items = items.filter(item => {
+					if (!item.vignetteText) return false;
+					if (!Array.isArray(item.questions) || item.questions.length === 0) {
+						console.warn('[ai-generate] Rejected vignette item: no sub-questions found');
+						return false;
+					}
+					// Ensure each sub-question has a stem and options
+					item.questions = item.questions.filter(sq => {
+						const s = (sq.stem || sq.question || '').trim();
+						return s.length >= 5 && Array.isArray(sq.options) && sq.options.length >= 2;
+					});
+					if (item.questions.length === 0) {
+						console.warn('[ai-generate] Rejected vignette item: sub-questions had no valid stems/options');
+						return false;
+					}
+					return true;
+				});
+				if (items.length === 0) {
+					return res.status(400).json({ error: 'AI generated vignette(s) without valid sub-questions. Please try again.' });
+				}
+			}
 
 			if (questionType === 'VIGNETTE_MCQ' && items.length > 0 && items[0].vignetteText) {
 				// Each item is a separate case study bundle
@@ -3625,9 +3656,18 @@ ${formatBlock}`;
 			// ── Strip LaTeX/formulas from stems and options (safety net) ────
 			const stripLatexFromText = (text) => {
 				if (!text || typeof text !== 'string') return text;
-				let result = text.replace(/\\\((.+?)\\\)/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').trim());
-				result = result.replace(/\\\[(.+?)\\\]/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').trim());
-				result = result.replace(/\\(frac|sigma|beta|alpha|sqrt|sum|cdot|times|left|right|text)\b/g, '');
+				// Remove \( ... \) and \[ ... \] delimited blocks, replace with inner text stripped of commands
+				let result = text.replace(/\\\((.+?)\\\)/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').replace(/\s{2,}/g, ' ').trim());
+				result = result.replace(/\\\[(.+?)\\\]/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').replace(/\s{2,}/g, ' ').trim());
+				// Remove $...$ and $$...$$ delimited LaTeX
+				result = result.replace(/\$\$(.+?)\$\$/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').replace(/\s{2,}/g, ' ').trim());
+				result = result.replace(/\$(.+?)\$/g, (_, inner) => inner.replace(/\\[a-zA-Z]+/g, '').replace(/[{}^_]/g, '').replace(/\s{2,}/g, ' ').trim());
+				// Remove standalone LaTeX commands that shouldn't be in plain text
+				result = result.replace(/\\(frac|sigma|beta|alpha|gamma|delta|epsilon|theta|lambda|mu|rho|phi|psi|omega|sqrt|sum|prod|int|cdot|times|div|pm|mp|leq|geq|neq|approx|infty|partial|nabla|left|right|text|mathrm|mathbf|mathit|overline|underline|hat|bar|tilde|vec|log|ln|exp|sin|cos|tan)\b/g, '');
+				// Remove remaining backslash-prefixed commands
+				result = result.replace(/\\[a-zA-Z]{2,}/g, '');
+				// Clean up leftover braces and carets
+				result = result.replace(/[{}]/g, '').replace(/\s{2,}/g, ' ').trim();
 				return result;
 			};
 			const cleanStemAndOptions = (obj) => {
@@ -3912,6 +3952,10 @@ ${formatBlock}`;
 					});
 					return { vignetteText, questions: subQuestions };
 				}).filter(b => b.vignetteText && b.questions.length > 0);
+				if (bundles.length === 0) {
+					sseSend('error', { error: 'AI generated vignette(s) without valid sub-questions. Please try again.' });
+					return sseEnd();
+				}
 				sseSend('result', { course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { bundles } });
 				return sseEnd();
 			}
