@@ -758,7 +758,7 @@ h1, h2, h3, h4, h5, h6 {
 .rich-content-display table,
 .question-preview-content table {
   border-collapse: collapse;
-  width: 100%;
+  width: auto;
   margin: 0.5rem 0;
 }
 /* Default cell styles — only for cells WITHOUT inline styles (so AI-generated inline styles are respected) */

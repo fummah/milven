@@ -2484,7 +2484,7 @@ export function cmsRouter(prisma) {
 		let topicIdList = Array.isArray(topicIds) && topicIds.length
 			? topicIds
 			: (topicId ? [topicId] : []);
-		// If no topics selected, auto-resolve from course modules
+		// If no topics selected, auto-resolve from course modules and randomly sample
 		if (topicIdList.length === 0) {
 			const autoTopics = await prisma.topic.findMany({
 				where: { courseId, ...(volumeId ? { module: { volumeId } } : {}) },
@@ -2493,14 +2493,27 @@ export function cmsRouter(prisma) {
 			});
 			topicIdList = autoTopics.map(t => t.id);
 			if (topicIdList.length === 0) return res.status(400).json({ error: 'No topics found for the selected course/volume' });
+			// Shuffle to randomize which topics are used (avoids always picking first ones)
+			for (let i = topicIdList.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				[topicIdList[i], topicIdList[j]] = [topicIdList[j], topicIdList[i]];
+			}
+			// Sample a reasonable subset so the AI focuses on different topics each run
+			const maxTopics = questionType === 'VIGNETTE_MCQ' ? Math.max(4, count * 4) : Math.max(3, count * 2);
+			if (topicIdList.length > maxTopics) topicIdList = topicIdList.slice(0, maxTopics);
 		}
 
 		// Load and validate topics
-		const selectedTopics = await prisma.topic.findMany({
+		let selectedTopics = await prisma.topic.findMany({
 			where: { id: { in: topicIdList } },
 			select: { id: true, name: true, courseId: true, moduleId: true, module: { select: { name: true, volumeId: true } } }
 		});
 		if (selectedTopics.length !== topicIdList.length) return res.status(400).json({ error: 'One or more topics not found' });
+		// Shuffle selectedTopics so round-robin assignment spreads across different topics each run
+		for (let i = selectedTopics.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[selectedTopics[i], selectedTopics[j]] = [selectedTopics[j], selectedTopics[i]];
+		}
 		for (const t of selectedTopics) {
 			if (t.courseId && t.courseId !== courseId) return res.status(400).json({ error: 'One or more topics do not belong to selected course' });
 			if (volumeId && t.module?.volumeId && t.module.volumeId !== volumeId) return res.status(400).json({ error: 'One or more topics do not belong to selected volume' });
@@ -2524,6 +2537,11 @@ export function cmsRouter(prisma) {
 			legacyConcepts = await prisma.concept.findMany({ where: { id: { in: conceptIds } }, select: { id: true, name: true, topicId: true } });
 		} else {
 			legacyConcepts = await prisma.concept.findMany({ where: { topicId: { in: topicIdList } }, orderBy: [{ order: 'asc' }], select: { id: true, name: true, topicId: true } });
+			// Shuffle auto-resolved concepts so prompt context varies each run
+			for (let i = legacyConcepts.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				[legacyConcepts[i], legacyConcepts[j]] = [legacyConcepts[j], legacyConcepts[i]];
+			}
 		}
 
 		// Load curriculum document for fine-tuning (if uploaded for this course + volume)
@@ -2599,7 +2617,7 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     - "Which observation best supports the analyst's conclusion?" → A. Observation 1 / B. Observation 2 / C. Observation 3
     The stem asks about correctness, accuracy, appropriateness, or conformity, and the options are the labeled items (e.g. "Statement 1", "Task 2", "Requirement 3"). This tests whether the student can evaluate each item against the relevant standard, concept, or principle.
   FORMAT: Use a heading <p><strong>Exhibit N: [Title]</strong></p>, then present items in a CLEAN TABLE with NO cell borders — only a top header line and bottom footer line. Use this exact style:
-    <table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
+    <table style="border-collapse:collapse;width:auto;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
     <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
     <tbody><tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
     <tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
@@ -2616,10 +2634,10 @@ WORD COUNT VERIFICATION (do this before returning JSON):
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
 - TWO TABLE TYPES — choose the right style based on content:
   DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags — randomly choose between these two styles per data table:
-    Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #999;" with <th>/<td> style="border:1px solid #999;padding:4px 8px;"
-    Style B (Top/bottom only): style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;" and <td> style="padding:4px 8px;border:none;"
+    Style A (Full borders): style="border-collapse:collapse;width:auto;border:1px solid #999;" with <th>/<td> style="border:1px solid #999;padding:4px 8px;"
+    Style B (Top/bottom only): style="border-collapse:collapse;width:auto;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;" and <td> style="padding:4px 8px;border:none;"
   EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations, Tasks): ALWAYS use clean style with NO cell borders — only header line and footer line:
-    style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;" and <td> style="padding:4px 8px;text-align:left;border:none;"
+    style="border-collapse:collapse;width:auto;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;" and <td> style="padding:4px 8px;text-align:left;border:none;"
 - NO markdown pipe tables`}
 - IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
 ${volPrompt ? `${volPrompt.questionDesign}\n${volPrompt.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
@@ -2671,11 +2689,54 @@ VIGNETTE MCQ QUALITY RULES:
 - Total question value: 12 points
 - MINIMUM 500 prose words in vignetteText (target 500–800). HTML tags and table markup do NOT count — only prose words count. Vignettes under 500 prose words are REJECTED.
 - All information required to answer must be contained within the vignette
-- At least two questions should require calculations whenever the topic allows
-- At least one question should test interpretation of assumptions, recommendations, or professional judgement
-- Distractors should represent common CFA mistakes — NOT trick answers
-- After the questions, provide: answer key, full solution, formula used, explanation of each incorrect answer
 - IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
+
+ADVANCED CFA LEVEL II ITEM-SET DESIGN REQUIREMENTS:
+The generated vignette must simulate a real CFA Level II examination case. The candidate should feel they are analyzing a professional investment situation, not answering a textbook quiz.
+
+Every vignette MUST contain:
+1. A CENTRAL INVESTMENT PROBLEM — one of: portfolio allocation decision, valuation decision, risk assessment, investment recommendation, analyst disagreement, or client suitability decision.
+2. MULTIPLE LAYERS OF INFORMATION — include relevant information, irrelevant information, conflicting information, and assumptions requiring judgement. The candidate must filter and interpret.
+3. PROFESSIONAL UNCERTAINTY — the vignette should NOT immediately reveal the answer. Candidates must evaluate alternatives. Difficulty comes from interpretation, not confusing wording.
+
+VIGNETTE WRITING STYLE — Write like CFA Institute curriculum examples:
+- Include named investment professionals, institutional investors, investment committee discussions, analyst reports, portfolio constraints, market environment, economic assumptions.
+- AVOID generic wording like "An investor wants to invest...". Instead write: "During a quarterly investment committee meeting, Sarah Williams, senior analyst at Horizon Capital, reviews..."
+
+QUESTION COMPLEXITY REQUIREMENTS — The 4 sub-questions must NOT all test the same concept. Distribute as follows:
+  Question 1 — FOUNDATION APPLICATION (Medium difficulty): Test whether the candidate can correctly apply the main concept — classify an investment, calculate a key metric, identify the appropriate framework.
+  Question 2 — ANALYTICAL INTERPRETATION (Medium-Hard difficulty): Require interpretation of exhibit information. The candidate must compare alternatives, evaluate assumptions, or understand implications.
+  Question 3 — CALCULATION + JUDGEMENT (Hard difficulty): Require a MULTI-STEP calculation: Step 1: Calculate a financial metric. Step 2: Interpret the result. Step 3: Select the most appropriate conclusion. Do NOT create single-step arithmetic questions.
+  Question 4 — INVESTMENT DECISION / PROFESSIONAL JUDGEMENT (Hard difficulty): Require the candidate to recommend an action. Examples: "The analyst's recommendation is most appropriate because:", "The portfolio manager should most likely:", "The investment committee should reject the proposal because:".
+
+DIFFICULTY CONTROL — Target: 70% Medium-Hard, 30% Hard. AVOID: definition questions, memorization, obvious calculations. PREFER stems using: "most appropriate", "least likely", "best explains", "most consistent with", "should most likely".
+
+REALISTIC CFA TRAPS — Incorrect options MUST represent mistakes actually made by CFA candidates:
+  Alternative Investments: confusing equity REITs vs mortgage REITs, confusing NAV vs book value, ignoring leverage effects, confusing income return vs capital appreciation.
+  Fixed Income: confusing duration vs convexity, ignoring credit spread changes.
+  Equity: confusing enterprise value vs equity value, incorrect growth assumptions.
+  Portfolio Management: ignoring investor constraints, selecting highest return instead of suitable portfolio.
+  Accounting: confusing IFRS vs US GAAP treatment.
+
+EXHIBIT REQUIREMENTS — When using exhibits, make them meaningful. Do NOT add tables only for appearance. Every exhibit MUST be referenced by at least one question. Good exhibits include:
+  Alternative Investments: REIT operating data, occupancy rates, capitalization rates, NAV calculations, leverage ratios.
+  Equity: financial forecasts, valuation multiples, comparable companies.
+  Fixed Income: yield curve, spread changes, duration statistics.
+  Portfolio: performance attribution, risk measures, IPS constraints.
+
+ANSWER QUALITY CONTROL — Before returning JSON, solve every question internally. For each question verify:
+  1. The correct answer can be PROVEN from the vignette data.
+  2. The distractors represent realistic CFA mistakes.
+  3. The answer is NOT obvious from wording alone.
+  4. The explanation teaches the candidate why the answer is correct.
+
+EXPLANATION REQUIREMENTS — Each explanation MUST include:
+  WHY CORRECT: Explain the CFA concept and reasoning.
+  WHY OTHER OPTIONS ARE WRONG: Explain the specific misconception for each distractor.
+  COMMON CFA MISTAKE: State the error a candidate would typically make.
+
+FINAL EXAM SIMULATION CHECK — Before generating, ask: "Would a CFA Level II candidate need 5-10 minutes to carefully analyze this item set?" If NO, make it more complex. The output must resemble a professional CFA Level II mock examination question, NOT an educational exercise.
+
 MATH IN vignetteText: If the vignetteText contains any mathematical expressions, formulas, or variables, ALWAYS wrap them in LaTeX delimiters \\\\( ... \\\\). NEVER put raw LaTeX like \\times, CF_{SGD}, e^{-r} in prose without delimiters.
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
@@ -2684,7 +2745,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\\\( \\\\), \\\\[ \\\\], or mathematical symbols like \\\\frac, \\\\sigma, \\\\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\\\( E(R) \\\\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 500 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 500 prose words are unacceptable.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\\\( \\\\), \\\\[ \\\\], or mathematical symbols like \\\\frac, \\\\sigma, \\\\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\\\( E(R) \\\\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 500 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 500 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL II EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level II exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
@@ -2756,7 +2817,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 						if (useFullBorders) {
 							const style = 'border:1px solid #999;padding:4px 8px;text-align:left';
 							const thStyle = `${style};font-weight:600`;
-							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #999;margin:6px 0;">';
+							html = '<table style="border-collapse:collapse;width:auto;border:1px solid #999;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
 							dataLines.forEach(line => {
@@ -2767,7 +2828,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 							const thStyle = 'border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left';
 							const tdStyle = 'padding:4px 8px;text-align:left;border:none';
 							const tdLastStyle = 'padding:4px 8px;text-align:left;border-bottom:1px solid #000';
-							html = '<table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:6px 0;">';
+							html = '<table style="border-collapse:collapse;width:auto;border-top:1px solid #000;border-bottom:1px solid #000;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
 							dataLines.forEach((line, idx) => {
@@ -2782,6 +2843,9 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				);
 			};
 			items.forEach(it => { if (it.vignetteText) it.vignetteText = convertPipeTablesToHtml(it.vignetteText); });
+
+			// ── Fix table width: replace width:100% with width:auto ────
+			items.forEach(it => { if (it.vignetteText) it.vignetteText = it.vignetteText.replace(/width:\s*100%/g, 'width:auto'); });
 
 			// ── Answer consistency validation (generate) ─────────────────
 			// Helper: extract a normalized number from text, accounting for "million", "billion", "$2.24 million" → 2240000
@@ -3005,9 +3069,9 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 			const level = course.level || 'LEVEL1';
 			const created = [];
-			// For creation, spread questions across selected topics (round-robin)
-			let topicCursor = 0;
-			let diffCursor = 0;
+			// For creation, spread questions across selected topics (round-robin with random start)
+			let topicCursor = Math.floor(Math.random() * selectedTopics.length);
+			let diffCursor = Math.floor(Math.random() * diffList.length);
 			const nextTopicId = () => {
 				const t = selectedTopics[topicCursor % selectedTopics.length];
 				topicCursor++;
@@ -3024,16 +3088,36 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 			// ── Validate vignette items have sub-questions ──────────────
 			if (questionType === 'VIGNETTE_MCQ') {
+				// Normalize sub-question field names so nothing is missed
+				for (const item of items) {
+					if (Array.isArray(item.questions)) {
+						item.questions = item.questions.map(sq => {
+							if (!sq.stem) sq.stem = sq.question || sq.text || sq.question_text || sq.questionText || sq.prompt || '';
+							if (!Array.isArray(sq.options)) sq.options = sq.choices || sq.answers || [];
+							sq.options = (Array.isArray(sq.options) ? sq.options : []).map(o => ({
+								text: o.text || o.label || o.answer || o.content || '',
+								isCorrect: o.isCorrect === true || o.correct === true || o.is_correct === true
+							}));
+							return sq;
+						});
+					}
+				}
 				items = items.filter(item => {
 					if (!item.vignetteText) return false;
 					if (!Array.isArray(item.questions) || item.questions.length === 0) {
 						console.warn('[ai-generate] Rejected vignette item: no sub-questions found');
 						return false;
 					}
-					// Ensure each sub-question has a stem and options
+					// Ensure each sub-question has a non-empty stem and at least 2 options with text
 					item.questions = item.questions.filter(sq => {
-						const s = (sq.stem || sq.question || '').trim();
-						return s.length >= 5 && Array.isArray(sq.options) && sq.options.length >= 2;
+						const s = (sq.stem || '').trim();
+						const validOpts = (sq.options || []).filter(o => (o.text || '').trim().length > 0);
+						if (s.length < 5 || validOpts.length < 2) {
+							console.warn(`[ai-generate] Dropped sub-question: stem=${s.length} chars, valid options=${validOpts.length}`);
+							return false;
+						}
+						sq.options = validOpts;
+						return true;
 					});
 					if (item.questions.length === 0) {
 						console.warn('[ai-generate] Rejected vignette item: sub-questions had no valid stems/options');
@@ -3071,9 +3155,10 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 					const subQ = Array.isArray(item.questions) ? item.questions : [];
 					for (let si = 0; si < subQ.length; si++) {
 						const sq = subQ[si];
-						const s = (sq.stem || sq.question || '').trim();
+						const s = (sq.stem || '').trim();
 						if (!s || s.length < 5) continue;
-						const opts = sq.options || [];
+						const opts = Array.isArray(sq.options) ? sq.options.filter(o => (o.text || '').trim().length > 0) : [];
+						if (opts.length < 2) continue;
 						const child = await prisma.question.create({
 							data: {
 								stem: s,
@@ -3196,7 +3281,9 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 		if (!course) return res.status(400).json({ error: 'Course not found' });
 
 		// Auto-resolve topics from moduleIds/course when none selected
+		let autoResolved = false;
 		if (!topicIds || topicIds.length === 0) {
+			autoResolved = true;
 			const topicWhere = { courseId };
 			if (Array.isArray(moduleIds) && moduleIds.length > 0) {
 				topicWhere.moduleId = { in: moduleIds };
@@ -3206,6 +3293,14 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const autoTopics = await prisma.topic.findMany({ where: topicWhere, select: { id: true }, orderBy: { order: 'asc' } });
 			topicIds = autoTopics.map(t => t.id);
 			if (topicIds.length === 0) return res.status(400).json({ error: 'No topics found for the selected course/volume/modules' });
+			// Shuffle to randomize which topics are used (avoids always picking first ones)
+			for (let i = topicIds.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				[topicIds[i], topicIds[j]] = [topicIds[j], topicIds[i]];
+			}
+			// Sample a reasonable subset so the AI focuses on different topics each run
+			const maxTopics = questionType === 'VIGNETTE_MCQ' ? Math.max(4, count * 4) : Math.max(3, count * 2);
+			if (topicIds.length > maxTopics) topicIds = topicIds.slice(0, maxTopics);
 		}
 
 		// Resolve volume name for better prompt context
@@ -3216,11 +3311,16 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			if (vol) volumeName = vol.name;
 		}
 
-		const selectedTopics = await prisma.topic.findMany({
+		let selectedTopics = await prisma.topic.findMany({
 			where: { id: { in: topicIds } },
 			select: { id: true, name: true, courseId: true, moduleId: true, module: { select: { id: true, name: true, volumeId: true } } }
 		});
 		if (selectedTopics.length !== topicIds.length) return res.status(400).json({ error: 'One or more topics not found' });
+		// Shuffle selectedTopics so round-robin assignment spreads across different topics each run
+		for (let i = selectedTopics.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[selectedTopics[i], selectedTopics[j]] = [selectedTopics[j], selectedTopics[i]];
+		}
 		for (const t of selectedTopics) {
 			if (t.courseId && t.courseId !== courseId) return res.status(400).json({ error: 'One or more topics do not belong to selected course' });
 			if (volumeId && t.module?.volumeId && t.module.volumeId !== volumeId) return res.status(400).json({ error: 'One or more topics do not belong to selected volume' });
@@ -3249,6 +3349,11 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
 				select: { id: true, name: true, topicId: true }
 			});
+			// Shuffle auto-resolved concepts so prompt context varies each run
+			for (let i = selectedConcepts.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				[selectedConcepts[i], selectedConcepts[j]] = [selectedConcepts[j], selectedConcepts[i]];
+			}
 		}
 
 		// Load curriculum document for fine-tuning (if uploaded for this course + volume)
@@ -3355,7 +3460,7 @@ Each object in "items" MUST follow this structure:
     • All information required to answer the questions MUST be contained within the vignette
     • Present multiple related financial scenarios, each with specific data, dates, company names, and context
     • EXHIBITS / STATEMENTS (use in SOME vignettes — about 50% of the time, NOT every vignette): Include labeled Exhibit or Statement blocks. Randomly vary the content type: Statements, Factors, Requirements, Recommendations, Observations, Tasks. A single vignette can mix MULTIPLE types (e.g. one block with Requirements and another with Tasks). Format: <p><strong>Exhibit N: [Title]</strong></p> then present items in a CLEAN TABLE with NO cell borders — only header line and footer line:
-      <table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
+      <table style="border-collapse:collapse;width:auto;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
       <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Title]</th></tr></thead>
       <tbody><tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr></tbody></table>
       NO internal cell borders, NO vertical lines. Include 1-3 blocks when used.
@@ -3363,8 +3468,8 @@ Each object in "items" MUST follow this structure:
     • MATH FORMATTING: If the vignetteText contains ANY mathematical expressions, formulas, variables, or equations, wrap them in LaTeX delimiters \\( ... \\). For example: "The value is \\( V = CF_{SGD} \\times e^{-r_{SGD}T} \\)" — NEVER put raw LaTeX like \\times, CF_{SGD}, e^{-r} directly in prose without \\( \\) delimiters.
     • TABLE FORMATTING — TWO TABLE TYPES based on content:
       DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags. Randomly choose between:
-        Style A (Full borders): <table style="border-collapse:collapse;width:100%;border:1px solid #999;"> with every <th> and <td> having style="border:1px solid #999;padding:4px 8px;"
-        Style B (Top/bottom only): <table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;"> with <th> style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;" and <td> style="padding:4px 8px;text-align:left;border:none;"
+        Style A (Full borders): <table style="border-collapse:collapse;width:auto;border:1px solid #999;"> with every <th> and <td> having style="border:1px solid #999;padding:4px 8px;"
+        Style B (Top/bottom only): <table style="border-collapse:collapse;width:auto;border-top:1px solid #000;border-bottom:1px solid #000;"> with <th> style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;" and <td> style="padding:4px 8px;text-align:left;border:none;"
       EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations, Tasks): ALWAYS use the clean no-border style described above (only header and footer lines, NO cell borders).
       NEVER use markdown pipe tables or ASCII tables.
 ${isEthics ? `    • ETHICS TOPIC: This is an ETHICS vignette — it MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines) must be woven naturally into prose paragraphs. No Exhibit labels.` : `    • EXHIBIT REQUIREMENTS:
@@ -3387,6 +3492,20 @@ ${volPrompt.distractors}
     • At least one question should test interpretation of assumptions, recommendations, or professional judgement
     • Distractors should represent common CFA mistakes — NOT trick answers
 `}
+    • ADVANCED CFA LEVEL II ITEM-SET DESIGN:
+      The vignette must simulate a real CFA Level II exam case — the candidate should feel they are analyzing a professional investment situation, not answering a textbook quiz.
+      Every vignette MUST contain: (1) a central investment problem (portfolio allocation, valuation, risk assessment, investment recommendation, analyst disagreement, or client suitability), (2) multiple layers of information including relevant, irrelevant, and conflicting data plus assumptions requiring judgement, (3) professional uncertainty where the answer is not immediately obvious.
+      VIGNETTE WRITING STYLE: Include named investment professionals, institutional investors, investment committee discussions, analyst reports, portfolio constraints, market environment, economic assumptions. AVOID generic wording like "An investor wants to invest...". Instead: "During a quarterly investment committee meeting, Sarah Williams, senior analyst at Horizon Capital, reviews..."
+    • QUESTION COMPLEXITY — The 4 sub-questions must NOT all test the same concept. Distribute:
+      Q1 — FOUNDATION APPLICATION (Medium): Apply the main concept — classify, calculate a key metric, identify the framework.
+      Q2 — ANALYTICAL INTERPRETATION (Medium-Hard): Interpret exhibit information — compare alternatives, evaluate assumptions, understand implications.
+      Q3 — CALCULATION + JUDGEMENT (Hard): Multi-step calculation — Step 1: Calculate metric, Step 2: Interpret result, Step 3: Select conclusion. NO single-step arithmetic.
+      Q4 — INVESTMENT DECISION / PROFESSIONAL JUDGEMENT (Hard): Recommend an action — "The analyst's recommendation is most appropriate because:", "The portfolio manager should most likely:", "The investment committee should reject the proposal because:".
+    • DIFFICULTY CONTROL: Target 70% Medium-Hard, 30% Hard. AVOID definition/memorization/obvious calculations. PREFER: "most appropriate", "least likely", "best explains", "most consistent with", "should most likely".
+    • REALISTIC CFA TRAPS: Distractors MUST represent real CFA candidate mistakes (confusing equity vs mortgage REITs, NAV vs book value, duration vs convexity, enterprise vs equity value, IFRS vs US GAAP, ignoring investor constraints, selecting highest return instead of suitable portfolio).
+    • EXHIBIT QUALITY: Every exhibit MUST be referenced by at least one question. Do NOT add tables only for appearance.
+    • EXPLANATION REQUIREMENTS: Each explanation must include: WHY CORRECT (CFA concept and reasoning), WHY OTHER OPTIONS ARE WRONG (specific misconception per distractor), COMMON CFA MISTAKE (the typical error).
+    • FINAL CHECK: "Would a CFA Level II candidate need 5-10 minutes to analyze this item set?" If NO, make it more complex.
     • CRITICAL — ANSWER CONSISTENCY RULE (MUST FOLLOW):
       For EVERY sub-question (numerical OR text-based):
       1. FIRST complete the worked solution, compute the final answer or conclusion.
@@ -3506,7 +3625,7 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     - "Which observation best supports the analyst's conclusion?" → A. Observation 1 / B. Observation 2 / C. Observation 3
     The stem asks about correctness, accuracy, appropriateness, or conformity, and the options are the labeled items (e.g. "Statement 1", "Task 2", "Requirement 3"). This tests whether the student can evaluate each item against the relevant standard, concept, or principle.
   FORMAT: Use a heading <p><strong>Exhibit N: [Title]</strong></p>, then present items in a CLEAN TABLE with NO cell borders — only a top header line and bottom footer line. Use this exact style:
-    <table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
+    <table style="border-collapse:collapse;width:auto;border-top:1px solid #000;border-bottom:1px solid #000;margin:8px 0;">
     <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
     <tbody><tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
     <tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
@@ -3523,13 +3642,26 @@ WORD COUNT VERIFICATION (do this before returning JSON):
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
 - TWO TABLE TYPES — choose the right style based on content:
   DATA TABLES (financial data, numbers, ratios): Use HTML <table> tags — randomly choose between these two styles per data table:
-    Style A (Full borders): style="border-collapse:collapse;width:100%;border:1px solid #999;" with <th>/<td> style="border:1px solid #999;padding:4px 8px;"
-    Style B (Top/bottom only): style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;" and <td> style="padding:4px 8px;border:none;"
+    Style A (Full borders): style="border-collapse:collapse;width:auto;border:1px solid #999;" with <th>/<td> style="border:1px solid #999;padding:4px 8px;"
+    Style B (Top/bottom only): style="border-collapse:collapse;width:auto;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;" and <td> style="padding:4px 8px;border:none;"
   EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations, Tasks): ALWAYS use clean style with NO cell borders — only header line and footer line:
-    style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;" and <td> style="padding:4px 8px;text-align:left;border:none;"
+    style="border-collapse:collapse;width:auto;border-top:1px solid #000;border-bottom:1px solid #000;" with <th> style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;" and <td> style="padding:4px 8px;text-align:left;border:none;"
 - NO markdown pipe tables`}
 - IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
 ${testVol ? `${testVol.questionDesign}\n${testVol.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
+ADVANCED CFA LEVEL II ITEM-SET DESIGN:
+The vignette must simulate a real CFA Level II exam case — not a textbook quiz. Include: (1) a central investment problem (portfolio allocation, valuation, risk assessment, recommendation, analyst disagreement, or client suitability), (2) multiple layers of relevant, irrelevant, and conflicting information plus assumptions requiring judgement, (3) professional uncertainty where the answer is not immediately obvious.
+VIGNETTE WRITING STYLE: Include named investment professionals, institutional investors, investment committee discussions, analyst reports, portfolio constraints, market environment, economic assumptions. AVOID: "An investor wants to invest...". Instead: "During a quarterly investment committee meeting, Sarah Williams, senior analyst at Horizon Capital, reviews..."
+QUESTION COMPLEXITY — The 4 sub-questions must NOT all test the same concept:
+  Q1 — FOUNDATION APPLICATION (Medium): Apply the main concept — classify, calculate a key metric, identify the framework.
+  Q2 — ANALYTICAL INTERPRETATION (Medium-Hard): Interpret exhibit information — compare alternatives, evaluate assumptions, understand implications.
+  Q3 — CALCULATION + JUDGEMENT (Hard): Multi-step calculation — Calculate metric → Interpret result → Select conclusion. NO single-step arithmetic.
+  Q4 — INVESTMENT DECISION / PROFESSIONAL JUDGEMENT (Hard): Recommend an action — "most appropriate because:", "should most likely:", "should reject because:".
+DIFFICULTY: 70% Medium-Hard, 30% Hard. AVOID definition/memorization/obvious calculations. PREFER: "most appropriate", "least likely", "best explains", "most consistent with".
+REALISTIC CFA TRAPS: Distractors must represent real CFA candidate mistakes (confusing similar concepts, ignoring constraints, wrong formula application, IFRS vs US GAAP).
+EXHIBIT QUALITY: Every exhibit MUST be referenced by at least one question. No decorative tables.
+EXPLANATION REQUIREMENTS: Each explanation must include: WHY CORRECT, WHY OTHER OPTIONS ARE WRONG (specific misconception), COMMON CFA MISTAKE.
+FINAL CHECK: "Would a CFA Level II candidate need 5-10 minutes to analyze this?" If NO, make it more complex.
 
 ${previewCurriculumExcerpt ? `CURRICULUM DOCUMENT RULES:
 1. "los": Copy EXACT Learning Outcome Statement from document (verbs: describe, explain, calculate, etc.)
@@ -3561,7 +3693,7 @@ ${formatBlock}`;
 			const completion = await openai.chat.completions.create({
 				model: 'gpt-4o-mini',
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\( \\), \\[ \\], or mathematical symbols like \\frac, \\sigma, \\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\( E(R) \\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 500 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 500 prose words are unacceptable.` },
+					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\( \\), \\[ \\], or mathematical symbols like \\frac, \\sigma, \\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\( E(R) \\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 500 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 500 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL II EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level II exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
@@ -3621,8 +3753,8 @@ ${formatBlock}`;
 				usedQids.add(qid);
 				return qid;
 			};
-			let topicCursor = 0;
-			let diffCursor = 0;
+			let topicCursor = Math.floor(Math.random() * selectedTopics.length);
+			let diffCursor = Math.floor(Math.random() * diffList.length);
 			const nextTopic = () => {
 				const t = selectedTopics[topicCursor % selectedTopics.length];
 				topicCursor++;
@@ -3699,7 +3831,7 @@ ${formatBlock}`;
 						if (useFullBorders) {
 							const style = 'border:1px solid #999;padding:4px 8px;text-align:left';
 							const thStyle = `${style};font-weight:600`;
-							html = '<table style="border-collapse:collapse;width:100%;border:1px solid #999;margin:6px 0;">';
+							html = '<table style="border-collapse:collapse;width:auto;border:1px solid #999;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
 							dataLines.forEach(line => {
@@ -3710,7 +3842,7 @@ ${formatBlock}`;
 							const thStyle = 'border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left';
 							const tdStyle = 'padding:4px 8px;text-align:left;border:none';
 							const tdLastStyle = 'padding:4px 8px;text-align:left;border-bottom:1px solid #000';
-							html = '<table style="border-collapse:collapse;width:100%;border-top:1px solid #000;border-bottom:1px solid #000;margin:6px 0;">';
+							html = '<table style="border-collapse:collapse;width:auto;border-top:1px solid #000;border-bottom:1px solid #000;margin:6px 0;">';
 							html += '<thead><tr>' + headerCells.map(c => `<th style="${thStyle}">${c}</th>`).join('') + '</tr></thead>';
 							html += '<tbody>';
 							dataLines.forEach((line, idx) => {
@@ -3725,6 +3857,9 @@ ${formatBlock}`;
 				);
 			};
 			items.forEach(it => { if (it.vignetteText) it.vignetteText = convertPipeTablesToHtml(it.vignetteText); });
+
+			// ── Fix table width: replace width:100% with width:auto ────
+			items.forEach(it => { if (it.vignetteText) it.vignetteText = it.vignetteText.replace(/width:\s*100%/g, 'width:auto'); });
 
 			// ── Answer consistency validation (preview) ──────────────────
 			// Helper: extract a normalized number from text, accounting for "million", "billion", "$2.24 million" → 2240000
@@ -3919,6 +4054,33 @@ ${formatBlock}`;
 			};
 
 			if (questionType === 'VIGNETTE_MCQ' || isConstructedBundle) {
+				// Normalize sub-question field names for VIGNETTE_MCQ
+				if (questionType === 'VIGNETTE_MCQ') {
+					for (const item of items) {
+						if (Array.isArray(item.questions)) {
+							item.questions = item.questions.map(sq => {
+								if (!sq.stem) sq.stem = sq.question || sq.text || sq.question_text || sq.questionText || sq.prompt || '';
+								if (!Array.isArray(sq.options)) sq.options = sq.choices || sq.answers || [];
+								sq.options = (Array.isArray(sq.options) ? sq.options : []).map(o => ({
+									text: o.text || o.label || o.answer || o.content || '',
+									isCorrect: o.isCorrect === true || o.correct === true || o.is_correct === true
+								}));
+								return sq;
+							});
+							// Filter out sub-questions with empty stems or insufficient options
+							item.questions = item.questions.filter(sq => {
+								const s = (sq.stem || '').trim();
+								const validOpts = (sq.options || []).filter(o => (o.text || '').trim().length > 0);
+								if (s.length < 5 || validOpts.length < 2) {
+									console.warn(`[ai-preview] Dropped sub-question: stem=${s.length} chars, valid options=${validOpts.length}`);
+									return false;
+								}
+								sq.options = validOpts;
+								return true;
+							});
+						}
+					}
+				}
 				// Each item in the array is a separate case study bundle
 				const bundles = items.map((bundle) => {
 					const vignetteText = String(bundle.vignetteText || '').trim();
