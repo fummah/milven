@@ -728,7 +728,7 @@ export function AdminQuestions() {
 			// Prefer preview flow (admin review before save)
 			// Uses fetch+SSE so heartbeats keep the connection alive on DigitalOcean
 			const previewController = new AbortController();
-			const previewTimeout = setTimeout(() => previewController.abort(), 210_000);
+			const previewTimeout = setTimeout(() => previewController.abort(), 360_000);
 			try {
 				const response = await fetch(`${API_URL}/api/cms/questions/generate-ai/preview`, {
 					method: 'POST',

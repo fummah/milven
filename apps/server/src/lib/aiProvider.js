@@ -100,7 +100,7 @@ export async function listModels(apiKey, provider = DEFAULT_PROVIDER) {
 
 // ── Unified chat completion ─────────────────────────────
 // Returns { content: string, usage: { prompt_tokens, completion_tokens } }
-export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, model, messages, temperature = 0.5, maxTokens = 4000, jsonMode = false, timeout = 120000 }) {
+export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, model, messages, temperature = 0.5, maxTokens = 4000, jsonMode = false, timeout = 300000 }) {
 	const resolvedModel = model || getDefaultModel(provider);
 
 	if (provider === 'openai') {
