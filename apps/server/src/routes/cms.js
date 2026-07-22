@@ -2577,8 +2577,8 @@ export function cmsRouter(prisma) {
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 			? isEthics
-				? 'Vignette / item-set (CFA Level II exam style): 500-800 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
-				: 'Vignette / item-set (CFA Level II exam style): 500-800 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
+				? 'Vignette / item-set (CFA Level II exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+				: 'Vignette / item-set (CFA Level II exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 			: 'Constructed response (written answer requiring calculations or explanations)';
 		const difficultyLabel = diffList.join(', ');
 		const curriculumSection = curriculumExcerpt
@@ -2595,7 +2595,7 @@ CORE REQUIREMENTS:
 - ALL metadata fields below are REQUIRED
 
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
-- MINIMUM 500 PROSE words in vignetteText (target 500–800 words of actual prose text). HTML tags, table markup, and exhibit labels do NOT count toward this minimum — only narrative prose words count.
+- MINIMUM 250 PROSE words in vignetteText (target 250–650 words of actual prose text). HTML tags, table markup, and exhibit labels do NOT count toward this minimum — only narrative prose words count.
 - 4 sub-questions (3 marks each), total 12 points
 - Protagonist: ${volPrompt ? volPrompt.roles : 'a financial professional'}
 - UNIQUE randomly generated name and company — NEVER repeat names
@@ -2627,13 +2627,13 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     <tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
     The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
 - Never create questions before the vignette is complete.
-- Do NOT shorten vignette. Vignettes under 500 prose words are REJECTED.
+- Do NOT shorten vignette. Vignettes under 250 prose words are REJECTED.
 WORD COUNT VERIFICATION (do this before returning JSON):
 - Strip all HTML tags from vignetteText mentally and count only the remaining prose words.
-- If fewer than 500 prose words, EXPAND the case study by adding more background, additional scenarios, analyst observations, market context, or client constraints.
-- If more than 800 prose words, trim slightly.
+- If fewer than 250 prose words, EXPAND the case study by adding more background, additional scenarios, analyst observations, market context, or client constraints.
+- If more than 650 prose words, trim slightly.
 - Vignettes with tables: tables reduce visible prose — compensate by writing MORE narrative paragraphs around and between tables.
-- Return the JSON only after vignetteText has at least 500 prose words.
+- Return the JSON only after vignetteText has at least 250 prose words.
 
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
 - TWO TABLE TYPES — choose the right style based on content:
@@ -2692,7 +2692,7 @@ For VIGNETTE_MCQ: items must be an array of ${count} objects, each with { "vigne
 VIGNETTE MCQ QUALITY RULES:
 - Exactly FOUR multiple-choice questions per vignette, three answer choices only (A, B, C)
 - Total question value: 12 points
-- MINIMUM 500 prose words in vignetteText (target 500–800). HTML tags and table markup do NOT count — only prose words count. Vignettes under 500 prose words are REJECTED.
+- MINIMUM 250 prose words in vignetteText (target 250–650). HTML tags and table markup do NOT count — only prose words count. Vignettes under 250 prose words are REJECTED.
 - All information required to answer must be contained within the vignette
 - IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
 
@@ -2749,7 +2749,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const aiResult = await chatCompletion({
 				apiKey, provider: aiProvider, model: aiModel,
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\\\( \\\\), \\\\[ \\\\], or mathematical symbols like \\\\frac, \\\\sigma, \\\\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\\\( E(R) \\\\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 500 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 500 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL II EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level II exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\\\( \\\\), \\\\[ \\\\], or mathematical symbols like \\\\frac, \\\\sigma, \\\\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\\\( E(R) \\\\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL II EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level II exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
@@ -3429,12 +3429,12 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 				? isEthics
-					? 'Vignette / item-set (CFA Level II exam style): 500-800 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
-					: 'Vignette / item-set (CFA Level II exam style): 500-800 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
+					? 'Vignette / item-set (CFA Level II exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+					: 'Vignette / item-set (CFA Level II exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 				: isConstructedBundle
 					? isEthics
-						? 'Constructed response case study: a detailed realistic scenario/case study passage (400-700 words) with a named protagonist. This is an ETHICS case study — PURELY NARRATIVE, NO tables, NO exhibits, NO charts. Followed by multiple constructed-response sub-questions requiring analysis or written explanations.'
-						: 'Constructed response case study: a detailed realistic scenario/case study passage (400-700 words) with a named protagonist and at least one HTML data table as an Exhibit, followed by multiple constructed-response sub-questions requiring calculations, analysis, or written explanations'
+						? 'Constructed response case study: a detailed realistic scenario/case study passage (250-650 words) with a named protagonist. This is an ETHICS case study — PURELY NARRATIVE, NO tables, NO exhibits, NO charts. Followed by multiple constructed-response sub-questions requiring analysis or written explanations.'
+						: 'Constructed response case study: a detailed realistic scenario/case study passage (250-650 words) with a named protagonist and at least one HTML data table as an Exhibit, followed by multiple constructed-response sub-questions requiring calculations, analysis, or written explanations'
 					: 'Constructed response (written answer requiring calculations or explanations)';
 		const conceptLabel = selectedConcepts.length > 0 ? selectedConcepts.map(c => c.name).join(', ') : 'All concepts under the selected topics';
 		const difficultyLabel = diffList.join(', ');
@@ -3483,7 +3483,7 @@ ${metaFieldsBlock}`;
 
 Each object in "items" MUST follow this structure:
 {
-  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (MINIMUM 500 prose words, target 500-800). IMPORTANT: word count means PROSE words only — HTML tags, table markup, style attributes, and exhibit labels do NOT count. When tables are included, write MORE narrative prose around them to compensate. Requirements:
+  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (MINIMUM 250 prose words, target 250-650). IMPORTANT: word count means PROSE words only — HTML tags, table markup, style attributes, and exhibit labels do NOT count. When tables are included, write MORE narrative prose around them to compensate. Requirements:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
     • Introduce a named protagonist who is ${volPrompt ? volPrompt.roles : 'a financial professional'} with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Rebecca Jones, Michael Torres, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]. She/He is evaluating..."
     • All information required to answer the questions MUST be contained within the vignette
@@ -3555,7 +3555,7 @@ ${metaFieldsBlock}`;
 
 Each object in "items" MUST follow this structure:
 {
-  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (400-700 words). Requirements:
+  "vignetteText": string — A LONG, RICH CFA-EXAM-STYLE CASE STUDY PASSAGE (250-650 words). Requirements:
     • Open with EXACTLY: "<p><strong>${volumeName}</strong></p>\n<p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 12 POINTS</strong></p>"
     • Introduce a named protagonist with a UNIQUE, RANDOMLY GENERATED full name and a UNIQUE fictional company name — NEVER reuse names like Sarah Chen, Michael Torres, Rebecca Jones, Apex Capital, or Meridian Asset Management. Invent fresh, diverse names every time (vary ethnicity, gender, and firm style). Example pattern: "[Unique Name], CFA, is a [role] at [Unique Firm]..."
     • Present multiple related financial scenarios with specific data, dates, company names, and context
@@ -3629,7 +3629,7 @@ CORE REQUIREMENTS:
 - Use UNIQUE fictional company names (invent fresh names each time)
 - ALL metadata fields below are REQUIRED
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
-- MINIMUM 500 PROSE words in vignetteText (target 500–800 words of actual prose text). HTML tags, table markup, and exhibit labels do NOT count toward this minimum — only narrative prose words count.
+- MINIMUM 250 PROSE words in vignetteText (target 250–650 words of actual prose text). HTML tags, table markup, and exhibit labels do NOT count toward this minimum — only narrative prose words count.
 - 4 sub-questions (3 marks each), total 12 points
 - Protagonist: ${testVol ? testVol.roles : 'a financial professional'}
 - UNIQUE randomly generated name and company — NEVER repeat names
@@ -3661,13 +3661,13 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     <tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
     The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
 - Never create questions before the vignette is complete.
-- Do NOT shorten vignette. Vignettes under 500 prose words are REJECTED.
+- Do NOT shorten vignette. Vignettes under 250 prose words are REJECTED.
 WORD COUNT VERIFICATION (do this before returning JSON):
 - Strip all HTML tags from vignetteText mentally and count only the remaining prose words.
-- If fewer than 500 prose words, EXPAND the case study by adding more background, additional scenarios, analyst observations, market context, or client constraints.
-- If more than 800 prose words, trim slightly.
+- If fewer than 250 prose words, EXPAND the case study by adding more background, additional scenarios, analyst observations, market context, or client constraints.
+- If more than 650 prose words, trim slightly.
 - Vignettes with tables: tables reduce visible prose — compensate by writing MORE narrative paragraphs around and between tables.
-- Return the JSON only after vignetteText has at least 500 prose words.
+- Return the JSON only after vignetteText has at least 250 prose words.
 
 ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table> tags, <pre> tags` : `- Include realistic exhibits: financial statements, regression output, yield curves, valuation tables, client constraints
 - TWO TABLE TYPES — choose the right style based on content:
@@ -3719,7 +3719,7 @@ ${formatBlock}`;
 			const aiResult = await chatCompletion({
 				apiKey, provider: aiProvider, model: aiModel,
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\( \\), \\[ \\], or mathematical symbols like \\frac, \\sigma, \\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\( E(R) \\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 500 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 500 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL II EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level II exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.` },
+					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\( \\), \\[ \\], or mathematical symbols like \\frac, \\sigma, \\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\( E(R) \\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL II EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level II exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
