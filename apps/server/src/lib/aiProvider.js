@@ -105,8 +105,8 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 
 	if (provider === 'openai') {
 		const openai = new OpenAI({ apiKey, timeout });
-		// Newer reasoning models (o1, o3, etc.) require max_completion_tokens instead of max_tokens
-		const usesCompletionTokens = /^(o[1-9]|chatgpt-4o-latest)/.test(resolvedModel);
+		// Newer models (o1, o3, gpt-5, gpt-5.5, etc.) require max_completion_tokens instead of max_tokens
+		const usesCompletionTokens = /^(o[1-9]|gpt-5|chatgpt-4o-latest)/.test(resolvedModel);
 		const opts = {
 			model: resolvedModel,
 			messages,
