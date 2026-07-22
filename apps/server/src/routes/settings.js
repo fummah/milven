@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import OpenAI from 'openai';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
+import { getOpenAIApiKey } from '../lib/openai.js';
 
 export function settingsRouter(prisma) {
   const router = Router();
@@ -62,6 +64,23 @@ export function settingsRouter(prisma) {
     );
     await prisma.$transaction(ops);
     res.json({ ok: true });
+  });
+
+  // List available OpenAI models for the configured API key
+  router.get('/openai-models', requireAuth(), requireRole('ADMIN'), async (_req, res) => {
+    try {
+      const apiKey = await getOpenAIApiKey(prisma);
+      if (!apiKey) return res.status(400).json({ error: 'No OpenAI API key configured. Set one in .env or in the AI settings tab.' });
+      const openai = new OpenAI({ apiKey });
+      const response = await openai.models.list();
+      const models = response.data
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map(m => ({ id: m.id, owned_by: m.owned_by, created: m.created }));
+      res.json({ models });
+    } catch (err) {
+      const msg = err?.message || 'Failed to fetch models';
+      res.status(502).json({ error: msg });
+    }
   });
 
   return router;

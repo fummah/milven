@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Tabs, Form, Input, InputNumber, Switch, Button, Upload, Space, Typography, message, List } from 'antd';
-import { UploadOutlined, SaveOutlined, BgColorsOutlined, DollarOutlined, SafetyCertificateOutlined, ReadOutlined, ScheduleOutlined, SettingOutlined, QuestionCircleOutlined, PlusOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons';
+import { Card, Tabs, Form, Input, InputNumber, Switch, Button, Upload, Space, Typography, message, List, Modal, Tag, Spin } from 'antd';
+import { UploadOutlined, SaveOutlined, BgColorsOutlined, DollarOutlined, SafetyCertificateOutlined, ReadOutlined, ScheduleOutlined, SettingOutlined, QuestionCircleOutlined, PlusOutlined, DeleteOutlined, RobotOutlined, ApiOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 export function AdminSettings() {
@@ -19,6 +19,22 @@ export function AdminSettings() {
   const [faqList, setFaqList] = useState([]);
   const [faqQuestion, setFaqQuestion] = useState('');
   const [faqAnswer, setFaqAnswer] = useState('');
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const [modelsList, setModelsList] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+
+  const fetchModels = async () => {
+    setModelsLoading(true);
+    setModelsList([]);
+    try {
+      const { data } = await api.get('/api/settings/openai-models');
+      setModelsList(data.models || []);
+    } catch (err) {
+      message.error(err?.response?.data?.error || 'Failed to fetch models');
+    } finally {
+      setModelsLoading(false);
+    }
+  };
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -345,6 +361,45 @@ export function AdminSettings() {
             </Form.Item>
             <Button type="primary" icon={<SaveOutlined />} htmlType="submit" loading={saving}>Save API key</Button>
           </Form>
+          <div style={{ marginTop: 16, borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
+            <Typography.Text strong>Available Models</Typography.Text>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+              List all models accessible with your configured API key.
+            </Typography.Paragraph>
+            <Button icon={<ApiOutlined />} onClick={() => { setModelsOpen(true); fetchModels(); }}>List Available Models</Button>
+          </div>
+          <Modal
+            title="Available OpenAI Models"
+            open={modelsOpen}
+            onCancel={() => setModelsOpen(false)}
+            footer={<Button onClick={() => setModelsOpen(false)}>Close</Button>}
+            width={700}
+          >
+            {modelsLoading ? (
+              <div style={{ textAlign: 'center', padding: 40 }}><Spin size="large" /><div style={{ marginTop: 12 }}>Fetching models…</div></div>
+            ) : modelsList.length === 0 ? (
+              <Typography.Text type="secondary">No models found.</Typography.Text>
+            ) : (
+              <>
+                <Typography.Text type="secondary" style={{ marginBottom: 12, display: 'block' }}>{modelsList.length} models available</Typography.Text>
+                <div style={{ maxHeight: 450, overflowY: 'auto' }}>
+                  <List
+                    size="small"
+                    bordered
+                    dataSource={modelsList}
+                    renderItem={(m) => (
+                      <List.Item>
+                        <List.Item.Meta
+                          title={<span style={{ fontFamily: 'monospace', fontSize: 13 }}>{m.id}</span>}
+                          description={<Tag color="blue">{m.owned_by}</Tag>}
+                        />
+                      </List.Item>
+                    )}
+                  />
+                </div>
+              </>
+            )}
+          </Modal>
         </Card>
       )
     },
