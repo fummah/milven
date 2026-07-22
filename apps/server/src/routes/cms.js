@@ -2757,15 +2757,35 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				jsonMode: true,
 				timeout: 120000,
 			});
-			const raw = aiResult.content || '{}';
+			let raw = aiResult.content || '{}';
+
+			// Strip markdown code fences that some models (e.g. gpt-5.2) wrap around JSON
+			raw = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+			// Try to find a JSON object or array if the model returned extra text
+			const jsonMatch = raw.match(/(\{.*\}|\[.*\])/s);
+			if (jsonMatch) raw = jsonMatch[1];
+			// Remove trailing commas before closing braces (common JSON parsing issue)
+			raw = raw.replace(/,(\s*[}\]])/g, '$1');
+
 			let items = [];
 			try {
 				const parsed = JSON.parse(raw);
 				items = Array.isArray(parsed.questions) ? parsed.questions : Array.isArray(parsed) ? parsed : (parsed.items ? parsed.items : [parsed]);
 			} catch {
-				// Try wrapping in array if single object
-				const single = JSON.parse(raw);
-				items = Array.isArray(single) ? single : [single];
+				try {
+					// Try wrapping in array if single object
+					const single = JSON.parse(raw);
+					items = Array.isArray(single) ? single : [single];
+				} catch {
+					// Try to fix common JSON escape issues: unescaped control chars, stray backslashes
+					const fixed = raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
+					try {
+						const parsed = JSON.parse(fixed);
+						items = Array.isArray(parsed.questions) ? parsed.questions : Array.isArray(parsed) ? parsed : (parsed.items ? parsed.items : [parsed]);
+					} catch {
+						items = [];
+					}
+				}
 			}
 			if (!Array.isArray(items)) items = [];
 
@@ -3387,14 +3407,14 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		// ── SSE: switch to streaming before the long OpenAI call ─────────────────
 		// DigitalOcean (and most cloud networks) kill TCP connections with no data
-		// flowing for ~60 s. SSE heartbeats every 15 s keep the pipe alive.
+		// flowing for ~60 s. SSE heartbeats every 10 s keep the pipe alive.
 		res.writeHead(200, {
 			'Content-Type': 'text/event-stream',
 			'Cache-Control': 'no-cache, no-transform',
 			'X-Accel-Buffering': 'no',
 			'Connection': 'keep-alive',
 		});
-		const sseHeartbeat = setInterval(() => { try { res.write(':heartbeat\n\n'); } catch {} }, 15000);
+		const sseHeartbeat = setInterval(() => { try { res.write(':heartbeat\n\n'); } catch {} }, 10000);
 		const sseSend = (event, payload) => { try { res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`); } catch {} };
 		const sseEnd = () => { clearInterval(sseHeartbeat); try { res.end(); } catch {} };
 

@@ -665,9 +665,9 @@ export function AdminQuestions() {
 		try {
 			const { data } = await api.get(`/api/settings/ai-models?provider=${prov}`);
 			const all = data.models || [];
-			// For OpenAI, filter to chat-capable models
+			// For OpenAI, filter to curated list of recommended models
 			const filtered = prov === 'openai'
-				? all.filter(m => /^(gpt-|o[1-9]|chatgpt|ft:gpt-)/.test(m.id))
+				? all.filter(m => ['gpt-5.5', 'gpt-5.5-pro', 'gpt-5.4-pro', 'o3', 'o1-pro', 'gpt-5.4', 'gpt-5.2-pro', 'gpt-5.2', 'gpt-4.1', 'gpt-4o', 'gpt-4-turbo', 'gpt-5-mini', 'gpt-5.4-mini', 'o4-mini', 'gpt-4.1-mini', 'gpt-4o-mini'].some(approved => m.id.startsWith(approved)))
 				: all;
 			setAiModels(filtered);
 			// auto-set default if form doesn't have one yet
@@ -726,9 +726,11 @@ export function AdminQuestions() {
 			};
 
 			// Prefer preview flow (admin review before save)
-			// Uses fetch+SSE so heartbeats keep the connection alive on DigitalOcean
+			// Uses fetch+SSE so heartbeats keep the connection alive
 			const previewController = new AbortController();
-			const previewTimeout = setTimeout(() => previewController.abort(), 360_000);
+			// Rolling timeout: resets on every received chunk (heartbeats every 10s keep it alive)
+			let previewTimeout = setTimeout(() => previewController.abort(), 120_000);
+			const resetTimeout = () => { clearTimeout(previewTimeout); previewTimeout = setTimeout(() => previewController.abort(), 120_000); };
 			try {
 				const response = await fetch(`${API_URL}/api/cms/questions/generate-ai/preview`, {
 					method: 'POST',
@@ -752,6 +754,7 @@ export function AdminQuestions() {
 				outer: while (true) {
 					const { done, value } = await reader.read();
 					if (done) break;
+					resetTimeout(); // keep alive as long as data flows
 					buffer += decoder.decode(value, { stream: true });
 					const parts = buffer.split('\n\n');
 					buffer = parts.pop() ?? '';
@@ -764,7 +767,6 @@ export function AdminQuestions() {
 							sseError = errObj?.error || 'AI generation failed';
 							break outer;
 						}
-						// :heartbeat lines are ignored
 					}
 				}
 				if (sseError) throw new Error(sseError);
