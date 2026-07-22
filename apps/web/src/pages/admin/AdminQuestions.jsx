@@ -727,7 +727,8 @@ export function AdminQuestions() {
 				const gen = data?.generated || null;
 				setAiPreview({
 					questionType: values.questionType,
-					generated: gen
+					generated: gen,
+					promptSent: data?.promptSent || ''
 				});
 				// bundles = array of case studies (for VIGNETTE_MCQ / constructed bundle)
 				// items = flat array of questions (for MCQ / single constructed)
@@ -1753,6 +1754,21 @@ export function AdminQuestions() {
 						Duplicates are automatically detected and skipped
 					</Typography.Text>
 				</div>
+				{aiPreview?.promptSent && (
+					<Collapse
+						style={{ marginTop: 12 }}
+						size="small"
+						items={[{
+							key: 'prompt',
+							label: <span><RobotOutlined style={{ marginRight: 6 }} />View Prompt Sent to ChatGPT</span>,
+							children: (
+								<pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, maxHeight: 400, overflow: 'auto', background: '#f5f5f5', padding: 12, borderRadius: 8, margin: 0 }}>
+									{aiPreview.promptSent}
+								</pre>
+							)
+						}]}
+					/>
+				)}
 			</Modal>
 
 			{/* Question Builder Drawer */}

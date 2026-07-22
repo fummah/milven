@@ -72,11 +72,20 @@ export function settingsRouter(prisma) {
       const apiKey = await getOpenAIApiKey(prisma);
       if (!apiKey) return res.status(400).json({ error: 'No OpenAI API key configured. Set one in .env or in the AI settings tab.' });
       const openai = new OpenAI({ apiKey });
-      const response = await openai.models.list();
-      const models = response.data
+      // Collect all pages from the async iterable
+      const all = [];
+      const list = await openai.models.list();
+      if (Array.isArray(list?.data)) {
+        all.push(...list.data);
+      } else if (list && typeof list[Symbol.asyncIterator] === 'function') {
+        for await (const m of list) all.push(m);
+      } else if (list && typeof list.data?.[Symbol.asyncIterator] === 'function') {
+        for await (const m of list.data) all.push(m);
+      }
+      const models = all
         .sort((a, b) => a.id.localeCompare(b.id))
         .map(m => ({ id: m.id, owned_by: m.owned_by, created: m.created }));
-      res.json({ models });
+      res.json({ models, keyPrefix: apiKey.slice(0, 8) + '...' });
     } catch (err) {
       const msg = err?.message || 'Failed to fetch models';
       res.status(502).json({ error: msg });

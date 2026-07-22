@@ -4121,7 +4121,7 @@ ${formatBlock}`;
 					sseSend('error', { error: 'AI generated vignette(s) without valid sub-questions. Please try again.' });
 					return sseEnd();
 				}
-				sseSend('result', { course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { bundles } });
+				sseSend('result', { course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { bundles }, promptSent: prompt });
 				return sseEnd();
 			}
 
@@ -4153,7 +4153,7 @@ ${formatBlock}`;
 				};
 			});
 
-			sseSend('result', { course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { items: normalized } });
+			sseSend('result', { course: { id: course.id, name: course.name, level }, questionType, concepts: selectedConcepts, generated: { items: normalized }, promptSent: prompt });
 			return sseEnd();
 		} catch (err) {
 			const msg = err?.message || err?.error?.message || 'OpenAI request failed';

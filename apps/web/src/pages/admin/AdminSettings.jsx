@@ -22,13 +22,16 @@ export function AdminSettings() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [modelsList, setModelsList] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsKeyPrefix, setModelsKeyPrefix] = useState('');
 
   const fetchModels = async () => {
     setModelsLoading(true);
     setModelsList([]);
+    setModelsKeyPrefix('');
     try {
       const { data } = await api.get('/api/settings/openai-models');
       setModelsList(data.models || []);
+      setModelsKeyPrefix(data.keyPrefix || '');
     } catch (err) {
       message.error(err?.response?.data?.error || 'Failed to fetch models');
     } finally {
@@ -381,7 +384,7 @@ export function AdminSettings() {
               <Typography.Text type="secondary">No models found.</Typography.Text>
             ) : (
               <>
-                <Typography.Text type="secondary" style={{ marginBottom: 12, display: 'block' }}>{modelsList.length} models available</Typography.Text>
+                <Typography.Text type="secondary" style={{ marginBottom: 12, display: 'block' }}>{modelsList.length} models available for key <code>{modelsKeyPrefix}</code></Typography.Text>
                 <div style={{ maxHeight: 450, overflowY: 'auto' }}>
                   <List
                     size="small"
