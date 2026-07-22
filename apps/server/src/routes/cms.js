@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
-import OpenAI from 'openai';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -11,7 +10,8 @@ const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, autoRepairLatex } from '../lib/openai.js';
+import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, autoRepairLatex } from '../lib/openai.js';
+import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
 
 // ── Volume-specific vignette MCQ prompt builder ──────────────────────────────
 // Returns { roles, exhibits, questionDesign, distractors } tailored to the volume.
@@ -2467,17 +2467,21 @@ export function cmsRouter(prisma) {
 			questionType: z.enum(['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE']),
 			difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
 			difficulties: z.array(z.enum(['EASY', 'MEDIUM', 'HARD'])).optional(),
-			count: z.coerce.number().int().min(1).max(10)
+			count: z.coerce.number().int().min(1).max(10),
+			model: z.string().optional(),
+			provider: z.string().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		const { courseId, volumeId, topicId, topicIds, conceptIds, questionType, difficulty, difficulties, count } = parse.data;
+		const { courseId, volumeId, topicId, topicIds, conceptIds, questionType, difficulty, difficulties, count, model, provider } = parse.data;
+		const aiProvider = provider || await getActiveProvider(prisma);
+		const aiModel = model || await getActiveModel(prisma) || getDefaultModel(aiProvider);
 		const diffList = Array.isArray(difficulties) && difficulties.length
 			? difficulties
 			: (difficulty ? [difficulty] : ['MEDIUM']);
 
-		const apiKey = await getOpenAIApiKey(prisma);
-		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured. Set OPENAI_API_KEY in .env or in Admin settings.' });
+		const apiKey = await getAIApiKey(prisma, aiProvider);
+		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider}. Set it in .env or in Admin settings.` });
 
 		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true } });
 		if (!course) return res.status(400).json({ error: 'Course not found' });
@@ -2742,18 +2746,18 @@ MATH IN vignetteText: If the vignetteText contains any mathematical expressions,
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		try {
-			const openai = new OpenAI({ apiKey, timeout: 120000 });
-			const completion = await openai.chat.completions.create({
-				model: 'gpt-4o-mini',
+			const aiResult = await chatCompletion({
+				apiKey, provider: aiProvider, model: aiModel,
 				messages: [
 					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\\\( \\\\), \\\\[ \\\\], or mathematical symbols like \\\\frac, \\\\sigma, \\\\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\\\( E(R) \\\\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 500 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 500 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL II EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level II exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
-				max_tokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
-				response_format: { type: 'json_object' }
+				maxTokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
+				jsonMode: true,
+				timeout: 120000,
 			});
-			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+			const raw = aiResult.content || '{}';
 			let items = [];
 			try {
 				const parsed = JSON.parse(raw);
@@ -3266,17 +3270,21 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			constructedMode: z.enum(['single', 'bundle']).optional(),
 			difficulties: z.array(z.enum(['EASY', 'MEDIUM', 'HARD'])).optional(),
 			difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
-			count: z.coerce.number().int().min(1).max(10)
+			count: z.coerce.number().int().min(1).max(10),
+			model: z.string().optional(),
+			provider: z.string().optional()
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-		let { courseId, volumeId, moduleIds, topicIds, conceptIds, questionType, constructedMode, difficulty, difficulties, count } = parse.data;
+		let { courseId, volumeId, moduleIds, topicIds, conceptIds, questionType, constructedMode, difficulty, difficulties, count, model, provider } = parse.data;
+		const aiProvider = provider || await getActiveProvider(prisma);
+		const aiModel = model || await getActiveModel(prisma) || getDefaultModel(aiProvider);
 		const diffList = Array.isArray(difficulties) && difficulties.length
 			? difficulties
 			: (difficulty ? [difficulty] : ['MEDIUM']);
 
-		const apiKey = await getOpenAIApiKey(prisma);
-		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured. Set OPENAI_API_KEY in .env or in Admin settings.' });
+		const apiKey = await getAIApiKey(prisma, aiProvider);
+		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider}. Set it in .env or in Admin settings.` });
 
 		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true } });
 		if (!course) return res.status(400).json({ error: 'Course not found' });
@@ -3687,24 +3695,20 @@ traceSection MUST match the assigned topic (e.g. "Standard I" topic → "Standar
 ${formatBlock}`;
 
 		try {
-			console.log([
-					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.` },
-					{ role: 'user', content: prompt }
-				]);
-			console.log('[AI Preview] Starting OpenAI call for questionType:', questionType);
-			const openai = new OpenAI({ apiKey, timeout: 120000 });
-			const completion = await openai.chat.completions.create({
-				model: 'gpt-4o-mini',
+			console.log('[AI Preview] Starting AI call for questionType:', questionType, 'provider:', aiProvider, 'model:', aiModel);
+			const aiResult = await chatCompletion({
+				apiKey, provider: aiProvider, model: aiModel,
 				messages: [
 					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\( \\), \\[ \\], or mathematical symbols like \\frac, \\sigma, \\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\( E(R) \\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 500 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 500 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL II EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level II exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
-				max_tokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
-				response_format: { type: 'json_object' }
+				maxTokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
+				jsonMode: true,
+				timeout: 120000,
 			});
-			console.log('[AI Preview] OpenAI call completed');
-			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+			console.log('[AI Preview] AI call completed');
+			const raw = aiResult.content || '{}';
 			console.log('[AI Preview] Raw response length:', raw.length);
 			let parsed;
 			try {

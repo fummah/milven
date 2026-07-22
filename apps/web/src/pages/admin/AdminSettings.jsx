@@ -23,13 +23,30 @@ export function AdminSettings() {
   const [modelsList, setModelsList] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsKeyPrefix, setModelsKeyPrefix] = useState('');
+  const [modelsProvider, setModelsProvider] = useState('');
+  const [aiConfig, setAiConfig] = useState(null);
+  const [aiConfigLoading, setAiConfigLoading] = useState(false);
 
-  const fetchModels = async () => {
+  const fetchAiConfig = async () => {
+    setAiConfigLoading(true);
+    try {
+      const { data } = await api.get('/api/settings/ai-config');
+      setAiConfig(data);
+      aiForm.setFieldsValue({
+        aiProvider: data.activeProvider || 'openai',
+        aiDefaultModel: data.activeModel || '',
+      });
+    } catch { /* ignore */ } finally { setAiConfigLoading(false); }
+  };
+
+  const fetchModels = async (provider) => {
+    const prov = provider || aiConfig?.activeProvider || 'openai';
     setModelsLoading(true);
     setModelsList([]);
     setModelsKeyPrefix('');
+    setModelsProvider(prov);
     try {
-      const { data } = await api.get('/api/settings/openai-models');
+      const { data } = await api.get(`/api/settings/ai-models?provider=${prov}`);
       setModelsList(data.models || []);
       setModelsKeyPrefix(data.keyPrefix || '');
     } catch (err) {
@@ -79,7 +96,7 @@ export function AdminSettings() {
     }
   };
 
-  useEffect(() => { fetchSettings(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { fetchSettings(); fetchAiConfig(); /* eslint-disable-next-line */ }, []);
 
   const onSave = async (obj) => {
     setSaving(true);
@@ -345,34 +362,73 @@ export function AdminSettings() {
     },
     {
       key: 'ai',
-      label: <Space size={6}>{badge(<RobotOutlined />, '#722ed1', '#f9f0ff')}<span>AI (OpenAI)</span></Space>,
+      label: <Space size={6}>{badge(<RobotOutlined />, '#722ed1', '#f9f0ff')}<span>AI Configuration</span></Space>,
       children: (
-        <Card loading={loading}>
+        <Card loading={loading || aiConfigLoading}>
           <Typography.Paragraph type="secondary">
-            API key is used for AI question generation (Admin → Questions) and for AI hints on failed questions (student result page). Stored securely; leave blank when saving to keep existing key.
+            Configure AI providers for question generation, hints, formulas, and other AI features. You can use OpenAI, Anthropic (Claude), or switch between them.
           </Typography.Paragraph>
-          <Form form={aiForm} layout="vertical" onFinish={(v) => {
-            if (v.openaiApiKey != null && String(v.openaiApiKey).trim() !== '') {
-              onSave({ openai_api_key: String(v.openaiApiKey).trim() });
-              aiForm.setFieldsValue({ openaiApiKey: '' });
-            } else {
-              message.info('Enter a key to save, or leave blank to keep current.');
-            }
+
+          {/* Active provider + default model */}
+          <Form form={aiForm} layout="vertical" onFinish={async (v) => {
+            const updates = {};
+            if (v.aiProvider) updates['ai.provider'] = v.aiProvider;
+            if (v.aiDefaultModel) updates['ai.model'] = v.aiDefaultModel;
+            if (v.openaiApiKey?.trim()) updates['ai.openai.apiKey'] = v.openaiApiKey.trim();
+            if (v.anthropicApiKey?.trim()) updates['ai.anthropic.apiKey'] = v.anthropicApiKey.trim();
+            if (Object.keys(updates).length === 0) { message.info('No changes to save.'); return; }
+            await onSave(updates);
+            aiForm.setFieldsValue({ openaiApiKey: '', anthropicApiKey: '' });
+            fetchAiConfig();
           }}>
-            <Form.Item name="openaiApiKey" label="OpenAI API key">
-              <Input.Password placeholder="sk-... (leave blank to keep existing)" autoComplete="off" />
-            </Form.Item>
-            <Button type="primary" icon={<SaveOutlined />} htmlType="submit" loading={saving}>Save API key</Button>
+            <div style={{ display: 'flex', gap: 16 }}>
+              <Form.Item name="aiProvider" label="Active AI Provider" style={{ flex: 1 }}>
+                <Select
+                  options={(aiConfig?.providers || []).map(p => ({
+                    value: p.id,
+                    label: <span>{p.label} {p.hasKey ? <Tag color="green" style={{ marginLeft: 6, fontSize: 11 }}>Key set</Tag> : <Tag color="orange" style={{ marginLeft: 6, fontSize: 11 }}>No key</Tag>}</span>
+                  }))}
+                />
+              </Form.Item>
+              <Form.Item name="aiDefaultModel" label="Default Model" style={{ flex: 1 }}>
+                <Input placeholder={aiConfig?.defaultModel || 'gpt-4o-mini'} />
+              </Form.Item>
+            </div>
+
+            <Typography.Text strong style={{ display: 'block', marginBottom: 8, marginTop: 4 }}>API Keys</Typography.Text>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 12, fontSize: 12 }}>
+              Leave blank when saving to keep existing keys. Keys are stored securely in the database.
+              {aiConfig?.providers?.map(p => p.hasKey ? <span key={p.id} style={{ marginLeft: 12 }}><Tag color="green">{p.label}</Tag> <code>{p.keyPrefix}</code></span> : null)}
+            </Typography.Paragraph>
+            <div style={{ display: 'flex', gap: 16 }}>
+              <Form.Item name="openaiApiKey" label="OpenAI API Key" style={{ flex: 1 }}>
+                <Input.Password placeholder="sk-... (leave blank to keep existing)" autoComplete="off" />
+              </Form.Item>
+              <Form.Item name="anthropicApiKey" label="Anthropic API Key" style={{ flex: 1 }}>
+                <Input.Password placeholder="sk-ant-... (leave blank to keep existing)" autoComplete="off" />
+              </Form.Item>
+            </div>
+            <Button type="primary" icon={<SaveOutlined />} htmlType="submit" loading={saving}>Save AI Configuration</Button>
           </Form>
+
           <div style={{ marginTop: 16, borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
             <Typography.Text strong>Available Models</Typography.Text>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-              List all models accessible with your configured API key.
+              List models accessible with your configured API key for a provider.
             </Typography.Paragraph>
-            <Button icon={<ApiOutlined />} onClick={() => { setModelsOpen(true); fetchModels(); }}>List Available Models</Button>
+            <Space>
+              {(aiConfig?.providers || []).filter(p => p.hasKey).map(p => (
+                <Button key={p.id} icon={<ApiOutlined />} onClick={() => { setModelsOpen(true); fetchModels(p.id); }}>
+                  {p.label} Models
+                </Button>
+              ))}
+              {(aiConfig?.providers || []).every(p => !p.hasKey) && (
+                <Typography.Text type="secondary">Configure an API key above to list available models.</Typography.Text>
+              )}
+            </Space>
           </div>
           <Modal
-            title="Available OpenAI Models"
+            title={`Available Models — ${modelsProvider === 'anthropic' ? 'Anthropic (Claude)' : 'OpenAI'}`}
             open={modelsOpen}
             onCancel={() => setModelsOpen(false)}
             footer={<Button onClick={() => setModelsOpen(false)}>Close</Button>}

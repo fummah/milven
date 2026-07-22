@@ -32,6 +32,10 @@ export function AdminQuestions() {
 	const [aiGenerateVolumeId, setAiGenerateVolumeId] = useState('');
 	const [aiGenerateModuleId, setAiGenerateModuleId] = useState('');
 	const [curriculumDocs, setCurriculumDocs] = useState([]);
+	const [aiModels, setAiModels] = useState([]);
+	const [aiModelsLoading, setAiModelsLoading] = useState(false);
+	const [aiProviders, setAiProviders] = useState([]);
+	const [aiActiveProvider, setAiActiveProvider] = useState('openai');
 	const [aiPreviewOpen, setAiPreviewOpen] = useState(false);
 	const [aiPreview, setAiPreview] = useState(null);
 	const [aiAcceptLoading, setAiAcceptLoading] = useState(false);
@@ -641,12 +645,51 @@ export function AdminQuestions() {
 		}
 	};
 
+	const fetchAiConfig = async () => {
+		try {
+			const { data } = await api.get('/api/settings/ai-config');
+			setAiProviders(data.providers || []);
+			const prov = data.activeProvider || 'openai';
+			setAiActiveProvider(prov);
+			if (!aiForm.getFieldValue('provider')) aiForm.setFieldsValue({ provider: prov });
+			if (!aiForm.getFieldValue('model') && data.activeModel) aiForm.setFieldsValue({ model: data.activeModel });
+			// auto-load models for active provider
+			fetchAiModels(prov);
+		} catch { /* ignore */ }
+	};
+
+	const fetchAiModels = async (provider) => {
+		const prov = provider || aiForm.getFieldValue('provider') || aiActiveProvider || 'openai';
+		setAiModelsLoading(true);
+		setAiModels([]);
+		try {
+			const { data } = await api.get(`/api/settings/ai-models?provider=${prov}`);
+			const all = data.models || [];
+			// For OpenAI, filter to chat-capable models
+			const filtered = prov === 'openai'
+				? all.filter(m => /^(gpt-|o[1-9]|chatgpt|ft:gpt-)/.test(m.id))
+				: all;
+			setAiModels(filtered);
+			// auto-set default if form doesn't have one yet
+			if (!aiForm.getFieldValue('model') && filtered.length > 0) {
+				aiForm.setFieldsValue({ model: filtered[0].id });
+			}
+		} catch {
+			// silent — user can still type a model manually
+		} finally {
+			setAiModelsLoading(false);
+		}
+	};
+
 	const doAiGenerate = async (values) => {
 		try {
 			setAiGenerateLoading(true);
 			const apiKey = values.openaiApiKey?.trim();
 			if (apiKey) {
-				await api.put('/api/settings', { openai_api_key: apiKey });
+				const prov = values.provider || aiActiveProvider || 'openai';
+				const keySettingKey = prov === 'anthropic' ? 'ai.anthropic.apiKey' : 'ai.openai.apiKey';
+				await api.put('/api/settings', { [keySettingKey]: apiKey });
+				setAiModels([]); // clear cache so next open re-fetches for the new key
 			}
 			const diffs = Array.isArray(values.difficulties)
 				? values.difficulties.filter(Boolean)
@@ -677,7 +720,9 @@ export function AdminQuestions() {
 				constructedMode: values.questionType === 'CONSTRUCTED_RESPONSE' ? (values.constructedMode || 'single') : undefined,
 				difficulties: diffs.length ? diffs : undefined,
 				difficulty: !diffs.length && values.difficulty ? values.difficulty : undefined,
-				count: values.count ?? 3
+				count: values.count ?? 3,
+				model: values.model || undefined,
+				provider: values.provider || undefined
 			};
 
 			// Prefer preview flow (admin review before save)
@@ -1032,6 +1077,7 @@ export function AdminQuestions() {
 							setAiGenerateModuleId('');
 							aiForm.resetFields();
 							aiForm.setFieldsValue({ questionType: 'MCQ', difficulties: ['MEDIUM'], count: 3, volumeId: undefined, aiModuleId: undefined, topicIds: undefined });
+							fetchAiConfig();
 						}}
 						style={{ borderRadius: 10, borderColor: '#8b5cf6', color: '#8b5cf6' }}
 					>
@@ -1516,8 +1562,38 @@ export function AdminQuestions() {
 								) : null
 							)}
 						</Form.Item>
+						{/* Row 6: AI Provider + Model */}
 						<Col span={12}>
-							<Form.Item name="openaiApiKey" label="OpenAI API key (optional)">
+							<Form.Item name="provider" label="AI Provider">
+								<Select
+									options={aiProviders.length > 0
+										? aiProviders.map(p => ({ value: p.id, label: `${p.label}${p.hasKey ? '' : ' (no key)'}` }))
+										: [{ value: 'openai', label: 'OpenAI' }, { value: 'anthropic', label: 'Anthropic (Claude)' }]
+									}
+									onChange={(val) => {
+										setAiActiveProvider(val);
+										aiForm.setFieldsValue({ model: undefined });
+										fetchAiModels(val);
+									}}
+								/>
+							</Form.Item>
+						</Col>
+						<Col span={12}>
+							<Form.Item name="model" label="AI Model">
+								<Select
+									showSearch
+									optionFilterProp="label"
+									loading={aiModelsLoading}
+									placeholder={aiModelsLoading ? 'Loading models…' : 'Select model'}
+									options={aiModels.map(m => ({ value: m.id, label: m.id }))}
+									notFoundContent={aiModelsLoading ? 'Loading…' : 'No models found — check API key in Settings'}
+								/>
+							</Form.Item>
+						</Col>
+
+						{/* Row 7: API key override */}
+						<Col span={12}>
+							<Form.Item name="openaiApiKey" label="API key override (optional)">
 								<Input.Password
 									placeholder="Leave blank to use saved key from Settings"
 									autoComplete="off"

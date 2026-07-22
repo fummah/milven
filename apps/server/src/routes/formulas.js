@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import OpenAI from 'openai';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, validateFormulaItems, autoRepairLatex } from '../lib/openai.js';
+import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, validateFormulaItems, autoRepairLatex } from '../lib/openai.js';
+import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
 
 /**
  * Build a formula-focused curriculum excerpt that prioritises formula sections
@@ -281,8 +281,10 @@ export function formulasRouter(prisma) {
 		const { courseId, volumeId, moduleId, topicId, level, year } = parse.data;
 		let count = parse.data.count || null;
 
-		const apiKey = await getOpenAIApiKey(prisma);
-		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured. Set OPENAI_API_KEY in .env or in Admin Settings.' });
+		const aiProvider = await getActiveProvider(prisma);
+		const aiModel = await getActiveModel(prisma) || getDefaultModel(aiProvider);
+		const apiKey = await getAIApiKey(prisma, aiProvider);
+		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider}. Set it in .env or in Admin Settings.` });
 
 		// ── Set up SSE to keep connection alive ──
 		res.setHeader('Content-Type', 'text/event-stream');
@@ -455,20 +457,20 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 
 			sendEvent('progress', { step: 'generating', message: `Generating ${count} formulas via AI...` });
 
-			const openai = new OpenAI({ apiKey, timeout: 180_000 });
 			const maxTokens = Math.min(16384, Math.max(4096, count * 700));
 			const systemMsg = { role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. Use the LATEST CFA curriculum formulas only.\n\n${LATEX_SYSTEM_RULES}` };
 			const userMsg = { role: 'user', content: prompt };
 
-			const completion = await openai.chat.completions.create({
-				model: 'gpt-4o-mini',
+			const aiResult = await chatCompletion({
+				apiKey, provider: aiProvider, model: aiModel,
 				messages: [systemMsg, userMsg],
 				temperature: 0.7,
-				max_tokens: maxTokens,
-				response_format: { type: 'json_object' }
+				maxTokens,
+				jsonMode: true,
+				timeout: 180_000,
 			});
 
-			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+			const raw = aiResult.content || '{}';
 			let items = [];
 			try {
 				const parsed = JSON.parse(raw);
@@ -493,14 +495,15 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 				const fixPrompt = `Some formulas you returned had INVALID LaTeX and would fail to render in KaTeX. Regenerate ONLY these items with VALID, KaTeX-compileable LaTeX, returning the SAME JSON shape { "formulas": [...] } with ONLY the fixed entries (preserve the original "order" field so I can match them back):\n\n${invalidList}\n\nFor each fix, ensure:\n- Every \\frac has TWO brace groups: \\frac{...}{...}\n- All { } pairs balance\n- All \\left have matching \\right\n- Multi-char superscripts/subscripts use braces: x^{2}, R_{equity}\n- No malformed escapes inside sub/superscripts\n- No empty math delimiters\n\nReturn ONLY valid JSON containing the corrected formulas array.`;
 
 				try {
-					const fixCompletion = await openai.chat.completions.create({
-						model: 'gpt-4o-mini',
+					const fixResult = await chatCompletion({
+						apiKey, provider: aiProvider, model: aiModel,
 						messages: [systemMsg, userMsg, { role: 'assistant', content: raw }, { role: 'user', content: fixPrompt }],
 						temperature: 0.3,
-						max_tokens: Math.min(8192, Math.max(2048, invalid.length * 600)),
-						response_format: { type: 'json_object' }
+						maxTokens: Math.min(8192, Math.max(2048, invalid.length * 600)),
+						jsonMode: true,
+						timeout: 180_000,
 					});
-					const fixRaw = fixCompletion.choices?.[0]?.message?.content?.trim() || '{}';
+					const fixRaw = fixResult.content || '{}';
 					const fixParsed = JSON.parse(fixRaw);
 					const fixes = Array.isArray(fixParsed.formulas) ? fixParsed.formulas : (Array.isArray(fixParsed.items) ? fixParsed.items : []);
 					for (let i = 0; i < fixes.length; i++) {
@@ -651,8 +654,10 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 		const { courseId, volumeId, moduleId, topicId, level, year } = parse.data;
 		let count = parse.data.count || null;
 
-		const apiKey = await getOpenAIApiKey(prisma);
-		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured. Set OPENAI_API_KEY in .env or in Admin Settings.' });
+		const aiProvider2 = await getActiveProvider(prisma);
+		const aiModel2 = await getActiveModel(prisma) || getDefaultModel(aiProvider2);
+		const apiKey = await getAIApiKey(prisma, aiProvider2);
+		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider2}. Set it in .env or in Admin Settings.` });
 
 		try {
 			// Resolve hierarchy names for prompt context
@@ -789,18 +794,17 @@ Return a JSON object:
 
 Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 
-			const openai = new OpenAI({ apiKey });
-			const completion = await openai.chat.completions.create({
-				model: 'gpt-4o-mini',
+			const aiResult2 = await chatCompletion({
+				apiKey, provider: aiProvider2, model: aiModel2,
 				messages: [
 					{ role: 'system', content: `You are an expert CFA curriculum author. Always return valid JSON only.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,
-				response_format: { type: 'json_object' }
+				jsonMode: true,
 			});
 
-			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+			const raw = aiResult2.content || '{}';
 			let items = [];
 			try {
 				const parsed = JSON.parse(raw);

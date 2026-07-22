@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import OpenAI from 'openai';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey } from '../lib/openai.js';
+import { AI_PROVIDERS, DEFAULT_PROVIDER, getAIApiKey, getDefaultModel, listModels, getActiveProvider, getActiveModel } from '../lib/aiProvider.js';
 
 export function settingsRouter(prisma) {
   const router = Router();
@@ -52,7 +51,12 @@ export function settingsRouter(prisma) {
       'system.supportEmail',
       'system.uploadMaxSizeMb',
       'faq.items',
-      'openai_api_key'
+      'openai_api_key',
+      // Multi-provider AI settings
+      'ai.provider',
+      'ai.model',
+      'ai.openai.apiKey',
+      'ai.anthropic.apiKey',
     ];
     const entries = Object.entries(payload).filter(([k]) => allowedKeys.includes(k));
     const ops = entries.map(([key, value]) =>
@@ -66,29 +70,57 @@ export function settingsRouter(prisma) {
     res.json({ ok: true });
   });
 
-  // List available OpenAI models for the configured API key
-  router.get('/openai-models', requireAuth(), requireRole('ADMIN'), async (_req, res) => {
+  // Get AI configuration (active provider, model, available providers)
+  router.get('/ai-config', requireAuth(), requireRole('ADMIN'), async (_req, res) => {
     try {
-      const apiKey = await getOpenAIApiKey(prisma);
-      if (!apiKey) return res.status(400).json({ error: 'No OpenAI API key configured. Set one in .env or in the AI settings tab.' });
-      const openai = new OpenAI({ apiKey });
-      // Collect all pages from the async iterable
-      const all = [];
-      const list = await openai.models.list();
-      if (Array.isArray(list?.data)) {
-        all.push(...list.data);
-      } else if (list && typeof list[Symbol.asyncIterator] === 'function') {
-        for await (const m of list) all.push(m);
-      } else if (list && typeof list.data?.[Symbol.asyncIterator] === 'function') {
-        for await (const m of list.data) all.push(m);
+      const activeProvider = await getActiveProvider(prisma);
+      const activeModel = await getActiveModel(prisma);
+      const providers = Object.values(AI_PROVIDERS).map(p => ({
+        id: p.id,
+        label: p.label,
+        hasKey: false, // populated below
+      }));
+      // Check which providers have API keys configured
+      for (const p of providers) {
+        const key = await getAIApiKey(prisma, p.id);
+        p.hasKey = !!key;
+        if (key) p.keyPrefix = key.slice(0, 8) + '...';
       }
-      const models = all
-        .sort((a, b) => a.id.localeCompare(b.id))
-        .map(m => ({ id: m.id, owned_by: m.owned_by, created: m.created }));
-      res.json({ models, keyPrefix: apiKey.slice(0, 8) + '...' });
+      res.json({
+        activeProvider,
+        activeModel: activeModel || getDefaultModel(activeProvider),
+        defaultModel: getDefaultModel(activeProvider),
+        providers,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err?.message || 'Failed to load AI config' });
+    }
+  });
+
+  // List available models for a provider (query: ?provider=openai)
+  router.get('/ai-models', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    try {
+      const provider = req.query.provider || await getActiveProvider(prisma);
+      if (!AI_PROVIDERS[provider]) return res.status(400).json({ error: `Unknown provider: ${provider}` });
+      const apiKey = await getAIApiKey(prisma, provider);
+      if (!apiKey) return res.status(400).json({ error: `No API key configured for ${AI_PROVIDERS[provider].label}. Set one in .env or in the AI settings tab.` });
+      const models = await listModels(apiKey, provider);
+      res.json({ provider, models, keyPrefix: apiKey.slice(0, 8) + '...' });
     } catch (err) {
       const msg = err?.message || 'Failed to fetch models';
       res.status(502).json({ error: msg });
+    }
+  });
+
+  // Backward-compat: /openai-models still works
+  router.get('/openai-models', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    try {
+      const apiKey = await getAIApiKey(prisma, 'openai');
+      if (!apiKey) return res.status(400).json({ error: 'No OpenAI API key configured.' });
+      const models = await listModels(apiKey, 'openai');
+      res.json({ provider: 'openai', models, keyPrefix: apiKey.slice(0, 8) + '...' });
+    } catch (err) {
+      res.status(502).json({ error: err?.message || 'Failed to fetch models' });
     }
   });
 

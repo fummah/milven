@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import OpenAI from 'openai';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
+import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
+import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
 
 export function summarySheetsRouter(prisma) {
 	const router = Router();
@@ -162,8 +162,10 @@ export function summarySheetsRouter(prisma) {
 		const { courseId, volumeId, moduleId, level, year } = parse.data;
 		let count = parse.data.count || null;
 
-		const apiKey = await getOpenAIApiKey(prisma);
-		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured.' });
+		const aiProvider = await getActiveProvider(prisma);
+		const aiModel = await getActiveModel(prisma) || getDefaultModel(aiProvider);
+		const apiKey = await getAIApiKey(prisma, aiProvider);
+		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider}.` });
 
 		try {
 			const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true } });
@@ -366,24 +368,22 @@ OUTPUT STANDARD: The final summary must read like a premium Milven revision dash
 
 Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
 
-			const openai = new OpenAI({ apiKey });
-
 			let items = [];
 			const sheetsToGenerate = Math.min(count, 20);
 
 			for (let i = 0; i < sheetsToGenerate; i++) {
-				const completion = await openai.chat.completions.create({
-					model: 'gpt-4o-mini',
+				const aiResult = await chatCompletion({
+					apiKey, provider: aiProvider, model: aiModel,
 					messages: [
 						{ role: 'system', content: `You are the Milven Summary Generator and Layout Formatter. Return valid JSON only. Generate a diagrammatic revision dashboard at Learning Module level. Every section must be fully populated. Use concise exam-focused language. Do NOT write textbook paragraphs.\n\n${LATEX_SYSTEM_RULES}` },
 						{ role: 'user', content: prompt }
 					],
 					temperature: 0.7,
-					max_tokens: 16384,
-					response_format: { type: 'json_object' }
+					maxTokens: 16384,
+					jsonMode: true,
 				});
 
-				const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+				const raw = aiResult.content || '{}';
 				try {
 					const parsed = JSON.parse(raw);
 					const sheetItems = Array.isArray(parsed.sheets) ? parsed.sheets : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : [parsed]));

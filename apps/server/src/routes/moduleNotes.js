@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import OpenAI from 'openai';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey, LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
+import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
+import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
 
 export function moduleNotesRouter(prisma) {
 	const router = Router();
@@ -151,8 +151,10 @@ export function moduleNotesRouter(prisma) {
 		const { courseId, volumeId, moduleId, topicId, level, year } = parse.data;
 		let count = parse.data.count || null;
 
-		const apiKey = await getOpenAIApiKey(prisma);
-		if (!apiKey) return res.status(400).json({ error: 'OpenAI API key not configured.' });
+		const aiProvider = await getActiveProvider(prisma);
+		const aiModel = await getActiveModel(prisma) || getDefaultModel(aiProvider);
+		const apiKey = await getAIApiKey(prisma, aiProvider);
+		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider}.` });
 
 		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true } });
 		if (!course) return res.status(400).json({ error: 'Course not found' });
@@ -375,21 +377,20 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 		const sseEnd = () => { clearInterval(sseHeartbeat); try { res.end(); } catch {} };
 
 		try {
-			const openai = new OpenAI({ apiKey, timeout: 180_000 });
-
 			// Generate exactly 1 note per preview request to avoid timeout
-			const completion = await openai.chat.completions.create({
-				model: 'gpt-4o-mini',
+			const aiResult = await chatCompletion({
+				apiKey, provider: aiProvider, model: aiModel,
 				messages: [
 					{ role: 'system', content: `You are the Milven Notes Generator for Milven Finance School. You produce premium, exam-ready study notes in the Milven Notes format. Return valid JSON only. Generate extremely detailed, comprehensive content — each note must be 10-15 printed pages worth of material. Every text field must be multiple sentences. The concepts array must have 10-20 items covering every topic and sub-topic. Write full original content — do NOT copy curriculum wording or third-party tuition materials.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.7,
-				max_tokens: 16384,
-				response_format: { type: 'json_object' }
+				maxTokens: 16384,
+				jsonMode: true,
+				timeout: 180_000,
 			});
 
-			const raw = completion.choices?.[0]?.message?.content?.trim() || '{}';
+			const raw = aiResult.content || '{}';
 			let items = [];
 			try {
 				const parsed = JSON.parse(raw);

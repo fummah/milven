@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import OpenAI from 'openai';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireActiveSubscription } from '../middleware/requireActiveSubscription.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { getOpenAIApiKey, LATEX_SYSTEM_RULES } from '../lib/openai.js';
+import { LATEX_SYSTEM_RULES } from '../lib/openai.js';
+import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
 
 export function examsRouter(prisma) {
 	const router = Router();
@@ -1278,8 +1278,10 @@ export function examsRouter(prisma) {
 		const isAdmin = req.user.role === 'ADMIN';
 		if (!attempt || (!isOwner && !isAdmin)) return res.status(404).json({ error: 'Attempt not found' });
 
-		const apiKey = await getOpenAIApiKey(prisma);
-		if (!apiKey) return res.status(400).json({ error: 'AI hints are not configured. Admin must set OpenAI API key.' });
+		const aiProvider = await getActiveProvider(prisma);
+		const aiModel = await getActiveModel(prisma) || getDefaultModel(aiProvider);
+		const apiKey = await getAIApiKey(prisma, aiProvider);
+		if (!apiKey) return res.status(400).json({ error: `AI hints are not configured. Admin must set an API key for ${aiProvider}.` });
 
 		// Failed: wrong MCQ/vignette, or constructed with partial/zero marks
 		const failed = attempt.answers.filter((a) => {
@@ -1292,7 +1294,6 @@ export function examsRouter(prisma) {
 		if (failed.length === 0) return res.json({ hints: [] });
 
 		const hints = [];
-		const openai = new OpenAI({ apiKey });
 		for (const ans of failed) {
 			const q = ans.question;
 			const stem = (q?.stem || '').replace(/<[^>]+>/g, ' ').trim().slice(0, 800);
@@ -1302,16 +1303,16 @@ export function examsRouter(prisma) {
 			const worked = (q?.workedSolution || '').slice(0, 400);
 			const prompt = `Exam question (student got it wrong). Give one short, brief study hint (1-2 sentences) to help them understand. Be concise.\n\nQuestion: ${stem}\n${correctText ? `Correct answer: ${correctText}\n` : ''}${keyFormulas ? `Key formula(s): ${keyFormulas}\n` : ''}${worked ? `Worked solution (excerpt): ${worked}\n` : ''}\nReply with only the hint, no preamble.`;
 			try {
-				const comp = await openai.chat.completions.create({
-					model: 'gpt-4o-mini',
+				const result = await chatCompletion({
+					apiKey, provider: aiProvider, model: aiModel,
 					messages: [
 						{ role: 'system', content: `You are a concise CFA study coach. When mentioning formulas, use valid LaTeX: inline \\( ... \\), fractions \\frac{a}{b}, Greek \\alpha \\beta \\sigma, subscripts P_{0}, superscripts x^{2}. Never output broken LaTeX.` },
 						{ role: 'user', content: prompt }
 					],
 					temperature: 0.5,
-					max_tokens: 150
+					maxTokens: 150
 				});
-				const hint = comp.choices?.[0]?.message?.content?.trim() || '';
+				const hint = result.content || '';
 				if (!hint) {
 					hints.push({ answerId: ans.id, questionId: q?.id, hint: '', error: 'AI returned empty hint' });
 				} else {
@@ -1336,8 +1337,10 @@ export function examsRouter(prisma) {
 		const parse = schema.safeParse(req.body || {});
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
 
-		const apiKey = await getOpenAIApiKey(prisma);
-		if (!apiKey) return res.status(400).json({ error: 'AI help is not configured. Admin must set OpenAI API key.' });
+		const aiProvider2 = await getActiveProvider(prisma);
+		const aiModel2 = await getActiveModel(prisma) || getDefaultModel(aiProvider2);
+		const apiKey = await getAIApiKey(prisma, aiProvider2);
+		if (!apiKey) return res.status(400).json({ error: `AI help is not configured. Admin must set an API key for ${aiProvider2}.` });
 
 		const question = await prisma.question.findUnique({
 			where: { id: questionId },
@@ -1386,17 +1389,16 @@ export function examsRouter(prisma) {
 		});
 
 		try {
-			const openai = new OpenAI({ apiKey });
-			const comp = await openai.chat.completions.create({
-				model: 'gpt-4o-mini',
+			const helpResult = await chatCompletion({
+				apiKey, provider: aiProvider2, model: aiModel2,
 				messages: [
 					{ role: 'system', content: `You are a concise CFA study coach. When mentioning formulas, use valid LaTeX: inline \\( ... \\), fractions \\frac{a}{b}, Greek \\alpha \\beta \\sigma, subscripts P_{0}, superscripts x^{2}. Never output broken LaTeX.` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.4,
-				max_tokens: 500
+				maxTokens: 500
 			});
-			const help = comp.choices?.[0]?.message?.content?.trim() || '';
+			const help = helpResult.content || '';
 			if (!help) return res.status(502).json({ error: 'AI returned empty help' });
 			return res.json({ help });
 		} catch (err) {
