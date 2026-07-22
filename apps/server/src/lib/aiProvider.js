@@ -105,13 +105,20 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 
 	if (provider === 'openai') {
 		const openai = new OpenAI({ apiKey, timeout });
+		// Newer reasoning models (o1, o3, etc.) require max_completion_tokens instead of max_tokens
+		const usesCompletionTokens = /^(o[1-9]|chatgpt-4o-latest)/.test(resolvedModel);
 		const opts = {
 			model: resolvedModel,
 			messages,
-			temperature,
-			max_tokens: maxTokens,
 		};
-		if (jsonMode) opts.response_format = { type: 'json_object' };
+		// Reasoning models don't support temperature or response_format
+		if (!usesCompletionTokens) {
+			opts.temperature = temperature;
+			opts.max_tokens = maxTokens;
+			if (jsonMode) opts.response_format = { type: 'json_object' };
+		} else {
+			opts.max_completion_tokens = maxTokens;
+		}
 		const completion = await openai.chat.completions.create(opts);
 		return {
 			content: completion.choices?.[0]?.message?.content?.trim() || '',
