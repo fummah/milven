@@ -799,7 +799,11 @@ export function AdminQuestions() {
 			setPage(1);
 			loadQuestions();
 		} catch (e) {
-			message.error(e?.response?.data?.error || 'AI generation failed');
+			const errMsg = e?.response?.data?.error
+				|| e?.message
+				|| (typeof e === 'string' ? e : 'AI generation failed');
+			console.error('[AI Generate Error]', e);
+			message.error(errMsg, 8);
 		} finally {
 			setAiGenerateLoading(false);
 		}
