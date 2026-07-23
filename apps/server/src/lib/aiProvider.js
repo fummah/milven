@@ -107,8 +107,13 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 		const openai = new OpenAI({ apiKey, timeout });
 		// Reasoning models (pure o-series: o1, o3, o4-mini, etc.) don't support temperature or response_format
 		// gpt-5.x models are standard chat models but use max_completion_tokens instead of max_tokens
+		// Some models (mini/lite variants) only support the default temperature (1) and don't accept custom values
+		const modelBase = resolvedModel.replace(/-[a-z0-9]+$/i, '').toLowerCase();
 		const isReasoningModel = /^o[1-9](?![a-zA-Z])/.test(resolvedModel);
 		const usesCompletionTokens = isReasoningModel || /^(gpt-5|chatgpt-4o-latest)/.test(resolvedModel);
+		// Models that cannot accept custom temperature (default 1 only)
+		const noCustomTemp = ['o1', 'o3', 'o4', 'gpt-5-mini', 'gpt-5.4-mini', 'gpt-4.1-mini', 'gpt-4o-mini', 'o4-mini'];
+		const supportsTemperature = !noCustomTemp.some(prefix => resolvedModel.startsWith(prefix));
 		const opts = {
 			model: resolvedModel,
 			messages,
@@ -118,10 +123,11 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 		} else {
 			opts.max_tokens = maxTokens;
 		}
-		// Reasoning models don't support temperature or response_format; gpt-5.x does
-		if (!isReasoningModel) {
+		if (supportsTemperature) {
 			opts.temperature = temperature;
-			if (jsonMode) opts.response_format = { type: 'json_object' };
+		}
+		if (jsonMode && supportsTemperature) {
+			opts.response_format = { type: 'json_object' };
 		}
 		const completion = await openai.chat.completions.create(opts);
 		return {
