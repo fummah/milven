@@ -1591,7 +1591,7 @@ export function AdminQuestions() {
 									optionFilterProp="label"
 									loading={aiModelsLoading}
 									placeholder={aiModelsLoading ? 'Loading models…' : 'Select model'}
-									options={aiModels.map(m => ({ value: m.id, label: m.id }))}
+									options={aiModels.map(m => ({ value: m.id, label: m.display_name ? `${m.display_name} (${m.id})` : m.id }))}
 									notFoundContent={aiModelsLoading ? 'Loading…' : 'No models found — check API key in Settings'}
 								/>
 							</Form.Item>

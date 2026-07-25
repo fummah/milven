@@ -18,7 +18,7 @@ export const DEFAULT_PROVIDER = 'openai';
 // ── Default models per provider (cost-effective) ────────
 const DEFAULT_MODELS = {
 	openai: 'gpt-4o-mini',
-	anthropic: 'claude-sonnet-4-20250514',
+	anthropic: 'claude-sonnet-4-6',
 };
 
 // ── Get API key for a provider ──────────────────────────
@@ -85,15 +85,22 @@ export async function listModels(apiKey, provider = DEFAULT_PROVIDER) {
 	}
 
 	if (provider === 'anthropic') {
-		// Anthropic doesn't have a list models API — return common model IDs
-		// Note: model availability depends on API key tier and region
-		return [
-			{ id: 'claude-sonnet-4-20250514', owned_by: 'anthropic', note: 'Latest Claude 4 Sonnet' },
-			{ id: 'claude-4-sonnet', owned_by: 'anthropic', note: 'Latest Claude 4 Sonnet (short name)' },
-			{ id: 'claude-3-5-sonnet-20241022', owned_by: 'anthropic', note: 'Claude 3.5 Sonnet (legacy)' },
-			{ id: 'claude-3-5-haiku-20241022', owned_by: 'anthropic', note: 'Claude 3.5 Haiku' },
-			{ id: 'claude-3-opus-20240229', owned_by: 'anthropic', note: 'Claude 3 Opus (legacy)' },
-		];
+		try {
+			const response = await fetch('https://api.anthropic.com/v1/models', {
+				headers: {
+					'x-api-key': apiKey,
+					'anthropic-version': '2023-06-01',
+				},
+			});
+			if (!response.ok) return [];
+			const body = await response.json();
+			const models = body.data || [];
+			return models
+				.sort((a, b) => a.display_name?.localeCompare(b.display_name || a.id) || a.id.localeCompare(b.id))
+				.map(m => ({ id: m.id, display_name: m.display_name, owned_by: 'anthropic', created: new Date(m.created_at).getTime() }));
+		} catch {
+			return [];
+		}
 	}
 
 	return [];

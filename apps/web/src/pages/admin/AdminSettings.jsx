@@ -449,7 +449,7 @@ export function AdminSettings() {
                     renderItem={(m) => (
                       <List.Item>
                         <List.Item.Meta
-                          title={<span style={{ fontFamily: 'monospace', fontSize: 13 }}>{m.id}</span>}
+                          title={<span style={{ fontFamily: 'monospace', fontSize: 13 }}>{m.display_name ? `${m.display_name} (${m.id})` : m.id}</span>}
                           description={<Tag color="blue">{m.owned_by}</Tag>}
                         />
                       </List.Item>
