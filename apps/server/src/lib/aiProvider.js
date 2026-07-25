@@ -85,13 +85,10 @@ export async function listModels(apiKey, provider = DEFAULT_PROVIDER) {
 	}
 
 	if (provider === 'anthropic') {
-		// Anthropic doesn't have a list models API — return known models
+		// Anthropic doesn't have a list models API — return known active models
 		return [
 			{ id: 'claude-sonnet-4-20250514', owned_by: 'anthropic' },
-			{ id: 'claude-3-5-sonnet-20241022', owned_by: 'anthropic' },
 			{ id: 'claude-3-5-haiku-20241022', owned_by: 'anthropic' },
-			{ id: 'claude-3-opus-20240229', owned_by: 'anthropic' },
-			{ id: 'claude-3-haiku-20240307', owned_by: 'anthropic' },
 		];
 	}
 
@@ -203,18 +200,25 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 
 			if (!response.ok) {
 				const errBody = await response.json().catch(() => ({}));
-				const errMsg = (errBody?.error?.message || '').toLowerCase();
+				console.error('[Anthropic API Error]', JSON.stringify(errBody));
+				const errMsg = (errBody?.error?.message || '');
+				const errMsgLower = errMsg.toLowerCase();
 
 				// If temperature is the issue, retry without it
-				if (errMsg.includes('temperature')) {
+				if (errMsgLower.includes('temperature')) {
+					console.log('[Anthropic] Retrying without temperature');
 					response = await doFetch(buildBody({ temperature: undefined }));
+				} else if (errMsg && !errMsg.includes(' ') && errMsg.startsWith('model:')) {
+					// Anthropic sometimes returns just the model name as error when model is not found/deprecated
+					throw new Error(`Anthropic model error: "${errMsg.replace('model:', '').trim()}" — this model may be deprecated or unavailable. Try a different model.`);
 				} else {
-					throw new Error(errBody?.error?.message || `Anthropic API error ${response.status}`);
+					throw new Error(errMsg || `Anthropic API error ${response.status}`);
 				}
 			}
 
 			if (!response.ok) {
 				const err = await response.json().catch(() => ({}));
+				console.error('[Anthropic API Error (2nd attempt)]', JSON.stringify(err));
 				throw new Error(err?.error?.message || `Anthropic API error ${response.status}`);
 			}
 
@@ -226,6 +230,7 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 				model: data.model || resolvedModel,
 			};
 		} catch (err) {
+			console.error('[Anthropic] Fatal error:', err?.message);
 			throw err;
 		}
 	}

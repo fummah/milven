@@ -4181,6 +4181,7 @@ ${formatBlock}`;
 			return sseEnd();
 		} catch (err) {
 			const msg = err?.message || err?.error?.message || 'OpenAI request failed';
+			console.error('[AI Preview] Error caught at route level:', err?.stack || err?.message);
 			sseSend('error', { error: msg });
 			return sseEnd();
 		}
