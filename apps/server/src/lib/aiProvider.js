@@ -105,76 +105,129 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 
 	if (provider === 'openai') {
 		const openai = new OpenAI({ apiKey, timeout });
-		// Reasoning models (pure o-series: o1, o3, o4-mini, etc.) don't support temperature or response_format
-		// gpt-5.x models are standard chat models but use max_completion_tokens instead of max_tokens
-		// Some models (mini/lite variants) only support the default temperature (1) and don't accept custom values
-		const modelBase = resolvedModel.replace(/-[a-z0-9]+$/i, '').toLowerCase();
-		const isReasoningModel = /^o[1-9](?![a-zA-Z])/.test(resolvedModel);
-		const usesCompletionTokens = isReasoningModel || /^(gpt-5|chatgpt-4o-latest)/.test(resolvedModel);
-		// Models that cannot accept custom temperature (default 1 only)
-		const noCustomTemp = ['o1', 'o3', 'o4', 'gpt-5-mini', 'gpt-5.4-mini', 'gpt-4.1-mini', 'gpt-4o-mini', 'o4-mini'];
-		const supportsTemperature = !noCustomTemp.some(prefix => resolvedModel.startsWith(prefix));
-		const opts = {
-			model: resolvedModel,
-			messages,
+
+		// Build options aggressively: include all params, let the API tell us what's unsupported
+		const buildOpts = (overrides = {}) => {
+			const opts = {
+				model: resolvedModel,
+				messages,
+				...overrides,
+			};
+			if (!('max_tokens' in overrides) && !('max_completion_tokens' in overrides)) {
+				opts.max_tokens = maxTokens;
+			}
+			if (!('temperature' in overrides)) {
+				opts.temperature = temperature;
+			}
+			if (jsonMode && !('response_format' in overrides)) {
+				opts.response_format = { type: 'json_object' };
+			}
+			return opts;
 		};
-		if (usesCompletionTokens) {
-			opts.max_completion_tokens = maxTokens;
-		} else {
-			opts.max_tokens = maxTokens;
-		}
-		if (supportsTemperature) {
-			opts.temperature = temperature;
-		}
-		if (jsonMode && supportsTemperature) {
-			opts.response_format = { type: 'json_object' };
-		}
-		const completion = await openai.chat.completions.create(opts);
-		return {
-			content: completion.choices?.[0]?.message?.content?.trim() || '',
-			usage: completion.usage || {},
-			model: completion.model || resolvedModel,
+
+		const tryCreate = async (overrides) => {
+			return await openai.chat.completions.create(buildOpts(overrides));
 		};
+
+		try {
+			const completion = await tryCreate({});
+			return {
+				content: completion.choices?.[0]?.message?.content?.trim() || '',
+				usage: completion.usage || {},
+				model: completion.model || resolvedModel,
+			};
+		} catch (err) {
+			const msg = (err?.message || '').toLowerCase();
+			const overrides = {};
+
+			// Determine which params to strip based on the error message
+			if (msg.includes('temperature')) overrides.temperature = undefined;
+			if (msg.includes('response_format') || msg.includes('json_object') || msg.includes('json mode')) {
+				overrides.response_format = undefined;
+			}
+			if (msg.includes('max_tokens') || msg.includes('max_completion_tokens')) {
+				if (msg.includes('max_completion_tokens')) {
+					overrides.max_tokens = undefined;
+					overrides.max_completion_tokens = maxTokens;
+				} else {
+					overrides.max_tokens = undefined;
+					overrides.max_completion_tokens = maxTokens;
+				}
+			}
+
+			// If we have nothing to change, rethrow
+			if (Object.keys(overrides).length === 0) throw err;
+
+			const completion = await tryCreate(overrides);
+			return {
+				content: completion.choices?.[0]?.message?.content?.trim() || '',
+				usage: completion.usage || {},
+				model: completion.model || resolvedModel,
+			};
+		}
 	}
 
 	if (provider === 'anthropic') {
-		// Anthropic uses a different API format — use fetch directly
-		// Extract system message from messages array
 		const systemMsgs = messages.filter(m => m.role === 'system');
 		const nonSystemMsgs = messages.filter(m => m.role !== 'system');
 		const systemText = systemMsgs.map(m => m.content).join('\n\n');
 
-		const body = {
-			model: resolvedModel,
-			max_tokens: maxTokens,
-			temperature,
-			messages: nonSystemMsgs.map(m => ({ role: m.role, content: m.content })),
+		const buildBody = (overrides = {}) => {
+			const body = {
+				model: resolvedModel,
+				max_tokens: maxTokens,
+				messages: nonSystemMsgs.map(m => ({ role: m.role, content: m.content })),
+				...overrides,
+			};
+			if (!('temperature' in overrides)) body.temperature = temperature;
+			if (!('system' in overrides) && systemText) body.system = systemText;
+			return body;
 		};
-		if (systemText) body.system = systemText;
 
-		const response = await fetch('https://api.anthropic.com/v1/messages', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'x-api-key': apiKey,
-				'anthropic-version': '2023-06-01',
-			},
-			body: JSON.stringify(body),
-			signal: AbortSignal.timeout(timeout),
-		});
+		const doFetch = async (bodyToSend) => {
+			const response = await fetch('https://api.anthropic.com/v1/messages', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'x-api-key': apiKey,
+					'anthropic-version': '2023-06-01',
+				},
+				body: JSON.stringify(bodyToSend),
+				signal: AbortSignal.timeout(timeout),
+			});
+			return response;
+		};
 
-		if (!response.ok) {
-			const err = await response.json().catch(() => ({}));
-			throw new Error(err?.error?.message || `Anthropic API error ${response.status}`);
+		try {
+			let response = await doFetch(buildBody({}));
+
+			if (!response.ok) {
+				const errBody = await response.json().catch(() => ({}));
+				const errMsg = (errBody?.error?.message || '').toLowerCase();
+
+				// If temperature is the issue, retry without it
+				if (errMsg.includes('temperature')) {
+					response = await doFetch(buildBody({ temperature: undefined }));
+				} else {
+					throw new Error(errBody?.error?.message || `Anthropic API error ${response.status}`);
+				}
+			}
+
+			if (!response.ok) {
+				const err = await response.json().catch(() => ({}));
+				throw new Error(err?.error?.message || `Anthropic API error ${response.status}`);
+			}
+
+			const data = await response.json();
+			const content = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+			return {
+				content: content.trim(),
+				usage: { prompt_tokens: data.usage?.input_tokens || 0, completion_tokens: data.usage?.output_tokens || 0 },
+				model: data.model || resolvedModel,
+			};
+		} catch (err) {
+			throw err;
 		}
-
-		const data = await response.json();
-		const content = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-		return {
-			content: content.trim(),
-			usage: { prompt_tokens: data.usage?.input_tokens || 0, completion_tokens: data.usage?.output_tokens || 0 },
-			model: data.model || resolvedModel,
-		};
 	}
 
 	throw new Error(`Unsupported AI provider: ${provider}`);
