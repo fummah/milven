@@ -137,41 +137,42 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 			return await openai.chat.completions.create(buildOpts(overrides));
 		};
 
-		try {
-			const completion = await tryCreate({});
-			return {
-				content: completion.choices?.[0]?.message?.content?.trim() || '',
-				usage: completion.usage || {},
-				model: completion.model || resolvedModel,
-			};
-		} catch (err) {
-			const msg = (err?.message || '').toLowerCase();
-			const overrides = {};
+		// Iteratively strip unsupported parameters and retry
+		const maxRetries = 5;
+		let currentOverrides = {};
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+			try {
+				const completion = await tryCreate(currentOverrides);
+				return {
+					content: completion.choices?.[0]?.message?.content?.trim() || '',
+					usage: completion.usage || {},
+					model: completion.model || resolvedModel,
+				};
+			} catch (err) {
+				const msg = (err?.message || '').toLowerCase();
+				let found = false;
 
-			// Determine which params to strip based on the error message
-			if (msg.includes('temperature')) overrides.temperature = undefined;
-			if (msg.includes('response_format') || msg.includes('json_object') || msg.includes('json mode')) {
-				overrides.response_format = undefined;
-			}
-			if (msg.includes('max_tokens') || msg.includes('max_completion_tokens')) {
-				if (msg.includes('max_completion_tokens')) {
-					overrides.max_tokens = undefined;
-					overrides.max_completion_tokens = maxTokens;
-				} else {
-					overrides.max_tokens = undefined;
-					overrides.max_completion_tokens = maxTokens;
+				if (msg.includes('temperature')) {
+					currentOverrides.temperature = undefined;
+					found = true;
 				}
+				if (msg.includes('response_format') || msg.includes('json_object') || msg.includes('json mode')) {
+					currentOverrides.response_format = undefined;
+					found = true;
+				}
+				if (msg.includes('max_completion_tokens')) {
+					currentOverrides.max_tokens = undefined;
+					currentOverrides.max_completion_tokens = maxTokens;
+					found = true;
+				} else if (msg.includes('max_tokens')) {
+					currentOverrides.max_tokens = undefined;
+					currentOverrides.max_completion_tokens = maxTokens;
+					found = true;
+				}
+
+				if (!found || attempt >= maxRetries) throw err;
+				console.log(`[OpenAI] Retry ${attempt + 1}: stripping unsupported params, current overrides:`, currentOverrides);
 			}
-
-			// If we have nothing to change, rethrow
-			if (Object.keys(overrides).length === 0) throw err;
-
-			const completion = await tryCreate(overrides);
-			return {
-				content: completion.choices?.[0]?.message?.content?.trim() || '',
-				usage: completion.usage || {},
-				model: completion.model || resolvedModel,
-			};
 		}
 	}
 
@@ -187,10 +188,17 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 				messages: nonSystemMsgs.map(m => ({ role: m.role, content: m.content })),
 				...overrides,
 			};
-			if (!('temperature' in overrides)) body.temperature = temperature;
+			if (!('temperature' in overrides) && !body.thinking) body.temperature = temperature;
 			if (!('system' in overrides) && systemText) body.system = systemText;
 			return body;
 		};
+
+		// Add thinking parameter for jsonMode — improves output quality on supported models
+		// Thinking uses budget_tokens (must be < max_tokens). Not all models support it.
+		const tryWithThinking = jsonMode ? {
+			thinking: { type: 'enabled', budget_tokens: Math.max(1024, Math.min(maxTokens * 0.5, 32000)) },
+			temperature: undefined, // temperature incompatible with thinking
+		} : {};
 
 		const doFetch = async (bodyToSend) => {
 			const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -213,8 +221,8 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 			'claude-3-5-sonnet-20241022': ['claude-3-5-haiku-20241022', 'claude-sonnet-4-20250514'],
 		};
 
-		const tryModel = async (modelId, retried = false) => {
-			const body = buildBody({});
+		const attemptRequest = async (modelId, overrides = {}) => {
+			const body = buildBody({ ...tryWithThinking, ...overrides });
 			body.model = modelId;
 			const response = await doFetch(body);
 
@@ -232,35 +240,32 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 				for (const fb of fallbacks) {
 					if (fb === modelId) continue;
 					console.log(`[Anthropic] Trying fallback model: ${fb}`);
-					const fbBody = buildBody({});
-					fbBody.model = fb;
-					const fbRes = await doFetch(fbBody);
+					const fbRes = await attemptRequest(fb, overrides);
 					if (fbRes.ok) {
 						console.log(`[Anthropic] Fallback model "${fb}" worked!`);
 						return fbRes;
 					}
-					const fbErr = await fbRes.json().catch(() => ({}));
-					console.error(`[Anthropic] Fallback "${fb}" also failed:`, JSON.stringify(fbErr));
 				}
 				throw new Error(`Model "${modelId}" not found by Anthropic API. Tried fallbacks: ${(fallbacks.length ? fallbacks.join(', ') : 'none available')}. Check your API key has access to the selected model.`);
 			}
 
-			// If temperature is the issue, retry without it
+			// If thinking not supported — retry without it
+			if (errMsg.toLowerCase().includes('thinking')) {
+				console.log('[Anthropic] Retrying without thinking (not supported by this model)');
+				return await attemptRequest(modelId, { thinking: undefined, temperature });
+			}
+
+			// If temperature is the issue — retry without it
 			if (errMsg.toLowerCase().includes('temperature')) {
 				console.log('[Anthropic] Retrying without temperature');
-				const noTempBody = buildBody({ temperature: undefined });
-				noTempBody.model = modelId;
-				const retryRes = await doFetch(noTempBody);
-				if (retryRes.ok) return retryRes;
-				const retryErr = await retryRes.json().catch(() => ({}));
-				throw new Error(retryErr?.error?.message || `Anthropic API error ${retryRes.status}`);
+				return await attemptRequest(modelId, { temperature: undefined, thinking: undefined });
 			}
 
 			throw new Error(errMsg || `Anthropic API error ${response.status}`);
 		};
 
 		try {
-			const response = await tryModel(resolvedModel);
+			const response = await attemptRequest(resolvedModel);
 			const data = await response.json();
 			const content = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 			return {

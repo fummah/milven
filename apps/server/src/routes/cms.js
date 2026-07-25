@@ -2755,7 +2755,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				temperature: 0.5,
 				maxTokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
 				jsonMode: true,
-				timeout: 120000,
+				timeout: aiProvider === 'anthropic' ? 300000 : 120000,
 			});
 			let raw = aiResult.content || '{}';
 
@@ -3725,7 +3725,7 @@ ${formatBlock}`;
 				temperature: 0.5,
 				maxTokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
 				jsonMode: true,
-				timeout: 120000,
+				timeout: aiProvider === 'anthropic' ? 300000 : 120000,
 			});
 			console.log('[AI Preview] AI call completed');
 			const raw = aiResult.content || '{}';
@@ -3737,8 +3737,21 @@ ${formatBlock}`;
 			} catch (e) {
 				console.error('[AI Preview] JSON parse error:', e.message);
 				console.error('[AI Preview] Raw response (first 500 chars):', raw.substring(0, 500));
-				sseSend('error', { error: 'AI returned invalid JSON' });
-				return sseEnd();
+				// fallback: try to extract JSON from markdown code block (```json ... ```)
+				const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+				if (jsonMatch) {
+					try {
+						parsed = JSON.parse(jsonMatch[1].trim());
+						console.log('[AI Preview] JSON extracted from markdown code block, items:', Array.isArray(parsed?.items) ? parsed.items.length : (Array.isArray(parsed?.questions) ? parsed.questions.length : 0));
+					} catch (e2) {
+						console.error('[AI Preview] Markdown extraction also failed:', e2.message);
+						sseSend('error', { error: 'AI returned invalid JSON' });
+						return sseEnd();
+					}
+				} else {
+					sseSend('error', { error: 'AI returned invalid JSON' });
+					return sseEnd();
+				}
 			}
 			let items = Array.isArray(parsed?.items) ? parsed.items : (Array.isArray(parsed?.questions) ? parsed.questions : []);
 
