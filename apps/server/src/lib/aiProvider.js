@@ -85,10 +85,14 @@ export async function listModels(apiKey, provider = DEFAULT_PROVIDER) {
 	}
 
 	if (provider === 'anthropic') {
-		// Anthropic doesn't have a list models API — return known active models
+		// Anthropic doesn't have a list models API — return common model IDs
+		// Note: model availability depends on API key tier and region
 		return [
-			{ id: 'claude-sonnet-4-20250514', owned_by: 'anthropic' },
-			{ id: 'claude-3-5-haiku-20241022', owned_by: 'anthropic' },
+			{ id: 'claude-sonnet-4-20250514', owned_by: 'anthropic', note: 'Latest Claude 4 Sonnet' },
+			{ id: 'claude-4-sonnet', owned_by: 'anthropic', note: 'Latest Claude 4 Sonnet (short name)' },
+			{ id: 'claude-3-5-sonnet-20241022', owned_by: 'anthropic', note: 'Claude 3.5 Sonnet (legacy)' },
+			{ id: 'claude-3-5-haiku-20241022', owned_by: 'anthropic', note: 'Claude 3.5 Haiku' },
+			{ id: 'claude-3-opus-20240229', owned_by: 'anthropic', note: 'Claude 3 Opus (legacy)' },
 		];
 	}
 
@@ -195,33 +199,61 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 			return response;
 		};
 
-		try {
-			let response = await doFetch(buildBody({}));
+		// Fallback model IDs to try if the requested model is not found
+		const MODEL_FALLBACKS = {
+			'claude-sonnet-4-20250514': ['claude-4-sonnet', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+			'claude-4-sonnet': ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+			'claude-3-5-sonnet-20241022': ['claude-3-5-haiku-20241022', 'claude-sonnet-4-20250514'],
+		};
 
-			if (!response.ok) {
-				const errBody = await response.json().catch(() => ({}));
-				console.error('[Anthropic API Error]', JSON.stringify(errBody));
-				const errMsg = (errBody?.error?.message || '');
-				const errMsgLower = errMsg.toLowerCase();
+		const tryModel = async (modelId, retried = false) => {
+			const body = buildBody({});
+			body.model = modelId;
+			const response = await doFetch(body);
 
-				// If temperature is the issue, retry without it
-				if (errMsgLower.includes('temperature')) {
-					console.log('[Anthropic] Retrying without temperature');
-					response = await doFetch(buildBody({ temperature: undefined }));
-				} else if (errMsg && !errMsg.includes(' ') && errMsg.startsWith('model:')) {
-					// Anthropic sometimes returns just the model name as error when model is not found/deprecated
-					throw new Error(`Anthropic model error: "${errMsg.replace('model:', '').trim()}" — this model may be deprecated or unavailable. Try a different model.`);
-				} else {
-					throw new Error(errMsg || `Anthropic API error ${response.status}`);
+			if (response.ok) return response;
+
+			const errBody = await response.json().catch(() => ({}));
+			console.error(`[Anthropic] Error with model "${modelId}":`, JSON.stringify(errBody));
+
+			const errType = errBody?.error?.type || '';
+			const errMsg = errBody?.error?.message || '';
+
+			// If not found error — try fallback models
+			if (errType === 'not_found_error') {
+				const fallbacks = MODEL_FALLBACKS[modelId] || [];
+				for (const fb of fallbacks) {
+					if (fb === modelId) continue;
+					console.log(`[Anthropic] Trying fallback model: ${fb}`);
+					const fbBody = buildBody({});
+					fbBody.model = fb;
+					const fbRes = await doFetch(fbBody);
+					if (fbRes.ok) {
+						console.log(`[Anthropic] Fallback model "${fb}" worked!`);
+						return fbRes;
+					}
+					const fbErr = await fbRes.json().catch(() => ({}));
+					console.error(`[Anthropic] Fallback "${fb}" also failed:`, JSON.stringify(fbErr));
 				}
+				throw new Error(`Model "${modelId}" not found by Anthropic API. Tried fallbacks: ${(fallbacks.length ? fallbacks.join(', ') : 'none available')}. Check your API key has access to the selected model.`);
 			}
 
-			if (!response.ok) {
-				const err = await response.json().catch(() => ({}));
-				console.error('[Anthropic API Error (2nd attempt)]', JSON.stringify(err));
-				throw new Error(err?.error?.message || `Anthropic API error ${response.status}`);
+			// If temperature is the issue, retry without it
+			if (errMsg.toLowerCase().includes('temperature')) {
+				console.log('[Anthropic] Retrying without temperature');
+				const noTempBody = buildBody({ temperature: undefined });
+				noTempBody.model = modelId;
+				const retryRes = await doFetch(noTempBody);
+				if (retryRes.ok) return retryRes;
+				const retryErr = await retryRes.json().catch(() => ({}));
+				throw new Error(retryErr?.error?.message || `Anthropic API error ${retryRes.status}`);
 			}
 
+			throw new Error(errMsg || `Anthropic API error ${response.status}`);
+		};
+
+		try {
+			const response = await tryModel(resolvedModel);
 			const data = await response.json();
 			const content = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 			return {
