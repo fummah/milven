@@ -40,6 +40,7 @@ export function AdminQuestions() {
 	const [aiPreview, setAiPreview] = useState(null);
 	const [aiAcceptLoading, setAiAcceptLoading] = useState(false);
 	const [aiSelectedIndices, setAiSelectedIndices] = useState([]);
+	const [aiEditModal, setAiEditModal] = useState(null); // { type, bundleIdx, qIdx, value } or null
 	const [drawerMode, setDrawerMode] = useState('single'); // 'single' | 'bundle'
 	const [aiForm] = Form.useForm();
 	const [notesDrawerOpen, setNotesDrawerOpen] = useState(false);
@@ -841,6 +842,32 @@ export function AdminQuestions() {
 			}
 			if (!Array.isArray(opts) || !opts[optIdx]) return prev;
 			opts[optIdx].text = newText;
+			return { ...prev, generated: gen };
+		});
+	};
+
+	// Helper: edit any text field in the AI preview (sub-question level)
+	const editPreviewField = (bundleIdx, qIdx, field, newText) => {
+		setAiPreview(prev => {
+			if (!prev?.generated) return prev;
+			const gen = JSON.parse(JSON.stringify(prev.generated));
+			if (bundleIdx != null && gen.bundles?.[bundleIdx]?.questions?.[qIdx]) {
+				gen.bundles[bundleIdx].questions[qIdx][field] = newText;
+			} else if (gen.items?.[qIdx]) {
+				gen.items[qIdx][field] = newText;
+			}
+			return { ...prev, generated: gen };
+		});
+	};
+
+	// Helper: edit vignetteText in a bundle
+	const editPreviewVignetteText = (bundleIdx, newText) => {
+		setAiPreview(prev => {
+			if (!prev?.generated) return prev;
+			const gen = JSON.parse(JSON.stringify(prev.generated));
+			if (gen.bundles?.[bundleIdx]) {
+				gen.bundles[bundleIdx].vignetteText = newText;
+			}
 			return { ...prev, generated: gen };
 		});
 	};
@@ -1669,7 +1696,10 @@ export function AdminQuestions() {
 											<Button size="small" type="link" disabled={aiAcceptLoading} onClick={() => acceptAiPreview([bIdx])}>Add this case study</Button>
 										</div>
 										<Card size="small" style={{ borderRadius: 10, background: '#f0f5ff', borderColor: '#adc6ff', marginBottom: 12 }}>
-											<Typography.Text strong style={{ color: '#1d39c4' }}>{isVignette ? 'Case Study Passage' : 'Case Study Scenario'}</Typography.Text>
+											<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+												<Typography.Text strong style={{ color: '#1d39c4' }}>{isVignette ? 'Case Study Passage' : 'Case Study Scenario'}</Typography.Text>
+												<EditOutlined style={{ fontSize: 13, color: '#1d39c4', cursor: 'pointer' }} onClick={() => setAiEditModal({ type: 'vignetteText', bundleIdx: bIdx, qIdx: null, value: bundle.vignetteText || '' })} />
+											</div>
 											<div className="prose prose-sm question-preview-content" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(bundle.vignetteText || '') }} />
 										</Card>
 										{(bundle.questions || []).map((q, qIdx) => (
@@ -1708,8 +1738,10 @@ export function AdminQuestions() {
 													</div>
 												)}
 												{q?.los && (
-													<div style={{ marginTop: 6, fontSize: 13 }}>
-														<Typography.Text type="secondary" strong>LOS: </Typography.Text>{q.los}
+													<div style={{ marginTop: 6, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+														<Typography.Text type="secondary" strong>LOS: </Typography.Text>
+														<span style={{ flex: 1 }}>{q.los}</span>
+														<EditOutlined style={{ fontSize: 12, color: '#999', cursor: 'pointer', flexShrink: 0 }} onClick={() => setAiEditModal({ type: 'los', bundleIdx: bIdx, qIdx, value: q.los })} />
 													</div>
 												)}
 												{(q?.traceSection || q?.tracePage) && (
@@ -1720,13 +1752,19 @@ export function AdminQuestions() {
 												)}
 												{q?.keyFormulas && (
 													<div style={{ marginTop: 6, padding: '6px 10px', background: '#f0f5ff', borderRadius: 6, fontSize: 13 }}>
-														<Typography.Text type="secondary" strong>Key Formula(s): </Typography.Text>
+														<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+															<Typography.Text type="secondary" strong>Key Formula(s): </Typography.Text>
+															<EditOutlined style={{ fontSize: 12, color: '#999', cursor: 'pointer' }} onClick={() => setAiEditModal({ type: 'keyFormulas', bundleIdx: bIdx, qIdx, value: q.keyFormulas })} />
+														</div>
 														<span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.keyFormulas) }} />
 													</div>
 												)}
 												{q?.workedSolution && (
 													<div style={{ marginTop: 6, padding: '6px 10px', background: '#f6ffed', borderRadius: 6, fontSize: 13 }}>
-														<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
+														<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+															<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
+															<EditOutlined style={{ fontSize: 12, color: '#999', cursor: 'pointer' }} onClick={() => setAiEditModal({ type: 'workedSolution', bundleIdx: bIdx, qIdx, value: q.workedSolution })} />
+														</div>
 														<span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} />
 													</div>
 												)}
@@ -1785,8 +1823,10 @@ export function AdminQuestions() {
 													</div>
 												)}
 												{q?.los && (
-													<div style={{ marginTop: 8, fontSize: 13 }}>
-														<Typography.Text type="secondary" strong>LOS: </Typography.Text>{q.los}
+													<div style={{ marginTop: 8, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+														<Typography.Text type="secondary" strong>LOS: </Typography.Text>
+														<span style={{ flex: 1 }}>{q.los}</span>
+														<EditOutlined style={{ fontSize: 12, color: '#999', cursor: 'pointer', flexShrink: 0 }} onClick={() => setAiEditModal({ type: 'los', bundleIdx: null, qIdx: idx, value: q.los })} />
 													</div>
 												)}
 												{(q?.traceSection || q?.tracePage) && (
@@ -1797,13 +1837,19 @@ export function AdminQuestions() {
 												)}
 												{q?.keyFormulas && (
 													<div style={{ marginTop: 6, fontSize: 13 }}>
-														<Typography.Text type="secondary" strong>Key Formula(s): </Typography.Text>
+														<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+															<Typography.Text type="secondary" strong>Key Formula(s): </Typography.Text>
+															<EditOutlined style={{ fontSize: 12, color: '#999', cursor: 'pointer' }} onClick={() => setAiEditModal({ type: 'keyFormulas', bundleIdx: null, qIdx: idx, value: q.keyFormulas })} />
+														</div>
 														<span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.keyFormulas) }} />
 													</div>
 												)}
 												{q?.workedSolution && (
 													<div style={{ marginTop: 6, fontSize: 13 }}>
-														<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
+														<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+															<Typography.Text type="secondary" strong>Worked Solution: </Typography.Text>
+															<EditOutlined style={{ fontSize: 12, color: '#999', cursor: 'pointer' }} onClick={() => setAiEditModal({ type: 'workedSolution', bundleIdx: null, qIdx: idx, value: q.workedSolution })} />
+														</div>
 														<span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} />
 													</div>
 												)}
@@ -1851,6 +1897,38 @@ export function AdminQuestions() {
 						}]}
 					/>
 				)}
+			</Modal>
+
+			{/* Edit field modal for AI preview */}
+			<Modal
+				title={aiEditModal ? {
+					vignetteText: 'Edit Case Study Passage',
+					los: 'Edit Learning Outcome Statement',
+					keyFormulas: 'Edit Key Formula(s)',
+					workedSolution: 'Edit Worked Solution',
+				}[aiEditModal.type] : ''}
+				open={!!aiEditModal}
+				onCancel={() => setAiEditModal(null)}
+				onOk={() => {
+					if (!aiEditModal) return;
+					const newValue = document.getElementById('ai-edit-textarea')?.value;
+					if (newValue !== undefined && newValue !== aiEditModal.value) {
+						if (aiEditModal.type === 'vignetteText') {
+							editPreviewVignetteText(aiEditModal.bundleIdx, newValue);
+						} else if (aiEditModal.qIdx != null) {
+							editPreviewField(aiEditModal.bundleIdx, aiEditModal.qIdx, aiEditModal.type, newValue);
+						}
+					}
+					setAiEditModal(null);
+				}}
+				width={aiEditModal?.type === 'vignetteText' || aiEditModal?.type === 'workedSolution' ? 900 : 600}
+			>
+				<Input.TextArea
+					id="ai-edit-textarea"
+					defaultValue={aiEditModal?.value || ''}
+					rows={aiEditModal?.type === 'vignetteText' || aiEditModal?.type === 'workedSolution' ? 15 : 4}
+					style={{ fontFamily: 'monospace', fontSize: 13 }}
+				/>
 			</Modal>
 
 			{/* Question Builder Drawer */}
