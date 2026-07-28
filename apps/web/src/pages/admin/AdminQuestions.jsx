@@ -1745,9 +1745,9 @@ export function AdminQuestions() {
 													</div>
 												)}
 												{(q?.traceSection || q?.tracePage) && (
-													<div style={{ fontSize: 13 }}>
+													<div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>
 														<Typography.Text type="secondary" strong>Trace: </Typography.Text>
-														{q.traceSection}{q.traceSection && q.tracePage ? ' \u2013 ' : ''}{q.tracePage ? `Page ${q.tracePage}` : ''}
+														{q.traceSection?.split('\\n').map((line, i) => <span key={i}>{i > 0 && <br/>}{line}</span>)}{q.traceSection && q.tracePage ? ' \u2013 ' : ''}{q.tracePage ? `Page ${q.tracePage}` : ''}
 													</div>
 												)}
 												{q?.keyFormulas && (

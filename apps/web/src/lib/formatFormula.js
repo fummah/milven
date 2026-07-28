@@ -736,6 +736,9 @@ export function formatProseWithMath(text) {
 function renderProseSegment(prose) {
 	if (!prose) return '';
 
+	// Convert newlines (both literal \n and real newline chars) to HTML line breaks
+	prose = prose.replace(/\\n/g, '\n').replace(/\n/g, '<br/>');
+
 	// Pattern to find inline LaTeX expressions that should be rendered via KaTeX:
 	// - \frac{...}{...} (with optional trailing = number)
 	// - \sqrt{...} (with optional trailing = number)
