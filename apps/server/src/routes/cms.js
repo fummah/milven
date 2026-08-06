@@ -3810,6 +3810,31 @@ ${formatBlock}`;
 				}
 			}
 			let items = Array.isArray(parsed?.items) ? parsed.items : (Array.isArray(parsed?.questions) ? parsed.questions : []);
+			// If the model returned a bare array or wrapped under another key, recover it
+			if (!Array.isArray(items) || items.length === 0) {
+				if (Array.isArray(parsed)) items = parsed;
+				else if (Array.isArray(parsed?.data)) items = parsed.data;
+				else if (Array.isArray(parsed?.vignettes)) items = parsed.vignettes;
+				else if (Array.isArray(parsed?.result)) items = parsed.result;
+			}
+			// Diagnostic: capture the real structure so we can see why sub-questions fail
+			if (items.length > 0) {
+				const it = items[0];
+				let diag = `[ai-preview] items=${items.length}; top-keys=${Object.keys(it).join(',')}`;
+				if (Array.isArray(it.questions)) {
+					const sq = it.questions[0];
+					diag += ` | questions=${it.questions.length} sq1-keys=${sq && typeof sq === 'object' ? Object.keys(sq).join(',') : typeof sq}`;
+					if (sq && typeof sq === 'object') {
+						diag += ` | sq1-options=${Array.isArray(sq.options) ? `array(${sq.options.length})` : typeof sq.options} | sq1-stem=${String(sq.stem || '').length}chars`;
+					}
+				} else {
+					diag += ' | NO questions array';
+				}
+				console.log(diag);
+			} else {
+				console.log('[AI-Preview] items is empty after parse; parsed top-level keys:', parsed && typeof parsed === 'object' ? Object.keys(parsed).join(',') : typeof parsed);
+				console.log('[AI-Preview] raw (first 800):', raw.substring(0, 800));
+			}
 
 			// Robust MCQ post-processing: if AI returned MCQ items in bundle format, flatten them
 			if (questionType === 'MCQ' && items.length > 0) {
