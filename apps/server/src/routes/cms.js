@@ -26,6 +26,49 @@ function compactGeneratedHtml(text) {
 		.trim();
 }
 
+// ── Robust option normalization ─────────────────────────────────────────────
+// Handles options as an array of objects ({text,isCorrect}), an array of plain
+// strings (["A","B","C"]), or a string-keyed object ({A: "...", B: "...", C: "..."}).
+// Always returns an array of { text, isCorrect }.
+function normalizeOptions(raw) {
+	let list = [];
+	const strip = (o) => {
+		if (typeof o === 'string') return { text: o, isCorrect: false };
+		if (o && typeof o === 'object') return {
+			text: o.text || o.label || o.answer || o.content || o.value || o.statement || o.optionText || '',
+			isCorrect: o.isCorrect === true || o.correct === true || o.is_correct === true || o.isAnswer === true || o.is_answer === true
+		};
+		return null;
+	};
+	if (Array.isArray(raw)) {
+		list = raw.map(strip).filter(Boolean);
+	} else if (raw && typeof raw === 'object') {
+		for (const [key, val] of Object.entries(raw)) {
+			const isCorrect = /^(correct|answer|right|isCorrect)$/i.test(key) || (val && typeof val === 'object' && (val.isCorrect === true || val.correct === true));
+			if (typeof val === 'string') { if (val.trim()) list.push({ text: val, isCorrect }); }
+			else if (val && typeof val === 'object') { const n = strip(val); if (n && n.text.trim()) { n.isCorrect = n.isCorrect || isCorrect; list.push(n); } }
+		}
+	}
+	// ignore options that are really just labels of the correct answer
+	return list.filter(o => o && o.text && typeof o.text === 'string' && o.text.trim());
+}
+
+// Normalize a VIGNETTE_MCQ item: pick the sub-question array, fix each sub-question's
+// stem + options, drop unusable sub-questions. Returns true if the item is savable.
+function normalizeVignetteSubQuestions(item) {
+	if (!item || typeof item !== 'object') return false;
+	const subqs = [item.questions, item.sub_questions, item.subQuestions, item.items]
+		.find(Array.isArray) || [];
+	item.questions = subqs.map(sq => {
+		if (!sq || typeof sq !== 'object') return null;
+		const stem = (sq.stem || sq.question || sq.text || sq.question_text || sq.questionText || sq.prompt || '').trim();
+		const opts = normalizeOptions(sq.options || sq.choices || sq.answers || sq.choices_options || sq.answer_options);
+		if (stem.length < 5 || opts.filter(o => o.text.trim()).length < 2) return null;
+		return { ...sq, stem, options: opts, sub_questions: undefined, subQuestions: undefined, items: undefined };
+	}).filter(Boolean);
+	return !!((item.vignetteText || item.vignette || '').trim()) && item.questions.length > 0;
+}
+
 // ── Volume-specific vignette MCQ prompt builder ──────────────────────────────
 // Returns { roles, exhibits, questionDesign, distractors } tailored to the volume.
 function getVolumeVignettePrompt(volumeName) {
@@ -3148,44 +3191,9 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 			// ── Validate vignette items have sub-questions ──────────────
 			if (questionType === 'VIGNETTE_MCQ') {
-				// Normalize sub-question field names so nothing is missed
-				for (const item of items) {
-					if (Array.isArray(item.questions)) {
-						item.questions = item.questions.map(sq => {
-							if (!sq.stem) sq.stem = sq.question || sq.text || sq.question_text || sq.questionText || sq.prompt || '';
-							if (!Array.isArray(sq.options)) sq.options = sq.choices || sq.answers || [];
-							sq.options = (Array.isArray(sq.options) ? sq.options : []).map(o => ({
-								text: o.text || o.label || o.answer || o.content || '',
-								isCorrect: o.isCorrect === true || o.correct === true || o.is_correct === true
-							}));
-							return sq;
-						});
-					}
-				}
-				items = items.filter(item => {
-					if (!item.vignetteText) return false;
-					if (!Array.isArray(item.questions) || item.questions.length === 0) {
-						console.warn('[ai-generate] Rejected vignette item: no sub-questions found');
-						return false;
-					}
-					// Ensure each sub-question has a non-empty stem and at least 2 options with text
-					item.questions = item.questions.filter(sq => {
-						const s = (sq.stem || '').trim();
-						const validOpts = (sq.options || []).filter(o => (o.text || '').trim().length > 0);
-						if (s.length < 5 || validOpts.length < 2) {
-							console.warn(`[ai-generate] Dropped sub-question: stem=${s.length} chars, valid options=${validOpts.length}`);
-							return false;
-						}
-						sq.options = validOpts;
-						return true;
-					});
-					if (item.questions.length === 0) {
-						console.warn('[ai-generate] Rejected vignette item: sub-questions had no valid stems/options');
-						return false;
-					}
-					return true;
-				});
+				items = items.filter(normalizeVignetteSubQuestions);
 				if (items.length === 0) {
+					console.warn('[ai-generate] No valid vignette sub-questions after normalization.');
 					return res.status(400).json({ error: 'AI generated vignette(s) without valid sub-questions. Please try again.' });
 				}
 			}
@@ -4154,30 +4162,7 @@ ${formatBlock}`;
 			if (questionType === 'VIGNETTE_MCQ' || isConstructedBundle) {
 				// Normalize sub-question field names for VIGNETTE_MCQ
 				if (questionType === 'VIGNETTE_MCQ') {
-					for (const item of items) {
-						if (Array.isArray(item.questions)) {
-							item.questions = item.questions.map(sq => {
-								if (!sq.stem) sq.stem = sq.question || sq.text || sq.question_text || sq.questionText || sq.prompt || '';
-								if (!Array.isArray(sq.options)) sq.options = sq.choices || sq.answers || [];
-								sq.options = (Array.isArray(sq.options) ? sq.options : []).map(o => ({
-									text: o.text || o.label || o.answer || o.content || '',
-									isCorrect: o.isCorrect === true || o.correct === true || o.is_correct === true
-								}));
-								return sq;
-							});
-							// Filter out sub-questions with empty stems or insufficient options
-							item.questions = item.questions.filter(sq => {
-								const s = (sq.stem || '').trim();
-								const validOpts = (sq.options || []).filter(o => (o.text || '').trim().length > 0);
-								if (s.length < 5 || validOpts.length < 2) {
-									console.warn(`[ai-preview] Dropped sub-question: stem=${s.length} chars, valid options=${validOpts.length}`);
-									return false;
-								}
-								sq.options = validOpts;
-								return true;
-							});
-						}
-					}
+					items = items.filter(normalizeVignetteSubQuestions);
 				}
 				// Each item in the array is a separate case study bundle
 				const bundles = items.map((bundle) => {
