@@ -115,6 +115,13 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 		const openai = new OpenAI({ apiKey, timeout });
 
 		// Build options aggressively: include all params, let the API tell us what's unsupported
+		// Reasoning models (gpt-5 / o1 / o3 / o4 / o1-mini / gpt-5-mini) reject
+		// `temperature` and consume a huge share of `max_completion_tokens` on
+		// hidden chain-of-thought. For them we omit temperature, keep output tokens
+		// generous, and set reasoning_effort low so they emit real JSON instead of `{}`.
+		const reasoningModel = /^(o[134]|o4-mini|gpt-5)/i.test(resolvedModel);
+		const effectiveTokens = reasoningModel ? Math.max(maxTokens, 24000) : maxTokens;
+
 		const buildOpts = (overrides = {}) => {
 			const opts = {
 				model: resolvedModel,
@@ -122,10 +129,14 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 				...overrides,
 			};
 			if (!('max_tokens' in overrides) && !('max_completion_tokens' in overrides)) {
-				opts.max_tokens = maxTokens;
+				if (reasoningModel) opts.max_completion_tokens = effectiveTokens;
+				else opts.max_tokens = effectiveTokens;
 			}
-			if (!('temperature' in overrides)) {
+			if (!reasoningModel && !('temperature' in overrides)) {
 				opts.temperature = temperature;
+			}
+			if (reasoningModel && !('reasoning_effort' in overrides)) {
+				opts.reasoning_effort = 'low';
 			}
 			if (jsonMode && !('response_format' in overrides)) {
 				opts.response_format = { type: 'json_object' };
@@ -160,13 +171,17 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 					currentOverrides.response_format = undefined;
 					found = true;
 				}
+				if (msg.includes('reasoning_effort')) {
+					currentOverrides.reasoning_effort = undefined;
+					found = true;
+				}
 				if (msg.includes('max_completion_tokens')) {
 					currentOverrides.max_tokens = undefined;
-					currentOverrides.max_completion_tokens = maxTokens;
+					currentOverrides.max_completion_tokens = effectiveTokens;
 					found = true;
 				} else if (msg.includes('max_tokens')) {
 					currentOverrides.max_tokens = undefined;
-					currentOverrides.max_completion_tokens = maxTokens;
+					currentOverrides.max_completion_tokens = effectiveTokens;
 					found = true;
 				}
 
