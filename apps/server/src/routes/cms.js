@@ -2872,9 +2872,9 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				timeout: questionType === 'VIGNETTE_MCQ' ? 900000 : 300000,
 			});
 			let raw = aiResult.content || '{}';
-
+console.log('AI raw output:', raw);
 			// Strip markdown code fences that some models (e.g. gpt-5.2) wrap around JSON
-			raw = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+			raw = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').replace(/(<br\s*\/?>\s*){2,}/gi, '<br>').trim();
 			// Try to find a JSON object or array if the model returned extra text
 			const jsonMatch = raw.match(/(\{.*\}|\[.*\])/s);
 			if (jsonMatch) raw = jsonMatch[1];
@@ -3835,8 +3835,8 @@ ${formatBlock}`;
 				timeout: questionType === 'VIGNETTE_MCQ' ? 900000 : 300000,
 			});
 			console.log('[AI Preview] AI call completed');
-			const raw = aiResult.content || '{}';
-			console.log('[AI Preview] Raw response length:', raw.length);
+			const raw = aiResult.content?.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>').trim() || '{}';
+			console.log('[AI Preview] Raw response:', raw);
 			let parsed;
 			try {
 				parsed = JSON.parse(raw);
