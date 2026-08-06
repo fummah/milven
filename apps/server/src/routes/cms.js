@@ -13,19 +13,6 @@ import { requireRole } from '../middleware/requireRole.js';
 import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, autoRepairLatex } from '../lib/openai.js';
 import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
 
-// ── Compact generated HTML ───────────────────────────────────────────────────
-// Removes blank paragraphs, <p>&nbsp;</p>, and stacked <br> tags the AI may emit
-// between blocks/exhibits so previews do not render large vertical gaps.
-function compactGeneratedHtml(text) {
-	if (!text || typeof text !== 'string') return text;
-	return text
-		.replace(/<p[^>]*>\s*(?:&nbsp;|<br\s*\/?>)\s*<\/p>/gi, '')
-		.replace(/<p[^>]*>\s*<\/p>/gi, '')
-		.replace(/(<br\s*\/?>\s*){2,}/gi, '<br/>')
-		.replace(/\n{3,}/g, '\n\n')
-		.trim();
-}
-
 // ── Volume-specific vignette MCQ prompt builder ──────────────────────────────
 // Returns { roles, exhibits, questionDesign, distractors } tailored to the volume.
 function getVolumeVignettePrompt(volumeName) {
@@ -2607,14 +2594,6 @@ CORE REQUIREMENTS:
 - Use UNIQUE fictional company names (invent fresh names each time)
 - ALL metadata fields below are REQUIRED
 
-FORMATTING RULES (STRICT) — these apply to ALL HTML in "vignetteText", "stem", options, explanations, and workedSolution:
-- Do NOT insert blank paragraphs before or after an Exhibit.
-- Do NOT use multiple <br> tags.
-- Do NOT output <p>&nbsp;</p>.
-- Place the exhibit immediately after the preceding paragraph.
-- There must never be more than one blank line between paragraphs.
-- The HTML must be compact with no unnecessary vertical spacing.
-
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
 - 4 sub-questions (3 marks each), total 12 points
 - Protagonist: ${volPrompt ? volPrompt.roles : 'a financial professional'}
@@ -2647,7 +2626,7 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
     <tbody><tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
     <tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
-    The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used. Place the Exhibit heading and its table IMMEDIATELY after the preceding paragraph — NO blank lines, <p>&nbsp;</p>, or <br> tags around the exhibit. Never stack multiple <br> tags.
+    The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
 - Never create questions before the vignette is complete.
 - Do NOT shorten vignette. Vignettes under 250 prose words are REJECTED.
 WORD COUNT VERIFICATION (do this before returning JSON):
@@ -2896,16 +2875,6 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 			// ── Fix table width: replace width:100% with width:auto ────
 			items.forEach(it => { if (it.vignetteText) it.vignetteText = it.vignetteText.replace(/width:\s*100%/g, 'width:auto'); });
-
-			// ── Compact HTML: strip blank paragraphs, &nbsp;, stacked <br> ──
-			items.forEach(it => {
-				if (it.vignetteText) it.vignetteText = compactGeneratedHtml(it.vignetteText);
-				if (Array.isArray(it.questions)) it.questions.forEach(q => {
-					if (q?.stem) q.stem = compactGeneratedHtml(q.stem);
-					if (q?.explanation) q.explanation = compactGeneratedHtml(q.explanation);
-					if (q?.workedSolution) q.workedSolution = compactGeneratedHtml(q.workedSolution);
-				});
-			});
 
 			// ── Answer consistency validation (generate) ─────────────────
 			// Helper: extract a normalized number from text, accounting for "million", "billion", "$2.24 million" → 2240000
@@ -3540,7 +3509,6 @@ Each object in "items" MUST follow this structure:
       CRITICAL — MULTIPLE COLUMNS: Data tables MUST have SEPARATE columns for each data attribute. NEVER put all data in one column. Example: a fund table needs columns Fund Type | Current Value | Commitment — NOT a single column with concatenated text. Each value (name, amount, ratio, return, weight, date) gets its OWN <th>/<td> column. Minimum 2 columns, typically 3-5.
       EXHIBIT/STATEMENT TABLES (Statements, Factors, Requirements, Recommendations, Observations, Tasks): ALWAYS use the clean no-border style described above (only header and footer lines, NO cell borders).
       NEVER use markdown pipe tables or ASCII tables.
-      EXHIBIT PLACEMENT (STRICT): Place the <p><strong>Exhibit N: [Title]</strong></p> heading and its table IMMEDIATELY after the preceding paragraph. Do NOT insert blank paragraphs or blank lines before/after an exhibit. Do NOT output <p>&nbsp;</p>. Do NOT stack multiple <br> tags.
 ${isEthics ? `    • ETHICS TOPIC: This is an ETHICS vignette — it MUST be PURELY NARRATIVE. Do NOT include ANY tables, exhibits, charts, <table> tags, <pre> tags, or ASCII data grids. ALL information (scenarios, facts, timelines) must be woven naturally into prose paragraphs. No Exhibit labels.` : `    • EXHIBIT REQUIREMENTS:
 ${volPrompt ? volPrompt.exhibits : `Include realistic exhibits where appropriate: financial statements, regression output, yield curves, valuation tables, client constraints, analyst notes, assumptions, market data.`}
       Also supported: <pre> blocks for regression output, ASCII charts, or structured data where a table format is not appropriate.`}
@@ -3605,8 +3573,7 @@ ${isEthics ? `    • ETHICS TOPIC: This is an ETHICS case study — it MUST be 
       FORMAT B (NARRATIVE ONLY): No exhibit at all — embed ALL specific numbers, ratios, and data richly in the prose only (use for ~30% of case studies)
       FORMAT C (CHART/GRAPH): Include a text-based chart as a CFA Exhibit using <pre> with ASCII/labelled data (use for ~30% of case studies)
     • Different case studies MUST use different formats — do not repeat the same format for every case study
-    • The passage should weave naturally between narrative context and any numerical exhibits
-    • EXHIBIT PLACEMENT (STRICT): Place each Exhibit directly after the preceding paragraph. Do NOT insert blank paragraphs/blank lines before or after an exhibit. Do NOT output <p>&nbsp;</p>. Do NOT stack multiple <br> tags. Keep the HTML compact.`}
+    • The passage should weave naturally between narrative context and any numerical exhibits`}
   "questions": array of 3 to 5 constructed-response sub-questions (vary the count between case studies). Each MUST:
     • Reference specific ${isEthics ? 'details from the narrative passage' : 'data or exhibits from the vignetteText'}
     • Have "stem" — clearly state what to calculate/explain. In SOME sub-questions (not all), include roman-numeral sub-points within the stem when it makes sense, e.g.:
@@ -3670,14 +3637,6 @@ CORE REQUIREMENTS:
 - Numerical answers must match worked solution exactly
 - Use UNIQUE fictional company names (invent fresh names each time)
 - ALL metadata fields below are REQUIRED
-
-FORMATTING RULES (STRICT) — these apply to ALL HTML in "vignetteText", "stem", options, explanations, and workedSolution:
-- Do NOT insert blank paragraphs before or after an Exhibit.
-- Do NOT use multiple <br> tags.
-- Do NOT output <p>&nbsp;</p>.
-- Place the exhibit immediately after the preceding paragraph.
-- There must never be more than one blank line between paragraphs.
-- The HTML must be compact with no unnecessary vertical spacing.
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
 - MINIMUM 250 PROSE words in vignetteText (target 250–650 words of actual prose text). HTML tags, table markup, and exhibit labels do NOT count toward this minimum — only narrative prose words count.
 - 4 sub-questions (3 marks each), total 12 points
@@ -3709,7 +3668,7 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
     <tbody><tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
     <tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
-    The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used. Place the Exhibit heading and its table IMMEDIATELY after the preceding paragraph — NO blank lines, <p>&nbsp;</p>, or <br> tags around the exhibit. Never stack multiple <br> tags.
+    The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
 - Never create questions before the vignette is complete.
 - Do NOT shorten vignette. Vignettes under 250 prose words are REJECTED.
 WORD COUNT VERIFICATION (do this before returning JSON):
@@ -3950,16 +3909,6 @@ ${formatBlock}`;
 
 			// ── Fix table width: replace width:100% with width:auto ────
 			items.forEach(it => { if (it.vignetteText) it.vignetteText = it.vignetteText.replace(/width:\s*100%/g, 'width:auto'); });
-
-			// ── Compact HTML: strip blank paragraphs, &nbsp;, stacked <br> ──
-			items.forEach(it => {
-				if (it.vignetteText) it.vignetteText = compactGeneratedHtml(it.vignetteText);
-				if (Array.isArray(it.questions)) it.questions.forEach(q => {
-					if (q?.stem) q.stem = compactGeneratedHtml(q.stem);
-					if (q?.explanation) q.explanation = compactGeneratedHtml(q.explanation);
-					if (q?.workedSolution) q.workedSolution = compactGeneratedHtml(q.workedSolution);
-				});
-			});
 
 			// ── Answer consistency validation (preview) ──────────────────
 			// Helper: extract a normalized number from text, accounting for "million", "billion", "$2.24 million" → 2240000
@@ -4754,4 +4703,3 @@ function computeEstimatedSeconds(kind, payload) {
   // PDFs/Links/Images default small slot unless provided
   return 2 * 60;
 }
-
