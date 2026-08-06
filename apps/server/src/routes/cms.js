@@ -4533,6 +4533,24 @@ ${formatBlock}`;
     const parse = schema.safeParse(req.body);
     if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
     const payload = parse.data;
+    // Compact generated HTML before persisting: collapse 3+ consecutive <br> to one,
+    // remove blank <p>&nbsp;</p> paragraphs so previews/saved questions in the system
+    // never carry the large vertical gaps the AI emits.
+    const compactHtml = (v) => (typeof v === 'string' ? compactGeneratedHtml(v) : v);
+    payload.vignetteText = compactHtml(payload.vignetteText);
+    payload.stem = compactHtml(payload.stem);
+    payload.keyFormulas = compactHtml(payload.keyFormulas);
+    payload.workedSolution = compactHtml(payload.workedSolution);
+    if (Array.isArray(payload.options)) {
+      payload.options = payload.options.map(o => ({ ...o, text: compactHtml(o.text) }));
+    }
+    if (Array.isArray(payload.subQuestions)) {
+      payload.subQuestions = payload.subQuestions.map(sq => ({
+        ...sq,
+        stem: compactHtml(sq.stem),
+        options: Array.isArray(sq.options) ? sq.options.map(o => ({ ...o, text: compactHtml(o.text) })) : sq.options
+      }));
+    }
     const existing = await prisma.question.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Not found' });
     const newType = payload.type ?? existing.type;
