@@ -13,6 +13,19 @@ import { requireRole } from '../middleware/requireRole.js';
 import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, autoRepairLatex } from '../lib/openai.js';
 import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
 
+// ── Compact generated HTML ───────────────────────────────────────────────────
+// Removes blank paragraphs, <p>&nbsp;</p>, and stacked <br> tags the AI may emit
+// between blocks/exhibits so previews do not render large vertical gaps.
+function compactGeneratedHtml(text) {
+	if (!text || typeof text !== 'string') return text;
+	return text
+		.replace(/<p[^>]*>\s*(?:&nbsp;|<br\s*\/?>)\s*<\/p>/gi, '')
+		.replace(/<p[^>]*>\s*<\/p>/gi, '')
+		.replace(/(<br\s*\/?>\s*){2,}/gi, '<br/>')
+		.replace(/\n{2,}/g, '\n')
+		.trim();
+}
+
 // ── Volume-specific vignette MCQ prompt builder ──────────────────────────────
 // Returns { roles, exhibits, questionDesign, distractors } tailored to the volume.
 function getVolumeVignettePrompt(volumeName) {
@@ -2594,6 +2607,14 @@ CORE REQUIREMENTS:
 - Use UNIQUE fictional company names (invent fresh names each time)
 - ALL metadata fields below are REQUIRED
 
+FORMATTING RULES (STRICT) — these apply to ALL HTML in "vignetteText", "stem", options, explanations, and workedSolution:
+- Do NOT insert blank paragraphs before or after an Exhibit.
+- Do NOT use multiple <br> tags.
+- Do NOT output <p>&nbsp;</p>.
+- Place the exhibit immediately after the preceding paragraph.
+- There must never be more than one blank line between paragraphs.
+- The HTML must be compact with no unnecessary vertical spacing.
+
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
 - 4 sub-questions (3 marks each), total 12 points
 - Protagonist: ${volPrompt ? volPrompt.roles : 'a financial professional'}
@@ -2626,7 +2647,7 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
     <tbody><tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
     <tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
-    The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
+    The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used. Place the Exhibit heading and its table IMMEDIATELY after the preceding paragraph — NO blank lines, <p>&nbsp;</p>, or <br> tags around the exhibit. Never stack multiple <br> tags.
 - Never create questions before the vignette is complete.
 - Do NOT shorten vignette. Vignettes under 250 prose words are REJECTED.
 WORD COUNT VERIFICATION (do this before returning JSON):
@@ -2759,7 +2780,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				temperature: 0.5,
 				maxTokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
 				jsonMode: true,
-				timeout: aiProvider === 'anthropic' ? 300000 : 120000,
+				timeout: questionType === 'VIGNETTE_MCQ' ? 900000 : 300000,
 			});
 			let raw = aiResult.content || '{}';
 
@@ -2875,6 +2896,16 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 			// ── Fix table width: replace width:100% with width:auto ────
 			items.forEach(it => { if (it.vignetteText) it.vignetteText = it.vignetteText.replace(/width:\s*100%/g, 'width:auto'); });
+
+			// ── Compact HTML: strip blank paragraphs, &nbsp;, stacked <br> ──
+			items.forEach(it => {
+				if (it.vignetteText) it.vignetteText = compactGeneratedHtml(it.vignetteText);
+				if (Array.isArray(it.questions)) it.questions.forEach(q => {
+					if (q?.stem) q.stem = compactGeneratedHtml(q.stem);
+					if (q?.explanation) q.explanation = compactGeneratedHtml(q.explanation);
+					if (q?.workedSolution) q.workedSolution = compactGeneratedHtml(q.workedSolution);
+				});
+			});
 
 			// ── Answer consistency validation (generate) ─────────────────
 			// Helper: extract a normalized number from text, accounting for "million", "billion", "$2.24 million" → 2240000
@@ -3637,6 +3668,14 @@ CORE REQUIREMENTS:
 - Numerical answers must match worked solution exactly
 - Use UNIQUE fictional company names (invent fresh names each time)
 - ALL metadata fields below are REQUIRED
+
+FORMATTING RULES (STRICT) — these apply to ALL HTML in "vignetteText", "stem", options, explanations, and workedSolution:
+- Do NOT insert blank paragraphs before or after an Exhibit.
+- Do NOT use multiple <br> tags.
+- Do NOT output <p>&nbsp;</p>.
+- Place the exhibit immediately after the preceding paragraph.
+- There must never be more than one blank line between paragraphs.
+- The HTML must be compact with no unnecessary vertical spacing.
 VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
 - MINIMUM 250 PROSE words in vignetteText (target 250–650 words of actual prose text). HTML tags, table markup, and exhibit labels do NOT count toward this minimum — only narrative prose words count.
 - 4 sub-questions (3 marks each), total 12 points
@@ -3668,7 +3707,7 @@ VIGNETTE REQUIREMENTS (for VIGNETTE_MCQ):
     <thead><tr><th style="border-bottom:1px solid #000;padding:4px 8px;font-weight:600;text-align:left;">[Column Header]</th></tr></thead>
     <tbody><tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 1:</strong> [text]</td></tr>
     <tr><td style="padding:4px 8px;text-align:left;border:none;"><strong>[Type] 2:</strong> [text]</td></tr></tbody></table>
-    The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used.
+    The table must have NO internal cell borders, NO vertical lines — only a thin horizontal line under the header and at the bottom of the table. All rows must align cleanly. Include 1-3 exhibit/statement blocks when used. Place the Exhibit heading and its table IMMEDIATELY after the preceding paragraph — NO blank lines, <p>&nbsp;</p>, or <br> tags around the exhibit. Never stack multiple <br> tags.
 - Never create questions before the vignette is complete.
 - Do NOT shorten vignette. Vignettes under 250 prose words are REJECTED.
 WORD COUNT VERIFICATION (do this before returning JSON):
@@ -3734,7 +3773,7 @@ ${formatBlock}`;
 				temperature: 0.5,
 				maxTokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
 				jsonMode: true,
-				timeout: aiProvider === 'anthropic' ? 300000 : 120000,
+				timeout: questionType === 'VIGNETTE_MCQ' ? 900000 : 300000,
 			});
 			console.log('[AI Preview] AI call completed');
 			const raw = aiResult.content || '{}';
@@ -3909,6 +3948,16 @@ ${formatBlock}`;
 
 			// ── Fix table width: replace width:100% with width:auto ────
 			items.forEach(it => { if (it.vignetteText) it.vignetteText = it.vignetteText.replace(/width:\s*100%/g, 'width:auto'); });
+
+			// ── Compact HTML: strip blank paragraphs, &nbsp;, stacked <br> ──
+			items.forEach(it => {
+				if (it.vignetteText) it.vignetteText = compactGeneratedHtml(it.vignetteText);
+				if (Array.isArray(it.questions)) it.questions.forEach(q => {
+					if (q?.stem) q.stem = compactGeneratedHtml(q.stem);
+					if (q?.explanation) q.explanation = compactGeneratedHtml(q.explanation);
+					if (q?.workedSolution) q.workedSolution = compactGeneratedHtml(q.workedSolution);
+				});
+			});
 
 			// ── Answer consistency validation (preview) ──────────────────
 			// Helper: extract a normalized number from text, accounting for "million", "billion", "$2.24 million" → 2240000

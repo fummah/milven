@@ -795,7 +795,7 @@ export function AdminQuestions() {
 				}
 			}
 
-			const { data } = await api.post('/api/cms/questions/generate-ai', payload, { timeout: 190000 });
+			const { data } = await api.post('/api/cms/questions/generate-ai', payload, { timeout: 600000 });
 			message.success(`Generated ${data?.created ?? 0} question(s)`);
 			setAiGenerateModalOpen(false);
 			setListTab('ai');
