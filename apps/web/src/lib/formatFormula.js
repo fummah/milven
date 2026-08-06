@@ -741,6 +741,9 @@ function renderProseSegment(prose) {
 	// content with large gaps between exhibits/blocks does not render big spaces.
 	// Also collapse any stacked literal <br> tags down to a single break.
 	prose = prose.replace(/\\n/g, '\n').replace(/<br\s*\/?>\s*/gi, '\n').replace(/\n{2,}/g, '\n').replace(/\n/g, '<br/>');
+	// Remove any lingering <br> right after a closing block and immediately before an
+	// exhibit/heading/table so the "Exhibit ..." heading attaches without a dead gap.
+	prose = prose.replace(/(<\/(?:p|div|h[1-6])>)\s*<br\s*\/?>\s*(?=<(?:table|ul|ol|h[1-6]))/gi, '$1');
 
 	// Pattern to find inline LaTeX expressions that should be rendered via KaTeX:
 	// - \frac{...}{...} (with optional trailing = number)
