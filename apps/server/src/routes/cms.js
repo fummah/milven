@@ -26,6 +26,20 @@ function compactGeneratedHtml(text) {
 		.trim();
 }
 
+// ── Clean AI-generated question HTML ──────────────────────────────────────────
+// Collapses stacked <br>, strips empty paragraphs and trailing breaks so stored
+// question previews never show the large vertical gaps the AI emits. Applied both
+// at preview time and before persisting to the database.
+function cleanQuestionHtml(html) {
+	if (!html) return html;
+	return html
+		.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
+		.replace(/<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '')
+		.replace(/(<br\s*\/?>\s*)+$/gi, '')
+		.replace(/\n{2,}/g, '\n')
+		.trim();
+}
+
 // ── Robust option normalization ─────────────────────────────────────────────
 // Handles options as an array of objects ({text,isCorrect}), an array of plain
 // strings (["A","B","C"]), or a string-keyed object ({A: "...", B: "...", C: "..."}).
@@ -2942,15 +2956,15 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 			// ── Compact HTML: strip blank paragraphs, &nbsp;, stacked <br> ──
 			items.forEach(it => {
-				if (it.vignetteText) it.vignetteText = compactGeneratedHtml(it.vignetteText);
+				if (it.vignetteText) it.vignetteText = cleanQuestionHtml(it.vignetteText);
 				if (Array.isArray(it.questions)) it.questions.forEach(q => {
-					if (q?.stem) q.stem = compactGeneratedHtml(q.stem);
-					if (q?.explanation) q.explanation = compactGeneratedHtml(q.explanation);
-					if (q?.workedSolution) q.workedSolution = compactGeneratedHtml(q.workedSolution);
-					if (q?.keyFormulas) q.keyFormulas = compactGeneratedHtml(q.keyFormulas);
-					if (q?.conclusion) q.conclusion = compactGeneratedHtml(q.conclusion);
+					if (q?.stem) q.stem = cleanQuestionHtml(q.stem);
+					if (q?.explanation) q.explanation = cleanQuestionHtml(q.explanation);
+					if (q?.workedSolution) q.workedSolution = cleanQuestionHtml(q.workedSolution);
+					if (q?.keyFormulas) q.keyFormulas = cleanQuestionHtml(q.keyFormulas);
+					if (q?.conclusion) q.conclusion = cleanQuestionHtml(q.conclusion);
 					if (Array.isArray(q.options)) q.options.forEach(o => {
-						if (o?.text) o.text = compactGeneratedHtml(o.text);
+						if (o?.text) o.text = cleanQuestionHtml(o.text);
 					});
 				});
 			});
@@ -3989,15 +4003,15 @@ ${formatBlock}`;
 
 			// ── Compact HTML: strip blank paragraphs, &nbsp;, stacked <br> ──
 			items.forEach(it => {
-				if (it.vignetteText) it.vignetteText = compactGeneratedHtml(it.vignetteText);
+				if (it.vignetteText) it.vignetteText = cleanQuestionHtml(it.vignetteText);
 				if (Array.isArray(it.questions)) it.questions.forEach(q => {
-					if (q?.stem) q.stem = compactGeneratedHtml(q.stem);
-					if (q?.explanation) q.explanation = compactGeneratedHtml(q.explanation);
-					if (q?.workedSolution) q.workedSolution = compactGeneratedHtml(q.workedSolution);
-					if (q?.keyFormulas) q.keyFormulas = compactGeneratedHtml(q.keyFormulas);
-					if (q?.conclusion) q.conclusion = compactGeneratedHtml(q.conclusion);
+					if (q?.stem) q.stem = cleanQuestionHtml(q.stem);
+					if (q?.explanation) q.explanation = cleanQuestionHtml(q.explanation);
+					if (q?.workedSolution) q.workedSolution = cleanQuestionHtml(q.workedSolution);
+					if (q?.keyFormulas) q.keyFormulas = cleanQuestionHtml(q.keyFormulas);
+					if (q?.conclusion) q.conclusion = cleanQuestionHtml(q.conclusion);
 					if (Array.isArray(q.options)) q.options.forEach(o => {
-						if (o?.text) o.text = compactGeneratedHtml(o.text);
+						if (o?.text) o.text = cleanQuestionHtml(o.text);
 					});
 				});
 			});
@@ -4329,7 +4343,7 @@ ${formatBlock}`;
 
 				const isConstructed = questionType === 'CONSTRUCTED_RESPONSE';
 				for (const bundle of bundles) {
-					const vignetteText = String(bundle.vignetteText || '').trim();
+					const vignetteText = cleanQuestionHtml(String(bundle.vignetteText || '').trim());
 					if (!vignetteText) continue;
 					const questions = Array.isArray(bundle.questions) ? bundle.questions : [];
 					if (questions.length === 0) continue;
@@ -4360,7 +4374,7 @@ ${formatBlock}`;
 
 						for (let si = 0; si < questions.length; si++) {
 							const sq = questions[si];
-							const stem = String(sq?.stem || sq?.question || sq?.text || '').trim();
+							const stem = cleanQuestionHtml(String(sq?.stem || sq?.question || sq?.text || '').trim());
 							if (!stem || stem.length < 3) continue;
 							// Use child's own topicId for curriculum mapping; fall back to firstTopicId.
 							// Always use parentPathIds for path fields (guaranteed complete).
@@ -4387,8 +4401,8 @@ ${formatBlock}`;
 									los: sq?.los || null,
 									traceSection: sq?.traceSection || null,
 									tracePage: sq?.tracePage || null,
-									keyFormulas: sq?.keyFormulas || null,
-									workedSolution: mergeWorkedSolution(sq),
+									keyFormulas: cleanQuestionHtml(sq?.keyFormulas || null),
+									workedSolution: cleanQuestionHtml(mergeWorkedSolution(sq)),
 									questionGuidelines: sq?.questionGuidelines || null,
 									output: sq?.output || null,
 									isAiGenerated: true
@@ -4402,7 +4416,7 @@ ${formatBlock}`;
 									await tx.mcqOption.createMany({
 										data: opts.map(o => ({
 											questionId: child.id,
-											text: String(o.text || '').trim() || 'Option',
+											text: cleanQuestionHtml(String(o.text || '').trim()) || 'Option',
 											isCorrect: !!o.isCorrect
 										}))
 									});
@@ -4428,7 +4442,7 @@ ${formatBlock}`;
 			}
 			if (items.length === 0) return res.status(400).json({ error: 'No questions selected' });
 			for (const item of items) {
-				const stem = String(item?.stem || '').trim();
+				const stem = cleanQuestionHtml(String(item?.stem || '').trim());
 				if (!stem || stem.length < 5) continue;
 				// Duplicate check
 				if (await isDuplicateStem(stem)) {
@@ -4455,8 +4469,8 @@ ${formatBlock}`;
 						los: item?.los || null,
 						traceSection: item?.traceSection || null,
 						tracePage: item?.tracePage || null,
-						keyFormulas: item?.keyFormulas || null,
-						workedSolution: mergeWorkedSolution(item),
+						keyFormulas: cleanQuestionHtml(item?.keyFormulas || null),
+						workedSolution: cleanQuestionHtml(mergeWorkedSolution(item)),
 						questionGuidelines: item?.questionGuidelines || null,
 						output: item?.output || null,
 						isAiGenerated: true
