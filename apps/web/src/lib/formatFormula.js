@@ -739,7 +739,8 @@ function renderProseSegment(prose) {
 	// Convert newlines (both literal \n and real newline chars) to HTML line breaks.
 	// Collapse runs of multiple blank lines into a single break so AI-generated
 	// content with large gaps between exhibits/blocks does not render big spaces.
-	prose = prose.replace(/\\n/g, '\n').replace(/\n{2,}/g, '\n').replace(/\n/g, '<br/>');
+	// Also collapse any stacked literal <br> tags down to a single break.
+	prose = prose.replace(/\\n/g, '\n').replace(/<br\s*\/?>\s*/gi, '\n').replace(/\n{2,}/g, '\n').replace(/\n/g, '<br/>');
 
 	// Pattern to find inline LaTeX expressions that should be rendered via KaTeX:
 	// - \frac{...}{...} (with optional trailing = number)
