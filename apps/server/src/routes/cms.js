@@ -21,7 +21,7 @@ function compactGeneratedHtml(text) {
 	return text
 		.replace(/<p[^>]*>\s*(?:&nbsp;|<br\s*\/?>)\s*<\/p>/gi, '')
 		.replace(/<p[^>]*>\s*<\/p>/gi, '')
-		.replace(/(<br\s*\/?>\s*){2,}/gi, '<br/>')
+		.replace(/(<br\s*\/?>\s*){3,}/gi, '<br/>')
 		.replace(/\n{2,}/g, '\n')
 		.trim();
 }
@@ -2947,6 +2947,11 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 					if (q?.stem) q.stem = compactGeneratedHtml(q.stem);
 					if (q?.explanation) q.explanation = compactGeneratedHtml(q.explanation);
 					if (q?.workedSolution) q.workedSolution = compactGeneratedHtml(q.workedSolution);
+					if (q?.keyFormulas) q.keyFormulas = compactGeneratedHtml(q.keyFormulas);
+					if (q?.conclusion) q.conclusion = compactGeneratedHtml(q.conclusion);
+					if (Array.isArray(q.options)) q.options.forEach(o => {
+						if (o?.text) o.text = compactGeneratedHtml(o.text);
+					});
 				});
 			});
 
@@ -3989,6 +3994,11 @@ ${formatBlock}`;
 					if (q?.stem) q.stem = compactGeneratedHtml(q.stem);
 					if (q?.explanation) q.explanation = compactGeneratedHtml(q.explanation);
 					if (q?.workedSolution) q.workedSolution = compactGeneratedHtml(q.workedSolution);
+					if (q?.keyFormulas) q.keyFormulas = compactGeneratedHtml(q.keyFormulas);
+					if (q?.conclusion) q.conclusion = compactGeneratedHtml(q.conclusion);
+					if (Array.isArray(q.options)) q.options.forEach(o => {
+						if (o?.text) o.text = compactGeneratedHtml(o.text);
+					});
 				});
 			});
 
