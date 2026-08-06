@@ -32,12 +32,20 @@ function compactGeneratedHtml(text) {
 // at preview time and before persisting to the database.
 function cleanQuestionHtml(html) {
 	if (!html) return html;
-	return html
-		.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
-		.replace(/<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '')
-		.replace(/(<br\s*\/?>\s*)+$/gi, '')
-		.replace(/\n{2,}/g, '\n')
-		.trim();
+	let out = html;
+	// Collapse any run of stacked <br> into a single one (handles <br><br><br><br> -> <br>)
+	out = out.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>');
+	// Collapse a run of <br> that sits between a closing and opening <p> (paragraph padding already provides the break)
+	out = out.replace(/<\/(p|div|h[1-6]|li)><br((?:\s*<br\s*\/?>)+)/gi, '</$1>');
+	// Normalise a single lone break right after a closing <p>/<div>/<h>/<li> (already line-broken by the block)
+	out = out.replace(/<\/(p|div|h[1-6]|li)><br>/gi, '</$1>');
+	// Collapse <br> runs immediately preceding an exhibit/table down to a single break
+	out = out.replace(/(<br\s*\/?>\s*)+<table/gi, '<br><table');
+	// Remove empty paragraphs
+	out = out.replace(/<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '');
+	// Remove trailing breaks
+	out = out.replace(/(<br\s*\/?>|<br\s*\/?>\s*)+$/gi, '');
+	return out.replace(/\n{2,}/g, '\n').trim();
 }
 
 // ── Robust option normalization ─────────────────────────────────────────────
@@ -4550,7 +4558,7 @@ ${formatBlock}`;
     // Compact generated HTML before persisting: collapse 3+ consecutive <br> to one,
     // remove blank <p>&nbsp;</p> paragraphs so previews/saved questions in the system
     // never carry the large vertical gaps the AI emits.
-    const compactHtml = (v) => (typeof v === 'string' ? compactGeneratedHtml(v) : v);
+    const compactHtml = (v) => (typeof v === 'string' ? cleanQuestionHtml(v) : v);
     payload.vignetteText = compactHtml(payload.vignetteText);
     payload.stem = compactHtml(payload.stem);
     payload.keyFormulas = compactHtml(payload.keyFormulas);
