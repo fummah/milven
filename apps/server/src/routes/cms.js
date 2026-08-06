@@ -48,6 +48,19 @@ function cleanQuestionHtml(html) {
 	return out.replace(/\n{2,}/g, '\n').trim();
 }
 
+// Clean every HTML-bearing field of a question object (and its options) in place.
+function cleanQuestionFields(q) {
+	if (!q || typeof q !== 'object') return q;
+	const fieldNames = ['stem', 'vignetteText', 'keyFormulas', 'workedSolution', 'explanation', 'conclusion', 'questionGuidelines', 'output'];
+	for (const f of fieldNames) {
+		if (typeof q[f] === 'string' && q[f]) q[f] = cleanQuestionHtml(q[f]);
+	}
+	if (Array.isArray(q.options)) {
+		q.options = q.options.map(o => (o && typeof o === 'object' ? { ...o, text: cleanQuestionHtml(o.text) } : o));
+	}
+	return q;
+}
+
 // ── Robust option normalization ─────────────────────────────────────────────
 // Handles options as an array of objects ({text,isCorrect}), an array of plain
 // strings (["A","B","C"]), or a string-keyed object ({A: "...", B: "...", C: "..."}).
@@ -2406,7 +2419,7 @@ export function cmsRouter(prisma) {
 
 		// Attach _childCount for UI display
 		const mapped = questions.map(q => ({
-			...q,
+			...cleanQuestionFields(q),
 			_childCount: q._count?.children ?? 0
 		}));
 
@@ -2443,6 +2456,17 @@ export function cmsRouter(prisma) {
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
 		const { vignetteText, parentId, options, subQuestions, qid, los, traceSection, tracePage, keyFormulas, workedSolution, orderIndex, topicIds: rawTopicIds, conceptIds, ...q } = parse.data;
+		// Clean AI-generated HTML before persisting (collapse stacked <br>, empty paragraphs)
+		if (q.stem) q.stem = cleanQuestionHtml(q.stem);
+		if (vignetteText) parse.data.vignetteText = cleanQuestionHtml(vignetteText);
+		if (keyFormulas) parse.data.keyFormulas = cleanQuestionHtml(keyFormulas);
+		if (workedSolution) parse.data.workedSolution = cleanQuestionHtml(workedSolution);
+		if (Array.isArray(options)) parse.data.options = options.map(o => ({ ...o, text: cleanQuestionHtml(o.text) }));
+		if (Array.isArray(subQuestions)) parse.data.subQuestions = subQuestions.map(sq => ({
+			...sq,
+			stem: cleanQuestionHtml(sq.stem),
+			options: Array.isArray(sq.options) ? sq.options.map(o => ({ ...o, text: cleanQuestionHtml(o.text) })) : sq.options
+		}));
 		// Resolve topic IDs: prefer topicIds array, fall back to single topicId
 		const resolvedTopicIds = (Array.isArray(rawTopicIds) && rawTopicIds.length > 0) ? rawTopicIds : (q.topicId ? [q.topicId] : []);
 		if (resolvedTopicIds.length === 0) {
@@ -2469,29 +2493,29 @@ export function cmsRouter(prisma) {
 				topics: { connect: resolvedTopicIds.map(id => ({ id })) },
 				...(resolvedConceptIds.length > 0 ? { concepts: { connect: resolvedConceptIds.map(id => ({ id })) } } : {}),
 				parentId: parentId || null,
-				vignetteText: vignetteText || null,
+				vignetteText: parse.data.vignetteText || null,
 				orderIndex: typeof orderIndex === 'number' ? orderIndex : 0,
 				imageUrl: parse.data.imageUrl || null,
 				qid: qid || null,
 				los: los || null,
 				traceSection: traceSection || null,
 				tracePage: tracePage || null,
-				keyFormulas: keyFormulas || null,
-				workedSolution: workedSolution || null
+				keyFormulas: parse.data.keyFormulas || null,
+				workedSolution: parse.data.workedSolution || null
 			}
 		});
 
 		// Create MCQ options for standalone MCQ or parent vignette question itself (if any)
-		if (q.type === 'MCQ' && options && options.length) {
+		if (q.type === 'MCQ' && parse.data.options && parse.data.options.length) {
 			await prisma.mcqOption.createMany({
-				data: options.map(o => ({ questionId: question.id, text: o.text, isCorrect: o.isCorrect }))
+				data: parse.data.options.map(o => ({ questionId: question.id, text: o.text, isCorrect: o.isCorrect }))
 			});
 		}
 
 		// Create sub-questions if provided (for vignette/constructed bundles created in one call)
-		if (Array.isArray(subQuestions) && subQuestions.length > 0 && !parentId) {
-			for (let i = 0; i < subQuestions.length; i++) {
-				const sq = subQuestions[i];
+		if (Array.isArray(parse.data.subQuestions) && parse.data.subQuestions.length > 0 && !parentId) {
+			for (let i = 0; i < parse.data.subQuestions.length; i++) {
+				const sq = parse.data.subQuestions[i];
 				const child = await prisma.question.create({
 					data: {
 						stem: sq.stem,
@@ -4521,7 +4545,7 @@ ${formatBlock}`;
       }
     });
     if (!q) return res.status(404).json({ error: 'Not found' });
-    return res.json({ question: q });
+    return res.json({ question: cleanQuestionFields(q) });
   });
   router.put('/questions/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const id = req.params.id;
