@@ -122,6 +122,7 @@ export function AdminQuestions() {
 				...(wording ? { q: wording } : {})
 			};
 			const { data } = await api.get('/api/cms/questions', { params });
+			console.log(data);
 			setQuestions(data?.questions || []);
 			setTotal(data?.total ?? 0);
 			setLogicalTotal(data?.logicalTotal ?? data?.total ?? 0);
@@ -796,6 +797,7 @@ export function AdminQuestions() {
 			}
 
 			const { data } = await api.post('/api/cms/questions/generate-ai', payload, { timeout: 600000 });
+			console.log(data);
 			message.success(`Generated ${data?.created ?? 0} question(s)`);
 			setAiGenerateModalOpen(false);
 			setListTab('ai');
@@ -886,6 +888,7 @@ export function AdminQuestions() {
 				generated: aiPreview.generated,
 				selectedIndices: toSend
 			});
+			console.log(data);
 			const dupes = data?.skippedDuplicates || [];
 			if (dupes.length > 0) {
 				message.warning(`Saved ${data?.created ?? 0} question(s). ${dupes.length} duplicate(s) skipped.`);
