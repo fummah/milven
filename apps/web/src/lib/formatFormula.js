@@ -728,6 +728,23 @@ export function formatProseWithMath(text) {
 }
 
 /**
+ * Remove the big vertical gaps the AI injects into generated HTML: any run of
+ * 2+ <br>, lone breaks right after a closing block tag, blank <p>, and trailing
+ * breaks. Applied to generated data the moment it arrives so previews and saved
+ * questions never contain stacked line breaks.
+ */
+export function cleanVignetteHtml(html) {
+	if (!html) return html;
+	return String(html)
+		.replace(/(?:<br\s*\/?>\s*){2,}/gi, '<br>')
+		.replace(/<\/(p|div|h[1-6])>\s*(?:<br\s*\/?>\s*)+/gi, '</$1>')
+		.replace(/<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '')
+		.replace(/(?:<br\s*\/?>\s*)+$/gi, '')
+		.replace(/\n{2,}/g, '\n')
+		.trim();
+}
+
+/**
  * Render a prose segment that may contain inline raw LaTeX expressions.
  * Detects patterns like \frac{...}{...}, \sqrt{...}, and other complex
  * LaTeX expressions, renders them via KaTeX inline, and converts the

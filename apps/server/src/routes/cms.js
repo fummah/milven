@@ -3664,12 +3664,12 @@ ${isEthics ? `    • ETHICS TOPIC: This is an ETHICS case study — it MUST be 
       FORMAT C (CHART/GRAPH): Include a text-based chart as a CFA Exhibit using <pre> with ASCII/labelled data (use for ~30% of case studies)
     • Different case studies MUST use different formats — do not repeat the same format for every case study
     • The passage should weave naturally between narrative context and any numerical exhibits`}
-  "questions": array of 3 to 5 constructed-response sub-questions (vary the count between case studies). Each MUST:
+  "questions": array of EXACTLY 4 OR 5 constructed-response sub-questions (varies per case study — generate 4 for some case studies and 5 for others, never the same for every case study). Each MUST:
     • Reference specific ${isEthics ? 'details from the narrative passage' : 'data or exhibits from the vignetteText'}
     • Have "stem" — clearly state what to calculate/explain. In SOME sub-questions (not all), include roman-numeral sub-points within the stem when it makes sense, e.g.:
       "Determine whether the stock market is overvalued using the:\ni. Fed model.\nii. Yardeni model.\nJustify each response with one reason."
       Only use sub-points when the question naturally breaks into distinct parts. Other sub-questions should be single direct prompts.
-    • Have "marks" (integer — the total across all sub-questions should equal 12)
+    • Have "marks" (integer — SPREAD the 12 total marks UNEVENLY across the sub-questions. NEVER give every sub-question the same mark. Examples: a 4-question set could be 4,3,3,2 or 3,2,4,3; a 5-question set could be 3,2,3,2,2 or 2,2,3,2,3. Award more marks to harder/multi-part sub-questions and fewer to shorter ones. The total across ALL sub-questions MUST equal exactly 12)
     • Have "questionGuidelines" (DETAILED marking criteria showing how marks are split — e.g. "Formula identification (1 mark)\nCorrect substitution (1 mark)\nFinal calculation (1 mark)\nInterpretation (1 mark)" — each step MUST show its mark allocation so students can self-assess)
     • Have "output" (full model answer that would receive maximum marks — use valid LaTeX for all formulas and show the step-by-step working with mark allocations inline, e.g. "Step 1: Identify formula... [1 mark]\nStep 2: Substitute values... [1 mark]")
 ${selectedTopics.length > 1 ? `    • TOPIC DISTRIBUTION: The selected topics are [${selectedTopics.map(t => t.name).join(', ')}]. You MUST spread these topics equally across the sub-questions. Each sub-question should test a different topic from this list. Assign topics round-robin so all selected topics are covered.

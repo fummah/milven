@@ -3,7 +3,7 @@ import { Card, Form, Input, Button, Select, message, Space, Typography, Table, U
 import { DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, PictureOutlined, DeleteFilled, FilterOutlined, QuestionCircleOutlined, BookOutlined, SearchOutlined, CalendarOutlined, CheckCircleOutlined, DownOutlined, UpOutlined, RobotOutlined, ThunderboltOutlined, TagsOutlined } from '@ant-design/icons';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api, API_URL } from '../../lib/api';
-import { safeHtml, formatFormulaHtml, formatProseWithMath } from '../../lib/formatFormula';
+import { safeHtml, formatFormulaHtml, formatProseWithMath, cleanVignetteHtml } from '../../lib/formatFormula';
 import { RichTextEditor } from '../../components/RichTextEditor.jsx';
 import { ModuleNotesDrawer } from '../../components/ModuleNotesDrawer.jsx';
 
@@ -773,7 +773,33 @@ export function AdminQuestions() {
 				}
 				if (sseError) throw new Error(sseError);
 				if (!data) throw new Error('No response received from server');
-				const gen = data?.generated || null;
+				// Strip stacked <br> / empty blocks from AI HTML before it is shown or saved
+				const cleanGenerated = (g) => {
+					if (!g) return g;
+					const cc = (v) => (typeof v === 'string' ? cleanVignetteHtml(v) : v);
+					const cleanSub = (sq) => {
+						const n = { ...sq };
+						['stem', 'explanation', 'workedSolution', 'keyFormulas', 'questionGuidelines', 'output']
+							.forEach(f => { if (typeof n[f] === 'string' && n[f]) n[f] = cc(n[f]); });
+						if (Array.isArray(n.options)) n.options = n.options.map(o => ({ ...o, text: cc(o.text) }));
+						return n;
+					};
+					if (Array.isArray(g.bundles)) {
+						return { ...g, bundles: g.bundles.map(b => ({
+							...b,
+							vignetteText: cc(b.vignetteText),
+							questions: Array.isArray(b.questions) ? b.questions.map(cleanSub) : b.questions
+						})) };
+					}
+					if (Array.isArray(g.items)) {
+						return { ...g, items: g.items.map(it => ({
+							...cleanSub(it),
+							vignetteText: cc(it.vignetteText)
+						})) };
+					}
+					return g;
+				};
+				const gen = cleanGenerated(data?.generated || null);
 				setAiPreview({
 					questionType: values.questionType,
 					generated: gen,
