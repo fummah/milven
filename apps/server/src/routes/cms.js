@@ -3391,6 +3391,8 @@ console.log('AI raw output:', raw);
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
 		let { courseId, volumeId, moduleIds, topicIds, conceptIds, questionType, constructedMode, difficulty, difficulties, count, model, provider } = parse.data;
+		// Constructed Response defaults to case-study format (bundle with sub-questions)
+		if (questionType === 'CONSTRUCTED_RESPONSE' && !constructedMode) constructedMode = 'bundle';
 		const aiProvider = provider || await getActiveProvider(prisma);
 		const aiModel = model || await getActiveModel(prisma) || getDefaultModel(aiProvider);
 		const diffList = Array.isArray(difficulties) && difficulties.length
@@ -4759,7 +4761,7 @@ ${formatBlock}`;
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
       include: { options: true }
     });
-    return res.json({ questions });
+    return res.json({ questions: questions.map(cleanQuestionFields) });
   });
 
 	// Revision summaries

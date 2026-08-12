@@ -1459,7 +1459,7 @@ export function AdminQuestions() {
 					form={aiForm}
 					layout="vertical"
 					onFinish={doAiGenerate}
-					initialValues={{ questionType: 'MCQ', difficulties: ['MEDIUM'], count: 3, constructedMode: 'single' }}
+					initialValues={{ questionType: 'MCQ', difficulties: ['MEDIUM'], count: 3, constructedMode: 'bundle' }}
 				>
 					<Row gutter={16}>
 						{/* Row 1: Course | Volume */}
@@ -1584,7 +1584,15 @@ export function AdminQuestions() {
 						</Col>
 						<Col span={12}>
 							<Form.Item name="questionType" label="Question type" rules={[{ required: true }]} >
-								<Select options={aiQuestionTypeOptions} />
+								<Select
+									options={aiQuestionTypeOptions}
+									onChange={(v) => {
+										if (v === 'CONSTRUCTED_RESPONSE') {
+											// Default Constructed format to "Case study with sub-questions"
+											aiForm.setFieldsValue({ constructedMode: 'bundle' });
+										}
+									}}
+								/>
 							</Form.Item>
 						</Col>
 
