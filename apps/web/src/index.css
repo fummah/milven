@@ -2,25 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Kill stacked AI <br> gaps in previews ─────────────────────────
-   Hides every <br> that directly follows another <br>, or that sits right
-   after a closing block (the classic "Exhibit 1</p><br><br><br><br><table>"
-   pattern). This guarantees previews never show double/triple blank gaps,
-   no matter what HTML the stored data contains. */
-.question-preview-content br + br,
-.question-preview-content br {
+/* ── Collapse stacked AI <br> gaps in previews ─────────────────────────
+   Only remove the gaps when there are more than 2 consecutive <br> (a run of
+   3+); runs of 1-2 are left as-is. `br + br + br` hides the 3rd+ break of any
+   consecutive run, so previews never show triple+ blank gaps no matter what
+   HTML the stored data contains. */
+.question-preview-content br + br + br {
 	display: none;
-}
-.question-preview-content p br,
-.question-preview-content div br,
-.question-preview-content table br,
-.question-preview-content h1 br,
-.question-preview-content h2 br,
-.question-preview-content h3 br,
-.question-preview-content h4 br,
-.question-preview-content h5 br,
-.question-preview-content h6 br {
-	display: inline;
 }
 :root {
 	--brand: #102540;

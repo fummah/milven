@@ -33,19 +33,17 @@ function compactGeneratedHtml(text) {
 function cleanQuestionHtml(html) {
 	if (!html) return html;
 	let out = html;
-	// Collapse any run of stacked <br> into a single one (handles <br><br><br><br> -> <br>)
-	out = out.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>');
-	// Collapse a run of <br> that sits between a closing and opening <p> (paragraph padding already provides the break)
-	out = out.replace(/<\/(p|div|h[1-6]|li)><br((?:\s*<br\s*\/?>)+)/gi, '</$1>');
-	// Normalise a single lone break right after a closing <p>/<div>/<h>/<li> (already line-broken by the block)
-	out = out.replace(/<\/(p|div|h[1-6]|li)><br>/gi, '</$1>');
-	// Collapse <br> runs immediately preceding an exhibit/table down to a single break
-	out = out.replace(/(<br\s*\/?>\s*)+<table/gi, '<br><table');
+	// Collapse any run of 3+ stacked <br> into a single one; runs of 1-2 are left as-is
+	out = out.replace(/(<br\s*\/?>\s*){3,}/gi, '<br>');
+	// Collapse a run of 3+ <br> that sits between a closing and opening block (block padding already provides the break)
+	out = out.replace(/<\/(p|div|h[1-6]|li)><br(?:\s*<br\s*\/?>\s*){2,}/gi, '</$1>');
+	// Collapse <br> runs of 3+ immediately preceding an exhibit/table down to a single break
+	out = out.replace(/(?:<br\s*\/?>\s*){3,}<table/gi, '<br><table');
 	// Remove empty paragraphs
 	out = out.replace(/<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '');
 	// Remove trailing breaks
 	out = out.replace(/(<br\s*\/?>|<br\s*\/?>\s*)+$/gi, '');
-	return out.replace(/\n{2,}/g, '\n').trim();
+	return out.replace(/\n{3,}/g, '\n').trim();
 }
 
 // Clean every HTML-bearing field of a question object (and its options) in place.

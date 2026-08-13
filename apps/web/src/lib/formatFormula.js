@@ -728,19 +728,19 @@ export function formatProseWithMath(text) {
 }
 
 /**
- * Remove the big vertical gaps the AI injects into generated HTML: any run of
- * 2+ <br>, lone breaks right after a closing block tag, blank <p>, and trailing
- * breaks. Applied to generated data the moment it arrives so previews and saved
+ * Remove the big vertical gaps the AI injects into generated HTML: collapse
+ * runs of 3+ <br>, blank <p>, and trailing breaks. Runs of 1-2 <br> are left
+ * as-is. Applied to generated data the moment it arrives so previews and saved
  * questions never contain stacked line breaks.
  */
 export function cleanVignetteHtml(html) {
 	if (!html) return html;
 	return String(html)
-		.replace(/(?:<br\s*\/?>\s*){2,}/gi, '<br>')
-		.replace(/<\/(p|div|h[1-6])>\s*(?:<br\s*\/?>\s*)+/gi, '</$1>')
+		.replace(/(?:<br\s*\/?>\s*){3,}/gi, '<br>')
+		.replace(/<\/(p|div|h[1-6])>\s*(?:<br\s*\/?>\s*){3,}/gi, '</$1>')
 		.replace(/<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, '')
 		.replace(/(?:<br\s*\/?>\s*)+$/gi, '')
-		.replace(/\n{2,}/g, '\n')
+		.replace(/\n{3,}/g, '\n')
 		.trim();
 }
 
@@ -754,13 +754,15 @@ function renderProseSegment(prose) {
 	if (!prose) return '';
 
 	// Convert newlines (both literal \n and real newline chars) to HTML line breaks.
-	// Collapse runs of multiple blank lines into a single break so AI-generated
-	// content with large gaps between exhibits/blocks does not render big spaces.
-	// Also collapse any stacked literal <br> tags down to a single break.
-	prose = prose.replace(/\\n/g, '\n').replace(/<br\s*\/?>\s*/gi, '\n').replace(/\n{2,}/g, '\n').replace(/\n/g, '<br/>');
-	// Remove any lingering <br> right after a closing block and immediately before an
-	// exhibit/heading/table so the "Exhibit ..." heading attaches without a dead gap.
-	prose = prose.replace(/(<\/(?:p|div|h[1-6])>)\s*<br\s*\/?>\s*(?=<(?:table|ul|ol|h[1-6]))/gi, '$1');
+	// Collapse runs of 3+ blank lines into a single break so AI-generated content
+	// with large gaps between exhibits/blocks does not render big spaces, while
+	// runs of 1-2 breaks are left untouched. Also collapse any stacked literal
+	// <br> tags down to a single break.
+	prose = prose.replace(/\\n/g, '\n').replace(/<br\s*\/?>\s*/gi, '\n').replace(/\n{3,}/g, '\n').replace(/\n/g, '<br/>');
+	// Remove lingering runs of 3+ <br> right after a closing block and immediately before an
+	// exhibit/heading/table so the "Exhibit ..." heading attaches without a dead gap
+	// (runs of 1-2 breaks are left as-is).
+	prose = prose.replace(/(<\/(?:p|div|h[1-6])>)\s*(?:<br\s*\/?>\s*){3,}(?=<(?:table|ul|ol|h[1-6]))/gi, '$1<br>');
 
 	// Pattern to find inline LaTeX expressions that should be rendered via KaTeX:
 	// - \frac{...}{...} (with optional trailing = number)
