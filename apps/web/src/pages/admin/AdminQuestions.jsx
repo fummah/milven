@@ -719,7 +719,7 @@ export function AdminQuestions() {
 				topicIds: resolvedTopicIds,
 				conceptIds: resolvedConceptIds,
 				questionType: values.questionType,
-				constructedMode: values.questionType === 'CONSTRUCTED_RESPONSE' ? (values.constructedMode || 'single') : undefined,
+				constructedMode: values.questionType === 'CONSTRUCTED_RESPONSE' ? (values.constructedMode || 'bundle') : undefined,
 				difficulties: diffs.length ? diffs : undefined,
 				difficulty: !diffs.length && values.difficulty ? values.difficulty : undefined,
 				count: values.count ?? 3,

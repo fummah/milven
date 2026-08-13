@@ -102,9 +102,17 @@ function normalizeVignetteSubQuestions(item) {
 	return !!((item.vignetteText || item.vignette || '').trim()) && item.questions.length > 0;
 }
 
+// Map a course level (e.g. "LEVEL2", "Level 2", "III") to CFA Roman numeral ("I"|"II"|"III").
+function cfaLevelRoman(level) {
+	const lv = String(level || 'LEVEL1').toUpperCase();
+	if (/III|3/.test(lv)) return 'III';
+	if (/II|2/.test(lv)) return 'II';
+	return 'I';
+}
+
 // ── Volume-specific vignette MCQ prompt builder ──────────────────────────────
 // Returns { roles, exhibits, questionDesign, distractors } tailored to the volume.
-function getVolumeVignettePrompt(volumeName) {
+function getVolumeVignettePrompt(volumeName, levelRoman = 'II') {
 	const vn = (volumeName || '').toLowerCase();
 
 	// Volume 1: Ethics, Quantitative Methods, and Economics
@@ -126,7 +134,7 @@ function getVolumeVignettePrompt(volumeName) {
 - One question MUST test interpretation of statistical or economic results (e.g. significance of a coefficient, model validity, economic forecast implication)
 - One question MUST test whether a specific statement or action is correct or incorrect (e.g. analyst statement evaluation, model assumption check)
 - One question may test ethics, model limitations, market expectations, currency parity, or policy interpretation`,
-			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+			distractors: `Use realistic distractors based on common CFA Level ${levelRoman} mistakes:
 - Treating correlation as causation
 - Ignoring non-stationarity or serial correlation
 - Using sample R-squared instead of adjusted R-squared
@@ -155,7 +163,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 - At least TWO questions MUST require calculations (e.g. adjusting ratios, computing pension cost components, translating financial statements, consolidation entries)
 - At least one question MUST test IFRS vs US GAAP treatment or accounting classification differences
 - At least one question MUST test analytical interpretation — impact on ratios, earnings quality, leverage, cash flow, or comparability`,
-			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+			distractors: `Use realistic distractors based on common CFA Level ${levelRoman} mistakes:
 - Using actual return on plan assets instead of interest income/expected return
 - Confusing OCI and profit/loss treatment
 - Using current rate method instead of temporal method (or vice versa)
@@ -184,7 +192,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 - One question MUST test a capital structure or payout interpretation (e.g. optimal structure, MM propositions, signalling)
 - One question MUST test governance, stakeholder, ESG, or agency-risk implications
 - One question MUST require selecting the best recommendation based on the data`,
-			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+			distractors: `Use realistic distractors based on common CFA Level ${levelRoman} mistakes:
 - Using book-value weights instead of market-value weights for WACC
 - Ignoring tax shields on debt
 - Assuming EPS accretion equals value creation
@@ -212,7 +220,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 - One question MUST test model selection: DDM vs FCFE vs FCFF vs residual income vs market multiples vs asset-based vs private-company valuation
 - One question MUST test interpretation of valuation assumptions, sensitivity, control premium, marketability discount, or country risk
 - One question should ask for the conclusion most supported by the data`,
-			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+			distractors: `Use realistic distractors based on common CFA Level ${levelRoman} mistakes:
 - Using FCFF discount rate (WACC) for FCFE model (or vice versa)
 - Using trailing instead of forward multiples
 - Double-counting debt in enterprise-to-equity conversion
@@ -244,7 +252,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 - One fixed income question should test valuation, yield spread, duration, convexity, credit risk, or embedded options
 - One derivatives question should test no-arbitrage pricing, valuation, hedging, payoff, swap valuation, or option strategy
 - One question MUST test interpretation of a risk-management recommendation`,
-			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+			distractors: `Use realistic distractors based on common CFA Level ${levelRoman} mistakes:
 - Using par value instead of market price in duration calculations
 - Ignoring convexity adjustment for large yield changes
 - Confusing effective duration and modified duration
@@ -277,7 +285,7 @@ Acceptable themes: pension accounting, multinational operations and translation,
 - At least one question MUST test portfolio interpretation — active risk, information ratio, factor exposure, rebalancing, liquidity, or benchmark fit
 - At least one question MUST test suitability or allocation judgment
 - One question should require selecting the recommendation most consistent with the client's objective or risk constraint`,
-			distractors: `Use realistic distractors based on common CFA Level II mistakes:
+			distractors: `Use realistic distractors based on common CFA Level ${levelRoman} mistakes:
 - Confusing FFO and AFFO in REIT valuation
 - Using accounting book value instead of NAV
 - Confusing backwardation and contango in commodity markets
@@ -2669,6 +2677,7 @@ export function cmsRouter(prisma) {
 		}
 		const legacyConceptLabel = legacyConcepts.length > 0 ? legacyConcepts.map(c => c.name).join(', ') : 'All concepts under the selected topics';
 		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
+		const levelRoman = cfaLevelRoman(course.level);
 		const topicLabel = selectedTopics.map(t => t.name).join(', ');
 
 		// Detect ethics topics — ethics questions must NEVER include tables (check volume, module, and topic names)
@@ -2677,15 +2686,15 @@ export function cmsRouter(prisma) {
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 			? isEthics
-				? 'Vignette / item-set (CFA Level II exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
-				: 'Vignette / item-set (CFA Level II exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
+				? 'Vignette / item-set (CFA Level ' + levelRoman + ' exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+				: 'Vignette / item-set (CFA Level ' + levelRoman + ' exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 			: 'Constructed response (written answer requiring calculations or explanations)';
 		const difficultyLabel = diffList.join(', ');
 		const curriculumSection = curriculumExcerpt
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
 			: '';
-		const volPrompt = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName) : null;
-		const prompt = `You are a senior CFA Level II exam writer. Generate ORIGINAL exam-quality questions in JSON format. DO NOT copy third-party material..
+		const volPrompt = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName, levelRoman) : null;
+		const prompt = `You are a senior CFA Level ${levelRoman} exam writer. Generate ORIGINAL exam-quality questions in JSON format. DO NOT copy third-party material..
 
 CORE REQUIREMENTS:
 - Professional exam quality — assess application, analysis, valuation, judgement
@@ -2808,8 +2817,8 @@ VIGNETTE MCQ QUALITY RULES:
 - LOS MATCHING RULE: Each sub-question's "los" MUST match the LEARNING OUTCOME STATEMENT for the specific topic being tested by THAT sub-question. If the sub-question tests topic "Inventory Valuation", the LOS must be the exact LOS for inventory valuation (e.g. "describe and apply inventory valuation methods under IFRS and US GAAP"). Do NOT use the same LOS for all 4 sub-questions — each sub-question (which tests a different topic/concept) must have its OWN LOS that matches its specific topic.
 - SUB-QUESTION STATEMENT MATCHING: Each sub-question's "stem" MUST be answerable using only the information in the vignette. After writing the stem, verify: "Is all the data needed to answer this question present in the vignette?" If a stem asks "What is the expected return?" then the vignette MUST contain the inputs (risk-free rate, beta, market return, etc.). If any input is missing, add it to the vignette or rewrite the stem.
 
-ADVANCED CFA LEVEL II ITEM-SET DESIGN REQUIREMENTS:
-The generated vignette must simulate a real CFA Level II examination case. The candidate should feel they are analyzing a professional investment situation, not answering a textbook quiz.
+ADVANCED CFA LEVEL ${levelRoman} ITEM-SET DESIGN REQUIREMENTS:
+The generated vignette must simulate a real CFA Level ${levelRoman} examination case. The candidate should feel they are analyzing a professional investment situation, not answering a textbook quiz.
 
 Every vignette MUST contain:
 1. A CENTRAL INVESTMENT PROBLEM — one of: portfolio allocation decision, valuation decision, risk assessment, investment recommendation, analyst disagreement, or client suitability decision.
@@ -2852,7 +2861,7 @@ EXPLANATION REQUIREMENTS — Each explanation MUST include:
   WHY OTHER OPTIONS ARE WRONG: Explain the specific misconception for each distractor.
   COMMON CFA MISTAKE: State the error a candidate would typically make.
 
-FINAL EXAM SIMULATION CHECK — Before generating, ask: "Would a CFA Level II candidate need 5-10 minutes to carefully analyze this item set?" If NO, make it more complex. The output must resemble a professional CFA Level II mock examination question, NOT an educational exercise.
+FINAL EXAM SIMULATION CHECK — Before generating, ask: "Would a CFA Level ${levelRoman} candidate need 5-10 minutes to carefully analyze this item set?" If NO, make it more complex. The output must resemble a professional CFA Level ${levelRoman} mock examination question, NOT an educational exercise.
 
 MATH IN vignetteText: If the vignetteText contains any mathematical expressions, formulas, or variables, ALWAYS wrap them in LaTeX delimiters \\\\( ... \\\\). NEVER put raw LaTeX like \\times, CF_{SGD}, e^{-r} in prose without delimiters.
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
@@ -2861,7 +2870,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const aiResult = await chatCompletion({
 				apiKey, provider: aiProvider, model: aiModel,
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level II exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\\\( \\\\), \\\\[ \\\\], or mathematical symbols like \\\\frac, \\\\sigma, \\\\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\\\( E(R) \\\\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL II EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level II exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\nCRITICAL RULE — VIGNETTE GROUNDING: Every sub-question MUST reference specific data or exhibits from the vignette. No sub-question can ask about information not provided. Every number used in any workedSolution must appear explicitly in the vignetteText or an exhibit. After writing all sub-questions, trace each input number back to its source in the vignette.\n\nCRITICAL RULE — ACCURACY VERIFICATION: After generating every sub-question, re-read the workedSolution from start to finish. Verify the option marked isCorrect:true matches the solution's final computed answer. If the worked solution computes 12.17%, the option with 12.17% must be isCorrect:true — NOT 11.16% or any other number. Fix any mismatch before returning JSON.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are a senior CFA Level ${levelRoman} exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\\\( \\\\), \\\\[ \\\\], or mathematical symbols like \\\\frac, \\\\sigma, \\\\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\\\( E(R) \\\\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL ${levelRoman} EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level ${levelRoman} exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\nCRITICAL RULE — VIGNETTE GROUNDING: Every sub-question MUST reference specific data or exhibits from the vignette. No sub-question can ask about information not provided. Every number used in any workedSolution must appear explicitly in the vignetteText or an exhibit. After writing all sub-questions, trace each input number back to its source in the vignette.\n\nCRITICAL RULE — ACCURACY VERIFICATION: After generating every sub-question, re-read the workedSolution from start to finish. Verify the option marked isCorrect:true matches the solution's final computed answer. If the worked solution computes 12.17%, the option with 12.17% must be isCorrect:true — NOT 11.16% or any other number. Fix any mismatch before returning JSON.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
@@ -3513,6 +3522,7 @@ console.log('AI raw output:', raw);
 		const sseEnd = () => { clearInterval(sseHeartbeat); try { res.end(); } catch {} };
 
 		const levelLabel = (course.level || 'LEVEL1').replace('LEVEL', 'Level ');
+		const levelRoman = cfaLevelRoman(course.level);
 		const isConstructedBundle = questionType === 'CONSTRUCTED_RESPONSE' && constructedMode === 'bundle';
 		const topicLabel = selectedTopics.map(t => t.name).join(', ');
 
@@ -3523,8 +3533,8 @@ console.log('AI raw output:', raw);
 			? 'Multiple choice (MCQ) with exactly 3 options (A, B, C) and exactly one correct answer'
 			: questionType === 'VIGNETTE_MCQ'
 				? isEthics
-					? 'Vignette / item-set (CFA Level II exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
-					: 'Vignette / item-set (CFA Level II exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
+					? 'Vignette / item-set (CFA Level ' + levelRoman + ' exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. ETHICS vignette — purely narrative, NO tables/exhibits/charts.'
+					: 'Vignette / item-set (CFA Level ' + levelRoman + ' exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 				: isConstructedBundle
 					? isEthics
 						? 'Constructed response case study: a detailed realistic scenario/case study passage (250-650 words) with a named protagonist. This is an ETHICS case study — PURELY NARRATIVE, NO tables, NO exhibits, NO charts. Followed by multiple constructed-response sub-questions requiring analysis or written explanations.'
@@ -3543,7 +3553,7 @@ console.log('AI raw output:', raw);
 - "keyFormulas": string (key formula(s) using VALID LaTeX — e.g. "\\( PV = \\frac{CF_1}{(1+r)^{1}} + \\frac{CF_2}{(1+r)^{2}} \\)", "\\( WACC = w_{d} \\cdot r_{d} \\cdot (1-t) + w_{e} \\cdot r_{e} \\)". Use \\frac, \\sigma, \\beta, \\alpha etc. ALL braces must be balanced. Include variable definitions.)
 - "workedSolution": string (step-by-step worked solution using valid LaTeX for all math — be thorough so students can learn from it)
 - "explanation": string (concise explanation of why the answer is correct and common mistakes to avoid)`;
-		const volPrompt = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName) : null;
+		const volPrompt = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName, levelRoman) : null;
 
 		let formatBlock;
 		if (questionType === 'MCQ') {
@@ -3619,8 +3629,8 @@ ${volPrompt.distractors}
     • At least one question should test interpretation of assumptions, recommendations, or professional judgement
     • Distractors should represent common CFA mistakes — NOT trick answers
 `}
-    • ADVANCED CFA LEVEL II ITEM-SET DESIGN:
-      The vignette must simulate a real CFA Level II exam case — the candidate should feel they are analyzing a professional investment situation, not answering a textbook quiz.
+    • ADVANCED CFA LEVEL ${levelRoman} ITEM-SET DESIGN:
+      The vignette must simulate a real CFA Level ${levelRoman} exam case — the candidate should feel they are analyzing a professional investment situation, not answering a textbook quiz.
       Every vignette MUST contain: (1) a central investment problem (portfolio allocation, valuation, risk assessment, investment recommendation, analyst disagreement, or client suitability), (2) multiple layers of information including relevant, irrelevant, and conflicting data plus assumptions requiring judgement, (3) professional uncertainty where the answer is not immediately obvious.
       VIGNETTE WRITING STYLE: Include named investment professionals, institutional investors, investment committee discussions, analyst reports, portfolio constraints, market environment, economic assumptions. AVOID generic wording like "An investor wants to invest...". Instead: "During a quarterly investment committee meeting, Sarah Williams, senior analyst at Horizon Capital, reviews..."
     • QUESTION COMPLEXITY — The 4 sub-questions must NOT all test the same concept. Distribute:
@@ -3632,7 +3642,7 @@ ${volPrompt.distractors}
     • REALISTIC CFA TRAPS: Distractors MUST represent real CFA candidate mistakes (confusing equity vs mortgage REITs, NAV vs book value, duration vs convexity, enterprise vs equity value, IFRS vs US GAAP, ignoring investor constraints, selecting highest return instead of suitable portfolio).
     • EXHIBIT QUALITY: Every exhibit MUST be referenced by at least one question. Do NOT add tables only for appearance.
     • EXPLANATION REQUIREMENTS: Each explanation must include: WHY CORRECT (CFA concept and reasoning), WHY OTHER OPTIONS ARE WRONG (specific misconception per distractor), COMMON CFA MISTAKE (the typical error).
-    • FINAL CHECK: "Would a CFA Level II candidate need 5-10 minutes to analyze this item set?" If NO, make it more complex.
+    • FINAL CHECK: "Would a CFA Level ${levelRoman} candidate need 5-10 minutes to analyze this item set?" If NO, make it more complex.
     • CRITICAL — ANSWER CONSISTENCY RULE (MUST FOLLOW):
       For EVERY sub-question (numerical OR text-based):
       1. FIRST complete the worked solution using ONLY numbers from the vignette, compute the final answer or conclusion.
@@ -3717,9 +3727,9 @@ ${metaFieldsBlock}`;
 		const previewCurriculumSection = previewCurriculumExcerpt
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${previewCurriculumExcerpt}\n---\n`
 			: '';
-			const testVol = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName) : null;
+			const testVol = questionType === 'VIGNETTE_MCQ' ? getVolumeVignettePrompt(volumeName, levelRoman) : null;
 	
-		const prompt = `You are a senior CFA Level II exam writer. Generate ORIGINAL exam-quality questions in JSON format. DO NOT copy third-party material.
+		const prompt = `You are a senior CFA Level ${levelRoman} exam writer. Generate ORIGINAL exam-quality questions in JSON format. DO NOT copy third-party material.
 
 CORE REQUIREMENTS:
 - Professional exam quality — assess application, analysis, valuation, judgement
@@ -3787,8 +3797,8 @@ ${isEthics ? `- ETHICS: PURELY NARRATIVE — NO tables, exhibits, charts, <table
 - NO markdown pipe tables`}
 - IMPORTANT: Question stems and option text must be plain language — do NOT include LaTeX formulas or math notation in stems/options. Formulas belong ONLY in keyFormulas and workedSolution.
 ${testVol ? `${testVol.questionDesign}\n${testVol.distractors}` : '- At least 2 calculation questions, 1 interpretation question\n- Distractors: common CFA mistakes'}
-ADVANCED CFA LEVEL II ITEM-SET DESIGN:
-The vignette must simulate a real CFA Level II exam case — not a textbook quiz. Include: (1) a central investment problem (portfolio allocation, valuation, risk assessment, recommendation, analyst disagreement, or client suitability), (2) multiple layers of relevant, irrelevant, and conflicting information plus assumptions requiring judgement, (3) professional uncertainty where the answer is not immediately obvious.
+ADVANCED CFA LEVEL ${levelRoman} ITEM-SET DESIGN:
+The vignette must simulate a real CFA Level ${levelRoman} exam case — not a textbook quiz. Include: (1) a central investment problem (portfolio allocation, valuation, risk assessment, recommendation, analyst disagreement, or client suitability), (2) multiple layers of relevant, irrelevant, and conflicting information plus assumptions requiring judgement, (3) professional uncertainty where the answer is not immediately obvious.
 VIGNETTE WRITING STYLE: Include named investment professionals, institutional investors, investment committee discussions, analyst reports, portfolio constraints, market environment, economic assumptions. AVOID: "An investor wants to invest...". Instead: "During a quarterly investment committee meeting, Sarah Williams, senior analyst at Horizon Capital, reviews..."
 QUESTION COMPLEXITY — The 4 sub-questions must NOT all test the same concept:
   Q1 — FOUNDATION APPLICATION (Medium): Apply the main concept — classify, calculate a key metric, identify the framework.
@@ -3799,7 +3809,7 @@ DIFFICULTY: 70% Medium-Hard, 30% Hard. AVOID definition/memorization/obvious cal
 REALISTIC CFA TRAPS: Distractors must represent real CFA candidate mistakes (confusing similar concepts, ignoring constraints, wrong formula application, IFRS vs US GAAP).
 EXHIBIT QUALITY: Every exhibit MUST be referenced by at least one question. No decorative tables.
 EXPLANATION REQUIREMENTS: Each explanation must include: WHY CORRECT, WHY OTHER OPTIONS ARE WRONG (specific misconception), COMMON CFA MISTAKE.
-FINAL CHECK: "Would a CFA Level II candidate need 5-10 minutes to analyze this?" If NO, make it more complex.
+FINAL CHECK: "Would a CFA Level ${levelRoman} candidate need 5-10 minutes to analyze this?" If NO, make it more complex.
 
 ${previewCurriculumExcerpt ? `CURRICULUM DOCUMENT RULES:
 1. "los": Copy EXACT Learning Outcome Statement from document (verbs: describe, explain, calculate, etc.)
@@ -3826,7 +3836,7 @@ ${formatBlock}`;
 			const aiResult = await chatCompletion({
 				apiKey, provider: aiProvider, model: aiModel,
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level II exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\( \\), \\[ \\], or mathematical symbols like \\frac, \\sigma, \\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\( E(R) \\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE GROUNDING: Every sub-question MUST reference specific data/exhibits from the vignette. No sub-question can ask about information not provided. Every number used in workedSolution must appear explicitly in the vignetteText. After writing all sub-questions, trace each input number back to the vignette.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL II EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level II exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\nCRITICAL RULE — ACCURACY VERIFICATION: After generating every sub-question, re-read the workedSolution and verify the option marked isCorrect matches the solution's final computed answer. If the solution yields 12.17%, the option with 12.17% must be isCorrect:true. Fix any mismatch before returning JSON.` },
+					{ role: 'system', content: `You are a senior CFA Level ${levelRoman} exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\( \\), \\[ \\], or mathematical symbols like \\frac, \\sigma, \\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\( E(R) \\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE GROUNDING: Every sub-question MUST reference specific data/exhibits from the vignette. No sub-question can ask about information not provided. Every number used in workedSolution must appear explicitly in the vignetteText. After writing all sub-questions, trace each input number back to the vignette.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL ${levelRoman} EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level ${levelRoman} exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\nCRITICAL RULE — ACCURACY VERIFICATION: After generating every sub-question, re-read the workedSolution and verify the option marked isCorrect matches the solution's final computed answer. If the solution yields 12.17%, the option with 12.17% must be isCorrect:true. Fix any mismatch before returning JSON.` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
