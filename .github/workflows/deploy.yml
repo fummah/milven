@@ -1,0 +1,89 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two production deploys at once; queue them instead of cancelling.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # 1) Build + test gate. Deploy only runs if this job succeeds.
+  # ─────────────────────────────────────────────────────────────
+  test:
+    name: Test & build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install server dependencies
+        working-directory: apps/server
+        run: npm install --no-audit --no-fund
+
+      - name: Run server tests
+        working-directory: apps/server
+        run: npm test
+
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: npm install --no-audit --no-fund
+
+      - name: Build web
+        working-directory: apps/web
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL || 'http://localhost:4000' }}
+
+  # ─────────────────────────────────────────────────────────────
+  # 2) Deploy the API to the production server over SSH.
+  #    The web app is hosted separately (CDN / static), so only the
+  #    backend is deployed here.
+  # ─────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy API
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+    steps:
+      - name: Deploy over SSH
+        # Skips cleanly (green) until the deploy secrets are configured.
+        if: ${{ env.DEPLOY_HOST != '' && env.DEPLOY_USER != '' && env.DEPLOY_SSH_KEY != '' && env.DEPLOY_PATH != '' }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.DEPLOY_HOST }}
+          username: ${{ env.DEPLOY_USER }}
+          key: ${{ env.DEPLOY_SSH_KEY }}
+          port: ${{ env.DEPLOY_PORT != '' && env.DEPLOY_PORT || 22 }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd "${{ env.DEPLOY_PATH }}"
+            echo "Fetching latest main..."
+            git fetch --prune origin
+            git checkout main
+            git pull --ff-only origin main
+            echo "Rebuilding and restarting the API service..."
+            docker compose -f docker-compose.prod.yml up -d --build api
+            echo "Pruning dangling images..."
+            docker image prune -f
+            echo "Current status:"
+            docker compose -f docker-compose.prod.yml ps
