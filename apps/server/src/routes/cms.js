@@ -315,6 +315,123 @@ Acceptable themes: pension accounting, multinational operations and translation,
 	};
 }
 
+// ── Difficulty compliance (CFA question generation) ───────────────────────
+// The admin-selected difficulty MUST control the generated question content,
+// not merely its metadata label.
+const DIFFICULTY_LEVELS = ['EASY', 'MEDIUM', 'HARD'];
+
+const DIFFICULTY_INSTRUCTIONS = {
+	EASY: `Generate an EASY CFA exam question.
+
+The question must test basic understanding, recognition or straightforward application of the supplied learning material.
+
+Characteristics:
+- direct wording
+- limited reasoning steps
+- no unnecessary ambiguity
+- simple calculations where applicable
+- one main concept at a time
+- distractors may be plausible but should not require advanced multi-step reasoning
+
+Do not generate a medium or hard question.`,
+	MEDIUM: `Generate a MEDIUM difficulty CFA exam question.
+
+The question must require meaningful application and interpretation of the supplied material.
+
+Characteristics:
+- requires understanding, not only recall
+- may combine related concepts
+- moderate calculation or reasoning
+- plausible distractors
+- candidate should need to analyse the scenario before answering
+- should resemble normal CFA exam difficulty
+
+Do not make the question trivially easy or unusually difficult.`,
+	HARD: `Generate a HARD CFA exam question.
+
+The question must require advanced application, interpretation or multi-step reasoning while remaining fully supported by the supplied curriculum.
+
+Characteristics:
+- challenging but fair
+- may combine multiple related concepts
+- may require several reasoning or calculation steps
+- distractors should reflect realistic candidate mistakes
+- scenario may contain information that must be interpreted carefully
+- answer should not be obvious from wording
+- must remain CFA-exam appropriate
+- do not create trick questions based on obscure wording
+- do not introduce material outside the supplied curriculum
+
+Do not simplify the question to medium or easy difficulty.`,
+};
+
+function normalizeDifficultyValue(val) {
+	const s = String(val || '').toUpperCase().trim();
+	return DIFFICULTY_LEVELS.includes(s) ? s : null;
+}
+
+// Builds the mandatory difficulty instruction injected into every generation prompt.
+function buildDifficultyInstructionBlock(diffList) {
+	const levels = (Array.isArray(diffList) && diffList.length ? diffList : ['MEDIUM'])
+		.map(d => normalizeDifficultyValue(d))
+		.filter(Boolean);
+	if (levels.length === 0) levels.push('MEDIUM');
+	const requested = levels.join(', ');
+	const multi = levels.length > 1;
+
+	const instructions = levels.map(l => DIFFICULTY_INSTRUCTIONS[l]).join('\n\n');
+
+	const distribution = multi
+		? `Generate the set across these requested difficulty levels: ${requested}. For each question, pick ONE of these levels and generate the FULL question content at that exact level. Do not exceed or fall below the requested set.`
+		: `ALL questions (and all vignette sub-questions) MUST be ${requested}.`;
+
+	return `===== DIFFICULTY REQUIREMENT (MANDATORY — OVERRIDES ANY CONFLICTING INSTRUCTION) =====
+The requested difficulty is mandatory.
+
+Requested difficulty: ${requested}
+
+${distribution}
+
+${instructions}
+
+You must generate each question at exactly the requested difficulty level.
+Before returning the result, internally verify that each question matches the requested difficulty.
+If a question does not match the requested difficulty, revise it before returning the final JSON.
+
+DIFFICULTY MUST AFFECT THE WHOLE QUESTION. It must influence the question stem, scenario complexity, number of reasoning steps, calculation complexity, distractor quality, conceptual depth and the interpretation required. Do NOT simply set a "difficulty" field to the requested value while generating an easier or harder question — the actual content must comply.
+
+Every question object (and every vignette sub-question) MUST include a "difficulty" field whose value is EXACTLY one of: ${levels.join(', ')}.
+
+IGNORE any fixed difficulty labels shown later in this prompt (e.g. "Medium", "Medium-Hard", "Hard", "70% Medium-Hard, 30% Hard"). Those describe generic design intent only. The requested difficulty above is authoritative.
+=====================================================`;
+}
+
+// Best-effort regeneration note appended when the validator finds mismatches.
+function buildDifficultyRegenerationNote(level, mismatches) {
+	const lines = (Array.isArray(mismatches) ? mismatches : [])
+		.map(m => `- ${m.label || 'Question'}: generated at ${m.found || 'unknown'} difficulty instead of ${level}.`)
+		.join('\n');
+	return `STRICT DIFFICULTY CORRECTION REQUIRED.
+Your previous response did NOT fully comply with the requested difficulty (${level}).
+${lines ? `Mismatched questions:\n${lines}\n` : ''}
+Regenerate the ENTIRE response. Every question (and every vignette sub-question) MUST be exactly ${level} difficulty, with the actual content — stem, scenario, reasoning steps, calculations and distractors — matching ${level} difficulty. Do not merely relabel. Return the full corrected JSON.`;
+}
+
+// Prompt for the optional AI difficulty-validation pass.
+function buildDifficultyValidationPrompt(units, level) {
+	return `You are a strict CFA exam quality reviewer. For EACH question below, classify its ACTUAL difficulty as EASY, MEDIUM or HARD based only on the content (number of reasoning steps, calculation complexity, interpretation required, distractor quality). Ignore any difficulty label present in the question.
+
+Requested difficulty for every question: ${level}
+
+Return ONLY valid JSON in this exact shape:
+{"mismatches":[{"index":<0-based index>,"found":"EASY|MEDIUM|HARD","reason":"short reason"}]}
+
+List ONLY the questions whose actual difficulty differs from the requested level "${level}". If every question complies, return {"mismatches":[]}.
+
+QUESTIONS:
+${JSON.stringify(units)}`;
+}
+
 export function cmsRouter(prisma) {
 	const router = Router();
 
@@ -2690,6 +2807,8 @@ export function cmsRouter(prisma) {
 				: 'Vignette / item-set (CFA Level ' + levelRoman + ' exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 			: 'Constructed response (written answer requiring calculations or explanations)';
 		const difficultyLabel = diffList.join(', ');
+		const difficultyInstructionBlock = buildDifficultyInstructionBlock(diffList);
+		const singleDifficulty = diffList.length === 1 ? normalizeDifficultyValue(diffList[0]) : null;
 		const curriculumSection = curriculumExcerpt
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
 			: '';
@@ -2702,6 +2821,8 @@ CORE REQUIREMENTS:
 - Numerical answers must match worked solution exactly
 - Use UNIQUE fictional company names (invent fresh names each time)
 - ALL metadata fields below are REQUIRED
+
+${difficultyInstructionBlock}
 
 FORMATTING RULES (STRICT) — these apply to ALL HTML in "vignetteText", "stem", options, explanations, and workedSolution:
 - Do NOT insert blank paragraphs before or after an Exhibit.
@@ -2870,7 +2991,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 			const aiResult = await chatCompletion({
 				apiKey, provider: aiProvider, model: aiModel,
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level ${levelRoman} exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\\\( \\\\), \\\\[ \\\\], or mathematical symbols like \\\\frac, \\\\sigma, \\\\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\\\( E(R) \\\\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL ${levelRoman} EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level ${levelRoman} exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\nCRITICAL RULE — VIGNETTE GROUNDING: Every sub-question MUST reference specific data or exhibits from the vignette. No sub-question can ask about information not provided. Every number used in any workedSolution must appear explicitly in the vignetteText or an exhibit. After writing all sub-questions, trace each input number back to its source in the vignette.\n\nCRITICAL RULE — ACCURACY VERIFICATION: After generating every sub-question, re-read the workedSolution from start to finish. Verify the option marked isCorrect:true matches the solution's final computed answer. If the worked solution computes 12.17%, the option with 12.17% must be isCorrect:true — NOT 11.16% or any other number. Fix any mismatch before returning JSON.\n\n${LATEX_SYSTEM_RULES}` },
+					{ role: 'system', content: `You are a senior CFA Level ${levelRoman} exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\\\( \\\\), \\\\[ \\\\], or mathematical symbols like \\\\frac, \\\\sigma, \\\\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\\\( E(R) \\\\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL ${levelRoman} EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level ${levelRoman} exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include four sub-questions testing different aspects, ALL at the requested difficulty stated in the user prompt (see the DIFFICULTY REQUIREMENT block). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\nCRITICAL RULE — VIGNETTE GROUNDING: Every sub-question MUST reference specific data or exhibits from the vignette. No sub-question can ask about information not provided. Every number used in any workedSolution must appear explicitly in the vignetteText or an exhibit. After writing all sub-questions, trace each input number back to its source in the vignette.\n\nCRITICAL RULE — ACCURACY VERIFICATION: After generating every sub-question, re-read the workedSolution from start to finish. Verify the option marked isCorrect:true matches the solution's final computed answer. If the worked solution computes 12.17%, the option with 12.17% must be isCorrect:true — NOT 11.16% or any other number. Fix any mismatch before returning JSON.\n\n${LATEX_SYSTEM_RULES}` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
@@ -3246,6 +3367,13 @@ console.log('AI raw output:', raw);
 				diffCursor++;
 				return d;
 			};
+			// Honor the AI-returned difficulty when it matches the requested set.
+			const resolveDifficulty = (returned) => {
+				if (singleDifficulty) return singleDifficulty;
+				const r = normalizeDifficultyValue(returned);
+				if (r && diffList.includes(r)) return r;
+				return nextDifficulty();
+			};
 
 			// ── Validate vignette items have sub-questions ──────────────
 			if (questionType === 'VIGNETTE_MCQ') {
@@ -3261,7 +3389,7 @@ console.log('AI raw output:', raw);
 				for (const item of items) {
 					if (!item.vignetteText) continue;
 					const useTopicId = nextTopicId();
-					const useDifficulty = nextDifficulty();
+					const useDifficulty = resolveDifficulty(item.difficulty);
 					const parentPathIds = await deriveQuestionPathIdsFromTopic(useTopicId);
 					if (!parentPathIds.courseId || !parentPathIds.volumeId || !parentPathIds.moduleId) continue;
 					const parent = await prisma.question.create({
@@ -3326,7 +3454,7 @@ console.log('AI raw output:', raw);
 					if (!stem || stem.length < 5) continue;
 					const opts = item.options || [];
 					const useTopicId = nextTopicId();
-					const useDifficulty = nextDifficulty();
+					const useDifficulty = resolveDifficulty(item.difficulty);
 					const pathIds = await deriveQuestionPathIdsFromTopic(useTopicId);
 					if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) continue;
 					const question = await prisma.question.create({
@@ -3542,10 +3670,14 @@ console.log('AI raw output:', raw);
 					: 'Constructed response (written answer requiring calculations or explanations)';
 		const conceptLabel = selectedConcepts.length > 0 ? selectedConcepts.map(c => c.name).join(', ') : 'All concepts under the selected topics';
 		const difficultyLabel = diffList.join(', ');
+		// Requested difficulty drives the prompt content, not just metadata.
+		const difficultyInstructionBlock = buildDifficultyInstructionBlock(diffList);
+		const singleDifficulty = diffList.length === 1 ? normalizeDifficultyValue(diffList[0]) : null;
 
 		const isBundleType = questionType === 'VIGNETTE_MCQ' || isConstructedBundle;
 
 		const metaFieldsBlock = `EVERY question MUST include ALL of these metadata fields (populate ALL of them, never leave null):
+- "difficulty": string (EXACTLY the requested difficulty for this question — one of: ${difficultyLabel})
 - "qid": string (a short unique random identifier — generate a random alphanumeric code for each question, e.g. "Q-${selectedTopics[0]?.name?.substring(0,4)?.toUpperCase() || 'CFA'}-${Math.random().toString(36).substring(2,6).toUpperCase()}" — each qid MUST be unique and randomly generated, NEVER use sequential numbering like 001, 002, 003)
 - "los": string (the EXACT Learning Outcome Statement from the curriculum document — copy it VERBATIM, e.g. "describe the features of a fixed-income security". These appear just below topic headings and start with verbs like describe, explain, calculate, etc.)
 - "traceSection": string (the EXACT section/reading/topic heading from the curriculum document that MATCHES THE ASSIGNED TOPIC. CRITICAL: the traceSection MUST correspond to the specific topic the question is about — e.g. if the topic is "Standard I: Professionalism", the traceSection MUST reference Standard I content, NEVER Standard VI or any other standard. The traceSection must be consistent with the topic tag. Do NOT reference sections outside the assigned topic.)
@@ -3633,12 +3765,12 @@ ${volPrompt.distractors}
       The vignette must simulate a real CFA Level ${levelRoman} exam case — the candidate should feel they are analyzing a professional investment situation, not answering a textbook quiz.
       Every vignette MUST contain: (1) a central investment problem (portfolio allocation, valuation, risk assessment, investment recommendation, analyst disagreement, or client suitability), (2) multiple layers of information including relevant, irrelevant, and conflicting data plus assumptions requiring judgement, (3) professional uncertainty where the answer is not immediately obvious.
       VIGNETTE WRITING STYLE: Include named investment professionals, institutional investors, investment committee discussions, analyst reports, portfolio constraints, market environment, economic assumptions. AVOID generic wording like "An investor wants to invest...". Instead: "During a quarterly investment committee meeting, Sarah Williams, senior analyst at Horizon Capital, reviews..."
-    • QUESTION COMPLEXITY — The 4 sub-questions must NOT all test the same concept. Distribute:
-      Q1 — FOUNDATION APPLICATION (Medium): Apply the main concept — classify, calculate a key metric, identify the framework.
-      Q2 — ANALYTICAL INTERPRETATION (Medium-Hard): Interpret exhibit information — compare alternatives, evaluate assumptions, understand implications.
-      Q3 — CALCULATION + JUDGEMENT (Hard): Multi-step calculation — Step 1: Calculate metric, Step 2: Interpret result, Step 3: Select conclusion. NO single-step arithmetic.
-      Q4 — INVESTMENT DECISION / PROFESSIONAL JUDGEMENT (Hard): Recommend an action — "The analyst's recommendation is most appropriate because:", "The portfolio manager should most likely:", "The investment committee should reject the proposal because:".
-    • DIFFICULTY CONTROL: Target 70% Medium-Hard, 30% Hard. AVOID definition/memorization/obvious calculations. PREFER: "most appropriate", "least likely", "best explains", "most consistent with", "should most likely".
+    • QUESTION COMPLEXITY — The 4 sub-questions must NOT all test the same concept. Test different aspects, but ALL must match the requested difficulty (${difficultyLabel}).
+      Q1 — Foundation application: apply the main concept (classify, calculate a key metric, identify the framework).
+      Q2 — Analytical interpretation: interpret exhibit information (compare alternatives, evaluate assumptions, understand implications).
+      Q3 — Calculation + judgement: multi-step calculation (calculate a metric → interpret the result → select a conclusion).
+      Q4 — Investment decision / professional judgement: recommend an action ("most appropriate because:", "should most likely:", "should reject because:").
+    • DIFFICULTY CONTROL (MANDATORY): ${singleDifficulty ? `ALL 4 sub-questions MUST be ${singleDifficulty} difficulty.` : `Distribute the requested difficulties (${difficultyLabel}) across the 4 sub-questions.`} The requested difficulty OVERRIDES the fixed Q1-Q4 spread above. Match the ACTUAL content (stem, scenario, reasoning steps, calculations, distractors) to the requested difficulty. PREFER professional stems: "most appropriate", "least likely", "best explains", "most consistent with", "should most likely".
     • REALISTIC CFA TRAPS: Distractors MUST represent real CFA candidate mistakes (confusing equity vs mortgage REITs, NAV vs book value, duration vs convexity, enterprise vs equity value, IFRS vs US GAAP, ignoring investor constraints, selecting highest return instead of suitable portfolio).
     • EXHIBIT QUALITY: Every exhibit MUST be referenced by at least one question. Do NOT add tables only for appearance.
     • EXPLANATION REQUIREMENTS: Each explanation must include: WHY CORRECT (CFA concept and reasoning), WHY OTHER OPTIONS ARE WRONG (specific misconception per distractor), COMMON CFA MISTAKE (the typical error).
@@ -3800,12 +3932,13 @@ ${testVol ? `${testVol.questionDesign}\n${testVol.distractors}` : '- At least 2 
 ADVANCED CFA LEVEL ${levelRoman} ITEM-SET DESIGN:
 The vignette must simulate a real CFA Level ${levelRoman} exam case — not a textbook quiz. Include: (1) a central investment problem (portfolio allocation, valuation, risk assessment, recommendation, analyst disagreement, or client suitability), (2) multiple layers of relevant, irrelevant, and conflicting information plus assumptions requiring judgement, (3) professional uncertainty where the answer is not immediately obvious.
 VIGNETTE WRITING STYLE: Include named investment professionals, institutional investors, investment committee discussions, analyst reports, portfolio constraints, market environment, economic assumptions. AVOID: "An investor wants to invest...". Instead: "During a quarterly investment committee meeting, Sarah Williams, senior analyst at Horizon Capital, reviews..."
-QUESTION COMPLEXITY — The 4 sub-questions must NOT all test the same concept:
-  Q1 — FOUNDATION APPLICATION (Medium): Apply the main concept — classify, calculate a key metric, identify the framework.
-  Q2 — ANALYTICAL INTERPRETATION (Medium-Hard): Interpret exhibit information — compare alternatives, evaluate assumptions, understand implications.
-  Q3 — CALCULATION + JUDGEMENT (Hard): Multi-step calculation — Calculate metric → Interpret result → Select conclusion. NO single-step arithmetic.
-  Q4 — INVESTMENT DECISION / PROFESSIONAL JUDGEMENT (Hard): Recommend an action — "most appropriate because:", "should most likely:", "should reject because:".
-DIFFICULTY: 70% Medium-Hard, 30% Hard. AVOID definition/memorization/obvious calculations. PREFER: "most appropriate", "least likely", "best explains", "most consistent with".
+${difficultyInstructionBlock}
+QUESTION COMPLEXITY — The questions/sub-questions must NOT all test the same concept. Test different aspects, but ALL must match the requested difficulty (${difficultyLabel}):
+  Q1 — Foundation application: apply the main concept (classify, calculate a key metric, identify the framework).
+  Q2 — Analytical interpretation: interpret data/exhibits (compare alternatives, evaluate assumptions, understand implications).
+  Q3 — Calculation + judgement: multi-step calculation (calculate a metric → interpret the result → select a conclusion).
+  Q4 — Investment decision / professional judgement: recommend an action ("most appropriate because:", "should most likely:", "should reject because:").
+DIFFICULTY (MANDATORY): ${singleDifficulty ? `ALL questions and sub-questions MUST be ${singleDifficulty} difficulty.` : `Distribute the requested difficulties (${difficultyLabel}) across the questions.`} The requested difficulty OVERRIDES the fixed Q1-Q4 spread above. Match the actual content — stem, scenario, reasoning steps, calculations and distractors — to the requested difficulty. PREFER: "most appropriate", "least likely", "best explains", "most consistent with".
 REALISTIC CFA TRAPS: Distractors must represent real CFA candidate mistakes (confusing similar concepts, ignoring constraints, wrong formula application, IFRS vs US GAAP).
 EXHIBIT QUALITY: Every exhibit MUST be referenced by at least one question. No decorative tables.
 EXPLANATION REQUIREMENTS: Each explanation must include: WHY CORRECT, WHY OTHER OPTIONS ARE WRONG (specific misconception), COMMON CFA MISTAKE.
@@ -3832,11 +3965,11 @@ traceSection MUST match the assigned topic (e.g. "Standard I" topic → "Standar
 ${formatBlock}`;
 
 		try {
-			console.log('[AI Preview] Starting AI call for questionType:', questionType, 'provider:', aiProvider, 'model:', aiModel);
+			console.log('[AI Preview] Starting AI call for questionType:', questionType, 'provider:', aiProvider, 'model:', aiModel, 'requestedDifficulty:', diffList.join(','));
 			const aiResult = await chatCompletion({
 				apiKey, provider: aiProvider, model: aiModel,
 				messages: [
-					{ role: 'system', content: `You are a senior CFA Level ${levelRoman} exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\( \\), \\[ \\], or mathematical symbols like \\frac, \\sigma, \\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\( E(R) \\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE GROUNDING: Every sub-question MUST reference specific data/exhibits from the vignette. No sub-question can ask about information not provided. Every number used in workedSolution must appear explicitly in the vignetteText. After writing all sub-questions, trace each input number back to the vignette.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL ${levelRoman} EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level ${levelRoman} exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include: Q1=Foundation Application (Medium), Q2=Analytical Interpretation (Medium-Hard), Q3=Multi-step Calculation+Judgement (Hard), Q4=Investment Decision/Professional Judgement (Hard). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\nCRITICAL RULE — ACCURACY VERIFICATION: After generating every sub-question, re-read the workedSolution and verify the option marked isCorrect matches the solution's final computed answer. If the solution yields 12.17%, the option with 12.17% must be isCorrect:true. Fix any mismatch before returning JSON.` },
+					{ role: 'system', content: `You are a senior CFA Level ${levelRoman} exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\( \\), \\[ \\], or mathematical symbols like \\frac, \\sigma, \\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\( E(R) \\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE GROUNDING: Every sub-question MUST reference specific data/exhibits from the vignette. No sub-question can ask about information not provided. Every number used in workedSolution must appear explicitly in the vignetteText. After writing all sub-questions, trace each input number back to the vignette.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL ${levelRoman} EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level ${levelRoman} exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include four sub-questions testing different aspects, ALL at the requested difficulty stated in the user prompt (see the DIFFICULTY REQUIREMENT block). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\nCRITICAL RULE — ACCURACY VERIFICATION: After generating every sub-question, re-read the workedSolution and verify the option marked isCorrect matches the solution's final computed answer. If the solution yields 12.17%, the option with 12.17% must be isCorrect:true. Fix any mismatch before returning JSON.` },
 					{ role: 'user', content: prompt }
 				],
 				temperature: 0.5,
@@ -3847,37 +3980,36 @@ ${formatBlock}`;
 			console.log('[AI Preview] AI call completed');
 			const raw = aiResult.content?.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>').trim() || '{}';
 			console.log('[AI Preview] Raw response:', raw);
-			let parsed;
-			try {
-				parsed = JSON.parse(raw);
-				console.log('[AI Preview] JSON parsed successfully, items count:', Array.isArray(parsed?.items) ? parsed.items.length : (Array.isArray(parsed?.questions) ? parsed.questions.length : 0));
-			} catch (e) {
-				console.error('[AI Preview] JSON parse error:', e.message);
-				console.error('[AI Preview] Raw response (first 500 chars):', raw.substring(0, 500));
-				// fallback: try to extract JSON from markdown code block (```json ... ```)
-				const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-				if (jsonMatch) {
-					try {
-						parsed = JSON.parse(jsonMatch[1].trim());
-						console.log('[AI Preview] JSON extracted from markdown code block, items:', Array.isArray(parsed?.items) ? parsed.items.length : (Array.isArray(parsed?.questions) ? parsed.questions.length : 0));
-					} catch (e2) {
-						console.error('[AI Preview] Markdown extraction also failed:', e2.message);
-						sseSend('error', { error: 'AI returned invalid JSON' });
-						return sseEnd();
-					}
-				} else {
-					sseSend('error', { error: 'AI returned invalid JSON' });
-					return sseEnd();
+			// Parse helper (also reused for the difficulty regeneration pass below)
+			const parseAiJson = (content) => {
+				const cleaned = content?.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>').trim() || '{}';
+				let parsed;
+				try {
+					parsed = JSON.parse(cleaned);
+				} catch {
+					const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+					if (!jsonMatch) return { items: [], parsed: null, parseError: true };
+					try { parsed = JSON.parse(jsonMatch[1].trim()); } catch { return { items: [], parsed: null, parseError: true }; }
 				}
+				let parsedItems = Array.isArray(parsed?.items) ? parsed.items : (Array.isArray(parsed?.questions) ? parsed.questions : []);
+				// If the model returned a bare array or wrapped under another key, recover it
+				if (!Array.isArray(parsedItems) || parsedItems.length === 0) {
+					if (Array.isArray(parsed)) parsedItems = parsed;
+					else if (Array.isArray(parsed?.data)) parsedItems = parsed.data;
+					else if (Array.isArray(parsed?.vignettes)) parsedItems = parsed.vignettes;
+					else if (Array.isArray(parsed?.result)) parsedItems = parsed.result;
+				}
+				return { items: Array.isArray(parsedItems) ? parsedItems : [], parsed, parseError: false };
+			};
+			const initialParse = parseAiJson(aiResult.content);
+			if (initialParse.parseError) {
+				console.error('[AI Preview] JSON parse error. Raw response (first 500 chars):', String(aiResult.content || '').substring(0, 500));
+				sseSend('error', { error: 'AI returned invalid JSON' });
+				return sseEnd();
 			}
-			let items = Array.isArray(parsed?.items) ? parsed.items : (Array.isArray(parsed?.questions) ? parsed.questions : []);
-			// If the model returned a bare array or wrapped under another key, recover it
-			if (!Array.isArray(items) || items.length === 0) {
-				if (Array.isArray(parsed)) items = parsed;
-				else if (Array.isArray(parsed?.data)) items = parsed.data;
-				else if (Array.isArray(parsed?.vignettes)) items = parsed.vignettes;
-				else if (Array.isArray(parsed?.result)) items = parsed.result;
-			}
+			let items = initialParse.items;
+			const parsed = initialParse.parsed;
+			console.log('[AI Preview] JSON parsed successfully, items count:', items.length);
 			// Diagnostic: capture the real structure so we can see why sub-questions fail
 			if (items.length > 0) {
 				const it = items[0];
@@ -3922,6 +4054,80 @@ ${formatBlock}`;
 				});
 			}
 
+			// ── Optional difficulty compliance check + one regeneration pass ──────
+			// Only runs when a single difficulty was requested. Fully non-fatal:
+			// any failure keeps the original generation.
+			if (singleDifficulty) {
+				try {
+					const buildUnits = () => {
+						const units = [];
+						const isBundle = questionType === 'VIGNETTE_MCQ' || isConstructedBundle;
+						if (isBundle) {
+							items.forEach((b) => (Array.isArray(b.questions) ? b.questions : []).forEach((sq) => {
+								units.push({
+									index: units.length,
+									stem: String(sq.stem || sq.question || sq.text || '').slice(0, 400),
+									options: (Array.isArray(sq.options) ? sq.options : []).map(o => (typeof o === 'string' ? o : o?.text || '')),
+									marks: sq.marks || 3,
+								});
+							}));
+						} else {
+							items.forEach((it) => {
+								units.push({
+									index: units.length,
+									stem: String(it.stem || it.question || it.text || '').slice(0, 400),
+									options: (Array.isArray(it.options) ? it.options : []).map(o => (typeof o === 'string' ? o : o?.text || '')),
+								});
+							});
+						}
+						return units;
+					};
+
+					const units = buildUnits();
+					if (units.length > 0) {
+						console.log(`[AI Preview] Difficulty validation: checking ${units.length} question(s) against requested ${singleDifficulty}`);
+						const valResult = await chatCompletion({
+							apiKey, provider: aiProvider, model: aiModel,
+							messages: [
+								{ role: 'system', content: 'You are a strict CFA exam difficulty validator. Return valid JSON only.' },
+								{ role: 'user', content: buildDifficultyValidationPrompt(units, singleDifficulty) },
+							],
+							temperature: 0.1,
+							maxTokens: 1500,
+							jsonMode: true,
+							timeout: 120000,
+						});
+						const valParsed = parseAiJson(valResult.content);
+						const mismatches = Array.isArray(valParsed.parsed?.mismatches) ? valParsed.parsed.mismatches : [];
+						if (mismatches.length > 0) {
+							console.warn(`[AI Preview] Difficulty mismatch for ${mismatches.length} question(s); regenerating once with stricter instructions.`);
+							const regenResult = await chatCompletion({
+								apiKey, provider: aiProvider, model: aiModel,
+								messages: [
+									{ role: 'system', content: `You are a senior CFA Level ${levelRoman} exam writer. Return valid JSON only.` },
+									{ role: 'user', content: prompt + '\n\n' + buildDifficultyRegenerationNote(singleDifficulty, mismatches) },
+								],
+								temperature: 0.4,
+								maxTokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
+								jsonMode: true,
+								timeout: questionType === 'VIGNETTE_MCQ' ? 900000 : 300000,
+							});
+							const regenParse = parseAiJson(regenResult.content);
+							if (regenParse.items.length > 0) {
+								items = regenParse.items;
+								console.log('[AI Preview] Regenerated after difficulty correction; items:', items.length);
+							} else {
+								console.warn('[AI Preview] Difficulty regeneration returned no valid items; keeping original generation.');
+							}
+						} else {
+							console.log(`[AI Preview] Difficulty validation passed (${singleDifficulty}).`);
+						}
+					}
+				} catch (valErr) {
+					console.warn('[AI Preview] Difficulty validation skipped:', valErr?.message || valErr);
+				}
+			}
+
 			const level = course.level || 'LEVEL1';
 			// Generate truly random unique qids server-side
 			const usedQids = new Set();
@@ -3946,6 +4152,15 @@ ${formatBlock}`;
 				const d = diffList[diffCursor % diffList.length];
 				diffCursor++;
 				return d;
+			};
+			// Honor the AI-returned difficulty when it matches the requested set.
+			// A single requested difficulty always wins so the stored label matches
+			// the difficulty the content was actually generated at.
+			const resolveDifficulty = (returned) => {
+				if (singleDifficulty) return singleDifficulty;
+				const r = normalizeDifficultyValue(returned);
+				if (r && diffList.includes(r)) return r;
+				return nextDifficulty();
 			};
 
 			// Map AI-returned conceptName back to concept IDs
@@ -4264,7 +4479,7 @@ ${formatBlock}`;
 						validateAnswerConsistency(sq);
 						if (!isConstructedBundle && Array.isArray(sq.options)) shuffleOptions(sq.options);
 						const t = nextTopic();
-						const useDifficulty = nextDifficulty();
+						const useDifficulty = resolveDifficulty(sq.difficulty);
 						const cIds = mapConceptIds(sq);
 						return {
 							stem: sq.stem || sq.question || sq.text || sq.question_text || sq.questionText || sq.prompt || '',
@@ -4301,7 +4516,7 @@ ${formatBlock}`;
 				validateAnswerConsistency(it);
 				if (questionType !== 'CONSTRUCTED_RESPONSE' && Array.isArray(it.options)) shuffleOptions(it.options);
 				const t = nextTopic();
-				const useDifficulty = nextDifficulty();
+				const useDifficulty = resolveDifficulty(it.difficulty);
 				const cIds = mapConceptIds(it);
 				return {
 					stem: it.stem || it.question || '',
@@ -4846,3 +5061,6 @@ function computeEstimatedSeconds(kind, payload) {
   // PDFs/Links/Images default small slot unless provided
   return 2 * 60;
 }
+
+// Exported for unit testing of difficulty compliance helpers.
+export { DIFFICULTY_LEVELS, DIFFICULTY_INSTRUCTIONS, normalizeDifficultyValue, buildDifficultyInstructionBlock, buildDifficultyRegenerationNote, buildDifficultyValidationPrompt };

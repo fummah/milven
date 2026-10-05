@@ -721,7 +721,9 @@ export function AdminQuestions() {
 				questionType: values.questionType,
 				constructedMode: values.questionType === 'CONSTRUCTED_RESPONSE' ? (values.constructedMode || 'bundle') : undefined,
 				difficulties: diffs.length ? diffs : undefined,
-				difficulty: !diffs.length && values.difficulty ? values.difficulty : undefined,
+				// Send the exact selected difficulty; when a single difficulty is chosen
+				// it is sent as `difficulty` so the generator targets it precisely.
+				difficulty: diffs.length === 1 ? diffs[0] : (!diffs.length && values.difficulty ? values.difficulty : undefined),
 				count: values.count ?? 3,
 				model: values.model || undefined,
 				provider: values.provider || undefined
