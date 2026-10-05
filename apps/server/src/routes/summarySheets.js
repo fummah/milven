@@ -2,11 +2,289 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
-import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
-import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
+import { LATEX_SYSTEM_RULES, validateFormulaItems } from '../lib/openai.js';
+import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion, AI_PROVIDERS } from '../lib/aiProvider.js';
+import { stripJsonFences, worstStatus, extractCurriculumExcerpt, STATUS_RANK } from '../lib/aiContent.js';
 
-export function summarySheetsRouter(prisma) {
+const MAX_TARGET_MODULES = 20;
+
+const MILVEN_SUMMARY_SYSTEM = `You are the Milven Diagrammatic Summary Generator for Milven Finance School.
+
+Your role is to transform authoritative CFA curriculum extracts, Learning Outcome Statements, completed Milven Notes and approved Formula Book content into a concise, exam-focused Learning Module revision dashboard.
+
+You are NOT writing textbook notes.
+
+You are creating a visual revision dashboard that helps a CFA candidate understand the entire Learning Module before attempting exam questions.
+
+Never invent curriculum content.
+
+If information required for a section is not supported by supplied source material, place it under Instructor Review Required instead of guessing.
+
+Return valid JSON only.`;
+
+// Programmatic quality-control validator (always runs).
+function programmaticValidation(item, ctx) {
+	const findings = [];
+	const checks = {};
+	const norm = (s) => String(s || '').toLowerCase().trim();
+
+	const topicNames = ctx.topics.map(t => t.name).filter(Boolean);
+	const mapTexts = [
+		...(Array.isArray(item.diagrams) ? item.diagrams.map(d => `${d.topic || ''} ${(d.subtopics || []).join(' ')} ${d.connectionTo || ''}`) : []),
+		...(Array.isArray(item.memoryHooks) ? item.memoryHooks.map(m => `${m.topic || ''} ${(m.concepts || []).join(' ')} ${m.linkToObjective || ''}`) : []),
+	].map(norm);
+
+	const coveredTopics = topicNames.filter(tn => {
+		const n = norm(tn);
+		return mapTexts.some(m => m.includes(n) || (n.length > 4 && n.includes(m) && m.length > 3));
+	});
+	checks.topicCoverage = topicNames.length ? Math.round((coveredTopics.length / topicNames.length) * 100) : 100;
+	if (topicNames.length && coveredTopics.length < Math.max(1, Math.ceil(topicNames.length * 0.6))) {
+		findings.push(`Topic coverage is low: ${coveredTopics.length}/${topicNames.length} module topics appear in the concept maps.`);
+	}
+
+	const losRefs = ctx.los.map(l => norm(l.ref)).filter(Boolean);
+	const itemLos = Array.isArray(item.coreDefinitions) ? item.coreDefinitions.map(c => norm(c.ref)).filter(Boolean) : [];
+	const coveredLos = losRefs.filter(r => itemLos.some(x => x === r || x.includes(r) || r.includes(x)));
+	checks.losCoverage = losRefs.length ? Math.round((coveredLos.length / losRefs.length) * 100) : (itemLos.length ? 100 : 0);
+	if (ctx.los.length && coveredLos.length < Math.ceil(ctx.los.length * 0.6)) {
+		findings.push(`LOS coverage is incomplete: ${coveredLos.length}/${ctx.los.length} supplied Learning Outcome Statements appear in the LOS Snapshot.`);
+	}
+	if (!ctx.los.length) {
+		findings.push('No Learning Outcome Statements were found for this module. Generation requires instructor review.');
+	}
+
+	checks.formulaCount = Array.isArray(item.formulas) ? item.formulas.length : 0;
+	if (ctx.formulas.length && checks.formulaCount === 0) {
+		findings.push('No formulas were included even though formulas exist in the Formula Book for this module.');
+	}
+
+	checks.decisionRuleCount = Array.isArray(item.distinctions) ? item.distinctions.length : 0;
+	if (checks.decisionRuleCount < 3) findings.push('Fewer than 3 exam decision rules were generated.');
+
+	checks.trapCount = Array.isArray(item.examTraps) ? item.examTraps.length : 0;
+	if (checks.trapCount < 3) findings.push('Fewer than 3 high-frequency exam traps were generated.');
+
+	checks.checklistCount = Array.isArray(item.revisionCheck) ? item.revisionCheck.length : 0;
+	if (checks.checklistCount < 5) findings.push('The final revision checklist has fewer than 5 action items.');
+
+	// Compression / verbatim detection
+	const longStrings = [];
+	const collectStrings = [];
+	const walk = (v) => {
+		if (typeof v === 'string') {
+			if (v.length > 600) longStrings.push(v);
+			if (v.length > 120) collectStrings.push(v);
+		} else if (Array.isArray(v)) v.forEach(walk);
+		else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+	};
+	walk(item);
+	checks.overlongBlocks = longStrings.length;
+	if (longStrings.length) findings.push(`${longStrings.length} block(s) exceed 600 characters — likely too text-heavy for a dashboard.`);
+
+	if (ctx.curriculumExcerpt) {
+		const excerptLower = ctx.curriculumExcerpt.toLowerCase();
+		let copied = 0;
+		for (const s of collectStrings) {
+			if (excerptLower.includes(s.toLowerCase().slice(0, 120))) copied++;
+		}
+		checks.copiedBlocks = copied;
+		if (copied > 0) findings.push(`${copied} block(s) appear to be copied verbatim from the curriculum — paraphrase required.`);
+	}
+
+	let status = findings.length ? 'REVISE' : 'PASS';
+	if (!ctx.topics.length && !ctx.notes.length && !ctx.curriculumExcerpt) status = 'INSTRUCTOR REVIEW REQUIRED';
+	if (!ctx.los.length) status = 'INSTRUCTOR REVIEW REQUIRED';
+	return { status, findings, checks };
+}
+
+// Second AI validation pass (best effort — never fatal). Uses the same provider/model.
+async function aiValidation(item, ctx, { apiKey, provider, model, chatCompletion: chat = chatCompletion }) {
+	const compact = {
+		title: item.title,
+		snapshot: item.snapshot,
+		coreDefinitions: item.coreDefinitions,
+		diagrams: item.diagrams,
+		memoryHooks: item.memoryHooks,
+		formulas: item.formulas,
+		distinctions: item.distinctions,
+		examTraps: item.examTraps,
+		revisionCheck: item.revisionCheck,
+		quickDrills: item.quickDrills,
+		useCase: item.useCase,
+	};
+	const sourceFacts = {
+		module: ctx.module?.name,
+		topics: ctx.topics.map(t => t.name),
+		los: ctx.los.map(l => `${l.ref || ''}: ${l.statement}`),
+		formulaNames: ctx.formulas.map(f => f.name),
+		hasCurriculum: !!ctx.curriculumExcerpt,
+		notesCount: ctx.notes.length,
+	};
+	const prompt = `You are the Milven Summary Quality Validator. Validate the generated Learning Module revision dashboard against the supplied source facts.
+
+CHECK THESE 10 CRITERIA:
+1. Is it at Learning Module level (not topic level)?
+2. Topic coverage — are all module topics represented?
+3. LOS coverage — are all supplied LOS represented?
+4. Objective alignment — do topics link to the module objective?
+5. Formula coverage — are the key formulas included?
+6. Decision rules — are there rules telling candidates which measure/concept to choose?
+7. Exam traps — are common candidate errors present?
+8. Compression — is it dashboard-dense (not textbook paragraphs)?
+9. Originality — no verbatim curriculum copying?
+10. Instructor-review gaps — is unsupported/ambiguous content flagged instead of invented?
+
+Return ONLY valid JSON:
+{"status":"PASS|REVISE|INSTRUCTOR REVIEW REQUIRED","findings":[{"area":"topic coverage","severity":"low|medium|high","note":"..."}]}
+
+SOURCE FACTS:
+${JSON.stringify(sourceFacts)}
+
+GENERATED SUMMARY:
+${JSON.stringify(compact)}`;
+
+	const result = await chat({
+		apiKey, provider, model,
+		messages: [
+			{ role: 'system', content: 'You are a strict QA validator for Milven Finance School revision summaries. Return valid JSON only.' },
+			{ role: 'user', content: prompt },
+		],
+		temperature: 0.2,
+		maxTokens: 1500,
+		jsonMode: true,
+	});
+	const parsed = JSON.parse(stripJsonFences(result.content || '{}'));
+	let status = String(parsed.status || 'PASS').toUpperCase();
+	if (!(status in STATUS_RANK)) status = 'REVISE';
+	const findings = Array.isArray(parsed.findings)
+		? parsed.findings.map(f => typeof f === 'string' ? f : `${f.area ? f.area + ': ' : ''}${f.note || ''}`.trim()).filter(Boolean)
+		: [];
+	return { status, findings };
+}
+
+function mergeInstructorReview(quickDrills, findings, status) {
+	const base = Array.isArray(quickDrills) ? quickDrills.filter(Boolean) : [];
+	const clean = base.filter(d => !(d.issue === 'None identified' && status !== 'PASS'));
+	if (status === 'PASS' && findings.length === 0) {
+		return clean.length ? clean : [{ issue: 'None identified', recommendation: 'Ready for publication' }];
+	}
+	const merged = [...clean];
+	for (const f of findings) {
+		if (!merged.some(m => (m.issue || '') === f)) {
+			merged.push({ issue: f, recommendation: 'Instructor to verify against curriculum before publication.' });
+		}
+	}
+	return merged.length ? merged : [{ issue: 'Quality validation did not pass', recommendation: 'Instructor review required before publication.' }];
+}
+
+function buildSummaryPrompt(ctx, year) {
+	const levelLabel = String(ctx.level || '').replace('LEVEL', 'Level ');
+	const topicNames = ctx.topics.map(t => t.name);
+	const losLines = ctx.los.length
+		? ctx.los.map(l => `- ${l.ref ? l.ref + ': ' : ''}${l.statement}${l.commandWord ? ` [${l.commandWord}]` : ''}`).join('\n')
+		: '(none supplied — flag under Instructor Review Required)';
+
+	const notesContext = ctx.notes.length
+		? ctx.notes.map(n => {
+			const parts = [`- ${n.title}`];
+			if (n.overview) parts.push(`  Overview: ${n.overview}`);
+			if (n.moduleSummary) parts.push(`  Module summary: ${n.moduleSummary}`);
+			if (Array.isArray(n.losStatements) && n.losStatements.length) {
+				parts.push(`  LOS: ${n.losStatements.map(l => l.statement || l.learningOutcomeStatement || '').filter(Boolean).join(' | ')}`);
+			}
+			if (Array.isArray(n.concepts) && n.concepts.length) {
+				parts.push(`  Concepts: ${n.concepts.map(c => c.title || c.name || '').filter(Boolean).join(' | ')}`);
+			}
+			return parts.join('\n');
+		}).join('\n')
+		: '(no published Milven Notes for this module)';
+
+	const formulaContext = ctx.formulas.length
+		? ctx.formulas.map(f => `- ${f.name}: ${f.formula}${f.variables ? ` | vars: ${f.variables}` : ''}${f.whenToUse ? ` | use: ${f.whenToUse}` : ''}${f.interpretation ? ` | meaning: ${f.interpretation}` : ''}`).join('\n')
+		: '(no Formula Book entries for this module)';
+
+	const curriculumSection = ctx.curriculumExcerpt
+		? `\n\nCURRICULUM REFERENCE MATERIAL (control source — do NOT reproduce verbatim):\n---\n${ctx.curriculumExcerpt}\n---\n`
+		: '\n\nCURRICULUM REFERENCE MATERIAL: (none available for this volume)\n';
+
+	return `Generate ONE Milven Diagrammatic Summary for the Learning Module below.
+
+HIERARCHY:
+Programme: CFA
+Exam Level: ${levelLabel}
+Course / Topic Area: ${ctx.course?.name || ''}
+Volume: ${ctx.module?.volume?.name || ''}
+Learning Module: ${ctx.module?.name || ''}
+Year: ${year}
+
+LEARNING MODULE OBJECTIVE (from published Milven Notes, if any):
+${ctx.moduleObjective || '(not available — infer only from supplied material, otherwise flag under Instructor Review Required)'}
+
+LEARNING OUTCOME STATEMENTS (LOS):
+${losLines}
+
+TOPIC HEADINGS IN THIS MODULE:
+${topicNames.length ? topicNames.map(t => `- ${t}`).join('\n') : '(none found — flag under Instructor Review Required)'}
+
+COMPLETED TOPIC-LEVEL MILVEN NOTES:
+${notesContext}
+
+FORMULA BOOK ENTRIES:
+${formulaContext}
+${curriculumSection}
+CORE GENERATION RULES:
+1. Generate at Learning Module level only.
+2. Prefer one-page density; allow a second page only when required.
+3. Cover every available topic.
+4. Address every supplied LOS.
+5. Link topics to the Learning Module objective.
+6. Do not reproduce source text verbatim.
+7. Use short exam-focused statements.
+8. Avoid long paragraphs.
+9. Include key formulas and their use cases.
+10. Include interpretation for formulas.
+11. Include decision rules that tell the candidate when to choose one concept/measure over another.
+12. Include high-frequency candidate errors/traps.
+13. End with an action-based revision checklist.
+14. Flag unsupported or ambiguous content under Instructor Review Required.
+15. Perform a coverage check before returning the output.
+
+REQUIRED JSON OUTPUT (populate ALL sections):
+{
+  "sheets": [
+    {
+      "title": "LM#: [Learning Module Name]",
+      "snapshot": "Concise Learning Module objective",
+      "coreDefinitions": [{"ref": "LOS 1.a", "statement": "Candidate-friendly LOS wording", "commandWord": "interpret"}],
+      "diagrams": [{"topic": "Topic", "subtopics": ["..."], "connectionTo": "..."}],
+      "memoryHooks": [{"topic": "Topic", "concepts": ["..."], "linkToObjective": "..."}],
+      "formulas": [{"formula": "LaTeX", "useCase": "...", "interpretation": "..."}],
+      "distinctions": [{"scenario": "...", "rule": "...", "apply": "..."}],
+      "examTraps": [{"trap": "..."}],
+      "revisionCheck": [{"item": "..."}],
+      "quickDrills": [{"issue": "...", "recommendation": "..."}],
+      "useCase": "PASS|REVISE|INSTRUCTOR REVIEW REQUIRED"
+    }
+  ]
+}
+
+Formula LaTeX: use \\frac{a}{b}, P_{0}, (1+r)^{n}, \\sigma, \\beta; inline \\( ... \\) or block \\[ ... \\]. Keep braces balanced.
+The "useCase" value is your own coverage quality check for this module.
+Return ONLY valid JSON. Generate exactly 1 summary sheet.`;
+}
+
+export function summarySheetsRouter(prisma, deps = {}) {
 	const router = Router();
+
+	// Injectable AI dependencies (defaults preserve production behaviour; tests can override).
+	const ai = {
+		getAIApiKey: deps.getAIApiKey || getAIApiKey,
+		getActiveProvider: deps.getActiveProvider || getActiveProvider,
+		getActiveModel: deps.getActiveModel || getActiveModel,
+		getDefaultModel: deps.getDefaultModel || getDefaultModel,
+		chatCompletion: deps.chatCompletion || chatCompletion,
+	};
 
 	const defaultInclude = {
 		course: { select: { id: true, name: true, level: true } },
@@ -28,6 +306,7 @@ export function summarySheetsRouter(prisma) {
 		coreDefinitions: z.any().optional().nullable(),
 		formulas: z.any().optional().nullable(),
 		distinctions: z.any().optional().nullable(),
+		diagrams: z.any().optional().nullable(),
 		examTraps: z.any().optional().nullable(),
 		memoryHooks: z.any().optional().nullable(),
 		quickDrills: z.any().optional().nullable(),
@@ -155,252 +434,232 @@ export function summarySheetsRouter(prisma) {
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 			year: z.coerce.number().int().optional().default(2026),
 			count: z.coerce.number().int().min(1).max(20).optional().nullable(),
+			provider: z.string().optional().nullable(),
+			model: z.string().optional().nullable(),
+			deepValidation: z.boolean().optional().nullable(),
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: 'Validation failed', details: parse.error.flatten() });
 
 		const { courseId, volumeId, moduleId, level, year } = parse.data;
-		let count = parse.data.count || null;
+		const requestedProvider = parse.data.provider || null;
+		const requestedModel = parse.data.model || null;
+		const count = parse.data.count || null;
 
-		const aiProvider = await getActiveProvider(prisma);
-		const aiModel = await getActiveModel(prisma) || getDefaultModel(aiProvider);
-		const apiKey = await getAIApiKey(prisma, aiProvider);
-		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider}.` });
+		// Provider: requested (if valid/configured) → otherwise active provider.
+		const activeProvider = await ai.getActiveProvider(prisma);
+		const aiProvider = (requestedProvider && AI_PROVIDERS[requestedProvider]) ? requestedProvider : activeProvider;
+		// Model: requested → active model → provider default.
+		const aiModel = requestedModel || await ai.getActiveModel(prisma) || ai.getDefaultModel(aiProvider);
+		const apiKey = await ai.getAIApiKey(prisma, aiProvider);
+		if (!apiKey) {
+			const label = AI_PROVIDERS[aiProvider]?.label || aiProvider;
+			return res.status(400).json({ error: `No API key configured for ${label}. Set it in .env or in Admin settings.` });
+		}
 
-		try {
-			const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true } });
-			if (!course) return res.status(400).json({ error: 'Course not found' });
+		// Build the source-of-truth context for a single Learning Module.
+		async function buildModuleContext(mod, course) {
+			const [topics, notes, formulas] = await Promise.all([
+				prisma.topic.findMany({
+					where: { moduleId: mod.id },
+					select: { id: true, name: true, order: true, losCode: true, commandWord: true, learningOutcomeStatement: true },
+					orderBy: [{ order: 'asc' }, { name: 'asc' }],
+				}),
+				prisma.moduleNote.findMany({
+					where: { moduleId: mod.id, status: 'PUBLISHED' },
+					select: { id: true, title: true, topicId: true, overview: true, moduleSummary: true, losStatements: true, concepts: true, formulaRecap: true },
+					orderBy: [{ order: 'asc' }],
+					take: 20,
+				}),
+				prisma.formula.findMany({
+					where: { moduleId: mod.id },
+					select: { name: true, formula: true, variables: true, interpretation: true, whenToUse: true, watchOut: true, losTag: true },
+					orderBy: [{ order: 'asc' }],
+					take: 40,
+				}),
+			]);
 
-			let volumeName = null, moduleName = null, moduleObjective = null;
-			let topicNames = [];
-
-			if (volumeId) {
-				const vol = await prisma.volume.findUnique({ where: { id: volumeId }, select: { name: true } });
-				if (vol) volumeName = vol.name;
-			}
-			if (moduleId) {
-				const mod = await prisma.module.findUnique({ where: { id: moduleId }, select: { name: true } });
-				if (mod) { moduleName = mod.name; }
-			}
-			// Resolve topics within scope
-			const topicWhere = { courseId };
-			if (moduleId) topicWhere.moduleId = moduleId;
-			else if (volumeId) topicWhere.module = { volumeId };
-			const resolvedTopics = await prisma.topic.findMany({ where: topicWhere, select: { id: true, name: true }, orderBy: { order: 'asc' }, take: 50 });
-			topicNames = resolvedTopics.map(t => t.name);
-
-			// Auto-detect count: if moduleId given, 1 sheet for that module; if volumeId, count modules in volume; else count modules in course
-			if (!count) {
-				if (moduleId) {
-					count = 1;
-				} else {
-					const modWhere = { courseId };
-					if (volumeId) modWhere.volumeId = volumeId;
-					const modCount = await prisma.module.count({ where: modWhere });
-					count = Math.max(1, Math.min(20, modCount));
-				}
-			}
-
+			// Curriculum (control source) scoped to the module's volume.
 			let curriculumExcerpt = '';
-			if (volumeId) {
+			try {
 				const currDoc = await prisma.curriculumDocument.findUnique({
-					where: { courseId_volumeId: { courseId, volumeId } },
-					select: { extractedText: true }
+					where: { courseId_volumeId: { courseId: mod.courseId, volumeId: mod.volumeId } },
+					select: { extractedText: true },
 				});
 				if (currDoc?.extractedText) {
-					const text = currDoc.extractedText;
-					if (text.length <= 15000) {
-						curriculumExcerpt = text;
-					} else {
-						const keywords = [...topicNames, moduleName].filter(Boolean)
-							.flatMap(n => n.split(/[\s,;:()\-\/]+/).filter(w => w.length > 3))
-							.map(w => w.toLowerCase());
-						if (keywords.length === 0) {
-							curriculumExcerpt = text.substring(0, 15000) + '\n... [truncated]';
-						} else {
-							const WINDOW = 2500, STEP = 500;
-							const windows = [];
-							for (let i = 0; i < text.length; i += STEP) {
-								const chunk = text.substring(i, i + WINDOW).toLowerCase();
-								let score = keywords.reduce((s, kw) => { let c = 0, idx = 0; while ((idx = chunk.indexOf(kw, idx)) !== -1) { c++; idx += kw.length; } return s + c; }, 0);
-								windows.push({ start: i, score });
-							}
-							windows.sort((a, b) => b.score - a.score);
-							const ranges = [];
-							let total = 0;
-							for (const w of windows) {
-								if (total >= 15000 || w.score === 0) break;
-								const end = Math.min(w.start + WINDOW, text.length);
-								const budget = Math.min(end - w.start, 15000 - total);
-								ranges.push({ start: w.start, end: w.start + budget });
-								total += budget;
-							}
-							ranges.sort((a, b) => a.start - b.start);
-							const merged = [];
-							for (const r of ranges) {
-								if (merged.length > 0 && r.start <= merged[merged.length - 1].end + 300) merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, r.end);
-								else merged.push({ ...r });
-							}
-							curriculumExcerpt = merged.map((r, i) => {
-								const t = text.substring(r.start, r.end).trim();
-								const pm = text.substring(0, r.start).match(/\[PAGE (\d+)\]/g);
-								const pg = pm ? parseInt(pm[pm.length - 1].match(/\d+/)[0], 10) : null;
-								const prefix = pg ? `[... content from page ${pg} ...]\n` : (r.start > 0 ? '[...]\n' : '');
-								return prefix + t + (i < merged.length - 1 ? '\n[...]\n' : '');
-							}).join('\n') + (merged[merged.length - 1]?.end < text.length ? '\n... [additional content omitted]' : '');
-						}
+					curriculumExcerpt = extractCurriculumExcerpt(currDoc.extractedText, [mod.name, ...topics.map(t => t.name)]);
+				}
+			} catch { /* no curriculum document for this volume */ }
+
+			// Module objective: Module has no objective column — derive from published Milven Notes.
+			const moduleNote = notes.find(n => !n.topicId) || notes[0] || null;
+			const moduleObjective = (moduleNote?.overview || moduleNote?.moduleSummary || '').trim();
+
+			// LOS: real source is Topic.learningOutcomeStatement / ModuleNote.losStatements.
+			const los = [];
+			const seen = new Set();
+			for (const t of topics) {
+				if (!t.learningOutcomeStatement) continue;
+				const key = `${t.losCode || ''}|${t.learningOutcomeStatement}`;
+				if (seen.has(key)) continue;
+				seen.add(key);
+				los.push({ ref: t.losCode || '', statement: t.learningOutcomeStatement, commandWord: t.commandWord || '' });
+			}
+			for (const n of notes) {
+				if (!Array.isArray(n.losStatements)) continue;
+				for (const l of n.losStatements) {
+					const ref = l?.ref || l?.losCode || '';
+					const statement = l?.statement || l?.learningOutcomeStatement || '';
+					if (!statement) continue;
+					const key = `${ref}|${statement}`;
+					if (seen.has(key)) continue;
+					seen.add(key);
+					los.push({ ref, statement, commandWord: l?.commandWord || '' });
+				}
+			}
+
+			return { module: mod, course, level, year, topics, notes, formulas, curriculumExcerpt, moduleObjective, los };
+		}
+
+		try {
+			const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true } });
+			if (!course) return res.status(400).json({ error: 'Course not found' });
+
+			// Resolve the actual target Learning Modules (module-specific generation).
+			let targetModules = [];
+			if (moduleId) {
+				const mod = await prisma.module.findUnique({
+					where: { id: moduleId },
+					select: { id: true, name: true, level: true, courseId: true, volumeId: true, volume: { select: { id: true, name: true } } },
+				});
+				if (!mod) return res.status(400).json({ error: 'Learning module not found' });
+				targetModules = [mod];
+			} else {
+				const modWhere = { courseId };
+				if (volumeId) modWhere.volumeId = volumeId;
+				targetModules = await prisma.module.findMany({
+					where: modWhere,
+					select: { id: true, name: true, level: true, courseId: true, volumeId: true, volume: { select: { id: true, name: true } } },
+					orderBy: [{ order: 'asc' }, { name: 'asc' }],
+					take: MAX_TARGET_MODULES,
+				});
+				if (!targetModules.length) {
+					return res.status(400).json({ error: volumeId ? 'No learning modules found in the selected volume.' : 'No learning modules found for the selected course.' });
+				}
+				if (count) targetModules = targetModules.slice(0, Math.min(count, MAX_TARGET_MODULES));
+			}
+
+			const items = [];
+			const validationSummaries = [];
+			// Programmatic validation always runs. The second AI validation pass adds
+			// semantic checks. Callers can force it (deepValidation=true), disable it
+			// (deepValidation=false), or leave it undefined for the bounded default so
+			// large bulk runs stay responsive.
+			const dv = parse.data.deepValidation;
+			const runAiValidation = dv === true ? true : (dv === false ? false : targetModules.length <= 5);
+
+			for (const mod of targetModules) {
+				const ctx = await buildModuleContext(mod, course);
+				const prompt = buildSummaryPrompt(ctx, year);
+
+				let parsedItem = null;
+				try {
+					const aiResult = await ai.chatCompletion({
+						apiKey, provider: aiProvider, model: aiModel,
+						messages: [
+							{ role: 'system', content: `${MILVEN_SUMMARY_SYSTEM}\n\n${LATEX_SYSTEM_RULES}` },
+							{ role: 'user', content: prompt },
+						],
+						temperature: 0.6,
+						maxTokens: 16384,
+						jsonMode: true,
+					});
+					const parsed = JSON.parse(stripJsonFences(aiResult.content || '{}'));
+					const sheetItems = Array.isArray(parsed.sheets)
+						? parsed.sheets
+						: (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : [parsed]));
+					parsedItem = sheetItems.find(Boolean) || null;
+				} catch (genErr) {
+					const msg = genErr?.error?.message || genErr?.message || 'AI generation failed';
+					console.error(`[summarySheets.generate-ai.preview] module ${mod.id} failed:`, msg);
+					items.push({
+						title: `LM: ${mod.name}`,
+						moduleId: mod.id,
+						volumeId: mod.volumeId,
+						courseId: mod.courseId,
+						level,
+						year,
+						_error: msg,
+						validation: { status: 'INSTRUCTOR REVIEW REQUIRED', findings: [msg], checks: {} },
+						quickDrills: [{ issue: msg, recommendation: 'Regenerate or author this summary manually.' }],
+					});
+					validationSummaries.push({ moduleId: mod.id, moduleName: mod.name, status: 'INSTRUCTOR REVIEW REQUIRED', findings: [msg] });
+					continue;
+				}
+
+				if (!parsedItem) {
+					const msg = 'AI returned no summary sheet for this module.';
+					items.push({
+						title: `LM: ${mod.name}`,
+						moduleId: mod.id,
+						volumeId: mod.volumeId,
+						courseId: mod.courseId,
+						level,
+						year,
+						_error: msg,
+						validation: { status: 'INSTRUCTOR REVIEW REQUIRED', findings: [msg], checks: {} },
+						quickDrills: [{ issue: msg, recommendation: 'Regenerate or author this summary manually.' }],
+					});
+					validationSummaries.push({ moduleId: mod.id, moduleName: mod.name, status: 'INSTRUCTOR REVIEW REQUIRED', findings: [msg] });
+					continue;
+				}
+
+				// Attach module linkage so bulk generation maps each sheet to its own module.
+				parsedItem.moduleId = mod.id;
+				parsedItem.volumeId = mod.volumeId;
+				parsedItem.courseId = mod.courseId;
+				parsedItem.level = level;
+				parsedItem.year = year;
+				parsedItem.moduleName = mod.name;
+				parsedItem.volumeName = mod.volume?.name || null;
+				parsedItem.courseName = course?.name || null;
+				if (!parsedItem.title) parsedItem.title = `LM: ${mod.name}`;
+
+				// LaTeX safety: auto-repair + flag invalid formulas (do not drop).
+				if (Array.isArray(parsedItem.formulas) && parsedItem.formulas.length) {
+					const invalid = validateFormulaItems(parsedItem.formulas);
+					if (invalid.length) parsedItem._invalidFormulas = invalid.length;
+				}
+
+				// Validation: programmatic (always) + second AI pass (best effort).
+				const programmatic = programmaticValidation(parsedItem, ctx);
+				let aiVal = { status: 'PASS', findings: [] };
+				if (runAiValidation) {
+					try {
+						aiVal = await aiValidation(parsedItem, ctx, { apiKey, provider: aiProvider, model: aiModel, chatCompletion: ai.chatCompletion });
+					} catch (vErr) {
+						console.warn('[summarySheets.generate-ai.preview] AI validation skipped:', vErr?.message);
 					}
 				}
-			}
+				const findings = [...(programmatic.findings || []), ...(aiVal.findings || [])];
+				let finalStatus = worstStatus(programmatic.status, aiVal.status);
+				if (finalStatus === 'PASS' && findings.length) finalStatus = 'REVISE';
+				parsedItem.validation = { status: finalStatus, findings, checks: programmatic.checks };
+				parsedItem.useCase = finalStatus;
+				parsedItem.quickDrills = mergeInstructorReview(parsedItem.quickDrills, findings, finalStatus);
 
-			const levelLabel = level.replace('LEVEL', 'Level ');
-			const hierarchyContext = [
-				`Programme: CFA`,
-				`Exam Level: ${levelLabel}`,
-				`Course / Topic Area: ${course.name}`,
-				volumeName ? `Volume: ${volumeName}` : null,
-				moduleName ? `Learning Module: ${moduleName}` : null,
-				moduleObjective ? `Learning Module Objective: ${moduleObjective}` : null,
-				topicNames.length > 0 ? `Topic Headings: ${topicNames.join('; ')}` : null,
-			].filter(Boolean).join('\n');
-
-			// Fetch existing module notes for this module (completed topic-level Milven Notes)
-			let topicNotesContext = '';
-			if (moduleId) {
-				const existingNotes = await prisma.moduleNote.findMany({
-					where: { moduleId, status: 'PUBLISHED' },
-					select: { title: true, overview: true, moduleSummary: true },
-					take: 10,
-				});
-				if (existingNotes.length > 0) {
-					topicNotesContext = '\n\nCOMPLETED TOPIC-LEVEL MILVEN NOTES:\n' + existingNotes.map(n =>
-						`- ${n.title}: ${n.overview || ''} ${n.moduleSummary || ''}`
-					).join('\n') + '\n';
-				}
-			}
-
-			// Fetch formulas for this module
-			let formulaListContext = '';
-			if (moduleId) {
-				const existingFormulas = await prisma.formula.findMany({
-					where: { moduleId },
-					select: { name: true, formula: true, variables: true },
-					take: 30,
-				});
-				if (existingFormulas.length > 0) {
-					formulaListContext = '\n\nFORMULA LIST FROM DATABASE:\n' + existingFormulas.map(f =>
-						`- ${f.name}: ${f.formula} (${f.variables || ''})`
-					).join('\n') + '\n';
-				}
-			}
-
-			const curriculumSection = curriculumExcerpt
-				? `\n\nCURRICULUM REFERENCE MATERIAL (use as primary source — reference exact LOS, formulas, page numbers):\n---\n${curriculumExcerpt}\n---\n`
-				: '';
-
-			const prompt = `You are a senior CFA curriculum expert at Milven Finance School.
-
-TASK: Generate a Learning Module-level Milven Summary — a one-to-two page diagrammatic revision dashboard.
-
-INPUTS:
-${hierarchyContext}
-Year: ${year}
-${curriculumSection}${topicNotesContext}${formulaListContext}
-
-CORE RULES:
-1. Generate at Learning Module level only.
-2. Prefer one page; use two pages only for dense or calculation-heavy modules.
-3. Do NOT copy or reproduce the curriculum verbatim.
-4. Include EVERY topic in the learning module.
-5. Link every major topic to the learning module objective.
-6. Cover ALL Learning Outcome Statements in candidate-friendly language.
-7. Use diagrammatic structures: boxes, arrows, tables, formula strips and checklists.
-8. Avoid long paragraphs.
-9. Include key formulas with use cases.
-10. Include decision rules that help candidates choose the correct measure or concept.
-11. Include common exam traps.
-12. Flag missing or unsupported areas under Instructor Review Required.
-
-REQUIRED OUTPUT SECTIONS (populate ALL of them):
-
-1. "snapshot" (string) — Module Objective: 2-3 sentences stating WHAT the module teaches and HOW it connects to the exam. This goes in the callout box at the top.
-
-2. "coreDefinitions" (array) — LOS Snapshot: [{ref, statement, commandWord}]. List EVERY Learning Outcome Statement with its reference code, the statement in candidate-friendly language, and the command word (calculate, describe, explain, compare, etc.). Minimum 5 items.
-
-3. "diagrams" (array) — Module Concept Map: [{topic, subtopics, connectionTo}]. Show how the topics in this module connect to each other and to the module objective. Each entry is a topic node with its subtopics and what it connects to. Minimum 3 items.
-
-4. "memoryHooks" (array) — Topic-to-Concept Map: [{topic, concepts, linkToObjective}]. For each topic, list the key concepts and explain how they link to the module objective. Minimum 3 items.
-
-5. "formulas" (array) — Formula Strip: [{formula, useCase, interpretation}]. Every key formula with its use case scenario and a one-line interpretation of what the result means. Minimum 6 items.
-   * Use valid LaTeX: \\frac{a}{b} for fractions, P_{0}, CF_{t} for subscripts, (1+r)^{n} for superscripts, \\sigma, \\beta, \\alpha for Greek
-   * Inline: \\( ... \\)  Block: \\[ ... \\]  ALL braces must be balanced
-
-6. "distinctions" (array) — Exam Decision Rules: [{scenario, rule, apply}]. Decision rules that help candidates choose the correct measure, method, or concept in exam questions. e.g. "If asked about return over multiple periods → use geometric mean, not arithmetic mean". Minimum 5 items.
-
-7. "examTraps" (array) — Exam Traps: [{trap}]. Short warning statements about common mistakes. e.g. "Arithmetic mean is NOT always appropriate — geometric mean for compounding." Minimum 5 items.
-
-8. "revisionCheck" (array) — Final Revision Checklist: [{item}]. Action-verb checklist items. e.g. "Calculate holding period return from given cash flows." Minimum 8 items.
-
-9. "quickDrills" (array) — Instructor Review Required: [{issue, recommendation}]. Flag any gaps, ambiguous areas, or content not fully supported by the curriculum. If none, include one item: {issue: "None identified", recommendation: "Ready for publication"}.
-
-10. "useCase" (string) — Coverage Quality Check: One of "PASS", "REVISE", or "INSTRUCTOR REVIEW REQUIRED". Confirm all topics, LOS, formulas, decision rules and traps are covered.
-
-Return a JSON object:
-{
-  "sheets": [
-    {
-      "title": "LM#: [Learning Module Name]",
-      "snapshot": "Module Objective string",
-      "useCase": "PASS|REVISE|INSTRUCTOR REVIEW REQUIRED",
-      "coreDefinitions": [{"ref": "LOS 1.a", "statement": "...", "commandWord": "calculate"}],
-      "diagrams": [{"topic": "...", "subtopics": ["..."], "connectionTo": "..."}],
-      "memoryHooks": [{"topic": "...", "concepts": ["..."], "linkToObjective": "..."}],
-      "formulas": [{"formula": "LaTeX string", "useCase": "...", "interpretation": "..."}],
-      "distinctions": [{"scenario": "...", "rule": "...", "apply": "..."}],
-      "examTraps": [{"trap": "..."}],
-      "revisionCheck": [{"item": "..."}],
-      "quickDrills": [{"issue": "...", "recommendation": "..."}]
-    }
-  ]
-}
-
-OUTPUT STANDARD: The final summary must read like a premium Milven revision dashboard, not like a textbook summary. Clean, visual, concise, exam-focused.
-
-Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
-
-			let items = [];
-			const sheetsToGenerate = Math.min(count, 20);
-
-			for (let i = 0; i < sheetsToGenerate; i++) {
-				const aiResult = await chatCompletion({
-					apiKey, provider: aiProvider, model: aiModel,
-					messages: [
-						{ role: 'system', content: `You are the Milven Summary Generator and Layout Formatter. Return valid JSON only. Generate a diagrammatic revision dashboard at Learning Module level. Every section must be fully populated. Use concise exam-focused language. Do NOT write textbook paragraphs.\n\n${LATEX_SYSTEM_RULES}` },
-						{ role: 'user', content: prompt }
-					],
-					temperature: 0.7,
-					maxTokens: 16384,
-					jsonMode: true,
-				});
-
-				const raw = aiResult.content || '{}';
-				try {
-					const parsed = JSON.parse(raw);
-					const sheetItems = Array.isArray(parsed.sheets) ? parsed.sheets : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : [parsed]));
-					items.push(...sheetItems);
-				} catch {
-					if (items.length === 0) return res.status(502).json({ error: 'AI returned invalid JSON' });
-				}
+				items.push(parsedItem);
+				validationSummaries.push({ moduleId: mod.id, moduleName: mod.name, status: finalStatus, findings });
 			}
 
 			if (!items.length) return res.status(502).json({ error: 'AI returned no summary sheets' });
 
 			return res.json({
 				generated: { items },
-				meta: { courseId, volumeId, moduleId, level, year }
+				meta: { courseId, volumeId, moduleId, level, year, provider: aiProvider, model: aiModel, validation: validationSummaries },
 			});
 		} catch (err) {
-			const msg = err?.error?.message || err?.message || 'OpenAI request failed';
+			const msg = err?.error?.message || err?.message || 'AI request failed';
 			console.error('[summarySheets.generate-ai.preview]', msg);
 			return res.status(502).json({ error: msg });
 		}
@@ -417,25 +676,35 @@ Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
 				return res.status(400).json({ error: 'No sheets selected' });
 			}
 			const { courseId, volumeId, moduleId, level, year } = meta || {};
-			if (!courseId || !level) {
-				return res.status(400).json({ error: 'Missing meta (courseId, level)' });
-			}
 
 			const created = [];
+			const skipped = [];
 			for (const idx of selectedIndices) {
 				const item = generated.items[idx];
 				if (!item) continue;
+				// Skip failed generation placeholders (no real content).
+				if (item._error && !item.snapshot && !item.coreDefinitions && !item.formulas && !item.diagrams) {
+					skipped.push({ index: idx, reason: item._error });
+					continue;
+				}
+				// Prefer per-item linkage (bulk generation maps each sheet to its own module).
+				const itemCourseId = item.courseId || courseId;
+				const itemLevel = item.level || level;
+				if (!itemCourseId || !itemLevel) {
+					skipped.push({ index: idx, reason: 'Missing course/level' });
+					continue;
+				}
 				try {
 					const sheet = await prisma.summarySheet.create({
 						data: {
 							title: String(item.title || `Summary Sheet ${idx + 1}`).slice(0, 255),
-							level,
-							courseId,
-							volumeId: volumeId || null,
-							moduleId: moduleId || null,
-							year: year || 2026,
+							level: itemLevel,
+							courseId: itemCourseId,
+							volumeId: item.volumeId || volumeId || null,
+							moduleId: item.moduleId || moduleId || null,
+							year: item.year || year || 2026,
 							snapshot: item.snapshot || null,
-							useCase: item.useCase || null,
+							useCase: item.useCase || item.validation?.status || null,
 							coreDefinitions: item.coreDefinitions || null,
 							formulas: item.formulas || null,
 							distinctions: item.distinctions || null,
@@ -452,10 +721,11 @@ Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
 					created.push(sheet);
 				} catch (saveErr) {
 					console.error(`[summarySheets.generate-ai.accept] Failed to save sheet ${idx}:`, saveErr?.message);
+					skipped.push({ index: idx, reason: saveErr?.message || 'Save failed' });
 				}
 			}
 
-			return res.status(201).json({ created: created.length, sheets: created });
+			return res.status(201).json({ created: created.length, skipped, sheets: created });
 		} catch (err) {
 			console.error('[summarySheets.generate-ai.accept]', err);
 			return res.status(500).json({ error: 'Failed to accept summary sheets' });
@@ -464,3 +734,6 @@ Generate exactly 1 summary sheet. Return ONLY valid JSON.`;
 
 	return router;
 }
+
+// Exported for unit testing of the pure summary-generation helpers.
+export { stripJsonFences, worstStatus, extractCurriculumExcerpt, programmaticValidation, mergeInstructorReview, buildSummaryPrompt };

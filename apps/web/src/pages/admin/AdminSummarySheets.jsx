@@ -35,6 +35,15 @@ export function AdminSummarySheets() {
 	const [aiCount, setAiCount] = useState(null);
 	const [aiYear, setAiYear] = useState(2026);
 
+	// AI Provider / Model selection (mirrors AdminQuestions.jsx)
+	const [aiProviders, setAiProviders] = useState([]);
+	const [aiActiveProvider, setAiActiveProvider] = useState('openai');
+	const [aiProvider, setAiProvider] = useState(undefined);
+	const [aiModel, setAiModel] = useState(undefined);
+	const [aiModels, setAiModels] = useState([]);
+	const [aiModelsLoading, setAiModelsLoading] = useState(false);
+	const [aiDeepValidation, setAiDeepValidation] = useState(false);
+
 	// AI Preview
 	const [aiPreviewOpen, setAiPreviewOpen] = useState(false);
 	const [aiPreview, setAiPreview] = useState(null);
@@ -196,6 +205,45 @@ export function AdminSummarySheets() {
 		}
 	};
 
+	const fetchAiModels = async (provider) => {
+		const prov = provider || aiProvider || aiActiveProvider || 'openai';
+		setAiModelsLoading(true);
+		setAiModels([]);
+		try {
+			const { data } = await api.get(`/api/settings/ai-models?provider=${prov}`);
+			const all = data.models || [];
+			// For OpenAI, filter to a curated list of recommended models (same as AdminQuestions)
+			const filtered = prov === 'openai'
+				? all.filter(m => ['gpt-5.5', 'gpt-5.5-pro', 'gpt-5.4-pro', 'o3', 'o1-pro', 'gpt-5.4', 'gpt-5.2-pro', 'gpt-5.2', 'gpt-4.1', 'gpt-4o', 'gpt-4-turbo', 'gpt-5-mini', 'gpt-5.4-mini', 'o4-mini', 'gpt-4.1-mini', 'gpt-4o-mini'].some(approved => m.id.startsWith(approved)))
+				: all;
+			setAiModels(filtered);
+			setAiModel(prev => prev || filtered[0]?.id);
+		} catch {
+			// silent — user can still regenerate; error surfaced by notFoundContent
+		} finally {
+			setAiModelsLoading(false);
+		}
+	};
+
+	const fetchAiConfig = async () => {
+		try {
+			const { data } = await api.get('/api/settings/ai-config');
+			setAiProviders(data.providers || []);
+			const prov = data.activeProvider || 'openai';
+			setAiActiveProvider(prov);
+			setAiProvider(prev => prev || prov);
+			setAiModel(prev => prev || data.activeModel || undefined);
+			fetchAiModels(prov);
+		} catch {
+			// ignore — generation will surface any provider error
+		}
+	};
+
+	const openAiModal = () => {
+		setAiModalOpen(true);
+		fetchAiConfig();
+	};
+
 	const handleAiGenerate = async () => {
 		if (!aiCourseId) return message.warning('Please select a course');
 		const selectedCourse = courses.find(c => c.id === aiCourseId);
@@ -209,6 +257,9 @@ export function AdminSummarySheets() {
 				level: selectedCourse.level,
 				year: aiYear,
 				count: aiCount || undefined,
+				provider: aiProvider || undefined,
+				model: aiModel || undefined,
+				deepValidation: aiDeepValidation || undefined,
 			};
 			Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 
@@ -242,6 +293,9 @@ export function AdminSummarySheets() {
 				selectedIndices: toSend,
 			});
 			message.success(`Saved ${data?.created ?? 0} summary sheet(s)`);
+			if (Array.isArray(data?.skipped) && data.skipped.length > 0) {
+				message.warning(`${data.skipped.length} item(s) skipped (failed generation or save).`);
+			}
 			setAiPreviewOpen(false);
 			setAiModalOpen(false);
 			setAiSelectedIndices([]);
@@ -380,7 +434,7 @@ export function AdminSummarySheets() {
 					</Col>
 					<Col xs={24} sm={12} md={6} style={{ textAlign: 'right' }}>
 						<Space>
-							<Button icon={<RobotOutlined />} onClick={() => setAiModalOpen(true)}
+							<Button icon={<RobotOutlined />} onClick={openAiModal}
 								style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6', color: '#fff' }}>
 								AI Generate
 							</Button>
@@ -606,6 +660,39 @@ export function AdminSummarySheets() {
 								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>Year</Typography.Text>
 								<InputNumber min={2020} max={2040} value={aiYear} onChange={setAiYear} style={{ width: '100%', marginTop: 4 }} />
 							</Col>
+							<Col span={12}>
+								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>AI Provider</Typography.Text>
+								<Select
+									placeholder="Select provider" value={aiProvider}
+									onChange={v => { setAiProvider(v); setAiActiveProvider(v); setAiModel(undefined); fetchAiModels(v); }}
+									options={aiProviders.length > 0
+										? aiProviders.map(p => ({ value: p.id, label: `${p.label}${p.hasKey ? '' : ' (no key)'}` }))
+										: [{ value: 'openai', label: 'OpenAI' }, { value: 'anthropic', label: 'Anthropic (Claude)' }]
+									}
+									style={{ width: '100%', marginTop: 4 }}
+								/>
+							</Col>
+							<Col span={12}>
+								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>AI Model</Typography.Text>
+								<Select
+									showSearch optionFilterProp="label"
+									loading={aiModelsLoading}
+									placeholder={aiModelsLoading ? 'Loading models…' : 'Select model'}
+									value={aiModel}
+									onChange={setAiModel}
+									options={aiModels.map(m => ({ value: m.id, label: m.display_name ? `${m.display_name} (${m.id})` : m.id }))}
+									notFoundContent={aiModelsLoading ? 'Loading…' : 'No models found — check API key in Settings'}
+									style={{ width: '100%', marginTop: 4 }}
+								/>
+							</Col>
+							<Col span={24}>
+								<Space align="center" style={{ marginTop: 4 }}>
+									<Switch size="small" checked={aiDeepValidation} onChange={setAiDeepValidation} />
+									<Tooltip title="When off, the AI quality-control pass runs automatically only for small batches (≤5 modules). When on, it runs for every generated sheet. Programmatic validation always runs regardless.">
+										<Typography.Text style={{ fontSize: 12, color: '#475569' }}>Always run AI validation pass (slower)</Typography.Text>
+									</Tooltip>
+								</Space>
+							</Col>
 						</Row>
 					</div>
 				)}
@@ -660,7 +747,7 @@ export function AdminSummarySheets() {
 										<div style={{ flex: 1, minWidth: 0 }}>
 											<SummarySheetPreviewContent sheet={s} compact />
 										</div>
-										<Button size="small" type="link" disabled={aiAcceptLoading} onClick={() => acceptAiPreview([idx])}>Add</Button>
+										<Button size="small" type="link" disabled={aiAcceptLoading || !!s._error} onClick={() => acceptAiPreview([idx])}>Add</Button>
 									</div>
 								</Card>
 							);
@@ -715,7 +802,43 @@ function DashboardSectionHeader({ number, title, color = '#102540' }) {
 
 // ─── Summary Sheet Preview Content (AI preview — full diagrammatic dashboard) ──────
 function SummarySheetPreviewContent({ sheet }) {
-	return <SummarySheetPreviewCard sheet={sheet} />;
+	const v = sheet?.validation;
+	const status = v?.status;
+	const statusColor = status === 'PASS' ? '#166534' : status === 'REVISE' ? '#92400e' : '#991b1b';
+	const statusBg = status === 'PASS' ? '#f0fdf4' : status === 'REVISE' ? '#fffbeb' : '#fef2f2';
+	const statusBorder = status === 'PASS' ? '#22c55e' : status === 'REVISE' ? '#f59e0b' : '#ef4444';
+
+	if (sheet?._error) {
+		return (
+			<div style={{ padding: '12px 16px', borderRadius: 10, background: '#fef2f2', border: '1px solid #ef4444' }}>
+				<Typography.Text strong style={{ color: '#991b1b' }}>Generation failed for this Learning Module</Typography.Text>
+				<div style={{ fontSize: 12, marginTop: 4, color: '#991b1b' }}>{sheet._error}</div>
+			</div>
+		);
+	}
+
+	return (
+		<div>
+			{status && (
+				<div style={{ marginBottom: 10, padding: '10px 14px', borderRadius: 8, background: statusBg, border: `1px solid ${statusBorder}`, color: statusColor }}>
+					<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+						<Typography.Text strong style={{ color: statusColor, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+							Quality Validation: {status}
+						</Typography.Text>
+						{sheet._invalidFormulas > 0 && (
+							<Typography.Text style={{ color: statusColor, fontSize: 11 }}>{sheet._invalidFormulas} formula(s) auto-repaired</Typography.Text>
+						)}
+					</div>
+					{Array.isArray(v?.findings) && v.findings.length > 0 && (
+						<ul style={{ margin: '6px 0 0 18px', padding: 0, color: statusColor, fontSize: 12 }}>
+							{v.findings.slice(0, 6).map((f, i) => <li key={i}>{f}</li>)}
+						</ul>
+					)}
+				</div>
+			)}
+			<SummarySheetPreviewCard sheet={sheet} />
+		</div>
+	);
 }
 
 // ─── Summary Sheet Full Preview Card (Milven Diagrammatic Dashboard) ─────────
@@ -729,7 +852,10 @@ function SummarySheetPreviewCard({ sheet }) {
 	const traps = Array.isArray(s.examTraps) ? s.examTraps : [];
 	const checks = Array.isArray(s.revisionCheck) ? s.revisionCheck : [];
 	const instructorReview = Array.isArray(s.quickDrills) ? s.quickDrills : [];
-	const coverageStatus = s.useCase || '';
+	// useCase holds the Coverage Quality Check status for generated sheets; older records may hold a free-text use case.
+	const coverageStatus = ['PASS', 'REVISE', 'INSTRUCTOR REVIEW REQUIRED'].includes(s.useCase) ? s.useCase : '';
+	const moduleTitle = s.module?.name || s.moduleName || s.title;
+	const courseLabel = s.course?.name || s.courseName || s.volume?.name || s.volumeName || '';
 
 	return (
 		<div style={{ background: '#f8f9fa', borderRadius: 16, overflow: 'hidden' }}>
@@ -743,11 +869,11 @@ function SummarySheetPreviewCard({ sheet }) {
 							<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>FINANCE SCHOOL</Typography.Text>
 						</div>
 						<Typography.Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
-							{LEVEL_LABELS[s.level]} | {s.course?.name || s.volume?.name || ''}
+							{LEVEL_LABELS[s.level]} | {courseLabel}
 						</Typography.Text>
 					</div>
 					<Typography.Text style={{ color: '#fff', fontSize: 15, fontWeight: 700 }}>
-						Learning Module: {s.module?.name || s.title}
+						Learning Module: {moduleTitle}
 					</Typography.Text>
 				</div>
 
@@ -782,7 +908,7 @@ function SummarySheetPreviewCard({ sheet }) {
 							{/* Central module node */}
 							<div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
 								<div style={{ background: '#102540', color: '#fff', padding: '16px 24px', borderRadius: 10, textAlign: 'center', maxWidth: 380 }}>
-									<div style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase' }}>{s.module?.name || s.title}</div>
+									<div style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase' }}>{moduleTitle}</div>
 									{s.snapshot && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>{s.snapshot.length > 80 ? s.snapshot.substring(0, 80) + '...' : s.snapshot}</div>}
 								</div>
 							</div>
@@ -827,7 +953,7 @@ function SummarySheetPreviewCard({ sheet }) {
 						<Typography.Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>Diagrammatic Revision Page</Typography.Text>
 					</div>
 					<Typography.Text style={{ color: '#fff', fontSize: 14, fontWeight: 700 }}>
-						{s.module?.name || s.title} | Exam Decision Map + Formula Strip
+						{moduleTitle} | Exam Decision Map + Formula Strip
 					</Typography.Text>
 				</div>
 

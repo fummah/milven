@@ -37,6 +37,14 @@ export function AdminModuleNotes() {
 	const [aiCount, setAiCount] = useState(null);
 	const [aiYear, setAiYear] = useState(2026);
 
+	// AI Provider / Model selection (mirrors AdminQuestions.jsx)
+	const [aiProviders, setAiProviders] = useState([]);
+	const [aiActiveProvider, setAiActiveProvider] = useState('openai');
+	const [aiProvider, setAiProvider] = useState(undefined);
+	const [aiModel, setAiModel] = useState(undefined);
+	const [aiModels, setAiModels] = useState([]);
+	const [aiModelsLoading, setAiModelsLoading] = useState(false);
+
 	// AI Preview
 	const [aiPreviewOpen, setAiPreviewOpen] = useState(false);
 	const [aiPreview, setAiPreview] = useState(null);
@@ -116,13 +124,51 @@ export function AdminModuleNotes() {
 
 	const toggleStatus = async (record) => { try { const s = record.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED'; await api.put(`/api/module-notes/${record.id}`, { status: s }); message.success(s === 'PUBLISHED' ? 'Published' : 'Moved to draft'); fetchNotes(); } catch { message.error('Failed to update status'); } };
 
+	const fetchAiModels = async (provider) => {
+		const prov = provider || aiProvider || aiActiveProvider || 'openai';
+		setAiModelsLoading(true);
+		setAiModels([]);
+		try {
+			const { data } = await api.get(`/api/settings/ai-models?provider=${prov}`);
+			const all = data.models || [];
+			const filtered = prov === 'openai'
+				? all.filter(m => ['gpt-5.5', 'gpt-5.5-pro', 'gpt-5.4-pro', 'o3', 'o1-pro', 'gpt-5.4', 'gpt-5.2-pro', 'gpt-5.2', 'gpt-4.1', 'gpt-4o', 'gpt-4-turbo', 'gpt-5-mini', 'gpt-5.4-mini', 'o4-mini', 'gpt-4.1-mini', 'gpt-4o-mini'].some(approved => m.id.startsWith(approved)))
+				: all;
+			setAiModels(filtered);
+			setAiModel(prev => prev || filtered[0]?.id);
+		} catch {
+			// silent — user can still generate; notFoundContent explains
+		} finally {
+			setAiModelsLoading(false);
+		}
+	};
+
+	const fetchAiConfig = async () => {
+		try {
+			const { data } = await api.get('/api/settings/ai-config');
+			setAiProviders(data.providers || []);
+			const prov = data.activeProvider || 'openai';
+			setAiActiveProvider(prov);
+			setAiProvider(prev => prev || prov);
+			setAiModel(prev => prev || data.activeModel || undefined);
+			fetchAiModels(prov);
+		} catch {
+			// ignore — generation surfaces provider errors
+		}
+	};
+
+	const openAiModal = () => {
+		setAiModalOpen(true);
+		fetchAiConfig();
+	};
+
 	const handleAiGenerate = async () => {
 		if (!aiCourseId) return message.warning('Please select a course');
 		setAiGenerating(true);
 		try {
 			const selectedCourse = courses.find(c => c.id === aiCourseId);
 			if (!selectedCourse) return message.warning('Course not found');
-			const payload = { courseId: aiCourseId, volumeId: aiVolumeId || undefined, moduleId: aiModuleId || undefined, topicId: aiTopicId || undefined, level: selectedCourse.level, year: aiYear, count: aiCount || undefined };
+			const payload = { courseId: aiCourseId, volumeId: aiVolumeId || undefined, moduleId: aiModuleId || undefined, topicId: aiTopicId || undefined, level: selectedCourse.level, year: aiYear, count: aiCount || undefined, provider: aiProvider || undefined, model: aiModel || undefined };
 			Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 			// Uses fetch+SSE so heartbeats keep the connection alive through Nginx
 			const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
@@ -180,6 +226,9 @@ export function AdminModuleNotes() {
 			const { data } = await api.post('/api/module-notes/generate-ai/accept', { generated: aiPreview, meta: aiPreviewMeta, selectedIndices: toSend });
 			if (data?.created > 0) {
 				message.success(`Saved ${data.created} module note(s)`);
+				if (Array.isArray(data?.skipped) && data.skipped.length > 0) {
+					message.warning(`${data.skipped.length} item(s) skipped (failed generation).`);
+				}
 				setAiPreviewOpen(false); setAiModalOpen(false); setAiSelectedIndices([]); fetchNotes();
 			} else {
 				message.error(data?.error || 'Failed to save notes — server returned 0 created. Check server logs.');
@@ -215,7 +264,7 @@ export function AdminModuleNotes() {
 					<Col xs={12} sm={6} md={3}><Select placeholder="Status" value={filterStatus} onChange={v => { setFilterStatus(v); setPage(1); }} options={[{ value: null, label: 'All' }, { value: 'DRAFT', label: 'Draft' }, { value: 'PUBLISHED', label: 'Published' }]} style={{ width: '100%' }} allowClear /></Col>
 					<Col xs={24} sm={12} md={6} style={{ textAlign: 'right' }}>
 						<Space>
-							<Button icon={<RobotOutlined />} onClick={() => setAiModalOpen(true)} style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6', color: '#fff' }}>AI Generate</Button>
+							<Button icon={<RobotOutlined />} onClick={openAiModal} style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6', color: '#fff' }}>AI Generate</Button>
 							<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} style={{ background: '#102540', borderColor: '#102540' }}>Add Note</Button>
 						</Space>
 					</Col>
@@ -320,12 +369,12 @@ export function AdminModuleNotes() {
 			</Drawer>
 
 			{/* AI Generate Modal */}
-			<Modal title={<Space><div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RobotOutlined style={{ fontSize: 18, color: '#fff' }} /></div><div><div style={{ fontWeight: 700, color: '#102540', fontSize: 16 }}>AI Module Notes Generator</div><div style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>Generate full learning module notes with AI</div></div></Space>} open={aiModalOpen} onCancel={() => { if (!aiGenerating) setAiModalOpen(false); }} width={640} centered footer={<Space><Button onClick={() => setAiModalOpen(false)} disabled={aiGenerating}>Cancel</Button><Button type="primary" icon={<ThunderboltOutlined />} loading={aiGenerating} onClick={handleAiGenerate} style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6' }}>{aiGenerating ? 'Generating…' : 'Generate Preview'}</Button></Space>} closable={!aiGenerating} maskClosable={!aiGenerating}>
+			<Modal title={<Space><div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RobotOutlined style={{ fontSize: 18, color: '#fff' }} /></div><div><div style={{ fontWeight: 700, color: '#102540', fontSize: 16 }}>AI Milven Notes Generator</div><div style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>Generate exam-focused notes at topic level with AI</div></div></Space>} open={aiModalOpen} onCancel={() => { if (!aiGenerating) setAiModalOpen(false); }} width={640} centered footer={<Space><Button onClick={() => setAiModalOpen(false)} disabled={aiGenerating}>Cancel</Button><Button type="primary" icon={<ThunderboltOutlined />} loading={aiGenerating} onClick={handleAiGenerate} style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6' }}>{aiGenerating ? 'Generating…' : 'Generate Preview'}</Button></Space>} closable={!aiGenerating} maskClosable={!aiGenerating}>
 				{aiGenerating ? (
-					<div style={{ textAlign: 'center', padding: '40px 0' }}><Spin size="large" /><div style={{ marginTop: 16, color: '#64748b' }}>AI is generating module notes… This may take 30–60 seconds.</div></div>
+					<div style={{ textAlign: 'center', padding: '40px 0' }}><Spin size="large" /><div style={{ marginTop: 16, color: '#64748b' }}>AI is generating topic notes… This may take 30–60 seconds.</div></div>
 				) : (
 					<div>
-						<div style={{ marginBottom: 20, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}><Typography.Text style={{ fontSize: 13, color: '#475569' }}>AI will generate complete module notes with LOS, concept pages, formulas, worked examples, practice questions, and revision checklists.</Typography.Text></div>
+						<div style={{ marginBottom: 20, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}><Typography.Text style={{ fontSize: 13, color: '#475569' }}>AI generates one Milven Notes set per topic: LOS coverage, concept map, core concepts, formulas with interpretation, worked examples, exam questions, common mistakes, exam tips, a quick revision box, and a coverage quality check.</Typography.Text></div>
 						<Row gutter={[12, 16]}>
 							<Col span={24}><Typography.Text strong style={{ fontSize: 12 }}>Course *</Typography.Text><Select placeholder="Select course" value={aiCourseId} onChange={v => { setAiCourseId(v); setAiVolumeId(null); setAiModuleId(null); setAiTopicId(null); }} options={courses.map(c => ({ value: c.id, label: `${c.name} (${LEVEL_LABELS[c.level] || c.level})` }))} style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label" /></Col>
 							<Col span={12}><Typography.Text strong style={{ fontSize: 12 }}>Volume</Typography.Text><Select placeholder="All volumes" value={aiVolumeId} onChange={v => { setAiVolumeId(v); setAiModuleId(null); setAiTopicId(null); }} options={aiVolumes.map(v => ({ value: v.id, label: v.name }))} style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label" /></Col>
@@ -333,6 +382,31 @@ export function AdminModuleNotes() {
 							<Col span={12}><Typography.Text strong style={{ fontSize: 12 }}>Topic</Typography.Text><Select placeholder="All topics" value={aiTopicId} onChange={setAiTopicId} options={aiTopics.map(t => ({ value: t.id, label: t.name }))} style={{ width: '100%', marginTop: 4 }} allowClear showSearch optionFilterProp="label" /></Col>
 							<Col span={6}><Typography.Text strong style={{ fontSize: 12 }}>Count</Typography.Text><InputNumber min={1} max={20} value={aiCount} onChange={setAiCount} placeholder="All" style={{ width: '100%', marginTop: 4 }} /></Col>
 							<Col span={6}><Typography.Text strong style={{ fontSize: 12 }}>Year</Typography.Text><InputNumber min={2020} max={2040} value={aiYear} onChange={setAiYear} style={{ width: '100%', marginTop: 4 }} /></Col>
+							<Col span={12}>
+								<Typography.Text strong style={{ fontSize: 12 }}>AI Provider</Typography.Text>
+								<Select
+									placeholder="Select provider" value={aiProvider}
+									onChange={v => { setAiProvider(v); setAiActiveProvider(v); setAiModel(undefined); fetchAiModels(v); }}
+									options={aiProviders.length > 0
+										? aiProviders.map(p => ({ value: p.id, label: `${p.label}${p.hasKey ? '' : ' (no key)'}` }))
+										: [{ value: 'openai', label: 'OpenAI' }, { value: 'anthropic', label: 'Anthropic (Claude)' }]
+									}
+									style={{ width: '100%', marginTop: 4 }}
+								/>
+							</Col>
+							<Col span={12}>
+								<Typography.Text strong style={{ fontSize: 12 }}>AI Model</Typography.Text>
+								<Select
+									showSearch optionFilterProp="label"
+									loading={aiModelsLoading}
+									placeholder={aiModelsLoading ? 'Loading models…' : 'Select model'}
+									value={aiModel}
+									onChange={setAiModel}
+									options={aiModels.map(m => ({ value: m.id, label: m.display_name ? `${m.display_name} (${m.id})` : m.id }))}
+									notFoundContent={aiModelsLoading ? 'Loading…' : 'No models found — check API key in Settings'}
+									style={{ width: '100%', marginTop: 4 }}
+								/>
+							</Col>
 						</Row>
 					</div>
 				)}
@@ -380,8 +454,32 @@ function ModuleNotePreviewContent({ note, compact }) {
 	const [expandedLos, setExpandedLos] = useState(false);
 	const [expandedConcepts, setExpandedConcepts] = useState(false);
 
+	const covStatus = n.coverageCheck?.status;
+	const covColor = covStatus === 'PASS' ? '#166534' : covStatus === 'REVISE' ? '#92400e' : '#991b1b';
+	const covBg = covStatus === 'PASS' ? '#f0fdf4' : covStatus === 'REVISE' ? '#fffbeb' : '#fef2f2';
+	const covBorder = covStatus === 'PASS' ? '#22c55e' : covStatus === 'REVISE' ? '#f59e0b' : '#ef4444';
+
+	if (n._error) {
+		return (
+			<div style={{ padding: '12px 16px', borderRadius: 10, background: '#fef2f2', border: '1px solid #ef4444' }}>
+				<Typography.Text strong style={{ color: '#991b1b' }}>Generation failed for this topic</Typography.Text>
+				<div style={{ fontSize: 12, marginTop: 4, color: '#991b1b' }}>{n._error}</div>
+			</div>
+		);
+	}
+
 	return (
 		<div>
+			{covStatus && (
+				<div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 8, background: covBg, border: `1px solid ${covBorder}`, color: covColor }}>
+					<Typography.Text strong style={{ color: covColor, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6 }}>Coverage Quality Check: {covStatus}</Typography.Text>
+					{Array.isArray(n.coverageCheck?.findings) && n.coverageCheck.findings.length > 0 && (
+						<ul style={{ margin: '4px 0 0 16px', padding: 0, color: covColor, fontSize: 11 }}>
+							{n.coverageCheck.findings.slice(0, 5).map((f, i) => <li key={i}>{f}</li>)}
+						</ul>
+					)}
+				</div>
+			)}
 			<Typography.Text strong style={{ fontSize: 15, color: '#102540' }}>{n.title}</Typography.Text>
 			{n.overview && <div style={{ color: '#475569', fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>{n.overview}</div>}
 			<div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>

@@ -12,6 +12,7 @@
     "start": "node src/index.js",
     "prisma": "prisma",
     "seed": "prisma db seed",
+    "test": "node --test \"test/**/*.test.mjs\"",
     "migrate": "node src/scripts/migrate.js",
     "migrate:dev": "prisma migrate dev --name init",
     "generate": "prisma generate"

@@ -38,20 +38,29 @@ export function ModuleNotePreviewCard({ note }) {
 	const n = note;
 	const roadmap = Array.isArray(n.studyRoadmap) ? n.studyRoadmap : [];
 	const los = Array.isArray(n.losStatements) ? n.losStatements : [];
+	const conceptMap = Array.isArray(n.conceptMap) ? n.conceptMap : [];
 	const concepts = Array.isArray(n.concepts) ? n.concepts : [];
 	const formulas = Array.isArray(n.formulaRecap) ? n.formulaRecap : [];
 	const practiceSet = Array.isArray(n.practiceSet) ? n.practiceSet : [];
 	const solutions = Array.isArray(n.workedSolutions) ? n.workedSolutions : [];
+	const commonMistakes = Array.isArray(n.commonMistakes) ? n.commonMistakes : [];
+	const examTips = Array.isArray(n.examTips) ? n.examTips : [];
+	const coverage = n.coverageCheck && typeof n.coverageCheck === 'object' ? n.coverageCheck : null;
 	const checks = Array.isArray(n.revisionCheck) ? n.revisionCheck : [];
+	const hasFormulaInterpretation = formulas.some(f => f && f.interpretation);
 
 	const tocItems = [
 		'Module Overview and Learning Outcomes',
 		...(roadmap.length ? ['Study Roadmap'] : []),
+		...(conceptMap.length ? ['Concept Map'] : []),
 		...concepts.map(c => typeof c.title === 'string' ? c.title : 'Topic Notes'),
+		...(commonMistakes.length ? ['Common Mistakes'] : []),
+		...(examTips.length ? ['Milven Exam Tips'] : []),
 		...(solutions.length ? ['Worked Examples'] : []),
 		...(practiceSet.length ? ['Exam-Style Questions with Answers'] : []),
 		...(formulas.length ? ['Formula Bank'] : []),
 		...(checks.length ? ['Final Exam Checklist'] : []),
+		...(coverage ? ['Coverage Quality Check'] : []),
 	];
 
 	return (
@@ -187,6 +196,26 @@ export function ModuleNotePreviewCard({ note }) {
 					</div>
 				)}
 
+				{/* ─── Concept Map ─── */}
+				{conceptMap.length > 0 && (
+					<div style={{ marginBottom: 32 }}>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 12px' }}>Concept Map</h2>
+						<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+							{conceptMap.map((node, i) => (
+								<div key={i} style={{ border: '2px solid #102540', borderRadius: 10, padding: '12px 16px', background: '#fff' }}>
+									<div style={{ fontSize: 13, fontWeight: 800, color: '#102540', textTransform: 'uppercase' }}>{prose(node.node || node.topic || `Node ${i + 1}`)}</div>
+									{Array.isArray(node.concepts) && node.concepts.length > 0 && (
+										<div style={{ fontSize: 12, color: '#374151', marginTop: 6, fontWeight: 600 }}>{node.concepts.join(' | ')}</div>
+									)}
+									{node.connectsTo && (
+										<div style={{ fontSize: 12, color: '#64748b', marginTop: 6, fontStyle: 'italic' }}>{prose(node.connectsTo)}</div>
+									)}
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+
 				{/* ─── 3+ Topic-by-topic Notes ─── */}
 				{concepts.length > 0 && concepts.map((c, i) => {
 					const sectionNum = 3 + i;
@@ -257,6 +286,35 @@ export function ModuleNotePreviewCard({ note }) {
 						</div>
 					);
 				})}
+
+				{/* ─── Common Mistakes ─── */}
+				{commonMistakes.length > 0 && (
+					<div style={{ marginBottom: 32 }}>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 12px' }}>Common Mistakes</h2>
+						<div style={{ border: '1px solid #f59e0b', background: '#fffbeb', borderRadius: 8, padding: '12px 16px' }}>
+							{commonMistakes.map((m, i) => (
+								<div key={i} style={{ fontSize: 13, color: '#92400e', marginTop: i > 0 ? 8 : 0, lineHeight: 1.6 }}>
+									• <strong>{prose(m.mistake || m)}</strong>
+									{(m.correction) && <span> — {prose(m.correction)}</span>}
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+
+				{/* ─── Milven Exam Tips ─── */}
+				{examTips.length > 0 && (
+					<div style={{ marginBottom: 32 }}>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 12px' }}>Milven Exam Tips</h2>
+						<div style={{ border: '2px solid #102540', borderRadius: 8, padding: '12px 16px' }}>
+							{examTips.map((t, i) => (
+								<div key={i} style={{ fontSize: 13, color: '#374151', marginTop: i > 0 ? 8 : 0, lineHeight: 1.6 }}>
+									• {prose(t.tip || t)}
+								</div>
+							))}
+						</div>
+					</div>
+				)}
 
 				{/* ─── Worked Examples (standalone section) ─── */}
 				{solutions.length > 0 && (
@@ -334,7 +392,8 @@ export function ModuleNotePreviewCard({ note }) {
 									<tr>
 										<th style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 11, padding: '8px 10px', textAlign: 'left', borderRight: '1px solid #1b3a5b' }}>Formula area</th>
 										<th style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 11, padding: '8px 10px', textAlign: 'left', borderRight: '1px solid #1b3a5b' }}>Formula</th>
-										<th style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 11, padding: '8px 10px', textAlign: 'left' }}>Use</th>
+										<th style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 11, padding: '8px 10px', textAlign: 'left', borderRight: hasFormulaInterpretation ? '1px solid #1b3a5b' : 'none' }}>Use</th>
+										{hasFormulaInterpretation && <th style={{ background: '#102540', color: '#fff', fontWeight: 700, fontSize: 11, padding: '8px 10px', textAlign: 'left' }}>Interpretation</th>}
 									</tr>
 								</thead>
 								<tbody>
@@ -344,7 +403,8 @@ export function ModuleNotePreviewCard({ note }) {
 											<td style={{ padding: '6px 10px', borderRight: '1px solid #e2e8f0' }}>
 												<MathText text={f.formula} tag="span" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 13, color: '#102540' }} />
 											</td>
-											<td style={{ padding: '6px 10px', color: '#475569', fontSize: 12 }}>{prose(f.useCase) || '—'}</td>
+											<td style={{ padding: '6px 10px', color: '#475569', fontSize: 12, borderRight: hasFormulaInterpretation ? '1px solid #e2e8f0' : 'none' }}>{prose(f.useCase) || '—'}</td>
+											{hasFormulaInterpretation && <td style={{ padding: '6px 10px', color: '#475569', fontSize: 12 }}>{prose(f.interpretation) || '—'}</td>}
 										</tr>
 									))}
 								</tbody>
@@ -366,6 +426,37 @@ export function ModuleNotePreviewCard({ note }) {
 								</li>
 							))}
 						</ul>
+					</div>
+				)}
+				{/* ─── Coverage Quality Check ─── */}
+				{coverage && (
+					<div style={{ marginBottom: 32 }}>
+						<h2 style={{ fontSize: 24, fontWeight: 800, color: '#102540', margin: '0 0 12px' }}>Coverage Quality Check</h2>
+						{(() => {
+							const status = coverage.status || 'REVISE';
+							const color = status === 'PASS' ? '#166534' : status === 'REVISE' ? '#92400e' : '#991b1b';
+							const bg = status === 'PASS' ? '#f0fdf4' : status === 'REVISE' ? '#fffbeb' : '#fef2f2';
+							const border = status === 'PASS' ? '#22c55e' : status === 'REVISE' ? '#f59e0b' : '#ef4444';
+							return (
+								<div style={{ padding: '14px 18px', borderRadius: 10, background: bg, border: `2px solid ${border}` }}>
+									<div style={{ fontSize: 14, fontWeight: 700, color, textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.6 }}>{status}</div>
+									{Array.isArray(coverage.findings) && coverage.findings.length > 0 && (
+										<ul style={{ margin: '10px 0 0 20px', padding: 0, color, fontSize: 13 }}>
+											{coverage.findings.map((f, i) => <li key={i}>{f}</li>)}
+										</ul>
+									)}
+									{coverage.checks && typeof coverage.checks === 'object' && (
+										<div style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>
+											{coverage.checks.losCoverage != null && <span style={{ marginRight: 12 }}>LOS coverage: {coverage.checks.losCoverage}%</span>}
+											{coverage.checks.conceptCount != null && <span style={{ marginRight: 12 }}>Concepts: {coverage.checks.conceptCount}</span>}
+											{coverage.checks.formulaCount != null && <span style={{ marginRight: 12 }}>Formulas: {coverage.checks.formulaCount}</span>}
+											{coverage.checks.exampleCount != null && <span style={{ marginRight: 12 }}>Examples: {coverage.checks.exampleCount}</span>}
+											{coverage.checks.questionCount != null && <span>Questions: {coverage.checks.questionCount}</span>}
+										</div>
+									)}
+								</div>
+							);
+						})()}
 					</div>
 				)}
 			</div>

@@ -3,10 +3,217 @@ import { z } from 'zod';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
-import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
+import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion, AI_PROVIDERS } from '../lib/aiProvider.js';
+import { stripJsonFences, extractCurriculumExcerpt } from '../lib/aiContent.js';
 
-export function moduleNotesRouter(prisma) {
+const MAX_TARGET_TOPICS = 20;
+
+const MILVEN_NOTES_SYSTEM = `You are the Milven Notes Generator for Milven Finance School.
+
+Your task is to generate exam-focused study notes from the supplied curriculum extract. The notes must be generated at TOPIC LEVEL, not at full learning module level, unless instructed otherwise.
+
+Milven style: professional, clear, technical, exam-focused, practical and concise.
+
+Never invent curriculum content. If a concept is mentioned in the curriculum but not clearly explained in the extract, flag it under Instructor Review Required instead of inventing unsupported detail.
+
+Return valid JSON only.`;
+
+function buildTopicPrompt(ctx, year) {
+	const levelLabel = String(ctx.level || '').replace('LEVEL', 'Level ');
+	const lengthGuide = ctx.level === 'LEVEL1' ? '1-2 pages (concise)'
+		: ctx.level === 'LEVEL2' ? '2-3 pages'
+		: '3-4 pages';
+	const losLines = ctx.los.length
+		? ctx.los.map(l => `- ${l.ref ? l.ref + ': ' : ''}${l.statement}${l.commandWord ? ` [${l.commandWord}]` : ''}`).join('\n')
+		: '(none supplied — flag under Instructor Review Required)';
+	const conceptLines = ctx.concepts.length
+		? ctx.concepts.map(c => `- ${c.name}${c.losCode ? ` (${c.losCode})` : ''}`).join('\n')
+		: '(none found — infer only from supplied material)';
+	const formulaContext = ctx.formulas.length
+		? ctx.formulas.map(f => `- ${f.name}: ${f.formula}${f.variables ? ` | vars: ${f.variables}` : ''}${f.whenToUse ? ` | use: ${f.whenToUse}` : ''}${f.interpretation ? ` | meaning: ${f.interpretation}` : ''}`).join('\n')
+		: '(no Formula Book entries for this topic)';
+	const notesContext = ctx.notes.length
+		? ctx.notes.map(n => `- ${n.title}${n.overview ? `: ${n.overview}` : ''}`).join('\n')
+		: '(no published Milven Notes for this topic)';
+	const curriculumSection = ctx.curriculumExcerpt
+		? `\n\nCURRICULUM EXTRACT (control source — do NOT reproduce verbatim):\n---\n${ctx.curriculumExcerpt}\n---\n`
+		: '\n\nCURRICULUM EXTRACT: (none available for this volume — flag gaps under Instructor Review Required)\n';
+
+	return `You are the Milven Notes Generator for Milven Finance School.
+
+Generate exam-focused study notes for the supplied TOPIC. Use the curriculum extract as the coverage control source. Do not copy curriculum wording. Do not reproduce examples from the curriculum or from third-party tuition providers. Write in original Milven teaching language.
+
+Inputs:
+- Programme: CFA
+- Exam level: ${levelLabel}
+- Volume: ${ctx.volumeName || 'N/A'}
+- Topic area: ${ctx.course?.name || 'N/A'}
+- Learning module: ${ctx.moduleName || 'N/A'}
+- Topic: ${ctx.topicName}
+- Candidate level: ${levelLabel}
+- Required output length: ${lengthGuide}
+- Milven style: professional, clear, technical, exam-focused, practical and concise.
+- Year: ${year}
+
+Learning Outcome Statements:
+${losLines}
+
+Sub-concepts to cover:
+${conceptLines}
+
+Formula Book entries:
+${formulaContext}
+
+Completed Milven Notes for reference:
+${notesContext}
+${curriculumSection}
+Core rules:
+1. Do not reproduce or copy the curriculum word-for-word.
+2. Use the curriculum as the control source, but rewrite in Milven's own teaching voice.
+3. Ensure every LOS relevant to the topic is covered.
+4. Include all concepts necessary to pass the exam for this topic.
+5. Do not over-expand into unnecessary academic detail.
+6. Do not omit formulas, definitions, interpretations, assumptions, common traps or exam applications.
+7. Where the curriculum contains examples, create fresh Milven examples using different numbers and wording.
+8. If a concept is mentioned in the curriculum but not clearly explained in the extract, flag it under Instructor Review Required instead of inventing unsupported detail.
+9. Include exam-style questions, but make them original and consistent with the exam format.
+10. Output must be candidate-ready.
+
+Required structure (map each section onto the JSON field below):
+1. LOS Covered -> losStatements
+2. Introduction -> overview
+3. Concept Map -> conceptMap
+4. Core Concepts -> concepts
+5. Key Formulas and Interpretation -> formulaRecap
+6. Worked Examples -> workedSolutions (plus inline concept workedExample)
+7. Typical Exam Questions -> practiceSet
+8. Common Mistakes -> commonMistakes
+9. Milven Exam Tips -> examTips
+10. Quick Revision Box -> revisionCheck
+11. Coverage Quality Check -> coverageCheck
+
+Return ONLY valid JSON:
+{
+  "notes": [{
+    "title": "Topic title",
+    "studyTime": "e.g. 1.5 hours",
+    "difficulty": "Foundational|Intermediate|Advanced",
+    "calculatorUse": "Minimal|Moderate|Heavy",
+    "overview": "Introduction — 3-5 sentences on what this topic covers and why it matters.",
+    "losStatements": [{"ref": "LOS 1.a", "statement": "full LOS text", "commandWord": "interpret"}],
+    "conceptMap": [{"node": "Topic node", "connectsTo": "How it links to the topic/objective", "concepts": ["key idea"]}],
+    "concepts": [{
+      "sectionNumber": "4.1",
+      "title": "Concept title",
+      "meaning": "Plain-English explanation (3-5 sentences).",
+      "explanation": "Detailed explanation (8-15 sentences) covering theory, relationships, edge cases and exam relevance.",
+      "formula": "LaTeX formula or null",
+      "formulaVariables": "variable definitions or null",
+      "formulaUseCase": "When to use this formula or null",
+      "formulaExamTrap": "Common mistake with this formula or null",
+      "interpretation": "What the result means (2-4 sentences) or null",
+      "workedExample": {"title": "Example title", "given": "Question with all givens", "solution": "Step 1\\nStep 2\\nStep 3", "conclusion": "Final answer and interpretation"},
+      "examTip": "Specific exam strategy (2-3 sentences) or null",
+      "commonMistake": "What candidates get wrong (2-3 sentences) or null"
+    }],
+    "formulaRecap": [{"name": "Formula area", "formula": "LaTeX formula", "useCase": "one-line when to use", "interpretation": "what the result means"}],
+    "workedSolutions": [{"label": "A", "title": "Short title", "question": "Full question text", "method": "Step 1\\nStep 2\\nStep 3", "interpretation": "What the result means", "trap": "What students might do wrong"}],
+    "practiceSet": [{"question": "Full question stem", "options": ["option A", "option B", "option C"], "correctAnswer": "A. answer text with explanation", "explanation": "Detailed explanation", "losRef": "LOS reference"}],
+    "commonMistakes": [{"mistake": "Common candidate error", "correction": "How to avoid it"}],
+    "examTips": [{"tip": "Milven exam tip"}],
+    "revisionCheck": [{"item": "explain the ..."}],
+    "coverageCheck": {"status": "PASS|REVISE|INSTRUCTOR REVIEW REQUIRED", "notes": ["coverage note"]}
+  }]
+}
+
+FORMAT RULES:
+${LATEX_PROMPT_SECTION}
+- Wrap ALL formulas in \\[...\\] for display math or \\(...\\) for inline.
+- Every formula must include a use case and an exam trap.
+- ANSWER CONSISTENCY (CRITICAL): "correctAnswer" MUST match the explanation. Distribute correct answers across A/B/C.
+
+QUALITY RULES:
+- Cover EVERY LOS and EVERY concept.
+- Include original worked examples and original exam-style questions.
+- Flag unsupported or ambiguous content under Instructor Review Required.
+- No curriculum text or third-party tuition notes copied.
+
+Generate exactly 1 topic note. Return ONLY valid JSON.`;
+}
+
+// Programmatic coverage / quality-control validator (always runs).
+function coverageValidation(note, ctx) {
+	const findings = [];
+	const checks = {};
+	const norm = (s) => String(s || '').toLowerCase().trim();
+
+	const losRefs = ctx.los.map(l => norm(l.ref)).filter(Boolean);
+	const noteLos = Array.isArray(note.losStatements) ? note.losStatements.map(l => norm(l.ref)).filter(Boolean) : [];
+	const covered = losRefs.filter(r => noteLos.some(x => x === r || x.includes(r) || r.includes(x)));
+	checks.losCoverage = losRefs.length ? Math.round((covered.length / losRefs.length) * 100) : (noteLos.length ? 100 : 0);
+	if (!ctx.los.length) findings.push('No Learning Outcome Statements were found for this topic. Generation requires instructor review.');
+	else if (covered.length < losRefs.length) findings.push(`LOS coverage incomplete: ${covered.length}/${losRefs.length} LOS appear in the notes.`);
+
+	checks.formulaCount = Array.isArray(note.formulaRecap) ? note.formulaRecap.length : 0;
+	if (ctx.formulas.length && checks.formulaCount === 0) findings.push('No formulas captured even though the Formula Book has entries for this topic.');
+
+	checks.conceptCount = Array.isArray(note.concepts) ? note.concepts.length : 0;
+	if (checks.conceptCount < 3) findings.push('Fewer than 3 core concepts were generated.');
+
+	const inlineExamples = Array.isArray(note.concepts) ? note.concepts.filter(c => c && c.workedExample).length : 0;
+	checks.exampleCount = (Array.isArray(note.workedSolutions) ? note.workedSolutions.length : 0) + inlineExamples;
+	if (checks.exampleCount < 1) findings.push('No worked examples were generated.');
+
+	checks.questionCount = Array.isArray(note.practiceSet) ? note.practiceSet.length : 0;
+	if (checks.questionCount < 5) findings.push('Fewer than 5 exam-style questions were generated.');
+
+	checks.mistakeCount = Array.isArray(note.commonMistakes) ? note.commonMistakes.length : 0;
+	if (checks.mistakeCount < 2) findings.push('Fewer than 2 common mistakes were generated.');
+
+	checks.tipCount = Array.isArray(note.examTips) ? note.examTips.length : 0;
+	if (checks.tipCount < 2) findings.push('Fewer than 2 Milven exam tips were generated.');
+
+	// Compression + verbatim-copy detection
+	const longStrings = [];
+	const strings = [];
+	const walk = (v) => {
+		if (typeof v === 'string') {
+			if (v.length > 800) longStrings.push(v);
+			if (v.length > 120) strings.push(v);
+		} else if (Array.isArray(v)) v.forEach(walk);
+		else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+	};
+	walk(note);
+	checks.overlongBlocks = longStrings.length;
+	if (longStrings.length) findings.push(`${longStrings.length} block(s) exceed 800 characters — consider tightening.`);
+
+	if (ctx.curriculumExcerpt) {
+		const excerptLower = ctx.curriculumExcerpt.toLowerCase();
+		let copied = 0;
+		for (const s of strings) {
+			if (excerptLower.includes(s.toLowerCase().slice(0, 120))) copied++;
+		}
+		checks.copiedBlocks = copied;
+		if (copied > 0) findings.push(`${copied} block(s) appear to be copied verbatim from the curriculum — paraphrase required.`);
+	}
+
+	let status = findings.length ? 'REVISE' : 'PASS';
+	if (!ctx.los.length) status = 'INSTRUCTOR REVIEW REQUIRED';
+	if (!ctx.curriculumExcerpt && !ctx.notes.length) status = 'INSTRUCTOR REVIEW REQUIRED';
+	return { status, findings, checks };
+}
+
+export function moduleNotesRouter(prisma, deps = {}) {
 	const router = Router();
+
+	// Injectable AI dependencies (defaults preserve production behaviour; tests can override).
+	const ai = {
+		getAIApiKey: deps.getAIApiKey || getAIApiKey,
+		getActiveProvider: deps.getActiveProvider || getActiveProvider,
+		getActiveModel: deps.getActiveModel || getActiveModel,
+		getDefaultModel: deps.getDefaultModel || getDefaultModel,
+		chatCompletion: deps.chatCompletion || chatCompletion,
+	};
 
 	const defaultInclude = {
 		course: { select: { id: true, name: true, level: true } },
@@ -29,11 +236,15 @@ export function moduleNotesRouter(prisma) {
 		overview: z.string().optional().nullable(),
 		studyRoadmap: z.any().optional().nullable(),
 		losStatements: z.any().optional().nullable(),
+		conceptMap: z.any().optional().nullable(),
 		concepts: z.any().optional().nullable(),
 		moduleSummary: z.string().optional().nullable(),
 		formulaRecap: z.any().optional().nullable(),
 		practiceSet: z.any().optional().nullable(),
 		workedSolutions: z.any().optional().nullable(),
+		commonMistakes: z.any().optional().nullable(),
+		examTips: z.any().optional().nullable(),
+		coverageCheck: z.any().optional().nullable(),
 		revisionCheck: z.any().optional().nullable(),
 		order: z.number().int().optional().default(0),
 		status: z.enum(['DRAFT', 'PUBLISHED']).optional().default('DRAFT'),
@@ -134,7 +345,7 @@ export function moduleNotesRouter(prisma) {
 		}
 	});
 
-	// ─── AI GENERATE PREVIEW (Admin only) ────────────────────
+	// ─── AI GENERATE PREVIEW (Admin only, topic-level, SSE) ──
 	router.post('/generate-ai/preview', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		const schema = z.object({
 			courseId: z.string(),
@@ -144,228 +355,96 @@ export function moduleNotesRouter(prisma) {
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 			year: z.coerce.number().int().optional().default(2026),
 			count: z.coerce.number().int().min(1).max(20).optional().nullable(),
+			provider: z.string().optional().nullable(),
+			model: z.string().optional().nullable(),
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: 'Validation failed', details: parse.error.flatten() });
 
 		const { courseId, volumeId, moduleId, topicId, level, year } = parse.data;
-		let count = parse.data.count || null;
+		const requestedProvider = parse.data.provider || null;
+		const requestedModel = parse.data.model || null;
+		const count = parse.data.count || null;
 
-		const aiProvider = await getActiveProvider(prisma);
-		const aiModel = await getActiveModel(prisma) || getDefaultModel(aiProvider);
-		const apiKey = await getAIApiKey(prisma, aiProvider);
-		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider}.` });
-
-		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true } });
-		if (!course) return res.status(400).json({ error: 'Course not found' });
-
-		let volumeName = null, moduleName = null, topicName = null;
-		let topicNames = [];
-		if (volumeId) { const v = await prisma.volume.findUnique({ where: { id: volumeId }, select: { name: true } }); if (v) volumeName = v.name; }
-		if (moduleId) { const m = await prisma.module.findUnique({ where: { id: moduleId }, select: { name: true } }); if (m) moduleName = m.name; }
-		if (topicId) { const t = await prisma.topic.findUnique({ where: { id: topicId }, select: { name: true } }); if (t) topicName = t.name; topicNames = [topicName]; }
-		else {
-			const topicWhere = { courseId };
-			if (moduleId) topicWhere.moduleId = moduleId;
-			else if (volumeId) topicWhere.module = { volumeId };
-			const resolvedTopics = await prisma.topic.findMany({ where: topicWhere, select: { name: true }, orderBy: { order: 'asc' }, take: 50 });
-			topicNames = resolvedTopics.map(t => t.name);
+		// Provider: requested (if valid) → otherwise active provider.
+		const activeProvider = await ai.getActiveProvider(prisma);
+		const aiProvider = (requestedProvider && AI_PROVIDERS[requestedProvider]) ? requestedProvider : activeProvider;
+		// Model: requested → active model → provider default.
+		const aiModel = requestedModel || await ai.getActiveModel(prisma) || ai.getDefaultModel(aiProvider);
+		const apiKey = await ai.getAIApiKey(prisma, aiProvider);
+		if (!apiKey) {
+			const label = AI_PROVIDERS[aiProvider]?.label || aiProvider;
+			return res.status(400).json({ error: `No API key configured for ${label}. Set it in .env or in Admin settings.` });
 		}
 
-		// Auto-detect count: if moduleId given, 1 note for that module; if volumeId, count modules in volume; else count modules in course
-		if (!count) {
-			if (moduleId) {
-				count = 1;
-			} else {
-				const modWhere = { courseId };
-				if (volumeId) modWhere.volumeId = volumeId;
-				const modCount = await prisma.module.count({ where: modWhere });
-				count = Math.max(1, Math.min(20, modCount));
-			}
-		}
+		// Build the source-of-truth context for a single Topic.
+		async function buildTopicContext(topic, course) {
+			const [concepts, formulas, notes] = await Promise.all([
+				prisma.concept.findMany({
+					where: { topicId: topic.id },
+					select: { name: true, losCode: true, commandWord: true, learningOutcomeStatement: true },
+					orderBy: [{ order: 'asc' }, { name: 'asc' }],
+				}),
+				prisma.formula.findMany({
+					where: { OR: [{ topicId: topic.id }, { moduleId: topic.moduleId }] },
+					select: { name: true, formula: true, variables: true, interpretation: true, whenToUse: true, watchOut: true, losTag: true },
+					orderBy: [{ order: 'asc' }],
+					take: 40,
+				}),
+				prisma.moduleNote.findMany({
+					where: { topicId: topic.id, status: 'PUBLISHED' },
+					select: { title: true, overview: true, moduleSummary: true },
+					take: 10,
+				}),
+			]);
 
-		let curriculumExcerpt = '';
-		if (volumeId) {
-			const currDoc = await prisma.curriculumDocument.findUnique({
-				where: { courseId_volumeId: { courseId, volumeId } },
-				select: { extractedText: true }
-			});
-			if (currDoc?.extractedText) {
-				const text = currDoc.extractedText;
-				if (text.length <= 15000) {
-					curriculumExcerpt = text;
-				} else {
-					// Topic-aware extraction: find windows mentioning the topic/module
-					const keywords = [topicName, moduleName].filter(Boolean)
-						.flatMap(n => n.split(/[\s,;:()\-\/]+/).filter(w => w.length > 3))
-						.map(w => w.toLowerCase());
-					if (keywords.length === 0) {
-						curriculumExcerpt = text.substring(0, 15000) + '\n... [truncated]';
-					} else {
-						const WINDOW = 2500, STEP = 500;
-						const windows = [];
-						for (let i = 0; i < text.length; i += STEP) {
-							const chunk = text.substring(i, i + WINDOW).toLowerCase();
-							let score = keywords.reduce((s, kw) => { let c = 0, idx = 0; while ((idx = chunk.indexOf(kw, idx)) !== -1) { c++; idx += kw.length; } return s + c; }, 0);
-							windows.push({ start: i, score });
-						}
-						windows.sort((a, b) => b.score - a.score);
-						const ranges = [];
-						let total = 0;
-						for (const w of windows) {
-							if (total >= 15000 || w.score === 0) break;
-							const end = Math.min(w.start + WINDOW, text.length);
-							const budget = Math.min(end - w.start, 15000 - total);
-							ranges.push({ start: w.start, end: w.start + budget });
-							total += budget;
-						}
-						ranges.sort((a, b) => a.start - b.start);
-						const merged = [];
-						for (const r of ranges) {
-							if (merged.length > 0 && r.start <= merged[merged.length - 1].end + 300) merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, r.end);
-							else merged.push({ ...r });
-						}
-						curriculumExcerpt = merged.map((r, i) => {
-							const t = text.substring(r.start, r.end).trim();
-							const pm = text.substring(0, r.start).match(/\[PAGE (\d+)\]/g);
-							const pg = pm ? parseInt(pm[pm.length - 1].match(/\d+/)[0], 10) : null;
-							const prefix = pg ? `[... content from page ${pg} ...]\n` : (r.start > 0 ? '[...]\n' : '');
-							return prefix + t + (i < merged.length - 1 ? '\n[...]\n' : '');
-						}).join('\n') + (merged[merged.length - 1]?.end < text.length ? '\n... [additional content omitted]' : '');
-					}
+			// Curriculum (control source) scoped to the topic's volume.
+			let curriculumExcerpt = '';
+			try {
+				const currDoc = await prisma.curriculumDocument.findUnique({
+					where: { courseId_volumeId: { courseId: topic.courseId || course.id, volumeId: topic.module.volumeId } },
+					select: { extractedText: true },
+				});
+				if (currDoc?.extractedText) {
+					curriculumExcerpt = extractCurriculumExcerpt(currDoc.extractedText, [topic.name, topic.module.name, ...concepts.map(c => c.name)]);
+				}
+			} catch { /* no curriculum document for this volume */ }
+
+			// LOS: topic fields + concept fields + published note LOS.
+			const los = [];
+			const seen = new Set();
+			const pushLos = (ref, statement, commandWord) => {
+				if (!statement) return;
+				const key = `${ref || ''}|${statement}`;
+				if (seen.has(key)) return;
+				seen.add(key);
+				los.push({ ref: ref || '', statement, commandWord: commandWord || '' });
+			};
+			pushLos(topic.losCode, topic.learningOutcomeStatement, topic.commandWord);
+			for (const c of concepts) pushLos(c.losCode, c.learningOutcomeStatement, c.commandWord);
+			for (const n of notes) {
+				if (Array.isArray(n.losStatements)) {
+					for (const l of n.losStatements) pushLos(l?.ref || l?.losCode, l?.statement || l?.learningOutcomeStatement, l?.commandWord);
 				}
 			}
+
+			return {
+				topic,
+				course,
+				level,
+				year,
+				topicName: topic.name,
+				moduleName: topic.module.name,
+				volumeName: topic.module.volume?.name || null,
+				concepts,
+				formulas,
+				notes,
+				curriculumExcerpt,
+				los,
+			};
 		}
 
-		const levelLabel = level.replace('LEVEL', 'Level ');
-		const hierarchyContext = [
-			`Course: ${course.name}`, `CFA Level: ${levelLabel}`,
-			volumeName ? `Volume: ${volumeName}` : null,
-			moduleName ? `Learning Module: ${moduleName}` : null,
-			topicName ? `Topic: ${topicName}` : null,
-		].filter(Boolean).join('\n');
-
-		const curriculumSection = curriculumExcerpt
-			? `\n\nCURRICULUM REFERENCE MATERIAL (use this as the primary source — reference exact LOS, formulas, and page numbers from the document):\n---\n${curriculumExcerpt}\n---\n`
-			: '';
-
-		const topicContext = topicNames.length > 0 ? `\nTopics to cover: ${topicNames.join(', ')}` : '';
-
-		const prompt = `You are the Milven Notes Generator for Milven Finance School.
-
-Generate exam-ready study notes for the supplied learning module. Use the official curriculum extract only as the coverage control source. Do not copy the curriculum wording. Do not reproduce examples from the curriculum or from tuition providers. Write in original Milven teaching language.
-
-Inputs:
-- Programme: CFA
-- Exam level: ${levelLabel}
-- Topic area: ${course.name}
-- Volume: ${volumeName || 'N/A'}
-- Learning module: ${moduleName || 'N/A'}
-- Learning Outcome Statements: ${topicNames.join(', ') || 'All in module'}
-- Year: ${year}
-${curriculumSection}
-
---- OUTPUT STRUCTURE ---
-
-Return a JSON object: { "notes": [ ONE note object ] }
-
-{
-  "notes": [{
-    "title": "Learning Module title (e.g. Rates and Returns)",
-    "studyTime": "e.g. 3 hours",
-    "difficulty": "Foundational|Intermediate|Advanced",
-    "calculatorUse": "Minimal|Moderate|Heavy",
-    "overview": "string — 3-5 sentences on what this module covers and why it matters",
-    "moduleSummary": "string — bullet-point list of what this module must help you do (skills)",
-    "studyRoadmap": [array],
-    "losStatements": [array],
-    "concepts": [array — 10-20 items, THIS IS THE MAIN BODY],
-    "formulaRecap": [array — Formula Bank],
-    "practiceSet": [array — 10 Exam-Style Questions],
-    "workedSolutions": [array — 4-6 Worked Examples],
-    "revisionCheck": [array — Final Exam Checklist]
-  }]
-}
-
---- FIELD SPECIFICATIONS ---
-
-1. "overview": 3-5 sentences explaining what this module is about, why it matters for the exam, and how it connects to other topics.
-
-2. "moduleSummary": A bullet-point list (newline-separated) of what this module must help the candidate do. Example:
-   "• Interpret an interest rate as a required return, a discount rate and an opportunity cost.\\n• Break down an interest rate into the real risk-free rate and risk premiums.\\n• Calculate and interpret holding period returns and average returns."
-
-3. "studyRoadmap": 5-8 objects forming a logical study sequence:
-   { "step": "1", "focus": "Interest rate meaning", "whyItMatters": "Explains the economic role of discount rates and required returns." }
-   The last item should be a "Simple decision logic" entry listing when to use each formula/method.
-
-4. "losStatements": ALL Learning Outcome Statements:
-   { "ref": "LOS 1", "statement": "full LOS text", "commandWord": "calculate|interpret|compare|etc" }
-
-5. "concepts": 10-20 topic-by-topic notes — THIS IS THE MAIN BODY.
-   EVERY topic and sub-topic in the module gets its own entry with numbered section titles.
-   Each object:
-   {
-     "sectionNumber": "3.1",
-     "title": "What an Interest Rate Means",
-     "meaning": "Plain-English explanation (3-5 sentences) of the concept.",
-     "explanation": "DETAILED explanation (8-15 sentences). Cover theory, relationships, edge cases, exam relevance, practical application. Use bold key terms inline.",
-     "formula": "LaTeX formula string or null",
-     "formulaVariables": "variable definitions (semicolons or newlines) or null",
-     "formulaUseCase": "When to use this formula (1-2 sentences) or null",
-     "formulaExamTrap": "Common mistake with this formula (1-2 sentences) or null",
-     "interpretation": "What the result means (2-4 sentences) or null",
-     "workedExample": { "title": "Example title", "given": "Question text with all givens", "solution": "Step 1\\nStep 2\\nStep 3 (each step on new line)", "conclusion": "Final answer and interpretation" } OR null,
-     "examTip": "Specific exam strategy (2-3 sentences) or null",
-     "commonMistake": "What candidates get wrong (2-3 sentences) or null"
-   }
-
-   IMPORTANT: For EVERY formula in a concept, fill formulaUseCase and formulaExamTrap. These render as a table:
-   | Formula | [the formula] |
-   | Use when | [formulaUseCase] |
-   | Exam trap | [formulaExamTrap] |
-
-6. "formulaRecap": Formula Bank — EVERY formula from the module (8-20 items):
-   { "name": "formula area name", "formula": "LaTeX formula", "useCase": "one-line description of when to use" }
-
-7. "practiceSet": 10 exam-style MCQ questions. MUST include "options" array:
-   {
-     "question": "Full question stem text",
-     "options": ["option A text", "option B text", "option C text"],
-     "correctAnswer": "A. [answer text with explanation]",
-     "explanation": "Detailed explanation of why this is correct",
-     "losRef": "LOS reference"
-   }
-
-8. "workedSolutions": 4-6 detailed Worked Examples (lettered A-F):
-   { "label": "A", "title": "Short title (e.g. Interest Rate Premiums)", "question": "Full question text", "method": "Step 1\\nStep 2\\nStep 3 (newline-separated steps)", "interpretation": "What the result means", "trap": "What students might do wrong" }
-
-9. "revisionCheck": 10-15 Final Exam Checklist items:
-   { "item": "explain the three meanings of an interest rate" }
-   (Each item completes the sentence "Can I ___?")
-
---- FORMAT REQUIREMENTS ---
-${LATEX_PROMPT_SECTION}
-- Wrap ALL formulas in \\[...\\] for display math or \\(...\\) for inline.
-- Every formula must include a "Use when" and "Exam trap".
-- PRESERVE exact notation from the curriculum but convert to valid LaTeX.
-
---- QUALITY RULES ---
-- Cover EVERY LOS.
-- Cover EVERY topic and concept in the learning module.
-- Keep the structure easy to follow.
-- Include original examples and original exam-style questions.
-- Explain formulas, variables, use cases and traps.
-- Flag gaps as "Instructor Review Required" if the source extract is incomplete.
-- No curriculum text or third-party tuition notes copied.
-- The notes must be sufficient for a candidate to study, practise and revise the learning module.
-- ANSWER CONSISTENCY (CRITICAL): The "correctAnswer" MUST match the explanation. If your solution calculates Portfolio B is better, correctAnswer MUST reference B, NOT A. Double-check every question. Never default to "A".
-- Make sure content is optimised so generation completes within token limits without timeout.
-
-Generate exactly 1 module note. Return ONLY valid JSON.`;
-
-		// ── SSE: switch to streaming before the long OpenAI call ─────────────────
-		// Nginx / DigitalOcean / cloud proxies kill idle TCP connections after ~60 s.
-		// SSE heartbeats every 15 s keep the pipe alive.
+		// ── SSE: switch to streaming before the long AI calls ────────────────
 		res.writeHead(200, {
 			'Content-Type': 'text/event-stream',
 			'Cache-Control': 'no-cache, no-transform',
@@ -377,43 +456,102 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 		const sseEnd = () => { clearInterval(sseHeartbeat); try { res.end(); } catch {} };
 
 		try {
-			// Generate exactly 1 note per preview request to avoid timeout
-			const aiResult = await chatCompletion({
-				apiKey, provider: aiProvider, model: aiModel,
-				messages: [
-					{ role: 'system', content: `You are the Milven Notes Generator for Milven Finance School. You produce premium, exam-ready study notes in the Milven Notes format. Return valid JSON only. Generate extremely detailed, comprehensive content — each note must be 10-15 printed pages worth of material. Every text field must be multiple sentences. The concepts array must have 10-20 items covering every topic and sub-topic. Write full original content — do NOT copy curriculum wording or third-party tuition materials.\n\n${LATEX_SYSTEM_RULES}` },
-					{ role: 'user', content: prompt }
-				],
-				temperature: 0.7,
-				maxTokens: 16384,
-				jsonMode: true,
-				timeout: 180_000,
-			});
+			const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true } });
+			if (!course) { sseSend('error', { error: 'Course not found' }); return sseEnd(); }
 
-			const raw = aiResult.content || '{}';
-			let items = [];
-			try {
-				const parsed = JSON.parse(raw);
-				items = Array.isArray(parsed.notes) ? parsed.notes : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : [parsed]));
-			} catch {
-				sseSend('error', { error: 'AI returned invalid JSON' });
-				return sseEnd();
-			}
-			if (!items.length) {
-				sseSend('error', { error: 'AI returned no module notes' });
-				return sseEnd();
+			// Resolve target topics (topic-level generation).
+			let targetTopics = [];
+			const topicSelect = {
+				id: true, name: true, losCode: true, commandWord: true, learningOutcomeStatement: true,
+				courseId: true, moduleId: true,
+				module: { select: { id: true, name: true, volumeId: true, volume: { select: { id: true, name: true } } } },
+			};
+			if (topicId) {
+				const t = await prisma.topic.findUnique({ where: { id: topicId }, select: topicSelect });
+				if (!t) { sseSend('error', { error: 'Topic not found' }); return sseEnd(); }
+				targetTopics = [t];
+			} else {
+				const where = { courseId };
+				if (moduleId) where.moduleId = moduleId;
+				else if (volumeId) where.module = { volumeId };
+				targetTopics = await prisma.topic.findMany({ where, select: topicSelect, orderBy: [{ order: 'asc' }, { name: 'asc' }], take: MAX_TARGET_TOPICS });
+				if (!targetTopics.length) {
+					sseSend('error', { error: volumeId ? 'No topics found in the selected volume.' : (moduleId ? 'No topics found in the selected module.' : 'No topics found for the selected course.') });
+					return sseEnd();
+				}
+				if (count) targetTopics = targetTopics.slice(0, Math.min(count, MAX_TARGET_TOPICS));
 			}
 
-			// ── Answer consistency validation for exam-style questions ─────────
-			for (const note of items) {
-				const ps = Array.isArray(note.practiceSet) ? note.practiceSet : [];
+			const items = [];
+			const validationSummaries = [];
+
+			for (const topic of targetTopics) {
+				const ctx = await buildTopicContext(topic, course);
+				const prompt = buildTopicPrompt(ctx, year);
+
+				let item = null;
+				try {
+					const aiResult = await ai.chatCompletion({
+						apiKey, provider: aiProvider, model: aiModel,
+						messages: [
+							{ role: 'system', content: `${MILVEN_NOTES_SYSTEM}\n\n${LATEX_SYSTEM_RULES}` },
+							{ role: 'user', content: prompt },
+						],
+						temperature: 0.7,
+						maxTokens: 16384,
+						jsonMode: true,
+						timeout: 180_000,
+					});
+					const parsed = JSON.parse(stripJsonFences(aiResult.content || '{}'));
+					const noteItems = Array.isArray(parsed.notes) ? parsed.notes
+						: (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : [parsed]));
+					item = noteItems.find(Boolean) || null;
+				} catch (genErr) {
+					const msg = genErr?.error?.message || genErr?.message || 'AI generation failed';
+					console.error(`[moduleNotes.generate-ai.preview] topic ${topic.id} failed:`, msg);
+					items.push({
+						title: topic.name, topicId: topic.id, moduleId: topic.moduleId, volumeId: topic.module.volumeId, courseId: topic.courseId || courseId, level, year,
+						topicName: topic.name, moduleName: topic.module.name, volumeName: topic.module.volume?.name || null, courseName: course.name,
+						_error: msg,
+						coverageCheck: { status: 'INSTRUCTOR REVIEW REQUIRED', findings: [msg], checks: {} },
+					});
+					validationSummaries.push({ topicId: topic.id, topicName: topic.name, status: 'INSTRUCTOR REVIEW REQUIRED', findings: [msg] });
+					continue;
+				}
+
+				if (!item) {
+					const msg = 'AI returned no note for this topic.';
+					items.push({
+						title: topic.name, topicId: topic.id, moduleId: topic.moduleId, volumeId: topic.module.volumeId, courseId: topic.courseId || courseId, level, year,
+						topicName: topic.name, moduleName: topic.module.name, volumeName: topic.module.volume?.name || null, courseName: course.name,
+						_error: msg,
+						coverageCheck: { status: 'INSTRUCTOR REVIEW REQUIRED', findings: [msg], checks: {} },
+					});
+					validationSummaries.push({ topicId: topic.id, topicName: topic.name, status: 'INSTRUCTOR REVIEW REQUIRED', findings: [msg] });
+					continue;
+				}
+
+				// Attach per-topic linkage so bulk generation maps each note to its own topic.
+				item.topicId = topic.id;
+				item.moduleId = topic.moduleId;
+				item.volumeId = topic.module.volumeId;
+				item.courseId = topic.courseId || courseId;
+				item.level = level;
+				item.year = year;
+				item.topicName = topic.name;
+				item.moduleName = topic.module.name;
+				item.volumeName = topic.module.volume?.name || null;
+				item.courseName = course.name;
+				if (!item.title) item.title = topic.name;
+
+				// Answer-consistency auto-correction for MCQ practice questions.
+				const ps = Array.isArray(item.practiceSet) ? item.practiceSet : [];
 				for (const q of ps) {
 					if (!q.correctAnswer || !q.explanation) continue;
 					const ca = String(q.correctAnswer).toUpperCase().trim();
 					const exp = String(q.explanation);
-					const found = [];
 					const letters = ['A', 'B', 'C'];
-					// Scan explanation for which letter is explicitly called correct
+					const found = [];
 					const patterns = [
 						new RegExp('correct\\s+answer\\s+is\\s+([A-C])', 'i'),
 						new RegExp('option\\s+([A-C])\\s+is\\s+(correct|right|preferred)', 'i'),
@@ -429,54 +567,34 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 						if (m) found.push(m[1].toUpperCase());
 					}
 					if (found.length > 0) {
-						// Pick the most common letter mentioned as correct
 						const counts = {};
-						for (const l of found) { counts[l] = (counts[l] || 0) + 1; }
+						for (const l of found) counts[l] = (counts[l] || 0) + 1;
 						let best = ca;
 						let bestCount = counts[ca] || 0;
 						for (const l of letters) {
 							if ((counts[l] || 0) > bestCount) { best = l; bestCount = counts[l]; }
 						}
-						if (best !== ca) {
-							console.warn(`[moduleNotes.ai.preview] Auto-corrected answer: ${ca} → ${best} for: ${(q.question || '').slice(0, 80)}...`);
-							q.correctAnswer = best;
-						}
-					}
-					// Numeric cross-check: extract numbers from explanation and option text
-					const optNums = {};
-					for (const l of letters) {
-						const optRegex = new RegExp(`${l}\\.\\s*[^\\n]*?(\\d+\\.?\\d*%?)`, 'i');
-						const m = q.question ? q.question.match(optRegex) : null;
-						if (m) optNums[l] = parseFloat(m[1].replace(/%/g, ''));
-					}
-					if (Object.keys(optNums).length >= 2) {
-						const expNums = [...exp.matchAll(/-?\d+\.?\d*/g)].map(m => parseFloat(m[0])).filter(n => !isNaN(n));
-						const numCorrect = optNums[ca];
-						if (numCorrect != null && expNums.length > 0) {
-							const foundNum = expNums.some(n => Math.abs(n - numCorrect) < 0.01);
-							if (!foundNum) {
-								for (const l of letters) {
-									if (l === ca) continue;
-									const n2 = optNums[l];
-									if (n2 != null && expNums.some(n => Math.abs(n - n2) < 0.01)) {
-										console.warn(`[moduleNotes.ai.preview] Numeric auto-correct: ${ca} → ${l} for: ${(q.question || '').slice(0, 80)}...`);
-										q.correctAnswer = l;
-										break;
-									}
-								}
-							}
-						}
+						if (best !== ca) q.correctAnswer = best;
 					}
 				}
+
+				// Coverage validation (programmatic).
+				const coverage = coverageValidation(item, ctx);
+				item.coverageCheck = { status: coverage.status, findings: coverage.findings, checks: coverage.checks };
+
+				items.push(item);
+				validationSummaries.push({ topicId: topic.id, topicName: topic.name, status: coverage.status, findings: coverage.findings });
 			}
+
+			if (!items.length) { sseSend('error', { error: 'AI returned no topic notes' }); return sseEnd(); }
 
 			sseSend('result', {
 				generated: { items },
-				meta: { courseId, volumeId, moduleId, topicId, level, year }
+				meta: { courseId, volumeId, moduleId, topicId, level, year, provider: aiProvider, model: aiModel, validation: validationSummaries },
 			});
 			return sseEnd();
 		} catch (err) {
-			const msg = err?.error?.message || err?.message || 'OpenAI request failed';
+			const msg = err?.error?.message || err?.message || 'AI request failed';
 			console.error('[moduleNotes.generate-ai.preview]', msg);
 			sseSend('error', { error: msg });
 			return sseEnd();
@@ -490,30 +608,45 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 			if (!generated?.items || !Array.isArray(generated.items)) return res.status(400).json({ error: 'Missing generated items' });
 			if (!Array.isArray(selectedIndices) || selectedIndices.length === 0) return res.status(400).json({ error: 'No notes selected' });
 			const { courseId, volumeId, moduleId, topicId, level, year } = meta || {};
-			if (!courseId || !level) return res.status(400).json({ error: 'Missing meta (courseId, level)' });
 
 			const created = [];
 			const errors = [];
+			const skipped = [];
 			for (const idx of selectedIndices) {
 				const item = generated.items[idx];
-				if (!item) { errors.push(`Index ${idx}: item not found in generated.items`); continue; }
+				if (!item) { errors.push(`Index ${idx}: item not found`); continue; }
+				if (item._error && !item.overview && !item.concepts && !item.formulaRecap) {
+					skipped.push({ index: idx, reason: item._error });
+					continue;
+				}
+				const itemCourseId = item.courseId || courseId;
+				const itemLevel = item.level || level;
+				if (!itemCourseId || !itemLevel) { errors.push(`Index ${idx}: missing course/level`); continue; }
 				try {
 					const note = await prisma.moduleNote.create({
 						data: {
-							title: String(item.title || `Module Note ${idx + 1}`).slice(0, 255),
-							level, courseId, volumeId: volumeId || null, moduleId: moduleId || null, topicId: topicId || null,
-							year: year || 2026,
+							title: String(item.title || `Topic Note ${idx + 1}`).slice(0, 255),
+							level: itemLevel,
+							courseId: itemCourseId,
+							volumeId: item.volumeId || volumeId || null,
+							moduleId: item.moduleId || moduleId || null,
+							topicId: item.topicId || topicId || null,
+							year: item.year || year || 2026,
 							studyTime: item.studyTime || null,
 							difficulty: item.difficulty || null,
 							calculatorUse: item.calculatorUse || null,
 							overview: item.overview || null,
 							studyRoadmap: item.studyRoadmap || null,
 							losStatements: item.losStatements || null,
+							conceptMap: item.conceptMap || null,
 							concepts: item.concepts || null,
 							moduleSummary: item.moduleSummary || null,
 							formulaRecap: item.formulaRecap || null,
 							practiceSet: item.practiceSet || null,
 							workedSolutions: item.workedSolutions || null,
+							commonMistakes: item.commonMistakes || null,
+							examTips: item.examTips || null,
+							coverageCheck: item.coverageCheck || null,
 							revisionCheck: item.revisionCheck || null,
 							order: idx + 1,
 							status: 'DRAFT',
@@ -530,7 +663,7 @@ Generate exactly 1 module note. Return ONLY valid JSON.`;
 			if (created.length === 0 && errors.length > 0) {
 				return res.status(500).json({ created: 0, error: `Failed to save notes: ${errors[0]}`, errors });
 			}
-			return res.status(201).json({ created: created.length, notes: created });
+			return res.status(201).json({ created: created.length, skipped, notes: created, errors });
 		} catch (err) {
 			console.error('[moduleNotes.generate-ai.accept]', err);
 			return res.status(500).json({ error: 'Failed to accept module notes' });

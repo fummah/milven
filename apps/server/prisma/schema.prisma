@@ -811,13 +811,19 @@ model ModuleNote {
   studyRoadmap    Json?                 // [{step, focus, whyItMatters, examTip}]
   // Learning Outcome Statements (JSON array)
   losStatements   Json?                 // [{ref, statement, commandWord}]
+  // Concept Map (JSON array) — topic-level Milven Notes
+  conceptMap      Json?                 // [{node, connectsTo, concepts}]
   // Topic-by-topic notes (JSON array) — rich concept pages
   concepts        Json?                 // [{title, meaning, explanation, formula, formulaVariables, interpretation, workedExample, examTip, commonMistake, formulaUseCase, formulaExamTrap}]
   // End-of-module content
   moduleSummary   String?               // Key ideas, must-know distinctions, exam traps
-  formulaRecap    Json?                 // [{name, formula, variables}]
-  practiceSet     Json?                 // [{question, losRef}]
-  workedSolutions Json?                 // [{question, answer, method, interpretation, trap}]
+  formulaRecap    Json?                 // [{name, formula, variables, useCase, interpretation}]
+  practiceSet     Json?                 // [{question, options, correctAnswer, explanation, losRef}]
+  workedSolutions Json?                 // [{label, title, question, method, interpretation, trap}]
+  // Topic-level Milven Notes sections
+  commonMistakes  Json?                 // [{mistake, correction}]
+  examTips        Json?                 // [{tip}]
+  coverageCheck   Json?                 // {status, notes}
   revisionCheck   Json?                 // [{item}]
   // Meta
   order           Int       @default(0)
