@@ -130,20 +130,20 @@ jobs:
             docker compose -f docker-compose.prod.yml ps
 
             echo "Checking API container..."
-            API_RUNNING=$(docker inspect -f '{{.State.Running}}' mutingwende_api 2>/dev/null || echo false)
+            API_RUNNING=$(docker inspect -f '{{.State.Running}}' milven_api 2>/dev/null || echo false)
 
             if [ "$API_RUNNING" != "true" ]; then
-              echo "ERROR: mutingwende_api is not running"
-              docker logs --tail=200 mutingwende_api || true
+              echo "ERROR: milven_api is not running"
+              docker logs --tail=200 milven_api || true
               exit 1
             fi
 
             echo "Checking frontend container..."
-            FRONTEND_RUNNING=$(docker inspect -f '{{.State.Running}}' mutingwende_frontend 2>/dev/null || echo false)
+            FRONTEND_RUNNING=$(docker inspect -f '{{.State.Running}}' milven_frontend 2>/dev/null || echo false)
 
             if [ "$FRONTEND_RUNNING" != "true" ]; then
-              echo "ERROR: mutingwende_frontend is not running"
-              docker logs --tail=200 mutingwende_frontend || true
+              echo "ERROR: milven_frontend is not running"
+              docker logs --tail=200 milven_frontend || true
               exit 1
             fi
 
