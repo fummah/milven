@@ -1,66 +1,114 @@
-version: "3.9"
-
 services:
+
   db:
     image: postgres:16
-    container_name: mutingwende_db
-    restart: always
+    container_name: milven_db
+    restart: unless-stopped
+
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: Action15
-      POSTGRES_DB: mutingwende
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 3s
-      timeout: 3s
-      retries: 20
-    ports:
-      - "5432:5432"  # optional: mainly for admin tools
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+
     volumes:
       - db_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+    networks:
+      - backend
+
 
   api:
     build:
       context: ./apps/server
       dockerfile: Dockerfile
-    container_name: mutingwende_api
-    restart: always
+
+    container_name: milven_api
+    restart: unless-stopped
+
     environment:
-      DATABASE_URL: postgresql://postgres:Action15@db:5432/mutingwende?schema=public
+      NODE_ENV: production
       PORT: 4000
-      JWT_SECRET: dev_secret
-      CORS_ORIGIN: http://localhost:5173,http://localhost:3000,exp://127.0.0.1:19000,http://164.90.156.5,https://dev.milven.zbsburial.com
-      ALLOW_DEBUG: "1"
-      DEFAULT_ADMIN_EMAIL: admin@milven.finance
-      DEFAULT_ADMIN_PASSWORD: Milven#2026
-      DEFAULT_ADMIN_FORCE_RESET: "1"
-      WEB_BASE_URL: https://dev.milven.zbsburial.com
-      SMTP_HOST: smtp.ethereal.email
-      SMTP_PORT: "587"
-      SMTP_USER: trent.shanahan@ethereal.email
-      SMTP_PASS: "F5VG1E763zgskN8eGU"
-      SMTP_FROM: info@zbsburial.com
-    ports:
-      - "4000:4000"
+
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+
+      JWT_SECRET: ${JWT_SECRET}
+
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      WEB_BASE_URL: ${WEB_BASE_URL}
+
+      DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD}
+      DEFAULT_ADMIN_FORCE_RESET: ${DEFAULT_ADMIN_FORCE_RESET}
+
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+
     volumes:
       - ./apps/server/uploads:/app/uploads
+
+    expose:
+      - "4000"
+
     depends_on:
       db:
         condition: service_healthy
-    command: sh -c "npm run migrate && npm run dev"
+
+    networks:
+      - backend
+      - frontend
+      - web_proxy
+
+    command: npm start
+
 
   frontend:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+
       args:
-        # Set VITE_API_URL in the server .env to point the built app at the API.
-        # Defaults to empty → same-origin (/api) proxied by the container's Nginx.
-        VITE_API_URL: ${VITE_API_URL:-}
-    container_name: mutingwende_frontend
-    restart: always
-    ports:
-      - "3000:80"  # serve React via Nginx in prod
+        VITE_API_URL: ${VITE_API_URL}
+
+    container_name: milven_frontend
+    restart: unless-stopped
+
+    expose:
+      - "80"
+
+    depends_on:
+      - api
+
+    networks:
+      - frontend
+      - web_proxy
+
 
 volumes:
   db_data:
+
+
+networks:
+
+  frontend:
+    driver: bridge
+
+  backend:
+    driver: bridge
+    internal: true
+
+  web_proxy:
+    external: true
+    name: web_proxy
