@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, validateFormulaItems, autoRepairLatex } from '../lib/openai.js';
-import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
+import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion, AI_PROVIDERS } from '../lib/aiProvider.js';
 
 /**
  * Build a formula-focused curriculum excerpt that prioritises formula sections
@@ -72,8 +72,26 @@ function buildFormulaCurriculumExcerpt(fullText, topicNames = [], maxChars = 150
 	}).join('\n') + (merged[merged.length - 1]?.end < fullText.length ? '\n... [additional content omitted]' : '');
 }
 
-export function formulasRouter(prisma) {
+export function formulasRouter(prisma, deps = {}) {
 	const router = Router();
+
+	// Injectable AI dependencies (defaults preserve production behaviour; tests can override).
+	const ai = {
+		getAIApiKey: deps.getAIApiKey || getAIApiKey,
+		getActiveProvider: deps.getActiveProvider || getActiveProvider,
+		getActiveModel: deps.getActiveModel || getActiveModel,
+		getDefaultModel: deps.getDefaultModel || getDefaultModel,
+		chatCompletion: deps.chatCompletion || chatCompletion,
+	};
+
+	// Resolve the provider/model for a generation request:
+	// requested (valid) provider → active provider; requested model → active model → provider default.
+	async function resolveAiSelection(requestedProvider, requestedModel) {
+		const activeProvider = await ai.getActiveProvider(prisma);
+		const provider = (requestedProvider && AI_PROVIDERS[requestedProvider]) ? requestedProvider : activeProvider;
+		const model = requestedModel || await ai.getActiveModel(prisma) || ai.getDefaultModel(provider);
+		return { provider, model };
+	}
 
 	// ─── Validation ────────────────────────────────────────────
 	const formulaSchema = z.object({
@@ -274,6 +292,8 @@ export function formulasRouter(prisma) {
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 			year: z.coerce.number().int().optional().default(2026),
 			count: z.coerce.number().int().min(1).max(100).optional().nullable(),
+			provider: z.string().optional().nullable(),
+			model: z.string().optional().nullable(),
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: 'Validation failed', details: parse.error.flatten() });
@@ -281,9 +301,9 @@ export function formulasRouter(prisma) {
 		const { courseId, volumeId, moduleId, topicId, level, year } = parse.data;
 		let count = parse.data.count || null;
 
-		const aiProvider = await getActiveProvider(prisma);
-		const aiModel = await getActiveModel(prisma) || getDefaultModel(aiProvider);
-		const apiKey = await getAIApiKey(prisma, aiProvider);
+		const { provider, model } = parse.data;
+		const { provider: aiProvider, model: aiModel } = await resolveAiSelection(provider, model);
+		const apiKey = await ai.getAIApiKey(prisma, aiProvider);
 		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider}. Set it in .env or in Admin Settings.` });
 
 		// ── Set up SSE to keep connection alive ──
@@ -461,7 +481,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 			const systemMsg = { role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. Use the LATEST CFA curriculum formulas only.\n\n${LATEX_SYSTEM_RULES}` };
 			const userMsg = { role: 'user', content: prompt };
 
-			const aiResult = await chatCompletion({
+			const aiResult = await ai.chatCompletion({
 				apiKey, provider: aiProvider, model: aiModel,
 				messages: [systemMsg, userMsg],
 				temperature: 0.7,
@@ -495,7 +515,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 				const fixPrompt = `Some formulas you returned had INVALID LaTeX and would fail to render in KaTeX. Regenerate ONLY these items with VALID, KaTeX-compileable LaTeX, returning the SAME JSON shape { "formulas": [...] } with ONLY the fixed entries (preserve the original "order" field so I can match them back):\n\n${invalidList}\n\nFor each fix, ensure:\n- Every \\frac has TWO brace groups: \\frac{...}{...}\n- All { } pairs balance\n- All \\left have matching \\right\n- Multi-char superscripts/subscripts use braces: x^{2}, R_{equity}\n- No malformed escapes inside sub/superscripts\n- No empty math delimiters\n\nReturn ONLY valid JSON containing the corrected formulas array.`;
 
 				try {
-					const fixResult = await chatCompletion({
+					const fixResult = await ai.chatCompletion({
 						apiKey, provider: aiProvider, model: aiModel,
 						messages: [systemMsg, userMsg, { role: 'assistant', content: raw }, { role: 'user', content: fixPrompt }],
 						temperature: 0.3,
@@ -568,7 +588,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 			cleanup();
 			sendEvent('result', {
 				generated: { items: previewItems },
-				meta: { courseId, volumeId, moduleId, topicId, level, year }
+				meta: { courseId, volumeId, moduleId, topicId, level, year, provider: aiProvider, model: aiModel }
 			});
 			res.end();
 		} catch (err) {
@@ -647,6 +667,8 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 			level: z.enum(['LEVEL1', 'LEVEL2', 'LEVEL3']),
 			year: z.coerce.number().int().optional().default(2026),
 			count: z.coerce.number().int().min(1).max(100).optional().nullable(),
+			provider: z.string().optional().nullable(),
+			model: z.string().optional().nullable(),
 		});
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: 'Validation failed', details: parse.error.flatten() });
@@ -654,9 +676,9 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 		const { courseId, volumeId, moduleId, topicId, level, year } = parse.data;
 		let count = parse.data.count || null;
 
-		const aiProvider2 = await getActiveProvider(prisma);
-		const aiModel2 = await getActiveModel(prisma) || getDefaultModel(aiProvider2);
-		const apiKey = await getAIApiKey(prisma, aiProvider2);
+		const { provider, model } = parse.data;
+		const { provider: aiProvider2, model: aiModel2 } = await resolveAiSelection(provider, model);
+		const apiKey = await ai.getAIApiKey(prisma, aiProvider2);
 		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider2}. Set it in .env or in Admin Settings.` });
 
 		try {
@@ -794,7 +816,7 @@ Return a JSON object:
 
 Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 
-			const aiResult2 = await chatCompletion({
+			const aiResult2 = await ai.chatCompletion({
 				apiKey, provider: aiProvider2, model: aiModel2,
 				messages: [
 					{ role: 'system', content: `You are an expert CFA curriculum author. Always return valid JSON only.\n\n${LATEX_SYSTEM_RULES}` },

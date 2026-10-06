@@ -317,16 +317,16 @@ export function autoRepairLatex(text) {
 
 function regexValidation(input) {
 
-	// malformed \frac — "rac{" without backslash
-	if (/(?<!\\)rac\{/.test(input)) {
+	// malformed \frac — "rac{" without backslash (must not match a valid "\frac{")
+	if (/(?<![\\a-zA-Z])rac\{/.test(input)) {
 		return {
 			valid: false,
 			reason: 'Malformed \\frac (found "rac{" — missing backslash)'
 		};
 	}
 
-	// malformed \text — "ext{" without backslash
-	if (/(?<!\\)ext\{/.test(input)) {
+	// malformed \text — "ext{" without backslash (must not match a valid "\text{")
+	if (/(?<![\\a-zA-Z])ext\{/.test(input)) {
 		return {
 			valid: false,
 			reason: 'Malformed \\text (found "ext{" — missing backslash)'

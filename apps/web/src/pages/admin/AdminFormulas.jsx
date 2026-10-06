@@ -36,6 +36,14 @@ export function AdminFormulas() {
 	const [aiCount, setAiCount] = useState(null);
 	const [aiYear, setAiYear] = useState(2026);
 
+	// AI Provider / Model selection (mirrors AdminQuestions / AdminSummarySheets / AdminModuleNotes)
+	const [aiProviders, setAiProviders] = useState([]);
+	const [aiActiveProvider, setAiActiveProvider] = useState('openai');
+	const [aiProvider, setAiProvider] = useState(undefined);
+	const [aiModel, setAiModel] = useState(undefined);
+	const [aiModels, setAiModels] = useState([]);
+	const [aiModelsLoading, setAiModelsLoading] = useState(false);
+
 	// AI Preview
 	const [aiPreviewOpen, setAiPreviewOpen] = useState(false);
 	const [aiPreview, setAiPreview] = useState(null);
@@ -241,8 +249,49 @@ export function AdminFormulas() {
 		}
 	};
 
+	const fetchAiModels = async (provider) => {
+		const prov = provider || aiProvider || aiActiveProvider || 'openai';
+		setAiModelsLoading(true);
+		setAiModels([]);
+		try {
+			const { data } = await api.get(`/api/settings/ai-models?provider=${prov}`);
+			const all = data.models || [];
+			// For OpenAI, filter to a curated list of recommended models (same as other generators)
+			const filtered = prov === 'openai'
+				? all.filter(m => ['gpt-5.5', 'gpt-5.5-pro', 'gpt-5.4-pro', 'o3', 'o1-pro', 'gpt-5.4', 'gpt-5.2-pro', 'gpt-5.2', 'gpt-4.1', 'gpt-4o', 'gpt-4-turbo', 'gpt-5-mini', 'gpt-5.4-mini', 'o4-mini', 'gpt-4.1-mini', 'gpt-4o-mini'].some(approved => m.id.startsWith(approved)))
+				: all;
+			setAiModels(filtered);
+			setAiModel(prev => prev || filtered[0]?.id);
+		} catch {
+			// silent — notFoundContent explains and the user can retry
+		} finally {
+			setAiModelsLoading(false);
+		}
+	};
+
+	const fetchAiConfig = async () => {
+		try {
+			const { data } = await api.get('/api/settings/ai-config');
+			setAiProviders(data.providers || []);
+			const prov = data.activeProvider || 'openai';
+			setAiActiveProvider(prov);
+			setAiProvider(prev => prev || prov);
+			setAiModel(prev => prev || data.activeModel || undefined);
+			fetchAiModels(prov);
+		} catch {
+			// ignore — generation surfaces provider errors
+		}
+	};
+
+	const openAiModal = () => {
+		setAiModalOpen(true);
+		fetchAiConfig();
+	};
+
 	const handleAiGenerate = async () => {
 		if (!aiCourseId) return message.warning('Please select a course');
+		if (!aiProvider) return message.warning('Please select an AI provider');
+		if (!aiModel) return message.warning('Please select an AI model');
 		const selectedCourse = courses.find(c => c.id === aiCourseId);
 		if (!selectedCourse) return message.warning('Course not found');
 		setAiGenerating(true);
@@ -255,6 +304,8 @@ export function AdminFormulas() {
 				level: selectedCourse.level,
 				year: aiYear,
 				count: aiCount || undefined,
+				provider: aiProvider || undefined,
+				model: aiModel || undefined,
 			};
 			Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 
@@ -555,7 +606,7 @@ export function AdminFormulas() {
 					</Col>
 					<Col xs={24} sm={12} md={4} style={{ textAlign: 'right' }}>
 						<Space>
-							<Button icon={<RobotOutlined />} onClick={() => setAiModalOpen(true)}
+							<Button icon={<RobotOutlined />} onClick={openAiModal}
 								style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6', color: '#fff' }}>
 								AI Generate
 							</Button>
@@ -861,6 +912,33 @@ export function AdminFormulas() {
 									max={2040}
 									value={aiYear}
 									onChange={setAiYear}
+									style={{ width: '100%', marginTop: 4 }}
+								/>
+							</Col>
+							<Col span={12}>
+								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>AI Provider *</Typography.Text>
+								<Select
+									placeholder="Select provider"
+									value={aiProvider}
+									onChange={v => { setAiProvider(v); setAiActiveProvider(v); setAiModel(undefined); fetchAiModels(v); }}
+									options={aiProviders.length > 0
+										? aiProviders.map(p => ({ value: p.id, label: `${p.label}${p.hasKey ? '' : ' (no key)'}` }))
+										: [{ value: 'openai', label: 'OpenAI' }, { value: 'anthropic', label: 'Anthropic (Claude)' }]
+									}
+									style={{ width: '100%', marginTop: 4 }}
+								/>
+							</Col>
+							<Col span={12}>
+								<Typography.Text strong style={{ fontSize: 12, color: '#102540' }}>AI Model *</Typography.Text>
+								<Select
+									showSearch
+									optionFilterProp="label"
+									loading={aiModelsLoading}
+									placeholder={aiModelsLoading ? 'Loading models…' : 'Select model'}
+									value={aiModel}
+									onChange={setAiModel}
+									options={aiModels.map(m => ({ value: m.id, label: m.display_name ? `${m.display_name} (${m.id})` : m.id }))}
+									notFoundContent={aiModelsLoading ? 'Loading…' : 'No models found — check API key in Settings'}
 									style={{ width: '100%', marginTop: 4 }}
 								/>
 							</Col>
