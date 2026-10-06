@@ -3,6 +3,7 @@ import { Card, Form, Input, Button, Select, message, Space, Typography, Table, M
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, FilterOutlined, StarOutlined, StarFilled, CopyOutlined, OrderedListOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { formatFormulaHtml, formatVariablesHtml, formatProseWithMath } from '../../lib/formatFormula';
+import { readSseStream } from '../../lib/sse';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -325,48 +326,37 @@ export function AdminFormulas() {
 				if (!response.ok) {
 					// Non-SSE error response (validation errors, etc.)
 					const errBody = await response.json().catch(() => ({}));
-					throw new Error(errBody.error || `Server error ${response.status}`);
+					throw new Error(errBody.message || errBody.error || `Server error ${response.status}`);
 				}
 
-				// Parse SSE stream
-				const reader = response.body.getReader();
-				const decoder = new TextDecoder();
-				let buffer = '';
+				const contentType = response.headers.get('content-type') || '';
+				if (!contentType.includes('text/event-stream')) {
+					// Some proxies/errors return JSON with a 2xx status.
+					const body = await response.json().catch(() => ({}));
+					throw new Error(body.message || body.error || 'AI generation returned an unexpected (non-stream) response.');
+				}
+
+				// Parse SSE stream robustly across chunk boundaries (see lib/sse.js).
 				let result = null;
 				let sseError = null;
-
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-					buffer += decoder.decode(value, { stream: true });
-
-					// Process complete SSE messages from buffer
-					const lines = buffer.split('\n');
-					buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-					let currentEvent = null;
-					for (const line of lines) {
-						if (line.startsWith('event: ')) {
-							currentEvent = line.slice(7).trim();
-						} else if (line.startsWith('data: ')) {
-							const dataStr = line.slice(6);
-							try {
-								const data = JSON.parse(dataStr);
-								if (currentEvent === 'result') {
-									result = data;
-								} else if (currentEvent === 'error') {
-									sseError = data.error || 'Unknown error';
-								}
-							} catch { /* ignore parse errors on progress events */ }
-							currentEvent = null;
-						} else if (line.startsWith(':') || line === '') {
-							// Comment (keepalive) or empty line — ignore
-						}
+				let sseMeta = null;
+				await readSseStream(response.body, (evt) => {
+					if (evt.event === 'result') {
+						result = evt.data;
+					} else if (evt.event === 'error') {
+						sseError = evt.data?.message || evt.data?.error || 'AI generation failed';
+						sseMeta = { provider: evt.data?.provider, model: evt.data?.model, rawPreview: evt.data?.rawPreview };
 					}
-				}
+				});
 
-				if (sseError) throw new Error(sseError);
-				if (!result) throw new Error('No result received from AI generation');
+				if (sseError) {
+					const err = new Error(sseError);
+					err.provider = sseMeta?.provider;
+					err.model = sseMeta?.model;
+					err.rawPreview = sseMeta?.rawPreview;
+					throw err;
+				}
+				if (!result) throw new Error('AI returned no result. The generation may have failed or the stream closed early.');
 
 				const gen = result.generated || null;
 				const meta = result.meta || payload;
@@ -392,8 +382,10 @@ export function AdminFormulas() {
 			setAiModalOpen(false);
 			fetchFormulas();
 		} catch (err) {
-			const msg = err?.response?.data?.error || err?.message || 'AI generation failed';
-			message.error(msg);
+			const base = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'AI generation failed';
+			const provider = err?.provider || err?.response?.data?.provider;
+			const model = err?.model || err?.response?.data?.model;
+			message.error(provider && model ? `${base} (${provider} / ${model})` : base);
 		} finally {
 			setAiGenerating(false);
 		}

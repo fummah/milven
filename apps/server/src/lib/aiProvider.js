@@ -154,10 +154,14 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 		for (let attempt = 0; attempt <= maxRetries; attempt++) {
 			try {
 				const completion = await tryCreate(currentOverrides);
+				const content = completion.choices?.[0]?.message?.content?.trim() || '';
+				// Normalized return shape shared by every provider/consumer.
 				return {
-					content: completion.choices?.[0]?.message?.content?.trim() || '',
+					text: content,
+					content,
 					usage: completion.usage || {},
 					model: completion.model || resolvedModel,
+					provider: 'openai',
 				};
 			} catch (err) {
 				const msg = (err?.message || '').toLowerCase();
@@ -283,10 +287,14 @@ export async function chatCompletion({ apiKey, provider = DEFAULT_PROVIDER, mode
 			const response = await attemptRequest(resolvedModel);
 			const data = await response.json();
 			const content = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+			const text = content.trim();
+			// Normalized return shape shared by every provider/consumer.
 			return {
-				content: content.trim(),
+				text,
+				content: text,
 				usage: { prompt_tokens: data.usage?.input_tokens || 0, completion_tokens: data.usage?.output_tokens || 0 },
 				model: data.model || resolvedModel,
+				provider: 'anthropic',
 			};
 		} catch (err) {
 			console.error('[Anthropic] Fatal error:', err?.message);

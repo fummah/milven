@@ -432,8 +432,17 @@ QUESTIONS:
 ${JSON.stringify(units)}`;
 }
 
-export function cmsRouter(prisma) {
+export function cmsRouter(prisma, deps = {}) {
 	const router = Router();
+
+	// Injectable AI dependency (defaults preserve production behaviour; tests can override).
+	const ai = {
+		chatCompletion: deps.chatCompletion || chatCompletion,
+		getAIApiKey: deps.getAIApiKey || getAIApiKey,
+		getActiveProvider: deps.getActiveProvider || getActiveProvider,
+		getActiveModel: deps.getActiveModel || getActiveModel,
+		getDefaultModel: deps.getDefaultModel || getDefaultModel,
+	};
 
   // Natural sort comparison - handles "Volume 1", "Volume 10" correctly
   function naturalCompare(a, b) {
@@ -2699,13 +2708,13 @@ export function cmsRouter(prisma) {
 		const parse = schema.safeParse(req.body);
 		if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
 		const { courseId, volumeId, topicId, topicIds, conceptIds, questionType, difficulty, difficulties, count, model, provider } = parse.data;
-		const aiProvider = provider || await getActiveProvider(prisma);
-		const aiModel = model || await getActiveModel(prisma) || getDefaultModel(aiProvider);
+		const aiProvider = provider || await ai.getActiveProvider(prisma);
+		const aiModel = model || await ai.getActiveModel(prisma) || ai.getDefaultModel(aiProvider);
 		const diffList = Array.isArray(difficulties) && difficulties.length
 			? difficulties
 			: (difficulty ? [difficulty] : ['MEDIUM']);
 
-		const apiKey = await getAIApiKey(prisma, aiProvider);
+		const apiKey = await ai.getAIApiKey(prisma, aiProvider);
 		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider}. Set it in .env or in Admin settings.` });
 
 		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true } });
@@ -2988,7 +2997,7 @@ MATH IN vignetteText: If the vignetteText contains any mathematical expressions,
 For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 
 		try {
-			const aiResult = await chatCompletion({
+			const aiResult = await ai.chatCompletion({
 				apiKey, provider: aiProvider, model: aiModel,
 				messages: [
 					{ role: 'system', content: `You are a senior CFA Level ${levelRoman} exam writer producing ORIGINAL, professional exam-quality item sets. You DO NOT copy or imitate any third-party prep provider. Always return valid JSON only.\n\nIMPORTANT: For every MCQ question, you MUST first solve the problem completely in workedSolution, then set the option matching your final answer as isCorrect. NEVER default to option A — distribute correct answers RANDOMLY and EVENLY across A, B, C positions (roughly 33% each). If you notice most correct answers landing on A, shuffle option order so correct moves to B or C.\n\nFor VIGNETTE sub-questions: EVERY sub-question MUST have its own los, traceSection, tracePage, keyFormulas, workedSolution, and explanation fields filled in. These are required for student revision. Each workedSolution must also explain why the incorrect answers are wrong.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\\\( \\\\), \\\\[ \\\\], or mathematical symbols like \\\\frac, \\\\sigma, \\\\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\\\( E(R) \\\\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL ${levelRoman} EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level ${levelRoman} exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include four sub-questions testing different aspects, ALL at the requested difficulty stated in the user prompt (see the DIFFICULTY REQUIREMENT block). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\nCRITICAL RULE — VIGNETTE GROUNDING: Every sub-question MUST reference specific data or exhibits from the vignette. No sub-question can ask about information not provided. Every number used in any workedSolution must appear explicitly in the vignetteText or an exhibit. After writing all sub-questions, trace each input number back to its source in the vignette.\n\nCRITICAL RULE — ACCURACY VERIFICATION: After generating every sub-question, re-read the workedSolution from start to finish. Verify the option marked isCorrect:true matches the solution's final computed answer. If the worked solution computes 12.17%, the option with 12.17% must be isCorrect:true — NOT 11.16% or any other number. Fix any mismatch before returning JSON.\n\n${LATEX_SYSTEM_RULES}` },
@@ -2999,7 +3008,7 @@ For MCQ or CONSTRUCTED_RESPONSE: items must be an array of ${count} objects.`;
 				jsonMode: true,
 				timeout: questionType === 'VIGNETTE_MCQ' ? 900000 : 300000,
 			});
-			let raw = aiResult.content || '{}';
+			let raw = (aiResult?.text ?? aiResult?.content ?? '') || '{}';
 console.log('AI raw output:', raw);
 			// Strip markdown code fences that some models (e.g. gpt-5.2) wrap around JSON
 			raw = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').replace(/(<br\s*\/?>\s*){2,}/gi, '<br>').trim();
@@ -3528,13 +3537,13 @@ console.log('AI raw output:', raw);
 		let { courseId, volumeId, moduleIds, topicIds, conceptIds, questionType, constructedMode, difficulty, difficulties, count, model, provider } = parse.data;
 		// Constructed Response defaults to case-study format (bundle with sub-questions)
 		if (questionType === 'CONSTRUCTED_RESPONSE' && !constructedMode) constructedMode = 'bundle';
-		const aiProvider = provider || await getActiveProvider(prisma);
-		const aiModel = model || await getActiveModel(prisma) || getDefaultModel(aiProvider);
+		const aiProvider = provider || await ai.getActiveProvider(prisma);
+		const aiModel = model || await ai.getActiveModel(prisma) || ai.getDefaultModel(aiProvider);
 		const diffList = Array.isArray(difficulties) && difficulties.length
 			? difficulties
 			: (difficulty ? [difficulty] : ['MEDIUM']);
 
-		const apiKey = await getAIApiKey(prisma, aiProvider);
+		const apiKey = await ai.getAIApiKey(prisma, aiProvider);
 		if (!apiKey) return res.status(400).json({ error: `AI API key not configured for ${aiProvider}. Set it in .env or in Admin settings.` });
 
 		const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, name: true, level: true } });
@@ -3966,7 +3975,7 @@ ${formatBlock}`;
 
 		try {
 			console.log('[AI Preview] Starting AI call for questionType:', questionType, 'provider:', aiProvider, 'model:', aiModel, 'requestedDifficulty:', diffList.join(','));
-			const aiResult = await chatCompletion({
+			const aiResult = await ai.chatCompletion({
 				apiKey, provider: aiProvider, model: aiModel,
 				messages: [
 					{ role: 'system', content: `You are a senior CFA Level ${levelRoman} exam writer. Return valid JSON only. Follow the detailed rules in the user prompt below. Always solve in workedSolution first, then set isCorrect to match. Distribute correct answers randomly across A/B/C.\n\nCRITICAL RULE — NO FORMULAS IN QUESTIONS: The "stem" field and "options" text must NEVER contain LaTeX, math notation, formulas, \\( \\), \\[ \\], or mathematical symbols like \\frac, \\sigma, \\beta. Question stems must use plain English (e.g. "What is the expected return?" NOT "What is \\( E(R) \\)?"). ALL formulas and math go ONLY in "keyFormulas" and "workedSolution" fields.\n\nCRITICAL RULE — VIGNETTE GROUNDING: Every sub-question MUST reference specific data/exhibits from the vignette. No sub-question can ask about information not provided. Every number used in workedSolution must appear explicitly in the vignetteText. After writing all sub-questions, trace each input number back to the vignette.\n\nCRITICAL RULE — VIGNETTE LENGTH: For VIGNETTE_MCQ, the vignetteText MUST contain at least 250 words of prose (not counting HTML tags). Write detailed, rich case studies with background, context, multiple scenarios, and data. Short vignettes under 250 prose words are unacceptable.\n\nCRITICAL RULE — CFA LEVEL ${levelRoman} EXAM SIMULATION: Vignette sub-questions must simulate a real CFA Level ${levelRoman} exam. NEVER generate simple recall, definition, or direct comprehension questions. Each item set must include four sub-questions testing different aspects, ALL at the requested difficulty stated in the user prompt (see the DIFFICULTY REQUIREMENT block). Stems must use professional context (e.g. "Based on the assumptions Chen provided, the value is closest to:" NOT "Calculate the value"). Distractors must represent real CFA candidate mistakes. The candidate should need 5-10 minutes to analyze the item set.\n\nCRITICAL RULE — ACCURACY VERIFICATION: After generating every sub-question, re-read the workedSolution and verify the option marked isCorrect matches the solution's final computed answer. If the solution yields 12.17%, the option with 12.17% must be isCorrect:true. Fix any mismatch before returning JSON.` },
@@ -3978,7 +3987,9 @@ ${formatBlock}`;
 				timeout: questionType === 'VIGNETTE_MCQ' ? 900000 : 300000,
 			});
 			console.log('[AI Preview] AI call completed');
-			const raw = aiResult.content?.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>').trim() || '{}';
+			// Normalized helper return: prefer `text`, fall back to legacy `content`.
+			const rawContent = (aiResult?.text ?? aiResult?.content ?? '') || '';
+			const raw = rawContent.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>').trim() || '{}';
 			console.log('[AI Preview] Raw response:', raw);
 			// Parse helper (also reused for the difficulty regeneration pass below)
 			const parseAiJson = (content) => {
@@ -4001,10 +4012,16 @@ ${formatBlock}`;
 				}
 				return { items: Array.isArray(parsedItems) ? parsedItems : [], parsed, parseError: false };
 			};
-			const initialParse = parseAiJson(aiResult.content);
+			const initialParse = parseAiJson(rawContent || '{}');
 			if (initialParse.parseError) {
-				console.error('[AI Preview] JSON parse error. Raw response (first 500 chars):', String(aiResult.content || '').substring(0, 500));
-				sseSend('error', { error: 'AI returned invalid JSON' });
+				console.error('[AI Preview] JSON parse error. Raw response (first 500 chars):', rawContent.substring(0, 500));
+				sseSend('error', {
+					error: 'AI_RESPONSE_PARSE_FAILED',
+					message: 'AI provider returned a response that could not be parsed as JSON.',
+					provider: aiProvider,
+					model: aiModel,
+					rawPreview: rawContent.substring(0, 500),
+				});
 				return sseEnd();
 			}
 			let items = initialParse.items;
@@ -4027,6 +4044,14 @@ ${formatBlock}`;
 			} else {
 				console.log('[AI-Preview] items is empty after parse; parsed top-level keys:', parsed && typeof parsed === 'object' ? Object.keys(parsed).join(',') : typeof parsed);
 				console.log('[AI-Preview] raw (first 800):', raw.substring(0, 800));
+				sseSend('error', {
+					error: 'AI_GENERATION_EMPTY',
+					message: 'AI provider returned a response but it contained no questions.',
+					provider: aiProvider,
+					model: aiModel,
+					rawPreview: rawContent.substring(0, 500),
+				});
+				return sseEnd();
 			}
 
 			// Robust MCQ post-processing: if AI returned MCQ items in bundle format, flatten them
@@ -4086,7 +4111,7 @@ ${formatBlock}`;
 					const units = buildUnits();
 					if (units.length > 0) {
 						console.log(`[AI Preview] Difficulty validation: checking ${units.length} question(s) against requested ${singleDifficulty}`);
-						const valResult = await chatCompletion({
+						const valResult = await ai.chatCompletion({
 							apiKey, provider: aiProvider, model: aiModel,
 							messages: [
 								{ role: 'system', content: 'You are a strict CFA exam difficulty validator. Return valid JSON only.' },
@@ -4097,11 +4122,11 @@ ${formatBlock}`;
 							jsonMode: true,
 							timeout: 120000,
 						});
-						const valParsed = parseAiJson(valResult.content);
+						const valParsed = parseAiJson(valResult?.text ?? valResult?.content ?? '{}');
 						const mismatches = Array.isArray(valParsed.parsed?.mismatches) ? valParsed.parsed.mismatches : [];
 						if (mismatches.length > 0) {
 							console.warn(`[AI Preview] Difficulty mismatch for ${mismatches.length} question(s); regenerating once with stricter instructions.`);
-							const regenResult = await chatCompletion({
+							const regenResult = await ai.chatCompletion({
 								apiKey, provider: aiProvider, model: aiModel,
 								messages: [
 									{ role: 'system', content: `You are a senior CFA Level ${levelRoman} exam writer. Return valid JSON only.` },
@@ -4112,7 +4137,7 @@ ${formatBlock}`;
 								jsonMode: true,
 								timeout: questionType === 'VIGNETTE_MCQ' ? 900000 : 300000,
 							});
-							const regenParse = parseAiJson(regenResult.content);
+							const regenParse = parseAiJson(regenResult?.text ?? regenResult?.content ?? '{}');
 							if (regenParse.items.length > 0) {
 								items = regenParse.items;
 								console.log('[AI Preview] Regenerated after difficulty correction; items:', items.length);
@@ -4698,56 +4723,62 @@ ${formatBlock}`;
 				items = items.filter((_, idx) => selectedIndices.includes(idx));
 			}
 			if (items.length === 0) return res.status(400).json({ error: 'No questions selected' });
-			for (const item of items) {
-				const stem = cleanQuestionHtml(String(item?.stem || '').trim());
-				if (!stem || stem.length < 5) continue;
-				// Duplicate check
-				if (await isDuplicateStem(stem)) {
-					skippedDuplicates.push(stem.substring(0, 60));
-					continue;
-				}
-				const topicId = String(item?.topicId || '').trim();
-				if (!topicId) continue;
-				const pathIds = await deriveQuestionPathIdsFromTopic(topicId);
-				if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) continue;
-				const itemConceptIds = Array.isArray(item?.conceptIds) ? item.conceptIds.filter(Boolean) : [];
-				const q = await prisma.question.create({
-					data: {
-						stem,
-						type: questionType,
-						level: pathIds.level || 'LEVEL1',
-						difficulty: item?.difficulty || 'MEDIUM',
-						marks: item?.marks ? Number(item.marks) : 1,
-						topicId,
-						...pathIds,
-						topics: { connect: [{ id: topicId }] },
-						...(itemConceptIds.length > 0 ? { concepts: { connect: itemConceptIds.map(cid => ({ id: cid })) } } : {}),
-						qid: item?.qid || null,
-						los: item?.los || null,
-						traceSection: item?.traceSection || null,
-						tracePage: item?.tracePage || null,
-						keyFormulas: cleanQuestionHtml(item?.keyFormulas || null),
-						workedSolution: cleanQuestionHtml(mergeWorkedSolution(item)),
-						questionGuidelines: item?.questionGuidelines || null,
-						output: item?.output || null,
-						isAiGenerated: true
+			// Insert atomically — a single transaction prevents partial inserts.
+			const flatCreated = await prisma.$transaction(async (tx) => {
+				const rows = [];
+				for (const item of items) {
+					const stem = cleanQuestionHtml(String(item?.stem || '').trim());
+					if (!stem || stem.length < 5) continue;
+					// Duplicate check
+					if (await isDuplicateStem(stem)) {
+						skippedDuplicates.push(stem.substring(0, 60));
+						continue;
 					}
-				});
-				if (questionType !== 'CONSTRUCTED_RESPONSE') {
-					const opts = Array.isArray(item?.options) ? item.options : [];
-					if (opts.length >= 2) {
-						await prisma.mcqOption.createMany({
-							data: opts.map(o => ({
-								questionId: q.id,
-								text: String(o.text || '').trim() || 'Option',
-								isCorrect: !!o.isCorrect
-							}))
-						});
+					const topicId = String(item?.topicId || '').trim();
+					if (!topicId) continue;
+					const pathIds = await deriveQuestionPathIdsFromTopic(topicId);
+					if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) continue;
+					const itemConceptIds = Array.isArray(item?.conceptIds) ? item.conceptIds.filter(Boolean) : [];
+					const q = await tx.question.create({
+						data: {
+							stem,
+							type: questionType,
+							level: pathIds.level || 'LEVEL1',
+							difficulty: item?.difficulty || 'MEDIUM',
+							marks: item?.marks ? Number(item.marks) : 1,
+							topicId,
+							...pathIds,
+							topics: { connect: [{ id: topicId }] },
+							...(itemConceptIds.length > 0 ? { concepts: { connect: itemConceptIds.map(cid => ({ id: cid })) } } : {}),
+							qid: item?.qid || null,
+							los: item?.los || null,
+							traceSection: item?.traceSection || null,
+							tracePage: item?.tracePage || null,
+							keyFormulas: cleanQuestionHtml(item?.keyFormulas || null),
+							workedSolution: cleanQuestionHtml(mergeWorkedSolution(item)),
+							questionGuidelines: item?.questionGuidelines || null,
+							output: item?.output || null,
+							isAiGenerated: true
+						}
+					});
+					if (questionType !== 'CONSTRUCTED_RESPONSE') {
+						const opts = Array.isArray(item?.options) ? item.options : [];
+						if (opts.length >= 2) {
+							await tx.mcqOption.createMany({
+								data: opts.map(o => ({
+									questionId: q.id,
+									text: String(o.text || '').trim() || 'Option',
+									isCorrect: !!o.isCorrect
+								}))
+							});
+						}
 					}
+					const full = await tx.question.findUnique({ where: { id: q.id }, include: { options: true } });
+					rows.push(full);
 				}
-				const full = await prisma.question.findUnique({ where: { id: q.id }, include: { options: true } });
-				created.push(full);
-			}
+				return rows;
+			});
+			created.push(...flatCreated);
 			return res.status(201).json({ created: created.length, questions: created, skippedDuplicates });
 		} catch (err) {
 			const msg = err?.message || err?.error?.message || 'Failed to save generated questions';

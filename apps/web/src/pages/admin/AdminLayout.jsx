@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Layout, Menu, Avatar, Typography, Grid, Drawer, Button } from 'antd';
+import { Layout, Menu, Avatar, Typography, Grid, Drawer, Button, Breadcrumb } from 'antd';
 import {
   DashboardOutlined,
   UserOutlined,
@@ -16,7 +16,8 @@ import {
   FolderOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  FunctionOutlined
+  FunctionOutlined,
+  ReadOutlined
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
@@ -85,12 +86,19 @@ const menuItems = [
       { key: 'topics', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/topics">Learning Modules</Link> },
       { key: 'questions', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/questions">Questions</Link> },
       { key: 'materials', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/materials">Learning Materials</Link> },
-      { key: 'documents', icon: subMenuBadge(<FolderOutlined />, '#8b5cf6'), label: <Link to="/admin/documents">Curriculum Docs</Link> },
-      { key: 'pdf-mapping', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/pdf-mapping">PDF Mapping</Link> },
-      { key: 'formulas', icon: subMenuBadge(<FunctionOutlined />, '#8b5cf6'), label: <Link to="/admin/formulas">Milven Formula Book</Link> },
-      { key: 'summary-sheets', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/admin/summary-sheets">Milven Summary Sheets</Link> },
-      { key: 'module-notes', icon: subMenuBadge(<BookOutlined />, '#8b5cf6'), label: <Link to="/admin/module-notes">Milven Module Notes</Link> },
       { key: 'levels', icon: subMenuBadge(<ProfileOutlined />, '#8b5cf6'), label: <Link to="/admin/levels">Levels</Link> }
+    ]
+  },
+  {
+    key: 'learning',
+    icon: modernBadge(<ReadOutlined />, 'linear-gradient(135deg, #14b8a6, #0d9488)'),
+    label: 'Learning',
+    children: [
+      { key: 'formulas', icon: subMenuBadge(<FunctionOutlined />, '#14b8a6'), label: <Link to="/admin/formulas">Milven Formula Book</Link> },
+      { key: 'summary-sheets', icon: subMenuBadge(<FileTextOutlined />, '#14b8a6'), label: <Link to="/admin/summary-sheets">Milven Summary Sheets</Link> },
+      { key: 'module-notes', icon: subMenuBadge(<BookOutlined />, '#14b8a6'), label: <Link to="/admin/module-notes">Milven Module Notes</Link> },
+      { key: 'documents', icon: subMenuBadge(<FolderOutlined />, '#14b8a6'), label: <Link to="/admin/documents">Curriculum Docs</Link> },
+      { key: 'pdf-mapping', icon: subMenuBadge(<FileTextOutlined />, '#14b8a6'), label: <Link to="/admin/pdf-mapping">PDF Mapping</Link> }
     ]
   },
   {
@@ -131,10 +139,27 @@ const isPreviewPath = (pathname) => /^\/admin\/courses\/[^/]+\/preview$/.test(pa
 // Parent key for each submenu item so we keep the parent open when a child is selected
 const childToParentKey = {
   'users-list': 'users', students: 'users', roles: 'users',
-  'courses-list': 'courses', volumes: 'courses', topics: 'courses', questions: 'courses', materials: 'courses', documents: 'courses', formulas: 'courses', 'summary-sheets': 'courses', 'module-notes': 'courses', levels: 'courses',
+  'courses-list': 'courses', volumes: 'courses', topics: 'courses', questions: 'courses', materials: 'courses', levels: 'courses',
+  formulas: 'learning', 'summary-sheets': 'learning', 'module-notes': 'learning', documents: 'learning', 'pdf-mapping': 'learning',
   'exams-list': 'exams', 'exam-builder': 'exams', 'mock-exams': 'exams',
   'reports-overview': 'reports',
   products: 'billing', purchases: 'billing', invoices: 'billing', subscriptions: 'billing', taxes: 'billing'
+};
+
+// Breadcrumb labels per selected menu key: [parentGroup, pageLabel].
+const adminBreadcrumbs = {
+  dashboard: ['Dashboard'],
+  'users-list': ['Users', 'Users'], students: ['Users', 'Candidates'], roles: ['Users', 'Roles'],
+  'courses-list': ['Courses', 'Courses'], volumes: ['Courses', 'Volumes'], topics: ['Courses', 'Learning Modules'],
+  questions: ['Courses', 'Questions'], materials: ['Courses', 'Learning Materials'], levels: ['Courses', 'Levels'],
+  formulas: ['Learning', 'Milven Formula Book'], 'summary-sheets': ['Learning', 'Milven Summary Sheets'],
+  'module-notes': ['Learning', 'Milven Module Notes'], documents: ['Learning', 'Curriculum Docs'],
+  'pdf-mapping': ['Learning', 'PDF Mapping'],
+  'exams-list': ['Exams', 'Exams'], 'exam-builder': ['Exams', 'Exam Builder'], 'mock-exams': ['Exams', 'Mock Exams'],
+  'reports-overview': ['Reports', 'Overview'],
+  products: ['Billing', 'Products'], purchases: ['Billing', 'Purchases'], invoices: ['Billing', 'Invoices'],
+  subscriptions: ['Billing', 'Subscriptions'], taxes: ['Billing', 'Taxes'],
+  settings: ['Settings']
 };
 
 export default function AdminLayout() {
@@ -219,6 +244,16 @@ export default function AdminLayout() {
   const siderWidth = (isMobile ? 0 : (collapsed ? 80 : 280));
   const HEADER_OFFSET = 64;
   const SIDER_TOP_GAP = 12;
+
+  // Breadcrumb derived from the active menu key (e.g. Learning > Milven Formula Book).
+  const breadcrumbItems = (() => {
+    const raw = adminBreadcrumbs[selected[0]];
+    if (!raw) return null;
+    const labels = raw.filter((l, i) => i === 0 || l !== raw[i - 1]); // collapse duplicates
+    return labels.map((title, i) => ({
+      title: i === labels.length - 1 ? <span style={{ color: '#64748b' }}>{title}</span> : title
+    }));
+  })();
   
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -351,9 +386,18 @@ export default function AdminLayout() {
                 width={Math.min(320, typeof window !== 'undefined' ? window.innerWidth * 0.86 : 320)}
                 className="modern-drawer"
               >
-                <Menu mode="inline" items={menuItems} selectedKeys={selected} onClick={() => setMobileOpen(false)} />
+                <Menu
+                  mode="inline"
+                  items={menuItems}
+                  selectedKeys={selected}
+                  defaultOpenKeys={selected[0] && childToParentKey[selected[0]] ? [childToParentKey[selected[0]]] : []}
+                  onClick={() => setMobileOpen(false)}
+                />
               </Drawer>
             </div>
+          )}
+          {!isPreview && breadcrumbItems && (
+            <Breadcrumb style={{ marginBottom: 12 }} items={breadcrumbItems} />
           )}
           <Outlet />
         </Content>

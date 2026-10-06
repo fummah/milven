@@ -481,6 +481,12 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 			const systemMsg = { role: 'system', content: `You are an expert CFA curriculum author. Return valid JSON only. Use the LATEST CFA curriculum formulas only.\n\n${LATEX_SYSTEM_RULES}` };
 			const userMsg = { role: 'user', content: prompt };
 
+			console.log('[formulas.generate-ai.preview] request', {
+				courseId, volumeId, moduleId, topicId, level, year, count,
+				provider: aiProvider, model: aiModel,
+			});
+			console.log('[formulas.generate-ai.preview] AI request start', { provider: aiProvider, model: aiModel, maxTokens });
+
 			const aiResult = await ai.chatCompletion({
 				apiKey, provider: aiProvider, model: aiModel,
 				messages: [systemMsg, userMsg],
@@ -490,19 +496,54 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 				timeout: 180_000,
 			});
 
-			const raw = aiResult.content || '{}';
-			let items = [];
-			try {
-				const parsed = JSON.parse(raw);
-				items = Array.isArray(parsed.formulas) ? parsed.formulas : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : []));
-			} catch {
+			// One normalized accessor: the shared helper returns `{ text, content, model, provider }`.
+			const raw = (aiResult?.text ?? aiResult?.content ?? '') || '';
+			console.log('[formulas.generate-ai.preview] raw AI response', { provider: aiProvider, model: aiModel, length: raw.length, preview: raw.slice(0, 500) });
+
+			if (!raw.trim()) {
 				cleanup();
-				sendEvent('error', { error: 'AI returned invalid JSON' });
+				sendEvent('error', {
+					error: 'AI_GENERATION_EMPTY',
+					message: 'AI provider returned an empty response.',
+					provider: aiProvider,
+					model: aiModel,
+				});
 				res.end();
 				return;
 			}
 
-			if (!items.length) { cleanup(); sendEvent('error', { error: 'AI returned no formulas' }); res.end(); return; }
+			let items = [];
+			try {
+				const parsed = JSON.parse(raw);
+				items = Array.isArray(parsed.formulas) ? parsed.formulas : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed) ? parsed : []));
+			} catch (parseErr) {
+				console.error('[formulas.generate-ai.preview] JSON parse failed:', parseErr?.message);
+				cleanup();
+				sendEvent('error', {
+					error: 'AI_RESPONSE_PARSE_FAILED',
+					message: 'AI provider returned a response that could not be parsed as JSON.',
+					provider: aiProvider,
+					model: aiModel,
+					rawPreview: raw.slice(0, 500),
+				});
+				res.end();
+				return;
+			}
+
+			console.log('[formulas.generate-ai.preview] parsed formulas', { count: items.length });
+
+			if (!items.length) {
+				cleanup();
+				sendEvent('error', {
+					error: 'AI_GENERATION_EMPTY',
+					message: 'AI provider returned a valid response but it contained no formulas.',
+					provider: aiProvider,
+					model: aiModel,
+					rawPreview: raw.slice(0, 500),
+				});
+				res.end();
+				return;
+			}
 
 			sendEvent('progress', { step: 'validating', message: `Validating ${items.length} formulas...` });
 
@@ -523,7 +564,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 						jsonMode: true,
 						timeout: 180_000,
 					});
-					const fixRaw = fixResult.content || '{}';
+					const fixRaw = (fixResult?.text ?? fixResult?.content ?? '') || '{}';
 					const fixParsed = JSON.parse(fixRaw);
 					const fixes = Array.isArray(fixParsed.formulas) ? fixParsed.formulas : (Array.isArray(fixParsed.items) ? fixParsed.items : []);
 					for (let i = 0; i < fixes.length; i++) {
@@ -593,9 +634,14 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 			res.end();
 		} catch (err) {
 			cleanup();
-			const msg = err?.error?.message || err?.message || 'OpenAI request failed';
-			console.error('[formulas.generate-ai.preview]', msg);
-			sendEvent('error', { error: msg });
+			const msg = err?.error?.message || err?.message || 'AI request failed';
+			console.error('[formulas.generate-ai.preview] caught exception:', msg);
+			sendEvent('error', {
+				error: 'AI_GENERATION_FAILED',
+				message: msg,
+				provider: aiProvider,
+				model: aiModel,
+			});
 			res.end();
 		}
 	});
@@ -616,40 +662,73 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 				return res.status(400).json({ error: 'Missing meta (courseId, level)' });
 			}
 
-			const created = [];
-			for (const idx of selectedIndices) {
-				const item = generated.items[idx];
-				if (!item) continue;
-				try {
-					const formula = await prisma.formula.create({
-						data: {
-							name: String(item.name || `Formula ${idx + 1}`).slice(0, 255),
-							formula: autoRepairLatex(String(item.formula || '')),
-							variables: autoRepairLatex(String(item.variables || '')),
-							interpretation: String(item.interpretation || ''),
-							whenToUse: String(item.whenToUse || ''),
-							watchOut: String(item.watchOut || ''),
-							calculatorCue: item.calculatorCue ? autoRepairLatex(String(item.calculatorCue)) : null,
-							losTag: item.losTag || null,
-							workedExample: item.workedExample || undefined,
-							level,
-							courseId,
-							volumeId: volumeId || null,
-							moduleId: moduleId || null,
-							topicId: item.matchedTopicId || topicId || null,
-							order: item.order || (idx + 1),
-							highYield: !!item.highYield,
-							year: year || 2026,
-						},
-						include: defaultInclude,
-					});
-					created.push(formula);
-				} catch (saveErr) {
-					console.error(`[formulas.generate-ai.accept] Failed to save formula ${idx}:`, saveErr?.message);
-				}
+			// Verify hierarchy references exist (prevents orphaned rows / FK errors).
+			const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true } });
+			if (!course) return res.status(400).json({ error: 'Course not found' });
+			if (volumeId) {
+				const v = await prisma.volume.findUnique({ where: { id: volumeId }, select: { id: true } });
+				if (!v) return res.status(400).json({ error: 'Volume not found' });
+			}
+			if (moduleId) {
+				const m = await prisma.module.findUnique({ where: { id: moduleId }, select: { id: true } });
+				if (!m) return res.status(400).json({ error: 'Module not found' });
+			}
+			if (topicId) {
+				const t = await prisma.topic.findUnique({ where: { id: topicId }, select: { id: true } });
+				if (!t) return res.status(400).json({ error: 'Topic not found' });
 			}
 
-			return res.status(201).json({ created: created.length, formulas: created });
+			// Resolve + validate the selected items BEFORE inserting.
+			const selected = selectedIndices.map(i => generated.items[i]).filter(Boolean);
+			if (selected.length === 0) return res.status(400).json({ error: 'No valid formulas selected' });
+			const invalid = [];
+			selected.forEach((item, i) => {
+				if (!String(item?.name || '').trim()) invalid.push({ index: i, reason: 'Missing name' });
+				if (!String(item?.formula || '').trim()) invalid.push({ index: i, reason: 'Missing formula' });
+			});
+			if (invalid.length) {
+				return res.status(400).json({ error: 'AI_VALIDATION_FAILED', message: 'Some formulas are missing required fields.', details: invalid });
+			}
+
+			// Insert atomically — a single interactive transaction prevents partial inserts.
+			let created;
+			try {
+				created = await prisma.$transaction(async (tx) => {
+					const rows = [];
+					for (let i = 0; i < selected.length; i++) {
+						const item = selected[i];
+						rows.push(await tx.formula.create({
+							data: {
+								name: String(item.name || `Formula ${i + 1}`).slice(0, 255),
+								formula: autoRepairLatex(String(item.formula || '')),
+								variables: autoRepairLatex(String(item.variables || '')),
+								interpretation: String(item.interpretation || ''),
+								whenToUse: String(item.whenToUse || ''),
+								watchOut: String(item.watchOut || ''),
+								calculatorCue: item.calculatorCue ? autoRepairLatex(String(item.calculatorCue)) : null,
+								losTag: item.losTag || null,
+								workedExample: item.workedExample || undefined,
+								level,
+								courseId,
+								volumeId: volumeId || null,
+								moduleId: moduleId || null,
+								topicId: item.matchedTopicId || topicId || null,
+								order: item.order || (i + 1),
+								highYield: !!item.highYield,
+								year: year || 2026,
+							},
+							include: defaultInclude,
+						}));
+					}
+					return rows;
+				});
+			} catch (txErr) {
+				console.error('[formulas.generate-ai.accept] transaction failed (rolled back):', txErr?.message);
+				return res.status(500).json({ error: 'DB_INSERT_FAILED', message: txErr?.message || 'Failed to save formulas' });
+			}
+
+			console.log('[formulas.generate-ai.accept] inserted', created.length, 'formula(s):', created.map(c => c.id));
+			return res.status(201).json({ created: created.length, ids: created.map(c => c.id), formulas: created });
 		} catch (err) {
 			console.error('[formulas.generate-ai.accept]', err);
 			return res.status(500).json({ error: 'Failed to accept formulas' });
@@ -826,7 +905,7 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 				jsonMode: true,
 			});
 
-			const raw = aiResult2.content || '{}';
+			const raw = (aiResult2?.text ?? aiResult2?.content ?? '') || '{}';
 			let items = [];
 			try {
 				const parsed = JSON.parse(raw);
