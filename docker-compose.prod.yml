@@ -53,6 +53,10 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        # Set VITE_API_URL in the server .env to point the built app at the API.
+        # Defaults to empty → same-origin (/api) proxied by the container's Nginx.
+        VITE_API_URL: ${VITE_API_URL:-}
     container_name: mutingwende_frontend
     restart: always
     ports:

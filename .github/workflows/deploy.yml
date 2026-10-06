@@ -11,7 +11,6 @@ on:
 
   workflow_dispatch:
 
-
 concurrency:
   group: deploy-main
   cancel-in-progress: false
@@ -28,27 +27,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
+      - name: Show Node versions
+        run: |
+          node --version
+          npm --version
 
-      - name: Install server dependencies
-        working-directory: apps/server
-        run: npm ci --no-audit --no-fund
-
+      # This repo is an npm workspaces monorepo: a single lockfile lives at the
+      # repo root. Install from the root (per-app `npm ci` has no lockfile and
+      # fails / misses Linux optional binaries such as Rollup's native package).
+      - name: Install dependencies (workspaces)
+        run: npm ci --include=optional --no-audit --no-fund
 
       - name: Run server tests
         working-directory: apps/server
         run: npm test
-
-
-      - name: Install web dependencies
-        working-directory: apps/web
-        run: npm ci --no-audit --no-fund
-
 
       - name: Build frontend
         working-directory: apps/web
@@ -78,17 +75,15 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
 
         with:
-
           host: ${{ env.DEPLOY_HOST }}
           username: ${{ env.DEPLOY_USER }}
           key: ${{ env.DEPLOY_SSH_KEY }}
           port: ${{ env.DEPLOY_PORT }}
 
           script_stop: true
-          command_timeout: 30m
+          command_timeout: 45m
 
           script: |
-
             set -e
 
             echo "======================================"
@@ -97,29 +92,92 @@ jobs:
 
             cd "${{ env.DEPLOY_PATH }}"
 
+            echo "Marking repository as safe..."
+            git config --global --add safe.directory "${{ env.DEPLOY_PATH }}"
+
             echo "Pulling latest code..."
             git fetch --prune origin
             git checkout main
             git pull --ff-only origin main
 
+            echo "Checking production environment file..."
+            if [ ! -f .env ]; then
+              echo "ERROR: .env file not found in $PWD"
+              exit 1
+            fi
+
             echo "Validating Docker Compose..."
             docker compose -f docker-compose.prod.yml config > /dev/null
 
-            echo "Building API and Frontend..."
+            echo "Building new API and frontend images..."
             docker compose -f docker-compose.prod.yml build api frontend
 
-            echo "Starting/updating services..."
-            docker compose -f docker-compose.prod.yml up -d
+            echo "Checking Prisma migration status..."
+            docker compose -f docker-compose.prod.yml run --rm api \
+              npx prisma migrate status
 
-            echo "Waiting for containers..."
-            sleep 10
+            echo "Applying pending Prisma migrations..."
+            docker compose -f docker-compose.prod.yml run --rm api \
+              npx prisma migrate deploy
 
-            echo "Container status:"
+            echo "Starting/updating application services..."
+            docker compose -f docker-compose.prod.yml up -d api frontend
+
+            echo "Waiting for services..."
+            sleep 15
+
+            echo "Checking container status..."
             docker compose -f docker-compose.prod.yml ps
 
-            echo "Cleaning dangling images..."
+            echo "Checking API container..."
+            API_RUNNING=$(docker inspect -f '{{.State.Running}}' mutingwende_api 2>/dev/null || echo false)
+
+            if [ "$API_RUNNING" != "true" ]; then
+              echo "ERROR: mutingwende_api is not running"
+              docker logs --tail=200 mutingwende_api || true
+              exit 1
+            fi
+
+            echo "Checking frontend container..."
+            FRONTEND_RUNNING=$(docker inspect -f '{{.State.Running}}' mutingwende_frontend 2>/dev/null || echo false)
+
+            if [ "$FRONTEND_RUNNING" != "true" ]; then
+              echo "ERROR: mutingwende_frontend is not running"
+              docker logs --tail=200 mutingwende_frontend || true
+              exit 1
+            fi
+
+            echo "Validating Nginx configuration..."
+            docker exec listmonk-nginx-1 nginx -t
+
+            echo "Reloading Nginx..."
+            docker exec listmonk-nginx-1 nginx -s reload
+
+            echo "Waiting for reverse proxy..."
+            sleep 5
+
+            echo "Checking frontend URL..."
+            curl --fail \
+              --silent \
+              --show-error \
+              --max-time 30 \
+              https://dev.milven.zbsburial.com/ \
+              > /dev/null
+
+            echo "Checking public API..."
+            curl --fail \
+              --silent \
+              --show-error \
+              --max-time 30 \
+              https://dev.milven.zbsburial.com/api/api/learning/courses/public \
+              > /dev/null
+
+            echo "Cleaning dangling Docker images..."
             docker image prune -f
 
             echo "======================================"
             echo "DEPLOYMENT COMPLETE"
+            echo "Frontend: OK"
+            echo "API: OK"
+            echo "Nginx: OK"
             echo "======================================"
