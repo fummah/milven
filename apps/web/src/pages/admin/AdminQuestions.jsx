@@ -6,6 +6,7 @@ import { api, API_URL } from '../../lib/api';
 import { safeHtml, formatFormulaHtml, formatProseWithMath, cleanVignetteHtml } from '../../lib/formatFormula';
 import { RichTextEditor } from '../../components/RichTextEditor.jsx';
 import { ModuleNotesDrawer } from '../../components/ModuleNotesDrawer.jsx';
+import AIQuestionEditModal from '../../components/AIQuestionEditModal.jsx';
 
 export function AdminQuestions() {
 	const [form] = Form.useForm();
@@ -41,6 +42,7 @@ export function AdminQuestions() {
 	const [aiAcceptLoading, setAiAcceptLoading] = useState(false);
 	const [aiSelectedIndices, setAiSelectedIndices] = useState([]);
 	const [aiEditModal, setAiEditModal] = useState(null); // { type, bundleIdx, qIdx, value } or null
+	const [aiQuestionEdit, setAiQuestionEdit] = useState(null); // { bundleIdx, qIdx } for the full-question editor
 	const [drawerMode, setDrawerMode] = useState('single'); // 'single' | 'bundle'
 	const [aiForm] = Form.useForm();
 	const [notesDrawerOpen, setNotesDrawerOpen] = useState(false);
@@ -902,6 +904,33 @@ export function AdminQuestions() {
 		});
 	};
 
+	// Full-question editor state (used by Level 1 MCQ items AND Level 2/3 sub-questions)
+	const editingQuestion = useMemo(() => {
+		if (!aiQuestionEdit || !aiPreview?.generated) return null;
+		const { bundleIdx, qIdx } = aiQuestionEdit;
+		if (bundleIdx != null) return aiPreview.generated.bundles?.[bundleIdx]?.questions?.[qIdx] || null;
+		return aiPreview.generated.items?.[qIdx] || null;
+	}, [aiQuestionEdit, aiPreview]);
+
+	const openQuestionEditor = (bundleIdx, qIdx) => setAiQuestionEdit({ bundleIdx, qIdx });
+
+	const saveEditedQuestion = (updated) => {
+		if (!aiQuestionEdit) return;
+		const { bundleIdx, qIdx } = aiQuestionEdit;
+		setAiPreview(prev => {
+			if (!prev?.generated) return prev;
+			const gen = JSON.parse(JSON.stringify(prev.generated));
+			if (bundleIdx != null && gen.bundles?.[bundleIdx]?.questions?.[qIdx]) {
+				gen.bundles[bundleIdx].questions[qIdx] = { ...gen.bundles[bundleIdx].questions[qIdx], ...updated };
+			} else if (gen.items?.[qIdx]) {
+				gen.items[qIdx] = { ...gen.items[qIdx], ...updated };
+			}
+			return { ...prev, generated: gen };
+		});
+		setAiQuestionEdit(null);
+		message.success('Question updated in preview');
+	};
+
 	const acceptAiPreview = async (indices) => {
 		if (!aiPreview?.questionType || !aiPreview?.generated) return;
 		const toSend = indices || aiSelectedIndices;
@@ -1743,7 +1772,12 @@ export function AdminQuestions() {
 										</Card>
 										{(bundle.questions || []).map((q, qIdx) => (
 											<div key={qIdx} style={{ padding: '10px 12px', borderRadius: 10, background: '#fafafa', border: '1px solid #f0f0f0', marginBottom: 8 }}>
-												<Typography.Text strong style={{ color: '#531dab' }}>{`Sub-question ${qIdx + 1}`}{!isVignette && q?.marks ? ` (${q.marks} mark${q.marks > 1 ? 's' : ''})` : ''}</Typography.Text>
+												<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+													<Typography.Text strong style={{ color: '#531dab' }}>{`Sub-question ${qIdx + 1}`}{!isVignette && q?.marks ? ` (${q.marks} mark${q.marks > 1 ? 's' : ''})` : ''}</Typography.Text>
+													<Tooltip title="Edit question">
+														<Button size="small" type="text" icon={<EditOutlined />} onClick={() => openQuestionEditor(bIdx, qIdx)} />
+													</Tooltip>
+												</div>
 												<div className="prose prose-sm question-preview-content formula-content" style={{ marginTop: 4 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(q?.stem || '') }} />
 												<div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
 													<Tag color="blue" style={{ cursor: q?.topicId ? 'pointer' : undefined }} onClick={(e) => { if (q?.topicId) { e.stopPropagation(); openNotesDrawer(q.topicId, q.topicName || q.topicId); } }}>{q?.topicName || q?.topicId}{q?.topicId ? ' 📖' : ''}</Tag>
@@ -1893,7 +1927,12 @@ export function AdminQuestions() {
 													</div>
 												)}
 											</div>
-											<Button size="small" type="link" disabled={aiAcceptLoading} onClick={() => acceptAiPreview([idx])}>Add</Button>
+											<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+												<Tooltip title="Edit question">
+													<Button size="small" type="text" icon={<EditOutlined />} onClick={() => openQuestionEditor(null, idx)} />
+												</Tooltip>
+												<Button size="small" type="link" disabled={aiAcceptLoading} onClick={() => acceptAiPreview([idx])}>Add</Button>
+											</div>
 										</div>
 									</Card>
 								);
@@ -1961,14 +2000,24 @@ export function AdminQuestions() {
 					setAiEditModal(null);
 				}}
 				width={aiEditModal?.type === 'vignetteText' || aiEditModal?.type === 'workedSolution' ? 900 : 600}
+				destroyOnClose
 			>
 				<Input.TextArea
 					id="ai-edit-textarea"
+					key={`${aiEditModal?.bundleIdx ?? 'item'}-${aiEditModal?.qIdx ?? 'x'}-${aiEditModal?.type || ''}`}
 					defaultValue={aiEditModal?.value || ''}
 					rows={aiEditModal?.type === 'vignetteText' || aiEditModal?.type === 'workedSolution' ? 15 : 4}
 					style={{ fontFamily: 'monospace', fontSize: 13 }}
 				/>
 			</Modal>
+
+			{/* Full-question editor for AI preview (Level 1 MCQ + Level 2/3 sub-questions) */}
+			<AIQuestionEditModal
+				open={!!aiQuestionEdit}
+				question={editingQuestion}
+				onCancel={() => setAiQuestionEdit(null)}
+				onSave={saveEditedQuestion}
+			/>
 
 			{/* Question Builder Drawer */}
 			<Drawer
