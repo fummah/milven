@@ -3672,7 +3672,7 @@ ${volPrompt.distractors}
       Every vignette MUST contain: (1) a central investment problem (portfolio allocation, valuation, risk assessment, investment recommendation, analyst disagreement, or client suitability), (2) multiple layers of information including relevant, irrelevant, and conflicting data plus assumptions requiring judgement, (3) professional uncertainty where the answer is not immediately obvious.
       VIGNETTE WRITING STYLE: Include named investment professionals, institutional investors, investment committee discussions, analyst reports, portfolio constraints, market environment, economic assumptions. AVOID generic wording like "An investor wants to invest...". Instead: "During a quarterly investment committee meeting, Sarah Williams, senior analyst at Horizon Capital, reviews..."
     • QUESTION COMPLEXITY — The 4 sub-questions must NOT all test the same concept. Test different aspects, but ALL must match the requested difficulty (${difficultyLabel}).
-      Q1 — Foundation application: apply the main concept (classify, calculate a key metric, identify the framework).
+      Q1 — Concept application: apply the main concept (classify, calculate a key metric, identify the framework).
       Q2 — Analytical interpretation: interpret exhibit information (compare alternatives, evaluate assumptions, understand implications).
       Q3 — Calculation + judgement: multi-step calculation (calculate a metric → interpret the result → select a conclusion).
       Q4 — Investment decision / professional judgement: recommend an action ("most appropriate because:", "should most likely:", "should reject because:").
@@ -3841,7 +3841,7 @@ ADVANCED CFA LEVEL ${levelRoman} ITEM-SET DESIGN:
 The vignette must simulate a real CFA Level ${levelRoman} exam case — not a textbook quiz. Include: (1) a central investment problem (portfolio allocation, valuation, risk assessment, recommendation, analyst disagreement, or client suitability), (2) multiple layers of relevant, irrelevant, and conflicting information plus assumptions requiring judgement, (3) professional uncertainty where the answer is not immediately obvious.
 VIGNETTE WRITING STYLE: Include named investment professionals, institutional investors, investment committee discussions, analyst reports, portfolio constraints, market environment, economic assumptions. AVOID: "An investor wants to invest...". Instead: "During a quarterly investment committee meeting, Sarah Williams, senior analyst at Horizon Capital, reviews..."
 QUESTION COMPLEXITY — The questions/sub-questions must NOT all test the same concept. Test different aspects, but ALL must match the requested difficulty (${difficultyLabel}):
-  Q1 — Foundation application: apply the main concept (classify, calculate a key metric, identify the framework).
+  Q1 — Concept application: apply the main concept (classify, calculate a key metric, identify the framework).
   Q2 — Analytical interpretation: interpret data/exhibits (compare alternatives, evaluate assumptions, understand implications).
   Q3 — Calculation + judgement: multi-step calculation (calculate a metric → interpret the result → select a conclusion).
   Q4 — Investment decision / professional judgement: recommend an action ("most appropriate because:", "should most likely:", "should reject because:").

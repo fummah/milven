@@ -8,6 +8,9 @@ import assert from 'node:assert/strict';
 import {
 	DIFFICULTY_LEVELS,
 	DIFFICULTY_RUBRICS,
+	HARD_RULES,
+	HARD_CRITERIA,
+	HARD_ARCHETYPES,
 	normalizeDifficultyValue,
 	buildTargetPlan,
 	buildDifficultyMandatoryBlock,
@@ -29,7 +32,7 @@ test('normalizeDifficultyValue accepts the enum case-insensitively', () => {
 test('rubrics describe the three levels with the required guidance', () => {
 	assert.match(DIFFICULTY_RUBRICS.EASY, /one primary concept/i);
 	assert.match(DIFFICULTY_RUBRICS.MEDIUM, /2-3 connected reasoning/i);
-	assert.match(DIFFICULTY_RUBRICS.HARD, /AT LEAST THREE/i);
+	assert.match(DIFFICULTY_RUBRICS.HARD, /AT LEAST FOUR/i);
 	assert.match(DIFFICULTY_RUBRICS.HARD, /reasoning depth/i);
 	assert.match(DIFFICULTY_RUBRICS.HARD, /NOT.*one-step arithmetic/is);
 	assert.deepEqual(DIFFICULTY_LEVELS, ['EASY', 'MEDIUM', 'HARD']);
@@ -47,15 +50,29 @@ test('buildTargetPlan: mixed difficulties => only the selected levels', () => {
 	assert.ok(plan.includes('MEDIUM') && plan.includes('HARD'));
 });
 
-test('mandatory block: HARD is explicit, includes the rubric, plan and self-check, no 70% rule', () => {
+test('mandatory block: HARD gate + design blueprint + plan + self-check, no 70% rule', () => {
 	const block = buildDifficultyMandatoryBlock(['HARD'], { questionType: 'MCQ', count: 3 });
 	assert.match(block, /MANDATORY TARGET DIFFICULTY: HARD/);
-	assert.match(block, /The administrator explicitly selected HARD/);
-	assert.match(block, /AT LEAST THREE/);
+	assert.match(block, /The administrator explicitly requested HARD/);
+	assert.match(block, /AT LEAST FOUR/);
 	assert.match(block, /HARD, HARD, HARD/);
+	assert.match(block, /MANDATORY PROHIBITIONS|must NOT be:/);
 	assert.match(block, /direct recall/);
 	assert.match(block, /one obvious step/);
 	assert.match(block, /PROMPT PRIORITY/);
+	// Pre-generation blueprint: design the reasoning path BEFORE writing.
+	assert.match(block, /HARD DESIGN PROCESS/);
+	assert.match(block, /DO NOT WRITE THE QUESTION IMMEDIATELY/);
+	assert.match(block, /QUANTITATIVE BLUEPRINT/);
+	assert.match(block, /CONCEPTUAL BLUEPRINT/);
+	assert.match(block, /PRE-GENERATION CHECK/);
+	assert.match(block, /POST-GENERATION CHECK/);
+	// Archetypes and distractor-from-solution rule.
+	assert.ok(HARD_ARCHETYPES.some(a => block.includes(a.split(':')[0])));
+	assert.match(block, /BUILD THE DISTRACTORS FROM THE SOLUTION/);
+	// Internal design metadata for quality checking.
+	assert.match(block, /"difficultyDesign"/);
+	assert.match(block, /hardCriteriaSatisfied/);
 	assert.doesNotMatch(block, /70%/);
 });
 
@@ -64,8 +81,21 @@ test('mandatory block: multiple difficulties => distribute only across them', ()
 	assert.match(block, /MANDATORY TARGET DIFFICULTY: MEDIUM, HARD/);
 	assert.match(block, /Never generate a level outside: MEDIUM, HARD/);
 	assert.match(block, /2-3 connected reasoning/);
-	assert.match(block, /AT LEAST THREE/);
+	assert.match(block, /AT LEAST FOUR/);
 	assert.doesNotMatch(block, /70%/);
+});
+
+test('shared rubric: generator, auditor and repair use the SAME HARD definition', () => {
+	// HARD_RULES is the single authoritative HARD text.
+	assert.match(HARD_RULES, /AT LEAST FOUR/);
+	assert.equal(DIFFICULTY_RUBRICS.HARD, HARD_RULES);
+	const generator = buildDifficultyMandatoryBlock(['HARD'], { questionType: 'MCQ', count: 1 });
+	const auditor = buildDifficultyAuditorPrompt({ stem: 's', options: [{ text: 'A', isCorrect: true }, { text: 'B' }], workedSolution: 'w' }, 'HARD', 'LEVEL1');
+	const repair = buildDifficultyRepairPrompt('HARD', { actualDifficulty: 'MEDIUM', issues: [] }, { stem: 's' }, 'LEVEL1');
+	for (const p of [generator, auditor, repair]) {
+		assert.match(p, /HARD — requires genuine analysis and exam-level judgement/);
+	}
+	assert.ok(HARD_CRITERIA.every(c => generator.includes(c)), 'generator lists all 7 HARD criteria');
 });
 
 test('auditor prompt forbids using the stored label and asks to be strict', () => {

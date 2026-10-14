@@ -59,6 +59,110 @@ A HARD question must satisfy AT LEAST THREE of the following whenever the curric
 Difficulty MUST come from reasoning depth — NOT from complicated arithmetic, obscure vocabulary, missing information, ambiguous wording, irrelevant tricks, or excessive unrelated reading.`,
 };
 
+// Shared rule aliases (one authoritative definition used by the generator,
+// the self-check, the independent validator and the repair prompt).
+export const EASY_RULES = DIFFICULTY_RUBRICS.EASY;
+export const MEDIUM_RULES = DIFFICULTY_RUBRICS.MEDIUM;
+
+// The 7 HARD criteria. A genuinely HARD question should normally satisfy at
+// least FOUR (the generator aims for >= 5 as a safety margin).
+export const HARD_CRITERIA = [
+	'Requires at least 3 meaningful reasoning or calculation operations.',
+	'Requires the candidate to determine the appropriate method, formula, principle, or relationship rather than having it stated explicitly.',
+	'Requires deriving at least one intermediate value or intermediate conclusion before reaching the final answer.',
+	'Integrates two or more related curriculum concepts where the LOS/content naturally supports integration.',
+	'Requires interpretation of a calculated result or analytical conclusion.',
+	'Requires judgement, comparison, evaluation, recommendation, or identification of the most appropriate conclusion.',
+	'Uses strong distractors based on realistic analytical errors rather than obviously incorrect alternatives.',
+];
+
+export const HARD_PROHIBITIONS = [
+	'pure recall',
+	'a definition question',
+	'one-step arithmetic',
+	'one obvious formula substitution',
+	'a straightforward calculation followed immediately by the answer',
+	'difficult only because the numbers are ugly',
+	'difficult only because the stem is long',
+	'difficult because wording is confusing',
+	'outside the selected curriculum level',
+];
+
+// Authoritative HARD definition — ONE source of truth used by the generator,
+// the self-check, the independent validator and the repair prompt (spec: the
+// generator and validator must share the same objective definition).
+export const HARD_RULES = `HARD — requires genuine analysis and exam-level judgement.
+A HARD question must NOT be: ${HARD_PROHIBITIONS.join('; ')}.
+A HARD question should normally satisfy AT LEAST FOUR of these seven criteria, where supported by the LOS:
+${HARD_CRITERIA.map((c, i) => `${i + 1}. ${c}`).join('\n')}
+The generator aims for at least FIVE (a safety margin above the validator threshold of four).
+Difficulty MUST come from reasoning depth — NOT from complicated arithmetic, obscure vocabulary, missing information, ambiguous wording, irrelevant tricks, or excessive unrelated reading.`;
+// Keep DIFFICULTY_RUBRICS.HARD consistent with the authoritative rule.
+DIFFICULTY_RUBRICS.HARD = HARD_RULES;
+
+export const HARD_ARCHETYPES = [
+	'MULTI-STEP CALCULATION: data → method selection → intermediate calculation → second calculation → interpretation.',
+	'CALCULATION + DECISION: calculate metric → interpret → apply constraint → make decision.',
+	'COMPETING ALTERNATIVES: scenario → evaluate alternatives A/B/C → apply curriculum principle → determine most appropriate choice.',
+	'ANALYST ERROR: analyst statement/calculation → identify principle → test reasoning → find mistake → select correct conclusion.',
+	'INTEGRATED CONCEPT: concept A + concept B → apply both → resolve interaction → conclusion.',
+	'CHANGE IN ASSUMPTION: base case → one assumption changes → determine consequences → recalculate/reinterpret → conclusion.',
+	'CONSTRAINT PROBLEM: calculate/analyse → apply mandate/rule/constraint → determine feasible alternatives → select most appropriate action.',
+];
+
+const HARD_BLUEPRINT = `HARD DESIGN PROCESS — perform this INTERNALLY before writing the final question. DO NOT WRITE THE QUESTION IMMEDIATELY.
+
+STEP 1 — Identify the test target: course level, learning module, LOS, topic, concept(s). Do not introduce content outside these sources.
+STEP 2 — Classify the LOS as (A) Quantitative, (B) Conceptual, or (C) Mixed and use the matching blueprint.
+
+QUANTITATIVE BLUEPRINT:
+Scenario → identify relevant information → choose the appropriate method/formula (not stated) → calculate intermediate value 1 → apply a second relationship/calculation → interpret the result → select the conclusion/recommendation.
+AVOID: "formula explicitly named → substitute numbers → answer" (that is normally EASY/MEDIUM).
+
+CONCEPTUAL BLUEPRINT:
+Professional scenario → identify the relevant principle → evaluate two or more plausible statements/actions → identify the subtle distinction or consequence → apply the curriculum rule → choose the MOST appropriate conclusion.
+A difficult conceptual question does NOT need calculations if the LOS does not require them (competing statements, policy choices, recommendations, exceptions, implications, interactions, spotting an error in reasoning, consequences of changing an assumption).
+
+MIXED BLUEPRINT:
+Scenario → calculation → interpretation → second concept/constraint → professional judgement.
+
+SELECT ONE ARCHETYPE (vary it across questions so HARD items do not look repetitive):
+${HARD_ARCHETYPES.map((a, i) => `${i + 1}. ${a}`).join('\n')}
+
+BUILD THE DISTRACTORS FROM THE SOLUTION:
+First solve the question correctly, THEN create each incorrect option from a SPECIFIC realistic candidate mistake (wrong denominator; arithmetic mean instead of geometric mean; ignoring tax or one cash flow; wrong sign/timing/formula/intermediate value; reversed relationship; nominal vs real; ignored stated constraint; correlation vs covariance; ending value instead of average value). Both wrong options must look plausible to a candidate who only partially understands the material.
+
+DO NOT GIVE AWAY THE METHOD:
+Avoid stems that name the method (e.g. "Using the Gordon growth model…") when identifying the right approach is legitimately part of the difficulty. Never create ambiguity — if several methods could be correct, give enough information to establish exactly one clearly correct approach. Do NOT put the formula in the student-facing stem; keep it in the keyFormulas/workedSolution metadata.
+
+PRE-GENERATION CHECK (answer internally before writing):
+A) How many meaningful reasoning steps will the candidate need?
+B) Does the candidate need to choose a method/formula/principle?
+C) Is there an intermediate value or conclusion?
+D) Are multiple concepts integrated?
+E) Is interpretation required?
+F) Is judgement required?
+G) Are the distractors based on realistic mistakes?
+If fewer than FOUR applicable HARD criteria are present, DO NOT GENERATE THAT DESIGN — redesign it first.
+
+POST-GENERATION CHECK (before returning the question):
+- Solvable by direct recall? → REWRITE.
+- Solvable by one obvious substitution? → REWRITE.
+- Difficulty mostly from long wording? → REWRITE.
+- Fewer than 3 meaningful reasoning steps in a quantitative question (and no genuinely difficult judgement/integration)? → REWRITE.
+- Distractors obviously wrong? → REWRITE.
+- Outside the selected CFA level / supplied curriculum? → REWRITE.
+Only return the question once this HARD check passes.
+
+QUALITY PRIORITY: 1) curriculum correctness, 2) clear single correct answer, 3) HARD cognitive depth, 4) realistic CFA-style scenario, 5) strong distractors, 6) originality. Do NOT overfit by adding random calculations, unnecessary concepts, or irrelevant constraints — every reasoning step must support the LOS.`;
+
+function buildDifficultyDesignMetadata(levels) {
+	const example = levels[0] || 'HARD';
+	return `Include an internal "difficultyDesign" object on every question (supporting metadata for quality checking only — it does NOT override the requirement that the actual content must match the target, and the independent validator still makes its own decision):
+"difficultyDesign": { "target": "${example}", "archetype": "MULTI_STEP_CALCULATION|CALCULATION_PLUS_DECISION|COMPETING_ALTERNATIVES|ANALYST_ERROR|INTEGRATED_CONCEPT|CHANGE_IN_ASSUMPTION|CONSTRAINT_PROBLEM", "reasoningStepCount": 0, "methodSelectionRequired": false, "intermediateResultRequired": false, "conceptsIntegrated": 0, "interpretationRequired": false, "judgementRequired": false, "hardCriteriaSatisfied": 0 }
+For HARD, aim for "hardCriteriaSatisfied" >= 5 (a safety margin above the validator's minimum of 4).`;
+}
+
 export function normalizeDifficultyValue(val) {
 	const s = String(val || '').toUpperCase().trim();
 	return DIFFICULTY_LEVELS.includes(s) ? s : null;
@@ -99,33 +203,33 @@ export function buildDifficultyMandatoryBlock(diffList, { questionType, count } 
 	}
 
 	const rubrics = levels.map(l => DIFFICULTY_RUBRICS[l]).join('\n\n');
+	const hardGate = levels.includes('HARD') ? `\n\n${HARD_BLUEPRINT}` : '';
 
 	return `=================================================
 MANDATORY TARGET DIFFICULTY: ${requested}
 =================================================
 
-The administrator explicitly selected ${requested}. ${scope} MUST be genuinely ${requested}.
+The administrator explicitly requested ${requested}. ${scope} MUST be genuinely ${requested}.
+A question that is EASY or MEDIUM but labelled ${requested} is a generation failure.
 Do NOT generate an easier (or harder) question and label it ${requested}.${planLine}
 
-Apply this rubric:
+Apply this rubric (the SAME objective definition the independent validator uses):
 
-${rubrics}
+${rubrics}${hardGate}
 
-Before returning EACH question, internally ask:
+Internal check BEFORE returning EACH question:
 1. Could a prepared candidate answer this by direct recall?
-2. Can this be solved using only one obvious step?
+2. Can this be solved using only one obvious step / one obvious substitution?
 3. Does the question require analysis rather than recognition?
 4. Does it contain meaningful reasoning depth?
 5. Are the distractors based on realistic mistakes?
 6. Would simplifying one intermediate step materially reduce the difficulty?
-If the answer to question 1 or 2 is YES (and the target is MEDIUM or HARD), the question is too easy — rewrite it before returning it.
+If the answer to question 1 or 2 is YES (and the target is MEDIUM or HARD), the question is too easy — redesign and rewrite it before returning it.
 If the target is EASY and the question requires advanced multi-concept analysis, simplify it.
 
 The "difficulty" field on every question object (and every sub-question) MUST equal exactly one of: ${requested}.
 
-Also include an internal "difficultyAssessment" object on every question (supporting metadata only — it does NOT override the requirement that the actual content must match the target):
-"difficultyAssessment": { "target": "${levels[0]}", "reasoningSteps": 0, "conceptsIntegrated": ["..."], "requiresIntermediateCalculation": false, "requiresInterpretation": false, "requiresJudgement": false, "difficultyJustification": "..." }
-=================================================
+${buildDifficultyDesignMetadata(levels)}
 
 PROMPT PRIORITY (highest first): 1) curriculum correctness, 2) selected target difficulty, 3) answer accuracy, 4) LOS/topic/concept alignment, 5) question-type format, 6) strong distractors, 7) originality, 8) metadata completeness. No other instruction may contradict target difficulty.`;
 }
@@ -168,6 +272,9 @@ Evaluate:
 7. distractor quality
 8. whether the approach is immediately obvious
 9. whether difficulty comes from reasoning rather than wording/arithmetic
+
+Apply this SAME objective level definition the generator used (do not use your own private scale):
+${DIFFICULTY_RUBRICS[normalizeDifficultyValue(target) || 'MEDIUM']}
 
 Classify the ACTUAL difficulty as exactly EASY, MEDIUM or HARD.
 
@@ -216,6 +323,10 @@ Increase reasoning depth WITHOUT introducing unsupported curriculum content, con
 ${target === 'HARD' ? `For HARD specifically: require additional meaningful reasoning; include intermediate derivation where appropriate; add interpretation/judgement; strengthen distractors; make the solving approach less obvious; integrate a second related concept when supported by the curriculum.` : ''}
 ${target === 'MEDIUM' ? `For MEDIUM specifically: require interpretation plus 2-3 connected steps (choose the right method before calculating).` : ''}
 ${target === 'EASY' ? `For EASY specifically: test ONE core concept with at most one calculation step; remove multi-concept analysis.` : ''}
+
+Apply this SAME objective level definition the generator and validator use:
+${DIFFICULTY_RUBRICS[normalizeDifficultyValue(target) || 'MEDIUM']}
+${target === 'HARD' ? `\n${HARD_BLUEPRINT}` : ''}
 
 Independently solve the rewritten question before returning it.
 
