@@ -95,8 +95,8 @@ function mcqItems() {
 	];
 }
 
-function makeDeps() {
-	const calls = { chat: [] };
+function makeDeps(cfg = {}) {
+	const calls = { chat: [], auditor: 0, repair: 0 };
 	return {
 		calls,
 		deps: {
@@ -104,19 +104,44 @@ function makeDeps() {
 			getActiveModel: async () => 'gpt-4o-mini',
 			getDefaultModel: () => 'gpt-4o-mini',
 			getAIApiKey: async () => 'sk-test',
-			// Mock only the provider client layer.
+			// Mock only the provider client layer (generation + auditor + repair).
 			chatCompletion: async (opts) => {
 				calls.chat.push(opts);
 				const sys = String(opts?.messages?.[0]?.content || '');
-				// The optional difficulty validation pass:
-				if (sys.includes('difficulty validator') || sys.includes('QA validator')) {
-					return { text: JSON.stringify({ mismatches: [] }), content: JSON.stringify({ mismatches: [] }), provider: opts.provider, model: opts.model };
+				const user = String(opts?.messages?.[1]?.content || '');
+				if (sys.includes('Difficulty Auditor')) {
+					calls.auditor++;
+					const m = user.match(/Target difficulty:\s*(EASY|MEDIUM|HARD)/);
+					const target = m ? m[1] : 'MEDIUM';
+					const actual = cfg.auditorActual ? cfg.auditorActual(target, calls.auditor) : target;
+					return {
+						text: JSON.stringify({ actualDifficulty: actual, targetDifficulty: target, pass: actual === target, reasoningStepCount: 3, issues: actual === target ? [] : ['too easy'], reason: 'mock auditor' }),
+						provider: opts.provider, model: opts.model,
+					};
 				}
-				const body = JSON.stringify({ items: mcqItems() });
+				if (user.includes('failed difficulty validation')) {
+					calls.repair++;
+					const q = cfg.repairQuestion || {
+						stem: 'REPAIRED HARD multi-step scenario question',
+						options: [{ text: 'A', isCorrect: true }, { text: 'B', isCorrect: false }, { text: 'C', isCorrect: false }],
+						workedSolution: 'Step 1 ... Step 2 ... interpret.',
+						keyFormulas: 'kf',
+						explanation: 'e',
+						los: 'L',
+					};
+					return { text: JSON.stringify(q), provider: opts.provider, model: opts.model };
+				}
+				const items = cfg.generateItems || mcqItems();
+				const body = JSON.stringify({ items });
 				return { text: body, content: body, provider: opts.provider, model: opts.model, usage: {} };
 			},
 		},
 	};
+}
+
+// The first chat call is always the generation call.
+function generationPrompt(calls) {
+	return String(calls.chat[0]?.messages?.[1]?.content || '');
 }
 
 function token(role = 'ADMIN') {
@@ -175,8 +200,8 @@ test('questions: generates 3 MCQs with the selected provider + model', async () 
 			assert.ok(q.topicId, 'topic assigned');
 			assert.ok(q.difficulty, 'difficulty assigned');
 		}
-		// The provider client received the selected provider/model.
-		const genCall = calls.chat.find(c => !String(c.messages[0].content).includes('validator'));
+		// The provider client received the selected provider/model on the generation call.
+		const genCall = calls.chat[0];
 		assert.equal(genCall.provider, 'anthropic');
 		assert.equal(genCall.model, 'claude-x');
 	});
@@ -239,5 +264,93 @@ test('questions: empty AI response is surfaced as AI_GENERATION_EMPTY', async ()
 		assert.equal(sseError.error, 'AI_GENERATION_EMPTY');
 		assert.equal(sseError.provider, 'openai');
 		assert.equal(sseError.model, 'gpt-4o-mini');
+	});
+});
+
+// ─────────────────────────────────────────────────────────────
+// Difficulty enforcement end-to-end
+// ─────────────────────────────────────────────────────────────
+
+async function generate(base, body) {
+	const res = await post(base, '/api/cms/questions/generate-ai/preview', { provider: 'openai', model: 'gpt-4o-mini', ...body });
+	return readResult(res);
+}
+
+for (const level of ['EASY', 'MEDIUM', 'HARD']) {
+	test(`questions: ${level} selection builds the mandatory ${level} prompt and validates/stores ${level}`, async () => {
+		const prisma = makePrisma();
+		const { deps, calls } = makeDeps();
+		await withServer(prisma, deps, async (base) => {
+			const { result, sseError } = await generate(base, { courseId: 'c1', topicIds: ['t1', 't2', 't3'], questionType: 'MCQ', difficulty: level, count: 3 });
+			assert.equal(sseError, null);
+			assert.equal(result.generated.items.length, 3);
+			for (const q of result.generated.items) assert.equal(q.difficulty, level);
+
+			const prompt = generationPrompt(calls);
+			assert.match(prompt, new RegExp(`MANDATORY TARGET DIFFICULTY: ${level}`));
+			assert.doesNotMatch(prompt, /70% Medium/);
+			assert.ok(calls.auditor >= 3, 'auditor runs once per question');
+
+			// Persist and confirm the stored difficulty equals the validated target.
+			const accept = await post(base, '/api/cms/questions/generate-ai/accept', { questionType: 'MCQ', generated: result.generated, selectedIndices: [0, 1, 2] });
+			assert.equal(accept.status, 201);
+			assert.ok(prisma._questions.length === 3);
+			assert.ok(prisma._questions.every(q => q.difficulty === level));
+		});
+	});
+}
+
+test('questions: mixed [MEDIUM, HARD] only uses those two targets', async () => {
+	const prisma = makePrisma();
+	const targetsSeen = [];
+	const { deps } = makeDeps({ auditorActual: (t) => { targetsSeen.push(t); return t; } });
+	await withServer(prisma, deps, async (base) => {
+		const { result } = await generate(base, { courseId: 'c1', topicIds: ['t1', 't2', 't3'], questionType: 'MCQ', difficulties: ['MEDIUM', 'HARD'], count: 4 });
+		assert.ok(result.generated.items.length >= 1);
+		for (const q of result.generated.items) assert.ok(['MEDIUM', 'HARD'].includes(q.difficulty), q.difficulty);
+		assert.ok(targetsSeen.length >= 1);
+		assert.ok(targetsSeen.every(t => ['MEDIUM', 'HARD'].includes(t)));
+		assert.ok(!targetsSeen.includes('EASY'));
+	});
+});
+
+test('questions: a trivial question is rejected as HARD and regenerated before preview', async () => {
+	const prisma = makePrisma();
+	const trivial = [{ stem: 'What does standard deviation measure?', options: [{ text: 'A', isCorrect: true }, { text: 'B' }, { text: 'C' }], workedSolution: '', keyFormulas: '', explanation: '', los: '' }];
+	let audit = 0;
+	const { deps, calls } = makeDeps({
+		generateItems: trivial,
+		auditorActual: (target) => { audit++; return audit === 1 ? 'EASY' : target; },
+		repairQuestion: {
+			stem: 'HARD: A portfolio manager must derive two values and interpret the result before recommending.',
+			options: [{ text: 'A', isCorrect: true }, { text: 'B', isCorrect: false }, { text: 'C', isCorrect: false }],
+			workedSolution: 'Step 1 ... Step 2 ... interpret ... conclude.',
+			keyFormulas: 'kf',
+			explanation: 'e',
+			los: 'L',
+		},
+	});
+	await withServer(prisma, deps, async (base) => {
+		const { result, sseError } = await generate(base, { courseId: 'c1', topicIds: ['t1'], questionType: 'MCQ', difficulty: 'HARD', count: 1 });
+		assert.equal(sseError, null);
+		assert.equal(calls.repair, 1);
+		assert.equal(result.generated.items.length, 1);
+		assert.match(result.generated.items[0].stem, /HARD: A portfolio manager/);
+		assert.equal(result.generated.items[0].difficulty, 'HARD');
+		assert.ok(!result.generated.items.some(q => /standard deviation measure/i.test(q.stem)));
+	});
+});
+
+test('questions: a one-step question that never meets HARD yields a clear validation error (never relabels)', async () => {
+	const prisma = makePrisma();
+	const oneTrivial = [{ stem: 'What is the definition of duration?', options: [{ text: 'A', isCorrect: true }, { text: 'B' }, { text: 'C' }], workedSolution: '', keyFormulas: '', explanation: '', los: '' }];
+	const { deps, calls } = makeDeps({ generateItems: oneTrivial, auditorActual: () => 'EASY' });
+	await withServer(prisma, deps, async (base) => {
+		const { result, sseError } = await generate(base, { courseId: 'c1', topicIds: ['t1'], questionType: 'MCQ', difficulty: 'HARD', count: 1 });
+		assert.equal(result, null);
+		assert.equal(sseError.error, 'AI_DIFFICULTY_VALIDATION_FAILED');
+		assert.match(sseError.message, /HARD/);
+		assert.equal(calls.auditor, 3, 'auditor ran initial + 2 re-validations');
+		assert.equal(calls.repair, 2, 'regenerated up to the attempt limit');
 	});
 });

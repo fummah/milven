@@ -12,6 +12,16 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, autoRepairLatex } from '../lib/openai.js';
 import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
+import {
+	DIFFICULTY_LEVELS,
+	DIFFICULTY_RUBRICS,
+	normalizeDifficultyValue,
+	buildTargetPlan,
+	buildDifficultyMandatoryBlock,
+	buildDifficultyAuditorPrompt,
+	buildDifficultyRepairPrompt,
+	enforceDifficulty,
+} from '../lib/questionDifficulty.js';
 
 // ── Compact generated HTML ───────────────────────────────────────────────────
 // Removes blank paragraphs, <p>&nbsp;</p>, and stacked <br> tags the AI may emit
@@ -318,119 +328,6 @@ Acceptable themes: pension accounting, multinational operations and translation,
 // ── Difficulty compliance (CFA question generation) ───────────────────────
 // The admin-selected difficulty MUST control the generated question content,
 // not merely its metadata label.
-const DIFFICULTY_LEVELS = ['EASY', 'MEDIUM', 'HARD'];
-
-const DIFFICULTY_INSTRUCTIONS = {
-	EASY: `Generate an EASY CFA exam question.
-
-The question must test basic understanding, recognition or straightforward application of the supplied learning material.
-
-Characteristics:
-- direct wording
-- limited reasoning steps
-- no unnecessary ambiguity
-- simple calculations where applicable
-- one main concept at a time
-- distractors may be plausible but should not require advanced multi-step reasoning
-
-Do not generate a medium or hard question.`,
-	MEDIUM: `Generate a MEDIUM difficulty CFA exam question.
-
-The question must require meaningful application and interpretation of the supplied material.
-
-Characteristics:
-- requires understanding, not only recall
-- may combine related concepts
-- moderate calculation or reasoning
-- plausible distractors
-- candidate should need to analyse the scenario before answering
-- should resemble normal CFA exam difficulty
-
-Do not make the question trivially easy or unusually difficult.`,
-	HARD: `Generate a HARD CFA exam question.
-
-The question must require advanced application, interpretation or multi-step reasoning while remaining fully supported by the supplied curriculum.
-
-Characteristics:
-- challenging but fair
-- may combine multiple related concepts
-- may require several reasoning or calculation steps
-- distractors should reflect realistic candidate mistakes
-- scenario may contain information that must be interpreted carefully
-- answer should not be obvious from wording
-- must remain CFA-exam appropriate
-- do not create trick questions based on obscure wording
-- do not introduce material outside the supplied curriculum
-
-Do not simplify the question to medium or easy difficulty.`,
-};
-
-function normalizeDifficultyValue(val) {
-	const s = String(val || '').toUpperCase().trim();
-	return DIFFICULTY_LEVELS.includes(s) ? s : null;
-}
-
-// Builds the mandatory difficulty instruction injected into every generation prompt.
-function buildDifficultyInstructionBlock(diffList) {
-	const levels = (Array.isArray(diffList) && diffList.length ? diffList : ['MEDIUM'])
-		.map(d => normalizeDifficultyValue(d))
-		.filter(Boolean);
-	if (levels.length === 0) levels.push('MEDIUM');
-	const requested = levels.join(', ');
-	const multi = levels.length > 1;
-
-	const instructions = levels.map(l => DIFFICULTY_INSTRUCTIONS[l]).join('\n\n');
-
-	const distribution = multi
-		? `Generate the set across these requested difficulty levels: ${requested}. For each question, pick ONE of these levels and generate the FULL question content at that exact level. Do not exceed or fall below the requested set.`
-		: `ALL questions (and all vignette sub-questions) MUST be ${requested}.`;
-
-	return `===== DIFFICULTY REQUIREMENT (MANDATORY — OVERRIDES ANY CONFLICTING INSTRUCTION) =====
-The requested difficulty is mandatory.
-
-Requested difficulty: ${requested}
-
-${distribution}
-
-${instructions}
-
-You must generate each question at exactly the requested difficulty level.
-Before returning the result, internally verify that each question matches the requested difficulty.
-If a question does not match the requested difficulty, revise it before returning the final JSON.
-
-DIFFICULTY MUST AFFECT THE WHOLE QUESTION. It must influence the question stem, scenario complexity, number of reasoning steps, calculation complexity, distractor quality, conceptual depth and the interpretation required. Do NOT simply set a "difficulty" field to the requested value while generating an easier or harder question — the actual content must comply.
-
-Every question object (and every vignette sub-question) MUST include a "difficulty" field whose value is EXACTLY one of: ${levels.join(', ')}.
-
-IGNORE any fixed difficulty labels shown later in this prompt (e.g. "Medium", "Medium-Hard", "Hard", "70% Medium-Hard, 30% Hard"). Those describe generic design intent only. The requested difficulty above is authoritative.
-=====================================================`;
-}
-
-// Best-effort regeneration note appended when the validator finds mismatches.
-function buildDifficultyRegenerationNote(level, mismatches) {
-	const lines = (Array.isArray(mismatches) ? mismatches : [])
-		.map(m => `- ${m.label || 'Question'}: generated at ${m.found || 'unknown'} difficulty instead of ${level}.`)
-		.join('\n');
-	return `STRICT DIFFICULTY CORRECTION REQUIRED.
-Your previous response did NOT fully comply with the requested difficulty (${level}).
-${lines ? `Mismatched questions:\n${lines}\n` : ''}
-Regenerate the ENTIRE response. Every question (and every vignette sub-question) MUST be exactly ${level} difficulty, with the actual content — stem, scenario, reasoning steps, calculations and distractors — matching ${level} difficulty. Do not merely relabel. Return the full corrected JSON.`;
-}
-
-// Prompt for the optional AI difficulty-validation pass.
-function buildDifficultyValidationPrompt(units, level) {
-	return `You are a strict CFA exam quality reviewer. For EACH question below, classify its ACTUAL difficulty as EASY, MEDIUM or HARD based only on the content (number of reasoning steps, calculation complexity, interpretation required, distractor quality). Ignore any difficulty label present in the question.
-
-Requested difficulty for every question: ${level}
-
-Return ONLY valid JSON in this exact shape:
-{"mismatches":[{"index":<0-based index>,"found":"EASY|MEDIUM|HARD","reason":"short reason"}]}
-
-List ONLY the questions whose actual difficulty differs from the requested level "${level}". If every question complies, return {"mismatches":[]}.
-
-QUESTIONS:
-${JSON.stringify(units)}`;
-}
 
 export function cmsRouter(prisma, deps = {}) {
 	const router = Router();
@@ -2816,7 +2713,7 @@ export function cmsRouter(prisma, deps = {}) {
 				: 'Vignette / item-set (CFA Level ' + levelRoman + ' exam style): 250-650 PROSE word case study passage (vignetteText only — word count is prose words only, HTML tags/table markup do NOT count) with a named protagonist, realistic exhibits, EXACTLY 4 MCQ sub-questions with 3 choices (A,B,C) each, total 12 points. At least 2 calculation questions, at least 1 interpretation question.'
 			: 'Constructed response (written answer requiring calculations or explanations)';
 		const difficultyLabel = diffList.join(', ');
-		const difficultyInstructionBlock = buildDifficultyInstructionBlock(diffList);
+		const difficultyInstructionBlock = buildDifficultyMandatoryBlock(diffList, { questionType, count });
 		const singleDifficulty = diffList.length === 1 ? normalizeDifficultyValue(diffList[0]) : null;
 		const curriculumSection = curriculumExcerpt
 			? `\n\nCURRICULUM REFERENCE MATERIAL (THIS IS YOUR PRIMARY SOURCE — all questions MUST be grounded in this document):\n---\n${curriculumExcerpt}\n---\n`
@@ -2959,13 +2856,13 @@ VIGNETTE WRITING STYLE — Write like CFA Institute curriculum examples:
 - Include named investment professionals, institutional investors, investment committee discussions, analyst reports, portfolio constraints, market environment, economic assumptions.
 - AVOID generic wording like "An investor wants to invest...". Instead write: "During a quarterly investment committee meeting, Sarah Williams, senior analyst at Horizon Capital, reviews..."
 
-QUESTION COMPLEXITY REQUIREMENTS — The 4 sub-questions must NOT all test the same concept. Distribute as follows:
-  Question 1 — FOUNDATION APPLICATION (Medium difficulty): Test whether the candidate can correctly apply the main concept — classify an investment, calculate a key metric, identify the appropriate framework.
-  Question 2 — ANALYTICAL INTERPRETATION (Medium-Hard difficulty): Require interpretation of exhibit information. The candidate must compare alternatives, evaluate assumptions, or understand implications.
-  Question 3 — CALCULATION + JUDGEMENT (Hard difficulty): Require a MULTI-STEP calculation: Step 1: Calculate a financial metric. Step 2: Interpret the result. Step 3: Select the most appropriate conclusion. Do NOT create single-step arithmetic questions.
-  Question 4 — INVESTMENT DECISION / PROFESSIONAL JUDGEMENT (Hard difficulty): Require the candidate to recommend an action. Examples: "The analyst's recommendation is most appropriate because:", "The portfolio manager should most likely:", "The investment committee should reject the proposal because:".
+QUESTION COMPLEXITY REQUIREMENTS — The 4 sub-questions must NOT all test the same concept. Test different aspects, but ALL must match the SELECTED TARGET DIFFICULTY (see the MANDATORY TARGET DIFFICULTY block above):
+  Question 1 — Analytical application of the main concept (calculate a key metric / identify the framework).
+  Question 2 — Interpretation of exhibit information (compare alternatives, evaluate assumptions, understand implications).
+  Question 3 — Multi-step calculation + interpretation (Step 1: calculate a metric → Step 2: interpret the result → Step 3: select the most appropriate conclusion). Do NOT create single-step arithmetic questions.
+  Question 4 — Professional judgement / recommendation (e.g. "The analyst's recommendation is most appropriate because:", "The portfolio manager should most likely:").
 
-DIFFICULTY CONTROL — Target: 70% Medium-Hard, 30% Hard. AVOID: definition questions, memorization, obvious calculations. PREFER stems using: "most appropriate", "least likely", "best explains", "most consistent with", "should most likely".
+DIFFICULTY CONTROL — The SELECTED TARGET DIFFICULTY is authoritative. Do NOT apply a fixed difficulty mix. PREFER stems using: "most appropriate", "least likely", "best explains", "most consistent with", "should most likely".
 
 REALISTIC CFA TRAPS — Incorrect options MUST represent mistakes actually made by CFA candidates:
   Alternative Investments: confusing equity REITs vs mortgage REITs, confusing NAV vs book value, ignoring leverage effects, confusing income return vs capital appreciation.
@@ -3680,7 +3577,7 @@ console.log('AI raw output:', raw);
 		const conceptLabel = selectedConcepts.length > 0 ? selectedConcepts.map(c => c.name).join(', ') : 'All concepts under the selected topics';
 		const difficultyLabel = diffList.join(', ');
 		// Requested difficulty drives the prompt content, not just metadata.
-		const difficultyInstructionBlock = buildDifficultyInstructionBlock(diffList);
+		const difficultyInstructionBlock = buildDifficultyMandatoryBlock(diffList, { questionType, count });
 		const singleDifficulty = diffList.length === 1 ? normalizeDifficultyValue(diffList[0]) : null;
 
 		const isBundleType = questionType === 'VIGNETTE_MCQ' || isConstructedBundle;
@@ -3879,6 +3776,8 @@ CORE REQUIREMENTS:
 - Use UNIQUE fictional company names (invent fresh names each time)
 - ALL metadata fields below are REQUIRED
 
+${difficultyInstructionBlock}
+
 FORMATTING RULES (STRICT) — these apply to ALL HTML in "vignetteText", "stem", options, explanations, and workedSolution:
 - Do NOT insert blank paragraphs before or after an Exhibit.
 - Do NOT use multiple <br> tags.
@@ -3941,7 +3840,6 @@ ${testVol ? `${testVol.questionDesign}\n${testVol.distractors}` : '- At least 2 
 ADVANCED CFA LEVEL ${levelRoman} ITEM-SET DESIGN:
 The vignette must simulate a real CFA Level ${levelRoman} exam case — not a textbook quiz. Include: (1) a central investment problem (portfolio allocation, valuation, risk assessment, recommendation, analyst disagreement, or client suitability), (2) multiple layers of relevant, irrelevant, and conflicting information plus assumptions requiring judgement, (3) professional uncertainty where the answer is not immediately obvious.
 VIGNETTE WRITING STYLE: Include named investment professionals, institutional investors, investment committee discussions, analyst reports, portfolio constraints, market environment, economic assumptions. AVOID: "An investor wants to invest...". Instead: "During a quarterly investment committee meeting, Sarah Williams, senior analyst at Horizon Capital, reviews..."
-${difficultyInstructionBlock}
 QUESTION COMPLEXITY — The questions/sub-questions must NOT all test the same concept. Test different aspects, but ALL must match the requested difficulty (${difficultyLabel}):
   Q1 — Foundation application: apply the main concept (classify, calculate a key metric, identify the framework).
   Q2 — Analytical interpretation: interpret data/exhibits (compare alternatives, evaluate assumptions, understand implications).
@@ -4079,78 +3977,123 @@ ${formatBlock}`;
 				});
 			}
 
-			// ── Optional difficulty compliance check + one regeneration pass ──────
-			// Only runs when a single difficulty was requested. Fully non-fatal:
-			// any failure keeps the original generation.
-			if (singleDifficulty) {
-				try {
-					const buildUnits = () => {
-						const units = [];
-						const isBundle = questionType === 'VIGNETTE_MCQ' || isConstructedBundle;
-						if (isBundle) {
-							items.forEach((b) => (Array.isArray(b.questions) ? b.questions : []).forEach((sq) => {
-								units.push({
-									index: units.length,
-									stem: String(sq.stem || sq.question || sq.text || '').slice(0, 400),
-									options: (Array.isArray(sq.options) ? sq.options : []).map(o => (typeof o === 'string' ? o : o?.text || '')),
-									marks: sq.marks || 3,
-								});
-							}));
-						} else {
-							items.forEach((it) => {
-								units.push({
-									index: units.length,
-									stem: String(it.stem || it.question || it.text || '').slice(0, 400),
-									options: (Array.isArray(it.options) ? it.options : []).map(o => (typeof o === 'string' ? o : o?.text || '')),
-								});
-							});
-						}
-						return units;
-					};
+			// ── Difficulty enforcement: target plan → generate → audit → regenerate ──
+			// The administrator-selected difficulty is authoritative. Each question is
+			// assigned a target BEFORE validation, independently audited, and rewritten
+			// (up to 2 attempts) if it does not genuinely meet the target. Questions that
+			// never pass are excluded — never relabelled.
+			try {
+				const isBundleType = questionType === 'VIGNETTE_MCQ' || isConstructedBundle;
+				const requestedLevels = (Array.isArray(diffList) && diffList.length ? diffList : ['MEDIUM'])
+					.map(normalizeDifficultyValue).filter(Boolean);
+				if (requestedLevels.length === 0) requestedLevels.push('MEDIUM');
 
-					const units = buildUnits();
-					if (units.length > 0) {
-						console.log(`[AI Preview] Difficulty validation: checking ${units.length} question(s) against requested ${singleDifficulty}`);
-						const valResult = await ai.chatCompletion({
-							apiKey, provider: aiProvider, model: aiModel,
-							messages: [
-								{ role: 'system', content: 'You are a strict CFA exam difficulty validator. Return valid JSON only.' },
-								{ role: 'user', content: buildDifficultyValidationPrompt(units, singleDifficulty) },
-							],
-							temperature: 0.1,
-							maxTokens: 1500,
-							jsonMode: true,
-							timeout: 120000,
-						});
-						const valParsed = parseAiJson(valResult?.text ?? valResult?.content ?? '{}');
-						const mismatches = Array.isArray(valParsed.parsed?.mismatches) ? valParsed.parsed.mismatches : [];
-						if (mismatches.length > 0) {
-							console.warn(`[AI Preview] Difficulty mismatch for ${mismatches.length} question(s); regenerating once with stricter instructions.`);
-							const regenResult = await ai.chatCompletion({
-								apiKey, provider: aiProvider, model: aiModel,
-								messages: [
-									{ role: 'system', content: `You are a senior CFA Level ${levelRoman} exam writer. Return valid JSON only.` },
-									{ role: 'user', content: prompt + '\n\n' + buildDifficultyRegenerationNote(singleDifficulty, mismatches) },
-								],
-								temperature: 0.4,
-								maxTokens: questionType === 'VIGNETTE_MCQ' ? 12000 : 4000,
-								jsonMode: true,
-								timeout: questionType === 'VIGNETTE_MCQ' ? 900000 : 300000,
-							});
-							const regenParse = parseAiJson(regenResult?.text ?? regenResult?.content ?? '{}');
-							if (regenParse.items.length > 0) {
-								items = regenParse.items;
-								console.log('[AI Preview] Regenerated after difficulty correction; items:', items.length);
-							} else {
-								console.warn('[AI Preview] Difficulty regeneration returned no valid items; keeping original generation.');
-							}
-						} else {
-							console.log(`[AI Preview] Difficulty validation passed (${singleDifficulty}).`);
-						}
-					}
-				} catch (valErr) {
-					console.warn('[AI Preview] Difficulty validation skipped:', valErr?.message || valErr);
+				const unitRefs = [];
+				if (isBundleType) {
+					items.forEach((b, bIdx) => (Array.isArray(b.questions) ? b.questions : []).forEach((sq, qi) => unitRefs.push({ loc: { bIdx, qi }, q: sq })));
+				} else {
+					items.forEach((it, i) => unitRefs.push({ loc: { i }, q: it }));
 				}
+
+				// Target difficulty per question, decided BEFORE validation.
+				const targets = unitRefs.map((_, i) => requestedLevels[i % requestedLevels.length]);
+
+				const units = unitRefs.map(({ loc, q }) => {
+					const opts = Array.isArray(q.options)
+						? q.options.map(o => ({ text: typeof o === 'string' ? o : (o.text || ''), isCorrect: !!(o && o.isCorrect) }))
+						: [];
+					return {
+						loc,
+						qid: q.qid || q.qid === 0 ? q.qid : (q.stem || '').slice(0, 24),
+						stem: String(q.stem || q.question || '').trim(),
+						options: opts,
+						workedSolution: String(q.workedSolution || q.explanation || '').trim(),
+						explanation: String(q.explanation || '').trim(),
+						keyFormulas: String(q.keyFormulas || ''),
+						los: q.los || '',
+						topicName: q.topicName || '',
+						conceptName: q.conceptName || '',
+					};
+				});
+
+				console.log('[AI Question Generation] Requested difficulty:', requestedLevels.join(','), 'Question count:', units.length, 'Provider:', aiProvider, 'Model:', aiModel);
+
+				const results = await enforceDifficulty({
+					units,
+					targets,
+					chatCompletion: ai.chatCompletion,
+					apiKey,
+					provider: aiProvider,
+					model: aiModel,
+					level: course.level || levelRoman,
+					maxAttempts: 2,
+					maxTokens: questionType === 'VIGNETTE_MCQ' ? 4000 : 2000,
+					timeout: 120000,
+					logger: console,
+				});
+
+				const keyOf = (loc) => (loc && loc.bIdx != null) ? `b:${loc.bIdx}:${loc.qi}` : `f:${loc?.i}`;
+				const resultByKey = new Map(results.map(r => [keyOf(r.loc), r]));
+
+				if (isBundleType) {
+					const newBundles = [];
+					items.forEach((b, bIdx) => {
+						const kept = [];
+						(Array.isArray(b.questions) ? b.questions : []).forEach((sq, qi) => {
+							const r = resultByKey.get(`b:${bIdx}:${qi}`);
+							if (!r || !r.pass) return;
+							kept.push({
+								...sq,
+								stem: r.unit.stem,
+								options: r.unit.options,
+								workedSolution: r.unit.workedSolution,
+								explanation: r.unit.explanation,
+								keyFormulas: r.unit.keyFormulas,
+								los: r.unit.los || sq.los,
+								difficulty: r.target,
+							});
+						});
+						if (kept.length > 0) newBundles.push({ ...b, questions: kept });
+					});
+					items = newBundles;
+					if (items.length === 0) {
+						sseSend('error', {
+							error: 'AI_DIFFICULTY_VALIDATION_FAILED',
+							message: `Unable to generate a question set meeting the selected ${requestedLevels.join('/')} difficulty after validation. Please retry.`,
+							provider: aiProvider, model: aiModel,
+						});
+						return sseEnd();
+					}
+				} else {
+					const kept = [];
+					items.forEach((it, i) => {
+						const r = resultByKey.get(`f:${i}`);
+						if (!r || !r.pass) return;
+						kept.push({
+							...it,
+							stem: r.unit.stem,
+							options: r.unit.options,
+							workedSolution: r.unit.workedSolution,
+							explanation: r.unit.explanation,
+							keyFormulas: r.unit.keyFormulas,
+							los: r.unit.los || it.los,
+							difficulty: r.target,
+						});
+					});
+					items = kept;
+					if (items.length === 0) {
+						sseSend('error', {
+							error: 'AI_DIFFICULTY_VALIDATION_FAILED',
+							message: `Unable to generate a question meeting the selected ${requestedLevels.join('/')} difficulty after validation. Please retry.`,
+							provider: aiProvider, model: aiModel,
+						});
+						return sseEnd();
+					}
+				}
+				console.log(`[AI Preview] Difficulty enforcement complete: ${results.filter(r => r.pass).length}/${results.length} question(s) passed validation.`);
+			} catch (diffErr) {
+				// Non-fatal: keep the generation (validator/infra failure must not wipe output).
+				console.warn('[AI Preview] Difficulty enforcement error (non-fatal):', diffErr?.message || diffErr);
 			}
 
 			const level = course.level || 'LEVEL1';
@@ -5094,4 +5037,4 @@ function computeEstimatedSeconds(kind, payload) {
 }
 
 // Exported for unit testing of difficulty compliance helpers.
-export { DIFFICULTY_LEVELS, DIFFICULTY_INSTRUCTIONS, normalizeDifficultyValue, buildDifficultyInstructionBlock, buildDifficultyRegenerationNote, buildDifficultyValidationPrompt };
+export { DIFFICULTY_LEVELS, DIFFICULTY_RUBRICS, normalizeDifficultyValue, buildTargetPlan, buildDifficultyMandatoryBlock, buildDifficultyAuditorPrompt, buildDifficultyRepairPrompt, enforceDifficulty };

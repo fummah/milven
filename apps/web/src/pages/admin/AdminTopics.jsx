@@ -298,6 +298,26 @@ export function AdminTopics() {
     setConceptDrawerOpen(true);
   };
 
+  // Open the New Topic drawer pre-populated for a specific Learning Module row.
+  // Mirrors openConceptDrawer (which prepopulates topicId for a new concept).
+  const openAddTopicForModule = (mod) => {
+    if (!mod?.id) return;
+    setEditing(null);
+    setTopicStep(0);
+    setMaterialEditing(null);
+    setMaterials([]);
+    form.resetFields();
+    // Derive course/volume if the module object does not carry them directly.
+    const courseId = mod.courseId || (courses.find(c => c.level === mod.level)?.id ?? '');
+    const volumeId = mod.volumeId || undefined;
+    // Default order = next available order within THIS module's topics.
+    const existingTopics = Array.isArray(mod.topics) ? mod.topics : (data || []).filter(t => t.moduleId === mod.id);
+    const maxOrder = existingTopics.length ? Math.max(...existingTopics.map(t => t.order ?? 0), 0) : 0;
+    form.setFieldsValue({ courseId, volumeId, moduleId: mod.id, order: maxOrder + 1 });
+    setActiveTab('modules');
+    setDrawerOpen(true);
+  };
+
   const openEditConceptDrawer = async (concept, topic) => {
     setSelectedConcept(concept);
     setConceptParentTopic(topic);
@@ -861,6 +881,7 @@ export function AdminTopics() {
                     width: 180,
                     render: (_, record) => (
                       <Space>
+                        <Tooltip title="Add Topic"><Button size="small" type="text" icon={<PlusOutlined />} style={{ color: '#06b6d4' }} onClick={() => openAddTopicForModule(record)} /></Tooltip>
                         <Tooltip title="Edit"><Button size="small" type="text" icon={<EditOutlined />} onClick={async () => {
                           setEditingModule(record);
                           // Load volumes for the module's course so the volumeId Select has options
