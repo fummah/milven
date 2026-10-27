@@ -17,7 +17,8 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   FunctionOutlined,
-  ReadOutlined
+  ReadOutlined,
+  FilePptOutlined
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
@@ -97,6 +98,7 @@ const menuItems = [
       { key: 'formulas', icon: subMenuBadge(<FunctionOutlined />, '#14b8a6'), label: <Link to="/admin/formulas">Milven Formula Book</Link> },
       { key: 'summary-sheets', icon: subMenuBadge(<FileTextOutlined />, '#14b8a6'), label: <Link to="/admin/summary-sheets">Milven Summary Sheets</Link> },
       { key: 'module-notes', icon: subMenuBadge(<BookOutlined />, '#14b8a6'), label: <Link to="/admin/module-notes">Milven Module Notes</Link> },
+      { key: 'milven-slides', icon: subMenuBadge(<FilePptOutlined />, '#14b8a6'), label: <Link to="/admin/slides">Milven Slides</Link> },
       { key: 'documents', icon: subMenuBadge(<FolderOutlined />, '#14b8a6'), label: <Link to="/admin/documents">Curriculum Docs</Link> },
       { key: 'pdf-mapping', icon: subMenuBadge(<FileTextOutlined />, '#14b8a6'), label: <Link to="/admin/pdf-mapping">PDF Mapping</Link> }
     ]
@@ -140,7 +142,7 @@ const isPreviewPath = (pathname) => /^\/admin\/courses\/[^/]+\/preview$/.test(pa
 const childToParentKey = {
   'users-list': 'users', students: 'users', roles: 'users',
   'courses-list': 'courses', volumes: 'courses', topics: 'courses', questions: 'courses', materials: 'courses', levels: 'courses',
-  formulas: 'learning', 'summary-sheets': 'learning', 'module-notes': 'learning', documents: 'learning', 'pdf-mapping': 'learning',
+  formulas: 'learning', 'summary-sheets': 'learning', 'module-notes': 'learning', 'milven-slides': 'learning', documents: 'learning', 'pdf-mapping': 'learning',
   'exams-list': 'exams', 'exam-builder': 'exams', 'mock-exams': 'exams',
   'reports-overview': 'reports',
   products: 'billing', purchases: 'billing', invoices: 'billing', subscriptions: 'billing', taxes: 'billing'
@@ -153,7 +155,7 @@ const adminBreadcrumbs = {
   'courses-list': ['Courses', 'Courses'], volumes: ['Courses', 'Volumes'], topics: ['Courses', 'Learning Modules'],
   questions: ['Courses', 'Questions'], materials: ['Courses', 'Learning Materials'], levels: ['Courses', 'Levels'],
   formulas: ['Learning', 'Milven Formula Book'], 'summary-sheets': ['Learning', 'Milven Summary Sheets'],
-  'module-notes': ['Learning', 'Milven Module Notes'], documents: ['Learning', 'Curriculum Docs'],
+  'module-notes': ['Learning', 'Milven Module Notes'], 'milven-slides': ['Learning', 'Milven Slides'], documents: ['Learning', 'Curriculum Docs'],
   'pdf-mapping': ['Learning', 'PDF Mapping'],
   'exams-list': ['Exams', 'Exams'], 'exam-builder': ['Exams', 'Exam Builder'], 'mock-exams': ['Exams', 'Mock Exams'],
   'reports-overview': ['Reports', 'Overview'],
@@ -201,6 +203,7 @@ export default function AdminLayout() {
       'formulas': 'formulas',
       'summary-sheets': 'summary-sheets',
       'module-notes': 'module-notes',
+      'slides': 'milven-slides',
       'levels': 'levels',
       'exams': 'exams-list',
       'exams/builder': 'exam-builder',

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChevronRight, ChevronDown, ChevronLeft, BookOpen, FileText, GraduationCap, Layers, Tag, Clock, BookMarked, ZoomIn, ZoomOut, X, Menu } from 'lucide-react';
 import { api } from '../../lib/api';
 
 const StudentLearning = () => {
+  const navigate = useNavigate();
   const [courses, setCourses] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [volumes, setVolumes] = useState([]);
@@ -11,6 +13,7 @@ const StudentLearning = () => {
   const [topics, setTopics] = useState([]);
   const [concepts, setConcepts] = useState([]);
   const [mappings, setMappings] = useState([]);
+  const [volumePresentations, setVolumePresentations] = useState([]);
   const [expandedModules, setExpandedModules] = useState(new Set());
   const [expandedTopics, setExpandedTopics] = useState(new Set());
   const [progress, setProgress] = useState({});
@@ -89,7 +92,7 @@ const StudentLearning = () => {
   const fetchHierarchyAndMappings = async () => {
     setHierarchyLoading(true);
     try {
-      const [modulesRes, topicsRes, conceptsRes, docRes] = await Promise.allSettled([
+      const [modulesRes, topicsRes, conceptsRes, docRes, slidesRes] = await Promise.allSettled([
         api.get('/api/learning/modules/public', {
           params: { courseId: selectedCourse, volumeId: selectedVolume }
         }),
@@ -101,6 +104,9 @@ const StudentLearning = () => {
         }),
         api.get(`/api/pdf-mapping/volume/${selectedVolume}/document`, {
           params: { courseId: selectedCourse }
+        }),
+        api.get('/api/slides/library/presentations', {
+          params: { courseId: selectedCourse, volumeId: selectedVolume, limit: 60 }
         })
       ]);
 
@@ -116,6 +122,7 @@ const StudentLearning = () => {
       setModules(mods);
       setTopics(volumeTopics);
       setConcepts(volumeConcepts);
+      setVolumePresentations(slidesRes.status === 'fulfilled' ? (slidesRes.value.data?.presentations || []) : []);
 
       if (docRes.status === 'fulfilled') {
         const doc = docRes.value.data;
@@ -171,6 +178,8 @@ const StudentLearning = () => {
   };
 
   const getTopicsForModule = (moduleId) => topics.filter(t => t.moduleId === moduleId);
+  const getSlidesForModule = (moduleId) => volumePresentations.filter(p => p.moduleId === moduleId);
+  const wholeVolumeSlides = volumePresentations.filter(p => p.scope === 'WHOLE_VOLUME');
   const getConceptsForTopic = (topicId) => concepts.filter(c => c.topicId === topicId);
 
   const selectedCourseData = courses.find(c => c.courseId === selectedCourse);
@@ -221,6 +230,15 @@ const StudentLearning = () => {
                 <option key={volume.id} value={volume.id}>{volume.name}</option>
               ))}
             </select>
+            {selectedCourse && selectedVolume && (
+              <button
+                type="button"
+                onClick={() => navigate(`/student/slides?courseId=${selectedCourse}&volumeId=${selectedVolume}`)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold hover:bg-amber-100"
+              >
+                <FileText size={13} /> Slides
+              </button>
+            )}
           </div>
           {selectedCourseData && (
             <div className="flex items-center gap-2 ml-auto">
@@ -326,6 +344,19 @@ const StudentLearning = () => {
                           )}
                           <BookMarked size={14} className="text-blue-600 flex-shrink-0" />
                           <span className="text-sm font-semibold text-gray-900 flex-1 truncate">{module.name}</span>
+                          {getSlidesForModule(module.id).length > 0 && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                navigate(`/student/slides?courseId=${selectedCourse}&volumeId=${selectedVolume}&moduleId=${module.id}`);
+                              }}
+                              className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 hover:bg-amber-200"
+                              title="Open slides for this module"
+                            >
+                              Slides {getSlidesForModule(module.id).length}
+                            </button>
+                          )}
                           {moduleMapping && (
                             <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
                               p.{moduleMapping.pageNumber}

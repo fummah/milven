@@ -8,37 +8,39 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  passwordHash  String
-  firstName     String?
-  lastName      String?
-  phone         String?
-  country       String?
+  id                     String                  @id @default(cuid())
+  email                  String                  @unique
+  passwordHash           String
+  firstName              String?
+  lastName               String?
+  phone                  String?
+  country                String?
   // Stripe customer id for billing
-  stripeCustomerId String?
-  role          UserRole  @default(STUDENT)
-  level         CfaLevel  @default(LEVEL1)
-  customRoleId  String?
-  customRole    CustomRole? @relation(fields: [customRoleId], references: [id])
-  emailVerifiedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  stripeCustomerId       String?
+  role                   UserRole                @default(STUDENT)
+  level                  CfaLevel                @default(LEVEL1)
+  customRoleId           String?
+  customRole             CustomRole?             @relation(fields: [customRoleId], references: [id])
+  emailVerifiedAt        DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
   // Relations
-  createdExams  Exam[]    @relation("ExamCreatedBy")
-  examAttempts  ExamAttempt[]
-  videoProgresses VideoProgress[]
-  subscriptions Subscription[]
-  payments      PaymentRecord[]
+  createdExams           Exam[]                  @relation("ExamCreatedBy")
+  examAttempts           ExamAttempt[]
+  videoProgresses        VideoProgress[]
+  subscriptions          Subscription[]
+  payments               PaymentRecord[]
   emailVerificationToken EmailVerificationToken?
-  passwordResetTokens PasswordResetToken[]
-  enrollments   Enrollment[]
-  materialProgresses MaterialProgress[]
-  topicProgresses    TopicProgress[]
-  courseProgresses   CourseProgress[]
-  mockExams         MockExam[]
-  scheduledMocks    MockExam[] @relation("MockScheduledBy")
-  pathwayVolumeId   String?
+  passwordResetTokens    PasswordResetToken[]
+  enrollments            Enrollment[]
+  materialProgresses     MaterialProgress[]
+  topicProgresses        TopicProgress[]
+  courseProgresses       CourseProgress[]
+  mockExams              MockExam[]
+  scheduledMocks         MockExam[]              @relation("MockScheduledBy")
+  pathwayVolumeId        String?
+  presentations          Presentation[]          @relation("PresentationCreatedBy")
+  presentationBatches    PresentationBatch[]     @relation("BatchCreatedBy")
 }
 
 enum UserRole {
@@ -66,20 +68,21 @@ enum QuestionType {
 }
 
 model Volume {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  isPathway   Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  courseLinks CourseVolume[]
-  modules    Module[]
+  id                   String                @id @default(cuid())
+  name                 String
+  description          String?
+  isPathway            Boolean               @default(false)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  courseLinks          CourseVolume[]
+  modules              Module[]
   mockExamTopicWeights MockExamTopicWeight[]
-  curriculumDocuments CurriculumDocument[]
-  formulas         Formula[]
-  summarySheets    SummarySheet[]
-  moduleNotes      ModuleNote[]
-  pdfMappings      PdfMapping[]
+  curriculumDocuments  CurriculumDocument[]
+  formulas             Formula[]
+  summarySheets        SummarySheet[]
+  moduleNotes          ModuleNote[]
+  pdfMappings          PdfMapping[]
+  presentations        Presentation[]
 }
 
 model CourseVolume {
@@ -96,115 +99,122 @@ model CourseVolume {
 }
 
 model Module {
-  id        String   @id @default(cuid())
-  name      String
-  level     CfaLevel
-  courseId  String
-  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  volumeId  String
-  volume    Volume   @relation(fields: [volumeId], references: [id], onDelete: Cascade)
-  order     Int?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  topics    Topic[]
-  formulas  Formula[]
+  id            String         @id @default(cuid())
+  name          String
+  level         CfaLevel
+  courseId      String
+  course        Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  volumeId      String
+  volume        Volume         @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  order         Int?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  topics        Topic[]
+  formulas      Formula[]
   summarySheets SummarySheet[]
   moduleNotes   ModuleNote[]
+  presentations Presentation[]
+
   @@index([volumeId, order])
   @@index([courseId, order])
 }
 
 model Topic {
-  id           String    @id @default(cuid())
-  name         String
-  level        CfaLevel
-  courseId     String?
-  course       Course?   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  order        Int?
-  moduleNumber Int?      // deprecated: use moduleId; kept for migration/display
-  moduleId     String
-  module       Module    @relation(fields: [moduleId], references: [id], onDelete: Restrict)
-  losCode      String?   // LOS Code (e.g. "LOS 1.a")
-  commandWord  String?   // Command Word (e.g. "describe", "calculate")
+  id                       String              @id @default(cuid())
+  name                     String
+  level                    CfaLevel
+  courseId                 String?
+  course                   Course?             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  order                    Int?
+  moduleNumber             Int? // deprecated: use moduleId; kept for migration/display
+  moduleId                 String
+  module                   Module              @relation(fields: [moduleId], references: [id], onDelete: Restrict)
+  losCode                  String? // LOS Code (e.g. "LOS 1.a")
+  commandWord              String? // Command Word (e.g. "describe", "calculate")
   learningOutcomeStatement String? // Learning Outcome Statement (full text)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
   // Relations
-  questions        Question[] @relation("PrimaryTopic")
-  linkedQuestions  Question[] @relation("QuestionTopics")
-  videos    Video[]
-  revisionSummaries RevisionSummary[]
-  materials LearningMaterial[]
-  concepts  Concept[]
-  formulas  Formula[]
-  summarySheets SummarySheet[]
-  moduleNotes   ModuleNote[]
+  questions                Question[]          @relation("PrimaryTopic")
+  linkedQuestions          Question[]          @relation("QuestionTopics")
+  videos                   Video[]
+  revisionSummaries        RevisionSummary[]
+  materials                LearningMaterial[]
+  concepts                 Concept[]
+  formulas                 Formula[]
+  summarySheets            SummarySheet[]
+  moduleNotes              ModuleNote[]
+  presentationLinks        PresentationTopic[]
+
   @@index([moduleId, order])
 }
 
 model Concept {
-  id                       String   @id @default(cuid())
+  id                       String                @id @default(cuid())
   name                     String
   topicId                  String
-  topic                    Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  topic                    Topic                 @relation(fields: [topicId], references: [id], onDelete: Cascade)
   order                    Int?
   losCode                  String?
   commandWord              String?
   learningOutcomeStatement String?
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
   materials                LearningMaterial[]
-  questions                Question[] @relation("QuestionConcepts")
+  questions                Question[]            @relation("QuestionConcepts")
+  presentationLinks        PresentationConcept[]
+
   @@index([topicId, order])
 }
 
 model Vignette {
-  id        String    @id @default(cuid())
+  id        String     @id @default(cuid())
   text      String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   questions Question[]
 }
 
 model Question {
-  id             String       @id @default(cuid())
-  qid            String?      // Optional external Question ID (e.g. IND9-001)
-  stem           String
-  type           QuestionType
-  level          CfaLevel
-  difficulty     Difficulty
-  topicId        String?
-  topic          Topic?       @relation("PrimaryTopic", fields: [topicId], references: [id])
-  topics         Topic[]      @relation("QuestionTopics")
+  id                 String         @id @default(cuid())
+  qid                String? // Optional external Question ID (e.g. IND9-001)
+  stem               String
+  type               QuestionType
+  level              CfaLevel
+  difficulty         Difficulty
+  topicId            String?
+  topic              Topic?         @relation("PrimaryTopic", fields: [topicId], references: [id])
+  topics             Topic[]        @relation("QuestionTopics")
   // Denormalized path fields for filtering and bulk import; derived from topic.module.volume.course
-  courseId       String?
-  volumeId       String?
-  moduleId       String?
-  marks          Int          @default(1)
-  orderIndex     Int          @default(0)
+  courseId           String?
+  volumeId           String?
+  moduleId           String?
+  marks              Int            @default(1)
+  orderIndex         Int            @default(0)
   // Parent-child self-reference for vignette/case-study bundles
-  parentId       String?
-  parent         Question?    @relation("QuestionParentChild", fields: [parentId], references: [id], onDelete: Cascade)
-  children       Question[]   @relation("QuestionParentChild")
+  parentId           String?
+  parent             Question?      @relation("QuestionParentChild", fields: [parentId], references: [id], onDelete: Cascade)
+  children           Question[]     @relation("QuestionParentChild")
   // Vignette/case-study text stored directly on the parent question
-  vignetteText   String?
+  vignetteText       String?
   // Legacy field kept for backward compatibility during migration
-  vignetteId     String?
-  vignette       Vignette?    @relation(fields: [vignetteId], references: [id])
-  imageUrl       String?
-  los            String?      // Learning Outcome Statement
-  traceSection   String?      // Trace (Section)
-  tracePage      String?      // Trace (Page)
-  keyFormulas    String?      // Key Formula(s)
-  workedSolution String?      // Worked Solution (concise)
-  questionGuidelines String?  // Marking guidelines for constructed questions
-  output         String?      // Expected model answer/output for constructed questions
-  isAiGenerated  Boolean      @default(false) // Tag for admin: question was generated by AI
-  createdAt      DateTime     @default(now())
-  options        McqOption[]
-  answers        ExamAnswer[]
-  usedInExams    ExamQuestion[]
-  concepts        Concept[]    @relation("QuestionConcepts")
+  vignetteId         String?
+  vignette           Vignette?      @relation(fields: [vignetteId], references: [id])
+  imageUrl           String?
+  los                String? // Learning Outcome Statement
+  traceSection       String? // Trace (Section)
+  tracePage          String? // Trace (Page)
+  keyFormulas        String? // Key Formula(s)
+  workedSolution     String? // Worked Solution (concise)
+  questionGuidelines String? // Marking guidelines for constructed questions
+  output             String? // Expected model answer/output for constructed questions
+  isAiGenerated      Boolean        @default(false) // Tag for admin: question was generated by AI
+  createdAt          DateTime       @default(now())
+  options            McqOption[]
+  answers            ExamAnswer[]
+  usedInExams        ExamQuestion[]
+  concepts           Concept[]      @relation("QuestionConcepts")
+
   @@index([topicId, difficulty])
   @@index([courseId, difficulty])
   @@index([moduleId, difficulty])
@@ -212,36 +222,37 @@ model Question {
 }
 
 model McqOption {
-  id          String    @id @default(cuid())
-  questionId  String
-  question    Question  @relation(fields: [questionId], references: [id])
-  text        String
-  isCorrect   Boolean   @default(false)
+  id                String       @id @default(cuid())
+  questionId        String
+  question          Question     @relation(fields: [questionId], references: [id])
+  text              String
+  isCorrect         Boolean      @default(false)
   // Back relation for ExamAnswer.selectedOption
   selectedByAnswers ExamAnswer[]
 }
 
 model Exam {
-  id               String     @id @default(cuid())
-  name             String
-  level            CfaLevel
-  timeLimitMinutes Int
+  id                  String         @id @default(cuid())
+  name                String
+  level               CfaLevel
+  timeLimitMinutes    Int
   // Extended metadata (lightweight to avoid relation rebuild for now)
-  type             String?    // 'COURSE' | 'QUIZ'
-  courseId         String?
-  topicId          String?
-  active           Boolean    @default(false)
+  type                String? // 'COURSE' | 'QUIZ'
+  courseId            String?
+  topicId             String?
+  active              Boolean        @default(false)
   // When set, exam is only available to students between startAt and endAt (inclusive)
-  startAt          DateTime?
-  endAt            DateTime?
-  createdAt        DateTime   @default(now())
-  createdById      String?
-  createdBy        User?      @relation("ExamCreatedBy", fields: [createdById], references: [id])
+  startAt             DateTime?
+  endAt               DateTime?
+  createdAt           DateTime       @default(now())
+  createdById         String?
+  createdBy           User?          @relation("ExamCreatedBy", fields: [createdById], references: [id])
   excludedQuestionIds String? // JSON array of question IDs excluded from marking (L3)
-  attempts         ExamAttempt[]
-  examQuestions    ExamQuestion[]
-  mockSession1     MockExam?  @relation("MockSession1")
-  mockSession2     MockExam?  @relation("MockSession2")
+  attempts            ExamAttempt[]
+  examQuestions       ExamQuestion[]
+  mockSession1        MockExam?      @relation("MockSession1")
+  mockSession2        MockExam?      @relation("MockSession2")
+
   @@index([createdById, active])
   @@index([courseId, active])
 }
@@ -253,6 +264,7 @@ model ExamQuestion {
   createdAt  DateTime @default(now())
   exam       Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
   @@id([examId, questionId])
   @@index([examId, order])
 }
@@ -263,46 +275,47 @@ enum AttemptStatus {
 }
 
 model ExamAttempt {
-  id               String       @id @default(cuid())
-  examId           String
-  exam             Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
-  userId           String
-  user             User         @relation(fields: [userId], references: [id])
-  startedAt        DateTime     @default(now())
-  submittedAt      DateTime?
-  status           AttemptStatus @default(IN_PROGRESS)
-  timeRemainingSec Int?
-  scorePercent     Float?
-  markingPreference String?     // 'SELF' | 'ADMIN' — how constructed responses should be marked
-  answers          ExamAnswer[]
+  id                String        @id @default(cuid())
+  examId            String
+  exam              Exam          @relation(fields: [examId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User          @relation(fields: [userId], references: [id])
+  startedAt         DateTime      @default(now())
+  submittedAt       DateTime?
+  status            AttemptStatus @default(IN_PROGRESS)
+  timeRemainingSec  Int?
+  scorePercent      Float?
+  markingPreference String? // 'SELF' | 'ADMIN' — how constructed responses should be marked
+  answers           ExamAnswer[]
 }
 
 model ExamAnswer {
-  id               String      @id @default(cuid())
-  attemptId        String
-  attempt          ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  questionId       String
-  question         Question    @relation(fields: [questionId], references: [id])
-  selectedOptionId String?
-  selectedOption   McqOption?  @relation(fields: [selectedOptionId], references: [id])
-  textAnswer       String?
-  isCorrect        Boolean?
-  marksAwarded     Int?        // Admin-awarded mark for constructed response questions
-  flagged          Boolean     @default(false)
-  timeSpentSec     Int         @default(0)
-  excludedFromMarking Boolean  @default(false)
+  id                  String      @id @default(cuid())
+  attemptId           String
+  attempt             ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId          String
+  question            Question    @relation(fields: [questionId], references: [id])
+  selectedOptionId    String?
+  selectedOption      McqOption?  @relation(fields: [selectedOptionId], references: [id])
+  textAnswer          String?
+  isCorrect           Boolean?
+  marksAwarded        Int? // Admin-awarded mark for constructed response questions
+  flagged             Boolean     @default(false)
+  timeSpentSec        Int         @default(0)
+  excludedFromMarking Boolean     @default(false)
+
   @@unique([attemptId, questionId])
 }
 
 model Video {
-  id          String    @id @default(cuid())
+  id          String          @id @default(cuid())
   title       String
   url         String
   topicId     String?
-  topic       Topic?    @relation(fields: [topicId], references: [id])
+  topic       Topic?          @relation(fields: [topicId], references: [id])
   level       CfaLevel
   durationSec Int?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime        @default(now())
   progresses  VideoProgress[]
 }
 
@@ -315,18 +328,19 @@ model VideoProgress {
   positionSec Int      @default(0)
   completed   Boolean  @default(false)
   updatedAt   DateTime @updatedAt
+
   @@unique([userId, videoId])
 }
 
 model RevisionSummary {
-  id         String   @id @default(cuid())
-  topicId    String?
-  topic      Topic?   @relation(fields: [topicId], references: [id])
-  level      CfaLevel
-  title      String
-  contentUrl String?
+  id          String   @id @default(cuid())
+  topicId     String?
+  topic       Topic?   @relation(fields: [topicId], references: [id])
+  level       CfaLevel
+  title       String
+  contentUrl  String?
   contentHtml String?
-  createdAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
 }
 
 enum MaterialKind {
@@ -338,48 +352,50 @@ enum MaterialKind {
 }
 
 model LearningMaterial {
-  id          String       @id @default(cuid())
-  topicId     String
-  topic       Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  conceptId   String?
-  concept     Concept?     @relation(fields: [conceptId], references: [id], onDelete: SetNull)
-  kind        MaterialKind
-  title       String
-  url         String?
-  contentHtml String?
-  imageUrl    String?
+  id               String       @id @default(cuid())
+  topicId          String
+  topic            Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  conceptId        String?
+  concept          Concept?     @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+  kind             MaterialKind
+  title            String
+  url              String?
+  contentHtml      String?
+  imageUrl         String?
   // Estimated time to complete this material in seconds
   estimatedSeconds Int?
-  order       Int?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  order            Int?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
   @@index([topicId, order])
   @@index([conceptId, order])
 }
 
 model Course {
-  id             String    @id @default(cuid())
-  name           String
-  level          CfaLevel
-  description    String?
-  examConditions String?   @db.Text
-  durationHours  Int?
+  id                   String                @id @default(cuid())
+  name                 String
+  level                CfaLevel
+  description          String?
+  examConditions       String?               @db.Text
+  durationHours        Int?
   // (Deprecated) Price moved to Product; left for backward compatibility.
-  priceCents     Int?
-  active         Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  enrollments    Enrollment[]
-  courseProducts CourseProduct[]
-  volumes        CourseVolume[]
-  modules        Module[]
-  topics         Topic[]
+  priceCents           Int?
+  active               Boolean               @default(true)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  enrollments          Enrollment[]
+  courseProducts       CourseProduct[]
+  volumes              CourseVolume[]
+  modules              Module[]
+  topics               Topic[]
   mockExamTopicWeights MockExamTopicWeight[]
-  mockExams      MockExam[]
-  curriculumDocuments CurriculumDocument[]
-  formulas       Formula[]
-  summarySheets  SummarySheet[]
-  moduleNotes    ModuleNote[]
+  mockExams            MockExam[]
+  curriculumDocuments  CurriculumDocument[]
+  formulas             Formula[]
+  summarySheets        SummarySheet[]
+  moduleNotes          ModuleNote[]
+  Presentation         Presentation[]
 }
 
 enum EnrollmentStatus {
@@ -396,6 +412,7 @@ model Enrollment {
   user      User             @relation(fields: [userId], references: [id])
   course    Course           @relation(fields: [courseId], references: [id])
   createdAt DateTime         @default(now())
+
   @@unique([userId, courseId])
   @@index([userId, createdAt])
 }
@@ -407,15 +424,15 @@ enum BillingInterval {
 }
 
 model Product {
-  id           String           @id @default(cuid())
-  name         String
-  description  String?
-  priceCents   Int
-  interval     BillingInterval
-  active       Boolean          @default(true)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  courseLinks  CourseProduct[]
+  id              String          @id @default(cuid())
+  name            String
+  description     String?
+  priceCents      Int
+  interval        BillingInterval
+  active          Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  courseLinks     CourseProduct[]
   // Stripe linkage
   stripeProductId String?
   stripePriceId   String?
@@ -426,6 +443,7 @@ model CourseProduct {
   productId String
   course    Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
   @@id([courseId, productId])
 }
 
@@ -438,12 +456,13 @@ model CustomRole {
 }
 
 model RolePermission {
-  id        String   @id @default(cuid())
-  roleKey   String   // 'ADMIN', 'STUDENT', or 'custom:<id>'
+  id         String   @id @default(cuid())
+  roleKey    String // 'ADMIN', 'STUDENT', or 'custom:<id>'
   permission String
-  allowed   Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  allowed    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
   @@unique([roleKey, permission])
 }
 
@@ -471,68 +490,71 @@ enum SubscriptionStatus {
 }
 
 model Subscription {
-  id               String             @id @default(cuid())
-  userId           String
-  user             User               @relation(fields: [userId], references: [id])
-  provider         Provider
-  plan             String?
+  id                String             @id @default(cuid())
+  userId            String
+  user              User               @relation(fields: [userId], references: [id])
+  provider          Provider
+  plan              String?
   // Provider-specific reference (e.g., Stripe subscription id)
   providerReference String?
-  status           SubscriptionStatus @default(INCOMPLETE)
-  currency         String?
-  currentPeriodEnd DateTime?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  status            SubscriptionStatus @default(INCOMPLETE)
+  currency          String?
+  currentPeriodEnd  DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
   @@unique([userId, provider])
 }
 
 model PaymentRecord {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  provider  Provider
-  reference String
-  amount    Int
-  currency  String
-  status    String
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  provider    Provider
+  reference   String
+  amount      Int
+  currency    String
+  status      String
   rawDataJson Json
-  createdAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
   @@unique([provider, reference])
 }
 
 model EmailVerificationToken {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id])
-  token     String   @unique
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  user      User      @relation(fields: [userId], references: [id])
+  token     String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 }
 
 model PasswordResetToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  token     String   @unique
+  user      User      @relation(fields: [userId], references: [id])
+  token     String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 }
 
 // Learning progress tracking
 model MaterialProgress {
-  id            String       @id @default(cuid())
-  userId        String
-  user          User         @relation(fields: [userId], references: [id])
-  materialId    String
-  kind          MaterialKind
-  percent       Float        @default(0)
-  timeSpentSec  Int          @default(0)
-  lastPosSec    Int?
-  meta          Json?
-  updatedAt     DateTime     @updatedAt
-  completedAt   DateTime?
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id])
+  materialId   String
+  kind         MaterialKind
+  percent      Float        @default(0)
+  timeSpentSec Int          @default(0)
+  lastPosSec   Int?
+  meta         Json?
+  updatedAt    DateTime     @updatedAt
+  completedAt  DateTime?
+
   @@unique([userId, materialId])
 }
 
@@ -546,20 +568,22 @@ model TopicProgress {
   completedAt   DateTime?
   gateSatisfied Boolean   @default(false)
   updatedAt     DateTime  @updatedAt
+
   @@unique([userId, topicId])
 }
 
 model CourseProgress {
-  id            String    @id @default(cuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
-  courseId      String
-  percent       Float     @default(0)
-  timeSpentSec  Int       @default(0)
-  completedAt   DateTime?
-  lastTopicId   String?
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  courseId       String
+  percent        Float     @default(0)
+  timeSpentSec   Int       @default(0)
+  completedAt    DateTime?
+  lastTopicId    String?
   lastMaterialId String?
-  updatedAt     DateTime  @updatedAt
+  updatedAt      DateTime  @updatedAt
+
   @@unique([userId, courseId])
 }
 
@@ -574,6 +598,7 @@ model Tax {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
 // Simple key-value settings storage
 model SystemSetting {
   id        String   @id @default(cuid())
@@ -586,18 +611,19 @@ model SystemSetting {
 
 // Mistake Bank - Auto-collected wrong answers for focused review
 model MistakeEntry {
-  id            String    @id @default(cuid())
-  userId        String
-  questionId    String
-  attemptId     String?   // Original attempt where mistake was made
-  answerId      String?   // Link to original answer
-  wrongOptionId String?   // The wrong option that was selected
+  id              String    @id @default(cuid())
+  userId          String
+  questionId      String
+  attemptId       String? // Original attempt where mistake was made
+  answerId        String? // Link to original answer
+  wrongOptionId   String? // The wrong option that was selected
   correctOptionId String? // The correct option
-  retested      Boolean   @default(false)
-  retestedAt    DateTime?
+  retested        Boolean   @default(false)
+  retestedAt      DateTime?
   retestedCorrect Boolean?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
   @@unique([userId, questionId])
   @@index([userId, retested])
   @@index([userId, createdAt])
@@ -605,15 +631,16 @@ model MistakeEntry {
 
 // Revision List - Questions manually added for later review
 model RevisionEntry {
-  id          String   @id @default(cuid())
-  userId      String
-  questionId  String
-  note        String?  // Optional user note
-  priority    Int      @default(1) // 1=Low, 2=Medium, 3=High
-  reviewed    Boolean  @default(false)
-  reviewedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String    @id @default(cuid())
+  userId     String
+  questionId String
+  note       String? // Optional user note
+  priority   Int       @default(1) // 1=Low, 2=Medium, 3=High
+  reviewed   Boolean   @default(false)
+  reviewedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
   @@unique([userId, questionId])
   @@index([userId, reviewed])
   @@index([userId, priority])
@@ -621,50 +648,52 @@ model RevisionEntry {
 
 // Mock Exam - Topic weight configuration per course (admin-managed)
 model MockExamTopicWeight {
-  id          String   @id @default(cuid())
-  courseId    String
-  volumeId    String
-  session     Int      @default(1)  // Session number (1 or 2)
-  weightMin   Float                 // Minimum weight percentage e.g. 15
-  weightMax   Float                 // Maximum weight percentage e.g. 20
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  volume      Volume   @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  courseId  String
+  volumeId  String
+  session   Int      @default(1) // Session number (1 or 2)
+  weightMin Float // Minimum weight percentage e.g. 15
+  weightMax Float // Maximum weight percentage e.g. 20
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  volume    Volume   @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+
   @@unique([courseId, volumeId])
   @@index([courseId, session])
 }
 
 // Mock Exam - Parent record linking two session exams together
 model MockExam {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   userId          String
-  courseId         String
-  session1ExamId  String?  @unique
-  session2ExamId  String?  @unique
-  breakMinutes    Int      @default(30)
-  session1Minutes Int      @default(135)
-  session2Minutes Int      @default(135)
-  currentSession  Int      @default(1)  // 1 = session 1, 2 = break, 3 = session 2
-  status          String   @default("PENDING") // PENDING, SESSION1, BREAK, SESSION2, COMPLETED
+  courseId        String
+  session1ExamId  String?   @unique
+  session2ExamId  String?   @unique
+  breakMinutes    Int       @default(30)
+  session1Minutes Int       @default(135)
+  session2Minutes Int       @default(135)
+  currentSession  Int       @default(1) // 1 = session 1, 2 = break, 3 = session 2
+  status          String    @default("PENDING") // PENDING, SESSION1, BREAK, SESSION2, COMPLETED
   startedAt       DateTime?
   completedAt     DateTime?
   totalScore      Float?
   session1Score   Float?
   session2Score   Float?
   // Admin-scheduled mock exam fields
-  isScheduled     Boolean  @default(false)
+  isScheduled     Boolean   @default(false)
   scheduledById   String?
-  scheduledBy     User?    @relation("MockScheduledBy", fields: [scheduledById], references: [id])
-  title           String?  // Admin-defined title for scheduled mocks
+  scheduledBy     User?     @relation("MockScheduledBy", fields: [scheduledById], references: [id])
+  title           String? // Admin-defined title for scheduled mocks
   availableFrom   DateTime?
   availableUntil  DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  session1Exam    Exam?    @relation("MockSession1", fields: [session1ExamId], references: [id], onDelete: SetNull)
-  session2Exam    Exam?    @relation("MockSession2", fields: [session2ExamId], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course          Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  session1Exam    Exam?     @relation("MockSession1", fields: [session1ExamId], references: [id], onDelete: SetNull)
+  session2Exam    Exam?     @relation("MockSession2", fields: [session2ExamId], references: [id], onDelete: SetNull)
+
   @@index([userId, status])
   @@index([courseId])
   @@index([isScheduled, courseId])
@@ -672,18 +701,19 @@ model MockExam {
 
 // Curriculum Documents - uploaded PDFs for AI question generation fine-tuning
 model CurriculumDocument {
-  id            String   @id @default(cuid())
+  id            String       @id @default(cuid())
   courseId      String
-  course        Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  course        Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
   volumeId      String
-  volume        Volume   @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  volume        Volume       @relation(fields: [volumeId], references: [id], onDelete: Cascade)
   filename      String
-  fileSize      Int      @default(0)
+  fileSize      Int          @default(0)
   extractedText String?
   uploadedById  String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
   pdfMappings   PdfMapping[]
+
   @@unique([courseId, volumeId])
   @@index([courseId])
   @@index([volumeId])
@@ -697,20 +727,20 @@ enum MappingTargetType {
 
 // PDF Mapping - Links specific pages/sections of curriculum PDFs to learning hierarchy
 model PdfMapping {
-  id                   String            @id @default(cuid())
+  id                   String             @id @default(cuid())
   volumeId             String
-  volume               Volume            @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  volume               Volume             @relation(fields: [volumeId], references: [id], onDelete: Cascade)
   curriculumDocumentId String
   curriculumDocument   CurriculumDocument @relation(fields: [curriculumDocumentId], references: [id], onDelete: Cascade)
   targetType           MappingTargetType
-  targetId             String            // Module, Topic, or Concept ID
+  targetId             String // Module, Topic, or Concept ID
   pageNumber           Int
-  pageLabel            String?           // Optional page label (e.g., "A-1", "iv")
-  yOffset              Float             @default(0) // Vertical offset for precise positioning
-  sectionTitle         String?           // Optional section title from PDF
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
-  
+  pageLabel            String? // Optional page label (e.g., "A-1", "iv")
+  yOffset              Float              @default(0) // Vertical offset for precise positioning
+  sectionTitle         String? // Optional section title from PDF
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
   @@unique([volumeId, targetType, targetId])
   @@index([curriculumDocumentId])
   @@index([pageNumber])
@@ -718,132 +748,261 @@ model PdfMapping {
 
 // ─── CFA Formula Book Master ───────────────────────────────
 model Formula {
-  id              String    @id @default(cuid())
-  name            String                // Formula title (e.g. "Holding Period Return")
-  formula         String                // Exact equation (LaTeX or plain text)
-  variables       String                // Variable definitions
-  interpretation  String                // Plain-English meaning
-  whenToUse       String                // Exam context / application
-  watchOut        String                // Common trap / confusion
-  calculatorCue   String?               // Optional calculator cue or assumption note
-  losTag          String?               // LOS mapping
+  id             String   @id @default(cuid())
+  name           String // Formula title (e.g. "Holding Period Return")
+  formula        String // Exact equation (LaTeX or plain text)
+  variables      String // Variable definitions
+  interpretation String // Plain-English meaning
+  whenToUse      String // Exam context / application
+  watchOut       String // Common trap / confusion
+  calculatorCue  String? // Optional calculator cue or assumption note
+  losTag         String? // LOS mapping
   // Hierarchy: Level → Volume → Topic → LM
-  level           CfaLevel
-  courseId        String?
-  course          Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  volumeId        String?
-  volume          Volume?   @relation(fields: [volumeId], references: [id], onDelete: SetNull)
-  moduleId        String?
-  module          Module?   @relation(fields: [moduleId], references: [id], onDelete: SetNull)
-  topicId         String?
-  topic           Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
-  workedExample   Json?               // Optional worked example (given, steps, answer, interpretation)
-  order           Int       @default(0) // Display order within topic
-  highYield       Boolean   @default(false) // Flagged for recap pages
-  year            Int       @default(2026) // Version year
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  level          CfaLevel
+  courseId       String?
+  course         Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  volumeId       String?
+  volume         Volume?  @relation(fields: [volumeId], references: [id], onDelete: SetNull)
+  moduleId       String?
+  module         Module?  @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  topicId        String?
+  topic          Topic?   @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  workedExample  Json? // Optional worked example (given, steps, answer, interpretation)
+  order          Int      @default(0) // Display order within topic
+  highYield      Boolean  @default(false) // Flagged for recap pages
+  year           Int      @default(2026) // Version year
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
   @@index([courseId, volumeId, moduleId, topicId])
   @@index([level, highYield])
 }
 
 // ─── CFA Summary Sheet Master ─────────────────────────────
 model SummarySheet {
-  id              String    @id @default(cuid())
-  title           String                // Sheet title (e.g. "Rates and Returns")
+  id              String   @id @default(cuid())
+  title           String // Sheet title (e.g. "Rates and Returns")
   level           CfaLevel
   courseId        String?
-  course          Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  course          Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   volumeId        String?
-  volume          Volume?   @relation(fields: [volumeId], references: [id], onDelete: SetNull)
+  volume          Volume?  @relation(fields: [volumeId], references: [id], onDelete: SetNull)
   moduleId        String?
-  module          Module?   @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  module          Module?  @relation(fields: [moduleId], references: [id], onDelete: SetNull)
   topicId         String?
-  topic           Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
-  year            Int       @default(2026)
+  topic           Topic?   @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  year            Int      @default(2026)
   // Section 1 — Module Snapshot
-  snapshot        String?               // What this sheet covers (max 4 lines)
-  useCase         String?               // Use case description
+  snapshot        String? // What this sheet covers (max 4 lines)
+  useCase         String? // Use case description
   // Section 2 — Core Concepts (key definitions as JSON array)
-  coreDefinitions Json?                 // [{term, definition}]
+  coreDefinitions Json? // [{term, definition}]
   // Section 3 — Formula Zone (JSON array)
-  formulas        Json?                 // [{formula, variables, whenToUse}]
+  formulas        Json? // [{formula, variables, whenToUse}]
   // Section 4 — Distinctions / Traps
-  distinctions    Json?                 // [{left, right, difference}]
-  diagrams        Json?                 // [{title, description}]
-  examTraps       Json?                 // [{trap}]
+  distinctions    Json? // [{left, right, difference}]
+  diagrams        Json? // [{title, description}]
+  examTraps       Json? // [{trap}]
   // Section 5 — Memory Hooks
-  memoryHooks     Json?                 // [{hook}]
+  memoryHooks     Json? // [{hook}]
   // Section 6 — Quick Drills
-  quickDrills     Json?                 // [{question}]
+  quickDrills     Json? // [{question}]
   // Section 7 — Revision Checklist
-  revisionCheck   Json?                 // [{item, checked}]
+  revisionCheck   Json? // [{item, checked}]
   // Meta
-  order           Int       @default(0)
-  status          String    @default("DRAFT") // DRAFT | PUBLISHED
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  order           Int      @default(0)
+  status          String   @default("DRAFT") // DRAFT | PUBLISHED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
   @@index([courseId, volumeId, moduleId, topicId])
   @@index([level, status])
 }
 
 // ─── CFA Learning Module Notes ────────────────────────────
 model ModuleNote {
-  id              String    @id @default(cuid())
-  title           String                // Module note title (e.g. "Rates and Returns")
+  id              String   @id @default(cuid())
+  title           String // Module note title (e.g. "Rates and Returns")
   level           CfaLevel
   courseId        String?
-  course          Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  course          Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   volumeId        String?
-  volume          Volume?   @relation(fields: [volumeId], references: [id], onDelete: SetNull)
+  volume          Volume?  @relation(fields: [volumeId], references: [id], onDelete: SetNull)
   moduleId        String?
-  module          Module?   @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  module          Module?  @relation(fields: [moduleId], references: [id], onDelete: SetNull)
   topicId         String?
-  topic           Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
-  year            Int       @default(2026)
+  topic           Topic?   @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  year            Int      @default(2026)
   // Module Identity Strip
-  studyTime       String?               // e.g. "2.5 hours"
-  difficulty      String?               // e.g. "Foundational", "Intermediate", "Advanced"
-  calculatorUse   String?               // e.g. "Moderate", "Heavy", "Minimal"
+  studyTime       String? // e.g. "2.5 hours"
+  difficulty      String? // e.g. "Foundational", "Intermediate", "Advanced"
+  calculatorUse   String? // e.g. "Moderate", "Heavy", "Minimal"
   // Overview
-  overview        String?               // Why the module matters, what success looks like
+  overview        String? // Why the module matters, what success looks like
   // Study Roadmap (JSON array)
-  studyRoadmap    Json?                 // [{step, focus, whyItMatters, examTip}]
+  studyRoadmap    Json? // [{step, focus, whyItMatters, examTip}]
   // Learning Outcome Statements (JSON array)
-  losStatements   Json?                 // [{ref, statement, commandWord}]
+  losStatements   Json? // [{ref, statement, commandWord}]
   // Concept Map (JSON array) — topic-level Milven Notes
-  conceptMap      Json?                 // [{node, connectsTo, concepts}]
+  conceptMap      Json? // [{node, connectsTo, concepts}]
   // Topic-by-topic notes (JSON array) — rich concept pages
-  concepts        Json?                 // [{title, meaning, explanation, formula, formulaVariables, interpretation, workedExample, examTip, commonMistake, formulaUseCase, formulaExamTrap}]
+  concepts        Json? // [{title, meaning, explanation, formula, formulaVariables, interpretation, workedExample, examTip, commonMistake, formulaUseCase, formulaExamTrap}]
   // End-of-module content
-  moduleSummary   String?               // Key ideas, must-know distinctions, exam traps
-  formulaRecap    Json?                 // [{name, formula, variables, useCase, interpretation}]
-  practiceSet     Json?                 // [{question, options, correctAnswer, explanation, losRef}]
-  workedSolutions Json?                 // [{label, title, question, method, interpretation, trap}]
+  moduleSummary   String? // Key ideas, must-know distinctions, exam traps
+  formulaRecap    Json? // [{name, formula, variables, useCase, interpretation}]
+  practiceSet     Json? // [{question, options, correctAnswer, explanation, losRef}]
+  workedSolutions Json? // [{label, title, question, method, interpretation, trap}]
   // Topic-level Milven Notes sections
-  commonMistakes  Json?                 // [{mistake, correction}]
-  examTips        Json?                 // [{tip}]
-  coverageCheck   Json?                 // {status, notes}
-  revisionCheck   Json?                 // [{item}]
+  commonMistakes  Json? // [{mistake, correction}]
+  examTips        Json? // [{tip}]
+  coverageCheck   Json? // {status, notes}
+  revisionCheck   Json? // [{item}]
   // Meta
-  order           Int       @default(0)
-  status          String    @default("DRAFT") // DRAFT | PUBLISHED
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  order           Int      @default(0)
+  status          String   @default("DRAFT") // DRAFT | PUBLISHED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
   @@index([courseId, volumeId, moduleId, topicId])
   @@index([level, status])
 }
 
 // Weak Topics - Topics identified for focused study
 model WeakTopic {
-  id          String   @id @default(cuid())
-  userId      String
-  topicId     String
-  wrongCount  Int      @default(0)
-  totalCount  Int      @default(0)
-  percent     Float    @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  userId     String
+  topicId    String
+  wrongCount Int      @default(0)
+  totalCount Int      @default(0)
+  percent    Float    @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
   @@unique([userId, topicId])
   @@index([userId, percent])
+}
+
+// ─── Milven Slides ───────────────────────────────────────────────────────────
+// Presentations are attached to the EXISTING curriculum hierarchy. Course,
+// Volume, Module, Topic and Concept IDs are foreign keys - never duplicated.
+
+enum PresentationScope {
+  LEARNING_MODULE
+  WHOLE_VOLUME
+}
+
+enum PresentationStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum PresentationProcessingStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+model Presentation {
+  id                 String                       @id @default(cuid())
+  title              String
+  description        String?                      @db.Text
+  courseId           String
+  course             Course                       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  volumeId           String
+  volume             Volume                       @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  moduleId           String?
+  module             Module?                      @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  year               Int                          @default(2027)
+  scope              PresentationScope            @default(LEARNING_MODULE)
+  originalFilename   String
+  fileStorageKey     String
+  fileHash           String
+  fileSize           Int                          @default(0)
+  mimeType           String                       @default("application/vnd.openxmlformats-officedocument.presentationml.presentation")
+  thumbnailKey       String?
+  pdfKey             String?
+  slideCount         Int                          @default(0)
+  status             PresentationStatus           @default(DRAFT)
+  processingStatus   PresentationProcessingStatus @default(PENDING)
+  processingError    String?                      @db.Text
+  processingAttempts Int                          @default(0)
+  publishWhenReady   Boolean                      @default(false)
+  tags               String[]                     @default([])
+  importBatchId      String?
+  importBatch        PresentationBatch?           @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  createdById        String?
+  createdBy          User?                        @relation("PresentationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+  deletedAt          DateTime?
+  slides             PresentationSlide[]
+  topicLinks         PresentationTopic[]
+  conceptLinks       PresentationConcept[]
+
+  @@index([courseId, volumeId, moduleId])
+  @@index([status, processingStatus])
+  @@index([deletedAt])
+  @@index([importBatchId])
+}
+
+model PresentationSlide {
+  id             String       @id @default(cuid())
+  presentationId String
+  presentation   Presentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  slideNumber    Int
+  text           String?      @db.Text
+  notes          String?      @db.Text
+  previewKey     String?
+  thumbnailKey   String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([presentationId, slideNumber])
+  @@index([presentationId, slideNumber])
+}
+
+model PresentationTopic {
+  presentationId String
+  topicId        String
+  presentation   Presentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  topic          Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([presentationId, topicId])
+  @@index([topicId])
+}
+
+model PresentationConcept {
+  presentationId String
+  conceptId      String
+  presentation   Presentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  concept        Concept      @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@id([presentationId, conceptId])
+  @@index([conceptId])
+}
+
+// Bulk ZIP upload batches. The archive is retained so failed items can be
+// retried without asking the administrator to upload the ZIP again.
+model PresentationBatch {
+  id                String         @id @default(cuid())
+  originalFilename  String
+  archiveStorageKey String
+  status            String         @default("ANALYZED") // ANALYZED | IMPORTING | PROCESSING | COMPLETED | FAILED
+  courseId          String?
+  volumeId          String?
+  year              Int            @default(2027)
+  totalFiles        Int            @default(0)
+  imported          Int            @default(0)
+  skipped           Int            @default(0)
+  failed            Int            @default(0)
+  totalSlides       Int            @default(0)
+  analysisJson      Json?
+  createdById       String?
+  createdBy         User?          @relation("BatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  presentations     Presentation[]
+
+  @@index([createdAt])
 }

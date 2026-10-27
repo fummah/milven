@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Card, Modal, Grid } from 'antd';
 import { BookOutlined, SearchOutlined, MenuOutlined, CloseOutlined, RightOutlined, DownOutlined, AppstoreOutlined, FolderOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { ModuleNotePreviewCard } from '../../components/ModuleNotePreviewCard';
 
@@ -230,6 +231,17 @@ export function StudentModuleNotes() {
 				{/* Search */}
 				<div style={{ marginBottom: 16 }}>
 					<Input prefix={<SearchOutlined />} placeholder="Search notes…" value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear style={{ maxWidth: 400 }} />
+						{filterModuleId && (
+							<Button
+								size="small"
+								onClick={() => {
+									const mod = modules.find(m => m.id === filterModuleId);
+									navigate(`/student/slides?courseId=${mod?.courseId || filterCourseId || ''}&volumeId=${filterVolumeId || mod?.volumeId || ''}&moduleId=${filterModuleId}`);
+								}}
+							>
+								Open Slides
+							</Button>
+						)}
 				</div>
 
 				{/* Notes Grid */}

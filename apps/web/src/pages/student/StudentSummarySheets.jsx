@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Row, Col, Card, Modal, Grid, Divider } from 'antd';
 import { FileTextOutlined, SearchOutlined, EyeOutlined, PrinterOutlined, MenuOutlined, CloseOutlined, RightOutlined, DownOutlined, BookOutlined, AppstoreOutlined, FolderOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import MathText, { MathVariables } from '../../components/MathText';
 
@@ -237,6 +238,17 @@ export function StudentSummarySheets() {
 				{/* Search */}
 				<div style={{ marginBottom: 16 }}>
 					<Input prefix={<SearchOutlined />} placeholder="Search sheets…" value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear style={{ maxWidth: 400 }} />
+						{filterModuleId && (
+							<Button
+								size="small"
+								onClick={() => {
+									const mod = modules.find(m => m.id === filterModuleId);
+									navigate(`/student/slides?courseId=${mod?.courseId || filterCourseId || ''}&volumeId=${filterVolumeId || mod?.volumeId || ''}&moduleId=${filterModuleId}`);
+								}}
+							>
+								Open Slides
+							</Button>
+						)}
 				</div>
 
 				{/* Sheets Grid */}

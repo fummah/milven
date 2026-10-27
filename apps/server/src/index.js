@@ -27,6 +27,8 @@ import { formulasRouter } from './routes/formulas.js';
 import { summarySheetsRouter } from './routes/summarySheets.js';
 import { moduleNotesRouter } from './routes/moduleNotes.js';
 import { pdfMappingRouter } from './routes/pdfMapping.js';
+import { slidesRouter } from './routes/slides.js';
+import { initSlideWorker } from './lib/slides/worker.js';
 
 /* ===========================
    DATABASE URL COMPOSITION
@@ -206,6 +208,7 @@ app.use('/api/formulas', safe(formulasRouter));
 app.use('/api/summary-sheets', safe(summarySheetsRouter));
 app.use('/api/module-notes', safe(moduleNotesRouter));
 app.use('/api/pdf-mapping', safe(pdfMappingRouter));
+app.use('/api/slides', safe(slidesRouter));
 app.use('/api', safe(testRouter));
 
 /* ===========================
@@ -244,6 +247,7 @@ app.use((err, req, res, next) => {
 const PORT = Number(process.env.PORT ?? 4000);
 
 ensureDefaultAdmin().finally(() => {
+  initSlideWorker(prisma);
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`API listening on http://0.0.0.0:${PORT}`);
   });
