@@ -25,6 +25,7 @@ services:
       JWT_SECRET: dev_secret
       CORS_ORIGIN: http://localhost:5173,http://localhost:3000,exp://127.0.0.1:19000,http://164.90.156.5
       ALLOW_DEBUG: "1"
+      SLIDES_STORAGE_DIR: /app/storage/milven-slides
       DEFAULT_ADMIN_EMAIL: admin@milven.finance
       DEFAULT_ADMIN_PASSWORD: Milven#2026
       DEFAULT_ADMIN_FORCE_RESET: "1"
@@ -38,6 +39,7 @@ services:
       - "4000:4000"
     volumes:
       - ./apps/server/uploads:/app/uploads
+      - ./apps/server/storage:/app/storage
     depends_on:
       db:
         condition: service_healthy

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Layout, Menu, Typography, Avatar, Grid, Drawer, Button } from 'antd';
-import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined, TeamOutlined, ExperimentOutlined, FunctionOutlined, SolutionOutlined, SnippetsOutlined, BarChartOutlined } from '@ant-design/icons';
+import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined, TeamOutlined, ExperimentOutlined, FunctionOutlined, SolutionOutlined, SnippetsOutlined, BarChartOutlined, FilePptOutlined } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const { Sider, Content } = Layout;
@@ -51,7 +51,7 @@ const subMenuBadge = (iconNode, color = '#102540') => (
 );
 
 const childToParentKey = {
-  'student-courses': 'learning', 'student-module-notes': 'learning',
+  'student-courses': 'learning', 'student-module-notes': 'learning', 'student-slides': 'learning',
   'student-formula-book': 'study-tools', 'student-summary-sheets': 'study-tools', 'student-revision': 'study-tools',
   'student-exams': 'exams-group', 'student-mock-exams': 'exams-group', 'student-milven-mocks': 'exams-group', 'student-mistakes': 'exams-group',
   'student-billing': 'account-group', 'student-invoices': 'account-group', 'student-account': 'account-group'
@@ -67,6 +67,7 @@ const menuItems = [
       { key: 'student-courses', icon: subMenuBadge(<BookOutlined />, '#8b5cf6'), label: <Link to="/student/courses">My Courses</Link> },
       { key: 'student-learning', icon: subMenuBadge(<ReadOutlined />, '#8b5cf6'), label: <Link to="/student/learning">Learning Center</Link> },
       { key: 'student-module-notes', icon: subMenuBadge(<SnippetsOutlined />, '#8b5cf6'), label: <Link to="/student/module-notes">Milven Module Notes</Link> },
+      { key: 'student-slides', icon: subMenuBadge(<FilePptOutlined />, '#8b5cf6'), label: <Link to="/student/slides">Milven Slides</Link> },
     ]
   },
   {

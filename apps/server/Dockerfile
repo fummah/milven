@@ -1,8 +1,9 @@
 FROM node:20-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=development
+ENV SLIDES_STORAGE_DIR=/app/storage/milven-slides
 # Install OpenSSL for Prisma engines
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends openssl libreoffice-impress poppler-utils fonts-liberation && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 # copy prisma early so postinstall/generate can find schema
 COPY prisma ./prisma

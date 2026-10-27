@@ -5,7 +5,7 @@ import {
   BookOutlined, ShoppingCartOutlined, RiseOutlined, TrophyOutlined, FileTextOutlined, CalendarOutlined,
   PlayCircleOutlined, ArrowRightOutlined, LineChartOutlined, DashboardOutlined, AimOutlined,
   QuestionCircleOutlined, FunctionOutlined, ExperimentOutlined, SnippetsOutlined, StarOutlined,
-  ExclamationCircleOutlined, ThunderboltOutlined, RightOutlined, InfoCircleOutlined
+  ExclamationCircleOutlined, ThunderboltOutlined, RightOutlined, InfoCircleOutlined, FilePptOutlined
 } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -840,6 +840,7 @@ export function StudentDashboard() {
                       { icon: <BookOutlined />, label: 'Curriculum', path: '/student/courses', color: '#8b5cf6' },
                       { icon: <FileTextOutlined />, label: 'Summary Sheets', path: '/student/summary-sheets', color: '#0ea5e9' },
                       { icon: <SnippetsOutlined />, label: 'Notes', path: '/student/module-notes', color: '#10b981' },
+                      { icon: <FilePptOutlined />, label: 'Milven Slides', path: '/student/slides', color: '#d97706' },
                     ].map((item) => (
                       <button key={item.path} onClick={() => navigate(item.path)}
                         style={{

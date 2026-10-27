@@ -63,6 +63,7 @@ import { AdminModuleNotes } from './pages/admin/AdminModuleNotes.jsx';
 import AdminDocuments from './pages/admin/AdminDocuments.jsx';
 import AdminMockExams from './pages/admin/AdminMockExams.jsx';
 import AdminPdfMapping from './pages/admin/AdminPdfMapping.jsx';
+import { AdminSlides } from './pages/admin/AdminSlides.jsx';
 import StudentLearning from './pages/student/StudentLearning.jsx';
 import { Home } from './pages/Home.jsx';
 import { CoursesPage } from './pages/Courses.jsx';
@@ -72,6 +73,8 @@ import { AboutCfa } from './pages/AboutCfa.jsx';
 import { FormulaBook } from './pages/FormulaBook.jsx';
 import { StudentSummarySheets } from './pages/student/StudentSummarySheets.jsx';
 import { StudentModuleNotes } from './pages/student/StudentModuleNotes.jsx';
+import StudentSlides from './pages/student/StudentSlides.jsx';
+import SlideViewerPage from './pages/student/SlideViewerPage.jsx';
 import { useSettings } from './contexts/SettingsContext.jsx';
 import { api } from './lib/api.js';
 
@@ -646,7 +649,8 @@ export default function App() {
 		}
 		return children;
 	}
-	const isPublicPage = !location.pathname.startsWith('/admin') && !location.pathname.startsWith('/student') && location.pathname !== '/account';
+	const isSlideViewer = /^\/learning\/slides\/[^/]+/.test(location.pathname);
+	const isPublicPage = !isSlideViewer && !location.pathname.startsWith('/admin') && !location.pathname.startsWith('/student') && location.pathname !== '/account';
 
 	return (
 		<Layout style={{ minHeight: '100vh' }} className="bg-gray-50">
@@ -706,7 +710,7 @@ export default function App() {
 					</div>
 				</div>
 			)}
-			<PublicHeader
+			{!isSlideViewer && <PublicHeader
 				logoUrl={logoUrl}
 				brandName={brandName}
 				exploreMenu={exploreMenu}
@@ -720,7 +724,7 @@ export default function App() {
 				navigate={navigate}
 				cfaCourses={cfaCourses}
 				hasTopBar={isPublicPage}
-			/>
+			/>}
 			{/* CTA strip below header (only on homepage and when logged out) */}
 			{!isLoggedIn && location.pathname === '/' && (
 			<div className="bg-gray-50 border-b border-gray-100 mt-6 md:mt-8">
@@ -766,7 +770,7 @@ export default function App() {
 				</div>
 			</div>
 			)}
-			<Content style={{ padding: screens.md ? '24px' : '12px', maxWidth: '100%', margin: '0 auto', width: '100%' }}>
+			<Content style={isSlideViewer ? { padding: 0, maxWidth: '100%', width: '100%' } : { padding: screens.md ? '24px' : '12px', maxWidth: '100%', margin: '0 auto', width: '100%' }}>
 				<Routes>
 					<Route path="/" element={<Home />} />
 					<Route path="/login" element={<LoginPage />} />
@@ -806,6 +810,7 @@ export default function App() {
 						<Route path="formulas" element={<AdminFormulas />} />
 						<Route path="summary-sheets" element={<AdminSummarySheets />} />
 						<Route path="module-notes" element={<AdminModuleNotes />} />
+						<Route path="slides" element={<AdminSlides />} />
 						<Route path="documents" element={<AdminDocuments />} />
 						<Route path="pdf-mapping" element={<AdminPdfMapping />} />
 						<Route path="questions" element={<AdminQuestions />} />
@@ -842,11 +847,13 @@ export default function App() {
 						<Route path="formula-book" element={<FormulaBook />} />
 						<Route path="summary-sheets" element={<StudentSummarySheets />} />
 						<Route path="module-notes" element={<StudentModuleNotes />} />
+						<Route path="slides" element={<StudentSlides />} />
 						<Route path="billing" element={<StudentBilling />} />
 						<Route path="invoices" element={<StudentInvoices />} />
 						<Route path="account" element={<Account />} />
 						<Route path="learn/:id" element={<AdminCoursePreview />} />
 					</Route>
+					<Route path="/learning/slides/:presentationId" element={<RequireAuth><SlideViewerPage /></RequireAuth>} />
 					{/* Learning route */}
 					{/* removed standalone /learn; now under /student/learn/:id */}
 					<Route path="/admin/login" element={<AdminLoginPage />} />
@@ -855,7 +862,7 @@ export default function App() {
 					<Route path="/admin/videos" element={<AdminVideos />} />
 				</Routes>
 			</Content>
-			{location.pathname.startsWith('/admin') || location.pathname.startsWith('/student') ? (
+			{!isSlideViewer && (location.pathname.startsWith('/admin') || location.pathname.startsWith('/student') ? (
 				<Footer className="bg-[#102540] text-white" style={{ padding: '12px 24px' }}>
 					<div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
 						<Typography.Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>
@@ -917,7 +924,7 @@ export default function App() {
 						</div>
 					</div>
 				</Footer>
-			)}
+			))}
 		</Layout>
 	);
 }

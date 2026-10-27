@@ -26,3 +26,6 @@ apps/server/prisma/*.db
 yarn-error.log
 
 
+
+# Milven Slides generated storage
+apps/server/storage/

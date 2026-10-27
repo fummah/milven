@@ -46,6 +46,7 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN}
       WEB_BASE_URL: ${WEB_BASE_URL}
 
+      SLIDES_STORAGE_DIR: /app/storage/milven-slides
       DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL}
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD}
       DEFAULT_ADMIN_FORCE_RESET: ${DEFAULT_ADMIN_FORCE_RESET}
@@ -58,6 +59,7 @@ services:
 
     volumes:
       - ./apps/server/uploads:/app/uploads
+      - ./apps/server/storage:/app/storage
 
     expose:
       - "4000"
