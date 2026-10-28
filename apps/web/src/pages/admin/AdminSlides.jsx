@@ -17,6 +17,8 @@ import AdminSlidesZipWizard from '../../components/slides/AdminSlidesZipWizard';
 const { Text, Title, Paragraph } = Typography;
 const { useBreakpoint } = Grid;
 
+const PROCESSING_STATES = ['PENDING', 'QUEUED', 'PROCESSING', 'RETRYING'];
+
 const PROCESSING_META = {
   PENDING: { color: 'default', label: 'Queued', icon: <SyncOutlined spin /> },
   PROCESSING: { color: 'processing', label: 'Processing', icon: <SyncOutlined spin /> },
@@ -81,15 +83,19 @@ export function AdminSlides() {
     }
   }, []);
 
+  const listParams = useMemo(() => {
+    const params = { page, limit: pageSize };
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') params[key] = value;
+    });
+    return params;
+  }, [filters, page, pageSize]);
+
   const loadList = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const params = { page, limit: pageSize };
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') params[key] = value;
-      });
-      const { data: res } = await api.get('/api/slides/admin/presentations', { params });
+      const { data: res } = await api.get('/api/slides/admin/presentations', { params: listParams });
       setData(res.presentations || []);
       setTotal(res.total || 0);
     } catch (err) {
@@ -99,10 +105,56 @@ export function AdminSlides() {
     } finally {
       setLoading(false);
     }
-  }, [filters, page, pageSize]);
+  }, [listParams]);
 
   useEffect(() => { loadBase(); }, [loadBase]);
   useEffect(() => { loadList(); }, [loadList]);
+
+  const hasProcessing = useMemo(
+    () => data.some(item => PROCESSING_STATES.includes(item.processingStatus)) || Number(stats?.processing || 0) > 0,
+    [data, stats]
+  );
+
+  useEffect(() => {
+    if (!hasProcessing) return undefined;
+    let cancelled = false;
+    let timer = null;
+    let delay = 5000;
+
+    const poll = async () => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        timer = setTimeout(poll, 5000);
+        return;
+      }
+      try {
+        const [listResponse, statsResponse] = await Promise.all([
+          api.get('/api/slides/admin/presentations', { params: listParams }),
+          api.get('/api/slides/admin/stats').catch(() => null)
+        ]);
+        if (cancelled) return;
+        const rows = listResponse.data?.presentations || [];
+        setData(rows);
+        setTotal(listResponse.data?.total || 0);
+        if (statsResponse?.data) setStats(statsResponse.data);
+        const rowProcessing = rows.some(item => PROCESSING_STATES.includes(item.processingStatus));
+        const statsProcessing = Number(statsResponse?.data?.processing || 0) > 0;
+        if (!rowProcessing && !statsProcessing) return;
+        delay = 5000;
+      } catch (err) {
+        if (cancelled) return;
+        const retryAfter = Number(err?.response?.headers?.['retry-after']) || 0;
+        delay = Math.min(60000, Math.max(15000, delay * 2, retryAfter * 1000));
+      }
+      timer = setTimeout(poll, delay);
+    };
+
+    timer = setTimeout(poll, 5000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [hasProcessing, listParams]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

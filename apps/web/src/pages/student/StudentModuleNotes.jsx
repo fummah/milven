@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Card, Modal, Grid } from 'antd';
-import { BookOutlined, SearchOutlined, MenuOutlined, CloseOutlined, RightOutlined, DownOutlined, AppstoreOutlined, FolderOutlined } from '@ant-design/icons';
+import { BookOutlined, SearchOutlined, MenuOutlined, CloseOutlined, RightOutlined, DownOutlined, AppstoreOutlined, FolderOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { ModuleNotePreviewCard } from '../../components/ModuleNotePreviewCard';
+import StudentModuleNotePdfsTab from './StudentModuleNotePdfsTab';
 
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 
@@ -93,6 +94,19 @@ export function StudentModuleNotes() {
 			: filterVolumeId
 				? volumes.find(v => v.id === filterVolumeId)?.name
 				: null;
+
+	if (activeTab === 'pdf') {
+		return (
+			<div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? 8 : 0 }}>
+				<div style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 60%, #274a74 100%)', borderRadius: 20, padding: isMobile ? '28px 20px' : '32px 40px', marginBottom: 16 }}>
+					<Typography.Title level={isMobile ? 3 : 2} style={{ color: '#fff', margin: '8px 0 4px' }}>CFA Learning Module Notes</Typography.Title>
+					<Typography.Text style={{ color: 'rgba(255,255,255,0.75)' }}>Volume-level PDF notes</Typography.Text>
+				</div>
+				<Tabs activeKey={activeTab} onChange={setActiveTab} items={[{ key: 'notes', label: 'Learning Notes' }, { key: 'pdf', label: <span><FilePdfOutlined /> PDF Notes</span> }]} />
+				<StudentModuleNotePdfsTab courses={courses} volumes={volumes} modules={modules} topics={topics} />
+			</div>
+		);
+	}
 
 	return (
 		<div style={{ display: 'flex', height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
@@ -228,9 +242,12 @@ export function StudentModuleNotes() {
 					</div>
 				</div>
 
+			<Tabs activeKey={activeTab} onChange={setActiveTab} style={{ padding: '0 8px' }} items={[{ key: 'notes', label: 'Learning Notes' }, { key: 'pdf', label: <span><FilePdfOutlined /> PDF Notes</span> }]} />
+
 				{/* Search */}
 				<div style={{ marginBottom: 16 }}>
-					<Input prefix={<SearchOutlined />} placeholder="Search notes…" value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear style={{ maxWidth: 400 }} />
+
+					<Input prefix={<SearchOutlined />} placeholder="Search notes..." value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear style={{ maxWidth: 400 }} />
 						{filterModuleId && (
 							<Button
 								size="small"

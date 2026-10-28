@@ -5,7 +5,7 @@ import {
 } from 'antd';
 import { InboxOutlined, ReloadOutlined, FileZipOutlined, CheckCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
-import { levelLabel } from '../../lib/slideUrls';
+import { levelLabel, moduleBelongsTo, volumeBelongsToCourse } from '../../lib/slideUrls';
 
 const { Dragger } = Upload;
 const { Text } = Typography;
@@ -38,10 +38,14 @@ export default function AdminSlidesZipWizard({ open, courses = [], allVolumes = 
   const [batch, setBatch] = useState(null);
   const [mappings, setMappings] = useState([]);
   const [modules, setModules] = useState([]);
+  const [modulesLoading, setModulesLoading] = useState(false);
+  const [modulesError, setModulesError] = useState('');
+  const [modulesReloadKey, setModulesReloadKey] = useState(0);
   const [importing, setImporting] = useState(false);
   const [results, setResults] = useState(null);
   const [polling, setPolling] = useState(false);
   const pollTimer = useRef(null);
+  const pollSequence = useRef(0);
 
   useEffect(() => {
     if (!open) return;
@@ -56,21 +60,40 @@ export default function AdminSlidesZipWizard({ open, courses = [], allVolumes = 
     setMappings([]);
     setResults(null);
     setUploadPercent(0);
-    api.get('/api/cms/modules').then(res => setModules(res.data?.modules || [])).catch(() => setModules([]));
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    setModulesLoading(true);
+    setModulesError('');
+    api.get('/api/cms/modules')
+      .then(res => setModules(res.data?.modules || []))
+      .catch(() => { setModules([]); setModulesError('Unable to load learning modules. Please retry.'); })
+      .finally(() => setModulesLoading(false));
+  }, [open, modulesReloadKey]);
+
   useEffect(() => () => {
-    if (pollTimer.current) clearInterval(pollTimer.current);
+    if (pollTimer.current) clearTimeout(pollTimer.current);
+    pollSequence.current += 1;
   }, []);
+
+  useEffect(() => {
+    if (!open) {
+      if (pollTimer.current) clearTimeout(pollTimer.current);
+      pollTimer.current = null;
+      pollSequence.current += 1;
+      setPolling(false);
+    }
+  }, [open]);
 
   const volumeOptions = useMemo(() => {
     const list = courseId
-      ? allVolumes.filter(v => (v.courseLinks || []).some(l => l.courseId === courseId))
+      ? allVolumes.filter(v => volumeBelongsToCourse(v, courseId))
       : allVolumes;
     return list.map(v => ({ value: v.id, label: v.name }));
   }, [allVolumes, courseId]);
 
-  const modulesFor = (mapping) => modules.filter(m => m.courseId === mapping.courseId && m.volumeId === mapping.volumeId);
+  const modulesFor = (mapping) => modules.filter(m => moduleBelongsTo(m, { courseId: mapping.courseId, volumeId: mapping.volumeId }));
 
   const handleAnalyze = async () => {
     setError('');
@@ -156,21 +179,39 @@ export default function AdminSlidesZipWizard({ open, courses = [], allVolumes = 
   };
 
   const startPolling = (batchId) => {
-    if (pollTimer.current) clearInterval(pollTimer.current);
+    if (pollTimer.current) clearTimeout(pollTimer.current);
+    const sequence = pollSequence.current + 1;
+    pollSequence.current = sequence;
     setPolling(true);
+    let delay = 5000;
+
+    const schedule = () => {
+      if (pollSequence.current !== sequence) return;
+      pollTimer.current = setTimeout(load, delay);
+    };
+
     const load = async () => {
+      if (pollSequence.current !== sequence) return;
       try {
         const { data } = await api.get(`/api/slides/admin/batches/${batchId}`);
+        if (pollSequence.current !== sequence) return;
         setBatch(data.batch);
         if (['COMPLETED', 'FAILED'].includes(data.batch?.status)) {
           setPolling(false);
-          if (pollTimer.current) clearInterval(pollTimer.current);
+          pollTimer.current = null;
           onImported?.();
+          return;
         }
-      } catch {}
+        delay = 5000;
+      } catch (err) {
+        if (pollSequence.current !== sequence) return;
+        const retryAfter = Number(err?.response?.headers?.['retry-after']) || 0;
+        delay = Math.min(60000, Math.max(15000, delay * 2, retryAfter * 1000));
+      }
+      schedule();
     };
+
     load();
-    pollTimer.current = setInterval(load, 5000);
   };
 
   const retryFailed = async () => {
@@ -218,14 +259,15 @@ export default function AdminSlidesZipWizard({ open, courses = [], allVolumes = 
       width: 190,
       render: (_, row) => {
         const list = allVolumes
-          .filter(v => !row.courseId || (v.courseLinks || []).some(l => l.courseId === row.courseId))
+          .filter(v => !row.courseId || volumeBelongsToCourse(v, row.courseId))
           .map(v => ({ value: v.id, label: v.name }));
         return (
           <Select
             size="small"
             style={{ width: 170 }}
             value={row.volumeId}
-            placeholder={row.detectedVolumeName || 'Select volume'}
+            disabled={!row.courseId}
+            placeholder={row.courseId ? (row.detectedVolumeName || 'Select volume') : 'Select Level first'}
             options={list}
             onChange={(value) => updateMapping(mappings.indexOf(row), { volumeId: value, moduleId: undefined })}
             showSearch
@@ -237,22 +279,32 @@ export default function AdminSlidesZipWizard({ open, courses = [], allVolumes = 
     {
       title: 'Learning Module',
       width: 280,
-      render: (_, row) => (
-        <Select
-          size="small"
-          style={{ width: 260 }}
-          value={row.scope === 'WHOLE_VOLUME' ? '__volume_review__' : row.moduleId}
-          disabled={!row.volumeId}
-          placeholder={row.scope === 'WHOLE_VOLUME' ? 'Whole Volume Review' : 'Select Learning Module'}
-          options={[
-            ...(row.scope === 'WHOLE_VOLUME' ? [{ value: '__volume_review__', label: 'Whole Volume Review' }] : []),
-            ...modulesFor(row).map(m => ({ value: m.id, label: m.name }))
-          ]}
-          onChange={(value) => updateMapping(mappings.indexOf(row), { moduleId: value === '__volume_review__' ? null : value })}
-          showSearch
-          optionFilterProp="label"
-        />
-      )
+      render: (_, row) => {
+        const moduleOptions = modulesFor(row).map(m => ({ value: m.id, label: m.name }));
+        const emptyText = modulesLoading
+          ? 'Loading learning modules...'
+          : modulesError
+            ? 'Unable to load learning modules. Please retry.'
+            : (row.volumeId ? 'No learning modules found for this volume.' : 'Select a volume first.');
+        return (
+          <Select
+            size="small"
+            style={{ width: 260 }}
+            value={row.scope === 'WHOLE_VOLUME' ? '__volume_review__' : row.moduleId}
+            disabled={!row.volumeId}
+            placeholder={row.scope === 'WHOLE_VOLUME' ? 'Whole Volume Review' : 'Select Learning Module'}
+            loading={modulesLoading}
+            notFoundContent={emptyText}
+            options={[
+              ...(row.scope === 'WHOLE_VOLUME' ? [{ value: '__volume_review__', label: 'Whole Volume Review' }] : []),
+              ...moduleOptions
+            ]}
+            onChange={(value) => updateMapping(mappings.indexOf(row), { moduleId: value === '__volume_review__' ? null : value })}
+            showSearch
+            optionFilterProp="label"
+          />
+        );
+      }
     },
     {
       title: 'Match',
@@ -420,6 +472,15 @@ export default function AdminSlidesZipWizard({ open, courses = [], allVolumes = 
             style={{ marginBottom: 14 }}
             message={`${includeCount} of ${mappings.length} presentations will be imported. Confirm or correct every uncertain mapping before importing.`}
           />
+          {modulesError && (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 14 }}
+              message="Unable to load learning modules. Please retry."
+              action={<Button size="small" onClick={() => setModulesReloadKey(key => key + 1)}>Retry</Button>}
+            />
+          )}
           <Table
             rowKey="zipPath"
             dataSource={mappings}
@@ -501,7 +562,8 @@ export default function AdminSlidesZipWizard({ open, courses = [], allVolumes = 
               <Button
                 type="primary"
                 onClick={() => {
-                  if (pollTimer.current) clearInterval(pollTimer.current);
+                  if (pollTimer.current) clearTimeout(pollTimer.current);
+                  pollSequence.current += 1;
                   setPolling(false);
                   setStep(0);
                   setZipFile(null);

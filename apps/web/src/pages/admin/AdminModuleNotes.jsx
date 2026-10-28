@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Spin, Checkbox } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, StarFilled, StarOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import MathText from '../../components/MathText';
 import { ModuleNotePreviewCard } from '../../components/ModuleNotePreviewCard';
+import AdminModuleNotePdfsTab from '../../components/moduleNotePdfs/AdminModuleNotePdfsTab';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -16,6 +17,7 @@ const STATUS_COLORS = { DRAFT: 'default', PUBLISHED: 'green' };
 
 export function AdminModuleNotes() {
 	const [form] = Form.useForm();
+	const [activeTab, setActiveTab] = useState('notes');
 	const [notes, setNotes] = useState([]);
 	const [loading, setLoading] = useState(false);
 	const [total, setTotal] = useState(0);
@@ -171,7 +173,7 @@ export function AdminModuleNotes() {
 			const payload = { courseId: aiCourseId, volumeId: aiVolumeId || undefined, moduleId: aiModuleId || undefined, topicId: aiTopicId || undefined, level: selectedCourse.level, year: aiYear, count: aiCount || undefined, provider: aiProvider || undefined, model: aiModel || undefined };
 			Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 			// Uses fetch+SSE so heartbeats keep the connection alive through Nginx
-			const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+			const API_URL = import.meta.env.VITE_API_URL - 'http://localhost:4000';
 			const response = await fetch(`${API_URL}/api/module-notes/generate-ai/preview`, {
 				method: 'POST',
 				headers: {
@@ -195,7 +197,7 @@ export function AdminModuleNotes() {
 				if (done) break;
 				buffer += decoder.decode(value, { stream: true });
 				const parts = buffer.split('\n\n');
-				buffer = parts.pop() ?? '';
+				buffer = parts.pop() - '';
 				for (const part of parts) {
 					if (part.startsWith('event: result\ndata: ')) {
 						data = JSON.parse(part.slice('event: result\ndata: '.length));
@@ -240,6 +242,28 @@ export function AdminModuleNotes() {
 		} finally { setAiAcceptLoading(false); }
 	};
 
+	if (activeTab === 'pdf') {
+		return (
+			<div>
+				<div style={{ marginBottom: 16 }}>
+					<div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+						<div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><BookOutlined style={{ fontSize: 22, color: '#fff' }} /></div>
+						<div><Typography.Title level={3} style={{ margin: 0, color: '#102540' }}>CFA Learning Module Notes</Typography.Title><Typography.Text type="secondary">Volume-level PDF module notes</Typography.Text></div>
+					</div>
+				</div>
+				<Tabs
+					activeKey={activeTab}
+					onChange={setActiveTab}
+					items={[
+						{ key: 'notes', label: 'Learning Notes' },
+						{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Notes</span> }
+					]}
+				/>
+				<AdminModuleNotePdfsTab courses={courses} volumes={volumes} />
+			</div>
+		);
+	}
+
 	return (
 		<div>
 			{/* Header */}
@@ -256,9 +280,19 @@ export function AdminModuleNotes() {
 			</div>
 
 			{/* Filters */}
+			<Tabs
+				activeKey={activeTab}
+				onChange={setActiveTab}
+				style={{ marginBottom: 8 }}
+				items={[
+					{ key: 'notes', label: 'Learning Notes' },
+					{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Notes</span> }
+				]}
+			/>
+
 			<Card size="small" style={{ marginBottom: 16, borderRadius: 12, border: '1px solid #e2e8f0' }}>
 				<Row gutter={[12, 12]} align="middle">
-					<Col xs={24} sm={12} md={4}><Input prefix={<SearchOutlined />} placeholder="Search notes…" value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear /></Col>
+					<Col xs={24} sm={12} md={4}><Input prefix={<SearchOutlined />} placeholder="Search notes..." value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear /></Col>
 					<Col xs={12} sm={6} md={3}><Select placeholder="Level" value={filterLevel} onChange={v => { setFilterLevel(v); setPage(1); }} options={[{ value: null, label: 'All Levels' }, ...LEVELS]} style={{ width: '100%' }} allowClear /></Col>
 					<Col xs={12} sm={6} md={4}><Select placeholder="Course" value={filterCourseId} onChange={v => { setFilterCourseId(v); setPage(1); }} options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
 					<Col xs={12} sm={6} md={3}><Select placeholder="Status" value={filterStatus} onChange={v => { setFilterStatus(v); setPage(1); }} options={[{ value: null, label: 'All' }, { value: 'DRAFT', label: 'Draft' }, { value: 'PUBLISHED', label: 'Published' }]} style={{ width: '100%' }} allowClear /></Col>

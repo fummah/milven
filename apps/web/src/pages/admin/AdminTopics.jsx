@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Form, Input, Button, Select, message, Table, Drawer, Space, Popconfirm, Tag, Tabs, Modal, Upload, Steps, Layout, List, Divider, Radio, Descriptions, Typography, Grid, Tooltip } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, UploadOutlined, FolderOutlined, SearchOutlined, EyeOutlined, BookOutlined, FileTextOutlined, CheckCircleOutlined, BulbOutlined, SettingOutlined, ExclamationCircleFilled, FilePptOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, UploadOutlined, FolderOutlined, SearchOutlined, EyeOutlined, BookOutlined, FileTextOutlined, CheckCircleOutlined, BulbOutlined, SettingOutlined, ExclamationCircleFilled, FilePptOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 
 // Natural sort comparison - handles "Volume 1", "Volume 10" correctly

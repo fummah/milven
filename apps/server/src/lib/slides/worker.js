@@ -21,6 +21,7 @@ import {
 
 const MAX_CONCURRENCY = Math.max(1, Math.min(4, Number(process.env.SLIDES_CONCURRENCY ?? 2)));
 const MAX_ATTEMPTS = Math.max(1, Number(process.env.SLIDES_MAX_ATTEMPTS ?? 3));
+const STALL_TIMEOUT_MS = Math.max(5, Number(process.env.SLIDES_STALL_TIMEOUT_MINUTES ?? 60)) * 60 * 1000;
 const queue = [];
 const queued = new Set();
 let active = 0;
@@ -40,6 +41,14 @@ export function initSlideWorker(prisma) {
   recoverQueue(prisma).catch((err) => {
     console.warn('[slides] queue recovery failed:', err?.message ?? err);
   });
+
+  recoverStalledJobs(prisma).catch((err) => {
+    console.warn('[slides] stalled job recovery failed:', err?.message ?? err);
+  });
+
+  setInterval(() => {
+    recoverStalledJobs(prisma).catch(() => {});
+  }, 10 * 60 * 1000).unref?.();
 
   setInterval(() => {
     pruneQueueFiles(prisma).catch(() => {});
@@ -117,6 +126,31 @@ function pump() {
 
 function absoluteKey(key) {
   return resolveStorageKey(key);
+}
+
+export async function recoverStalledJobs(prisma) {
+  const cutoff = new Date(Date.now() - STALL_TIMEOUT_MS);
+  const stalled = await prisma.presentation.findMany({
+    where: {
+      deletedAt: null,
+      processingStatus: 'PROCESSING',
+      updatedAt: { lt: cutoff }
+    },
+    select: { id: true, importBatchId: true }
+  }).catch(() => []);
+
+  for (const item of stalled) {
+    await prisma.presentation.update({
+      where: { id: item.id },
+      data: {
+        processingStatus: 'FAILED',
+        processingError: 'Processing stalled or was interrupted. The previous preview was kept. Retry rendering to try again.'
+      }
+    }).catch(() => {});
+    await refreshBatch(prisma, item.importBatchId);
+    console.warn('[slides] marked stalled presentation:', item.id);
+  }
+  return stalled.length;
 }
 
 async function refreshBatch(prisma, batchId) {

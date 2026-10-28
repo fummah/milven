@@ -16,6 +16,48 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function LazyThumbnail({ src, active }) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(Boolean(active));
+
+  useEffect(() => {
+    if (active) setVisible(true);
+  }, [active]);
+
+  useEffect(() => {
+    if (visible || !ref.current) return undefined;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some(entry => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { root: null, rootMargin: '400px 0px', threshold: 0.01 }
+    );
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  return (
+    <div ref={ref} style={{ width: '100%', height: '100%' }}>
+      {visible && src ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export default function SlideViewerPage() {
   const { presentationId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -285,7 +327,10 @@ export default function SlideViewerPage() {
           >
             <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#020617', borderRadius: 4, overflow: 'hidden' }}>
               {slide.thumbnailUrl && (
-                <img src={assetUrl(slide.thumbnailUrl)} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                <LazyThumbnail
+                  src={assetUrl(slide.thumbnailUrl)}
+                  active={currentSlide === slide.slideNumber}
+                />
               )}
               <span style={{ position: 'absolute', left: 4, bottom: 3, fontSize: 10, color: '#e2e8f0', background: 'rgba(2,6,23,0.75)', padding: '0 4px', borderRadius: 3 }}>
                 {slide.slideNumber}
@@ -399,6 +444,8 @@ export default function SlideViewerPage() {
                 alt={`${presentation?.title} — slide ${currentSlide}`}
                 onLoad={() => setImageLoading(false)}
                 onError={() => setImageLoading(false)}
+                decoding="async"
+                fetchpriority="high"
                 style={{
                   maxWidth: zoom <= 1 ? '100%' : 'none',
                   maxHeight: zoom <= 1 ? '100%' : 'none',

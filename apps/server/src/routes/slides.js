@@ -149,7 +149,7 @@ async function validateMapping(prisma, {
   if (conceptIds.length) {
     const concepts = await prisma.concept.findMany({
       where: { id: { in: conceptIds } },
-      select: { id: true, name: true, topic: { select: { moduleId: true, module: { select: { volumeId: true } } } } }
+      select: { id: true, name: true, topicId: true, topic: { select: { moduleId: true, module: { select: { volumeId: true } } } } }
     });
     if (concepts.length !== conceptIds.length) errors.push('One or more selected Concepts no longer exist.');
     for (const concept of concepts) {
@@ -158,6 +158,9 @@ async function validateMapping(prisma, {
       }
       if (scope === 'WHOLE_VOLUME' && volumeId && concept.topic?.module?.volumeId !== volumeId) {
         errors.push(`Concept "${concept.name}" does not belong to the selected Volume.`);
+      }
+      if (topicIds.length && !topicIds.includes(concept.topicId)) {
+        errors.push(`Concept "${concept.name}" does not belong to the selected Topics.`);
       }
     }
   }
@@ -245,6 +248,12 @@ function batchResultsShape(batch) {
 export function slidesRouter(prisma) {
   const router = Router();
 
+  // Administrative status must never be served from a stale browser/proxy cache.
+  router.use('/admin', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+
   /* ─────────────────────────────────────────────────────────────
      Signed slide assets (thumbnails / previews / PDFs)
   ───────────────────────────────────────────────────────────── */
@@ -284,7 +293,13 @@ export function slidesRouter(prisma) {
     try {
       const absolute = resolveStorageKey(key);
       if (!fs.existsSync(absolute)) return res.status(404).json({ error: 'Asset file is missing' });
-      res.setHeader('Cache-Control', 'private, max-age=3600');
+      const versioned = Boolean(req.query.v);
+      res.setHeader(
+        'Cache-Control',
+        versioned
+          ? 'private, max-age=31536000, immutable'
+          : 'private, max-age=3600'
+      );
       res.setHeader('X-Content-Type-Options', 'nosniff');
       return res.sendFile(absolute);
     } catch {

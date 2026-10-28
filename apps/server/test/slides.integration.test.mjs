@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { slidesRouter } from '../src/routes/slides.js';
-import { recoverQueue } from '../src/lib/slides/worker.js';
+import { recoverQueue, recoverStalledJobs } from '../src/lib/slides/worker.js';
 
 const COURSE = { id: 'c1', name: 'CFA I', level: 'LEVEL1' };
 const OTHER_COURSE = { id: 'c2', name: 'CFA II', level: 'LEVEL2' };
 const VOLUME = { id: 'v1', name: 'Fixed Income' };
 const MODULE = { id: 'm1', name: 'Bond Valuation', courseId: 'c1', volumeId: 'v1', order: 1 };
 const OTHER_MODULE = { id: 'm2', name: 'Ethics', courseId: 'c2', volumeId: 'v1', order: 1 };
+const TOPIC_ONE = { id: 't1', name: 'Bond Prices', moduleId: 'm1', module: { volumeId: 'v1', courseId: 'c1' } };
+const TOPIC_TWO = { id: 't2', name: 'Bond Yields', moduleId: 'm1', module: { volumeId: 'v1', courseId: 'c1' } };
+const CONCEPT_ONE = { id: 'cp1', name: 'Duration', topicId: 't1', topic: { moduleId: 'm1', module: { volumeId: 'v1' } } };
 
 const PRESENTATION = {
   id: 'p1',
@@ -57,8 +60,8 @@ function makePrisma() {
     course: { findUnique: async ({ where }) => [COURSE, OTHER_COURSE].find(c => c.id === where.id) || null },
     volume: { findUnique: async ({ where }) => (where.id === VOLUME.id ? VOLUME : null) },
     module: { findUnique: async ({ where }) => [MODULE, OTHER_MODULE].find(m => m.id === where.id) || null },
-    topic: { findMany: async () => [] },
-    concept: { findMany: async () => [] },
+    topic: { findMany: async ({ where }) => [TOPIC_ONE, TOPIC_TWO].filter(t => where.id.in.includes(t.id)) },
+    concept: { findMany: async ({ where }) => [CONCEPT_ONE].filter(c => where.id.in.includes(c.id)) },
     enrollment: {
       findUnique: async ({ where }) => (where.userId_courseId?.userId === 'student1' && where.userId_courseId?.courseId === 'c1'
         ? { id: 'e1' }
@@ -206,4 +209,40 @@ test('restart recovery re-queues interrupted processing jobs', async () => {
   await recoverQueue(prisma);
   assert.deepEqual(updates.find(u => u.id === 'p1')?.data, { processingStatus: 'PENDING' });
   assert.equal(updates.find(u => u.id === 'p2')?.data.processingStatus, 'FAILED');
+});
+
+test('admin update rejects concepts that do not belong to the selected topics', async () => {
+  await withServer(async (base) => {
+    const res = await fetch(`${base}/api/slides/admin/presentations/p1`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token('ADMIN')}` },
+      body: JSON.stringify({
+        title: 'Bond Valuation',
+        courseId: 'c1',
+        volumeId: 'v1',
+        scope: 'LEARNING_MODULE',
+        moduleId: 'm1',
+        year: 2027,
+        topicIds: ['t2'],
+        conceptIds: ['cp1']
+      })
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.match(body.error, /selected Topics/i);
+  });
+});
+
+test('stalled processing jobs are marked failed instead of staying PROCESSING', async () => {
+  const updates = [];
+  const prisma = {
+    presentation: {
+      findMany: async () => [{ id: 'p-stalled', importBatchId: null }],
+      update: async ({ where, data }) => { updates.push({ id: where.id, data }); return {}; }
+    }
+  };
+  const recovered = await recoverStalledJobs(prisma);
+  assert.equal(recovered, 1);
+  assert.equal(updates[0]?.data.processingStatus, 'FAILED');
+  assert.match(updates[0]?.data.processingError, /stalled|interrupted/i);
 });

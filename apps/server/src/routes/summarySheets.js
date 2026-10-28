@@ -1,10 +1,29 @@
 import { Router } from 'express';
+import multer from 'multer';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import crypto from 'node:crypto';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { LATEX_SYSTEM_RULES, validateFormulaItems } from '../lib/openai.js';
 import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion, AI_PROVIDERS } from '../lib/aiProvider.js';
 import { stripJsonFences, worstStatus, extractCurriculumExcerpt, STATUS_RANK } from '../lib/aiContent.js';
+import { extractPdfPages, looksLikePdfBuffer } from '../lib/summarySheets/pdf.js';
+import { enqueueSummarySheet } from '../lib/summarySheets/worker.js';
+import { searchSummarySheets, searchWithinSummarySheet, serializeSheet } from '../lib/summarySheets/search.js';
+import {
+  summarySheetDir,
+  summaryKey,
+  safeFilename,
+  moveFile,
+  hashFile,
+  signedSummaryPdfUrl,
+  verifySummaryPdfToken,
+  resolveSummaryKey,
+  removeSummaryStorage
+} from '../lib/summarySheets/storage.js';
 
 const MAX_TARGET_MODULES = 20;
 
@@ -274,6 +293,94 @@ The "useCase" value is your own coverage quality check for this module.
 Return ONLY valid JSON. Generate exactly 1 summary sheet.`;
 }
 
+const MAX_SUMMARY_PDF_BYTES = Number(process.env.SUMMARY_PDF_MAX_BYTES ?? 250 * 1024 * 1024);
+const summaryTempDir = path.join(os.tmpdir(), 'milven-summary-pdf-uploads');
+fs.mkdirSync(summaryTempDir, { recursive: true });
+
+const summaryPdfUpload = multer({
+  dest: summaryTempDir,
+  limits: { fileSize: MAX_SUMMARY_PDF_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!/\.pdf$/i.test(file.originalname || '')) return cb(new Error('Only PDF files are accepted.'));
+    cb(null, true);
+  }
+});
+
+function cleanupSummaryTemp(file) {
+  if (!file?.path) return;
+  try { fs.rmSync(file.path, { force: true }); } catch {}
+}
+
+async function validateSummaryMapping(prisma, { courseId, volumeId, moduleId, topicIds = [], conceptIds = [] }) {
+  const errors = [];
+  if (!courseId) errors.push('Course is required.');
+  if (!volumeId) errors.push('Volume is required.');
+  if (!moduleId) errors.push('Learning Module is required.');
+  const [course, volume, moduleRecord] = await Promise.all([
+    courseId ? prisma.course.findUnique({ where: { id: courseId }, select: { id: true, level: true } }) : null,
+    volumeId ? prisma.volume.findUnique({ where: { id: volumeId }, select: { id: true } }) : null,
+    moduleId ? prisma.module.findUnique({ where: { id: moduleId }, select: { id: true, courseId: true, volumeId: true } }) : null
+  ]);
+  if (courseId && !course) errors.push('Course not found.');
+  if (volumeId && !volume) errors.push('Volume not found.');
+  if (moduleId && !moduleRecord) errors.push('Learning Module not found.');
+  if (course && volume) {
+    const link = await prisma.courseVolume.findUnique({
+      where: { courseId_volumeId: { courseId, volumeId } },
+      select: { courseId: true }
+    });
+    if (!link) errors.push('The selected Volume is not linked to this Course.');
+  }
+  if (moduleRecord && courseId && moduleRecord.courseId !== courseId) errors.push('The Learning Module does not belong to the selected Course.');
+  if (moduleRecord && volumeId && moduleRecord.volumeId !== volumeId) errors.push('The Learning Module does not belong to the selected Volume.');
+
+  if (topicIds.length) {
+    const topics = await prisma.topic.findMany({
+      where: { id: { in: topicIds } },
+      select: { id: true, name: true, moduleId: true }
+    });
+    if (topics.length !== topicIds.length) errors.push('One or more selected Topics no longer exist.');
+    for (const topic of topics) {
+      if (moduleId && topic.moduleId !== moduleId) errors.push(`Topic "${topic.name}" does not belong to the selected Learning Module.`);
+    }
+  }
+  if (conceptIds.length) {
+    const concepts = await prisma.concept.findMany({
+      where: { id: { in: conceptIds } },
+      select: { id: true, name: true, topicId: true, topic: { select: { moduleId: true } } }
+    });
+    if (concepts.length !== conceptIds.length) errors.push('One or more selected Concepts no longer exist.');
+    for (const concept of concepts) {
+      if (moduleId && concept.topic?.moduleId !== moduleId) errors.push(`Concept "${concept.name}" does not belong to the selected Learning Module.`);
+      if (topicIds.length && !topicIds.includes(concept.topicId)) errors.push(`Concept "${concept.name}" does not belong to the selected Topics.`);
+    }
+  }
+  return { errors, course };
+}
+
+async function canAccessSummarySheet(prisma, user, sheet) {
+  if (!user) return false;
+  if (user.role === 'ADMIN') return true;
+  if (sheet.status !== 'PUBLISHED') return false;
+  if (!sheet.courseId) return false;
+  const enrollment = await prisma.enrollment.findUnique({
+    where: { userId_courseId: { userId: user.id, courseId: sheet.courseId } },
+    select: { id: true }
+  });
+  return Boolean(enrollment);
+}
+
+function parseIdArray(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch {
+    return String(value).split(',').map(item => item.trim()).filter(Boolean);
+  }
+}
+
 export function summarySheetsRouter(prisma, deps = {}) {
 	const router = Router();
 
@@ -291,6 +398,21 @@ export function summarySheetsRouter(prisma, deps = {}) {
 		volume: { select: { id: true, name: true } },
 		module: { select: { id: true, name: true } },
 		topic: { select: { id: true, name: true } },
+		topicLinks: { include: { topic: { select: { id: true, name: true } } } },
+		conceptLinks: { include: { concept: { select: { id: true, name: true, topicId: true } } } },
+	};
+
+	const stripStorage = (sheet) => {
+		if (!sheet) return sheet;
+		const { pdfStorageKey, pendingPdfKey, pdfFileHash, pendingPdfHash, ...safe } = sheet;
+		return {
+			...safe,
+			topics: (sheet.topicLinks || []).map(link => link.topic).filter(Boolean),
+			concepts: (sheet.conceptLinks || []).map(link => link.concept).filter(Boolean),
+			topicLinks: undefined,
+			conceptLinks: undefined,
+			hasPdf: Boolean(pdfStorageKey)
+		};
 	};
 
 	const sheetSchema = z.object({
@@ -303,6 +425,8 @@ export function summarySheetsRouter(prisma, deps = {}) {
 		year: z.number().int().optional().default(2026),
 		snapshot: z.string().optional().nullable(),
 		useCase: z.string().optional().nullable(),
+		description: z.string().optional().nullable(),
+		keywords: z.array(z.string()).optional(),
 		coreDefinitions: z.any().optional().nullable(),
 		formulas: z.any().optional().nullable(),
 		distinctions: z.any().optional().nullable(),
@@ -318,7 +442,7 @@ export function summarySheetsRouter(prisma, deps = {}) {
 	// ─── LIST ─────────────────────────────────────────────────
 	router.get('/', async (req, res) => {
 		try {
-			const { courseId, volumeId, moduleId, topicId, level, status, year, search, page, limit } = req.query;
+			const { courseId, volumeId, moduleId, topicId, level, status, year, search, source, page, limit } = req.query;
 			const where = {};
 			if (courseId) where.courseId = courseId;
 			if (volumeId) where.volumeId = volumeId;
@@ -327,10 +451,13 @@ export function summarySheetsRouter(prisma, deps = {}) {
 			if (level) where.level = level;
 			if (status) where.status = status;
 			if (year) where.year = Number(year);
+			if (source === 'AI_GENERATED' || source === 'UPLOADED_PDF') where.sourceType = source;
 			if (search) {
 				where.OR = [
 					{ title: { contains: search, mode: 'insensitive' } },
 					{ snapshot: { contains: search, mode: 'insensitive' } },
+					{ description: { contains: search, mode: 'insensitive' } },
+					{ keywords: { has: search } },
 				];
 			}
 
@@ -349,7 +476,7 @@ export function summarySheetsRouter(prisma, deps = {}) {
 				prisma.summarySheet.count({ where }),
 			]);
 
-			return res.json({ sheets, total, page: pageNum, limit: pageSize });
+			return res.json({ sheets: sheets.map(stripStorage), total, page: pageNum, limit: pageSize });
 		} catch (err) {
 			console.error('[summarySheets.list]', err);
 			return res.status(500).json({ error: 'Failed to list summary sheets' });
@@ -357,6 +484,317 @@ export function summarySheetsRouter(prisma, deps = {}) {
 	});
 
 	// ─── GET ONE ──────────────────────────────────────────────
+	// Uploaded PDF asset delivery (signed token; no public static files)
+	router.get('/assets/:id/pdf', async (req, res) => {
+		const payload = verifySummaryPdfToken(String(req.query.token || ''));
+		if (!payload || payload.sid !== req.params.id) {
+			return res.status(401).json({ error: 'Invalid or expired PDF link' });
+		}
+		const sheet = await prisma.summarySheet.findUnique({
+			where: { id: req.params.id },
+			select: { id: true, status: true, pdfStorageKey: true, originalFilename: true }
+		});
+		if (!sheet || !sheet.pdfStorageKey) return res.status(404).json({ error: 'PDF not found' });
+		if (sheet.status !== 'PUBLISHED' && !payload.adm) {
+			return res.status(403).json({ error: 'PDF is not published' });
+		}
+		try {
+			const absolute = resolveSummaryKey(sheet.pdfStorageKey);
+			if (!fs.existsSync(absolute)) return res.status(404).json({ error: 'PDF file is missing' });
+			const versioned = Boolean(req.query.v);
+			res.setHeader('Content-Type', 'application/pdf');
+			res.setHeader('Content-Disposition', `inline; filename="${safeFilename(sheet.originalFilename || 'summary-sheet.pdf')}"`);
+			res.setHeader('Cache-Control', versioned ? 'private, max-age=31536000, immutable' : 'private, max-age=3600');
+			res.setHeader('X-Content-Type-Options', 'nosniff');
+			return res.sendFile(absolute);
+		} catch {
+			return res.status(400).json({ error: 'Invalid PDF storage path' });
+		}
+	});
+
+	// Global uploaded-PDF search
+	router.get('/search', requireAuth(), async (req, res) => {
+		try {
+			const q = String(req.query.q || '').trim();
+			if (q.length < 2) return res.json({ q, results: [], total: 0 });
+			const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 24));
+			const page = Math.max(1, Number(req.query.page) || 1);
+			const data = await searchSummarySheets(prisma, {
+				q,
+				user: req.user,
+				courseId: String(req.query.courseId || '') || null,
+				volumeId: String(req.query.volumeId || '') || null,
+				moduleId: String(req.query.moduleId || '') || null,
+				topicId: String(req.query.topicId || '') || null,
+				conceptId: String(req.query.conceptId || '') || null,
+				level: String(req.query.level || '') || null,
+				year: req.query.year ? Number(req.query.year) : null,
+				includeDrafts: req.user.role === 'ADMIN',
+				limit,
+				offset: (page - 1) * limit
+			});
+			return res.json({ q, page, limit, ...data });
+		} catch (err) {
+			console.error('[summarySheets.search]', err);
+			return res.status(500).json({ error: 'Search failed' });
+		}
+	});
+
+	router.get('/:id/pdf-access', requireAuth(), async (req, res) => {
+		const sheet = await prisma.summarySheet.findUnique({
+			where: { id: req.params.id },
+			include: defaultInclude
+		});
+		if (!sheet) return res.status(404).json({ error: 'Summary sheet not found' });
+		if (!(await canAccessSummarySheet(prisma, req.user, sheet))) {
+			return res.status(403).json({ error: 'You do not have access to this summary sheet.' });
+		}
+		if (sheet.sourceType !== 'UPLOADED_PDF' || !sheet.pdfStorageKey) {
+			return res.status(404).json({ error: 'This summary sheet has no uploaded PDF.' });
+		}
+		return res.json({
+			sheet: stripStorage(sheet),
+			pdfUrl: signedSummaryPdfUrl({
+				id: sheet.id,
+				userId: req.user.id,
+				admin: req.user.role === 'ADMIN',
+				version: sheet.pdfVersion
+			}),
+			canDownload: true,
+			pageCount: sheet.pdfPageCount || 0,
+			processingStatus: sheet.processingStatus,
+			searchIndexStatus: sheet.searchIndexStatus
+		});
+	});
+
+	router.get('/:id/search', requireAuth(), async (req, res) => {
+		const sheet = await prisma.summarySheet.findUnique({
+			where: { id: req.params.id },
+			select: { id: true, courseId: true, status: true, sourceType: true }
+		});
+		if (!sheet) return res.status(404).json({ error: 'Summary sheet not found' });
+		if (!(await canAccessSummarySheet(prisma, req.user, sheet))) {
+			return res.status(403).json({ error: 'You do not have access to this summary sheet.' });
+		}
+		const q = String(req.query.q || '').trim();
+		const results = await searchWithinSummarySheet(prisma, sheet.id, q);
+		return res.json({ q, results });
+	});
+
+	router.get('/:id/download', requireAuth(), async (req, res) => {
+		const sheet = await prisma.summarySheet.findUnique({
+			where: { id: req.params.id },
+			select: { id: true, courseId: true, status: true, pdfStorageKey: true, originalFilename: true, sourceType: true }
+		});
+		if (!sheet || sheet.sourceType !== 'UPLOADED_PDF' || !sheet.pdfStorageKey) {
+			return res.status(404).json({ error: 'PDF not found' });
+		}
+		if (!(await canAccessSummarySheet(prisma, req.user, sheet))) {
+			return res.status(403).json({ error: 'You do not have access to this PDF.' });
+		}
+		try {
+			const absolute = resolveSummaryKey(sheet.pdfStorageKey);
+			if (!fs.existsSync(absolute)) return res.status(404).json({ error: 'PDF file is missing' });
+			return res.download(absolute, sheet.originalFilename || 'summary-sheet.pdf');
+		} catch {
+			return res.status(400).json({ error: 'Invalid PDF storage path' });
+		}
+	});
+
+	router.post('/upload-pdf', requireAuth(), requireRole('ADMIN'), summaryPdfUpload.single('file'), async (req, res) => {
+		const file = req.file;
+		try {
+			if (!file) return res.status(400).json({ error: 'A PDF file is required.' });
+			const buffer = await fs.promises.readFile(file.path);
+			if (!looksLikePdfBuffer(buffer)) return res.status(400).json({ error: 'The uploaded file is not a valid PDF.' });
+			if (buffer.length > MAX_SUMMARY_PDF_BYTES) return res.status(400).json({ error: 'PDF exceeds the allowed size.' });
+
+			const courseId = String(req.body.courseId || '').trim();
+			const volumeId = String(req.body.volumeId || '').trim();
+			const moduleId = String(req.body.moduleId || '').trim();
+			const topicIds = parseIdArray(req.body.topicIds);
+			const conceptIds = parseIdArray(req.body.conceptIds);
+			const validation = await validateSummaryMapping(prisma, { courseId, volumeId, moduleId, topicIds, conceptIds });
+			if (validation.errors.length) return res.status(400).json({ error: validation.errors[0], errors: validation.errors });
+
+			let parsed;
+			try {
+				parsed = await extractPdfPages(buffer);
+			} catch (err) {
+				return res.status(400).json({ error: err?.message || 'Could not read this PDF.' });
+			}
+
+			const id = crypto.randomUUID();
+			const version = `pdf-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`;
+			const destination = path.join(summarySheetDir(id), 'versions', version, 'original.pdf');
+			await moveFile(file.path, destination);
+			const fileHash = await hashFile(destination);
+			const stat = await fs.promises.stat(destination);
+			const keywords = parseIdArray(req.body.keywords).map(keyword => String(keyword).trim()).filter(Boolean).slice(0, 40);
+			const title = String(req.body.title || '').trim() || path.basename(file.originalname, path.extname(file.originalname)) || 'Summary Sheet';
+			const year = Number(req.body.year) || 2026;
+
+			const sheet = await prisma.$transaction(async (tx) => {
+				const created = await tx.summarySheet.create({
+					data: {
+						id,
+						title: title.slice(0, 300),
+						level: validation.course.level,
+						courseId,
+						volumeId,
+						moduleId,
+						topicId: topicIds[0] || null,
+						year,
+						description: String(req.body.description || '').trim().slice(0, 10000) || null,
+						keywords,
+						sourceType: 'UPLOADED_PDF',
+						status: 'DRAFT',
+						pdfStorageKey: summaryKey('sheets', id, 'versions', version, 'original.pdf'),
+						originalFilename: safeFilename(file.originalname),
+						pdfFileHash: fileHash,
+						pdfFileSize: stat.size,
+						pdfPageCount: parsed.pageCount,
+						pdfVersion: version,
+						processingStatus: 'INDEXING',
+						searchIndexStatus: 'INDEXING',
+						processingAttempts: 0,
+						createdById: req.user.id
+					},
+					include: defaultInclude
+				});
+				if (topicIds.length) {
+					await tx.summarySheetTopic.createMany({
+						data: topicIds.map(topicId => ({ summarySheetId: id, topicId })),
+						skipDuplicates: true
+					});
+				}
+				if (conceptIds.length) {
+					await tx.summarySheetConcept.createMany({
+						data: conceptIds.map(conceptId => ({ summarySheetId: id, conceptId })),
+						skipDuplicates: true
+					});
+				}
+				return created;
+			});
+			enqueueSummarySheet(id);
+			return res.status(201).json({
+				sheet: stripStorage(sheet),
+				message: 'PDF uploaded. Text indexing is running in the background.'
+			});
+		} catch (err) {
+			console.error('[summarySheets.upload-pdf]', err);
+			return res.status(500).json({ error: err?.message || 'Failed to upload PDF summary sheet' });
+		} finally {
+			cleanupSummaryTemp(file);
+		}
+	});
+
+	router.post('/:id/replace-pdf', requireAuth(), requireRole('ADMIN'), summaryPdfUpload.single('file'), async (req, res) => {
+		const file = req.file;
+		try {
+			const existing = await prisma.summarySheet.findUnique({ where: { id: req.params.id } });
+			if (!existing) return res.status(404).json({ error: 'Summary sheet not found' });
+			if (existing.sourceType !== 'UPLOADED_PDF') return res.status(400).json({ error: 'Only uploaded PDF summary sheets can be replaced.' });
+			if (!file) return res.status(400).json({ error: 'A PDF file is required.' });
+			const buffer = await fs.promises.readFile(file.path);
+			if (!looksLikePdfBuffer(buffer)) return res.status(400).json({ error: 'The uploaded file is not a valid PDF.' });
+			try {
+				await extractPdfPages(buffer);
+			} catch (err) {
+				return res.status(400).json({ error: err?.message || 'Could not read this PDF.' });
+			}
+
+			const version = `pdf-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`;
+			const destination = path.join(summarySheetDir(existing.id), 'versions', version, 'original.pdf');
+			await moveFile(file.path, destination);
+			const fileHash = await hashFile(destination);
+			const stat = await fs.promises.stat(destination);
+			const updated = await prisma.summarySheet.update({
+				where: { id: existing.id },
+				data: {
+					pendingPdfKey: summaryKey('sheets', existing.id, 'versions', version, 'original.pdf'),
+					pendingPdfHash: fileHash,
+					pendingPdfSize: stat.size,
+					pendingPdfVersion: version,
+					pendingFilename: safeFilename(file.originalname),
+					processingStatus: 'INDEXING',
+					searchIndexStatus: 'INDEXING',
+					processingError: null,
+					processingAttempts: 0
+				},
+				include: defaultInclude
+			});
+			enqueueSummarySheet(existing.id);
+			return res.json({ sheet: stripStorage(updated), message: 'Replacement PDF uploaded. The current PDF remains available until indexing succeeds.' });
+		} catch (err) {
+			console.error('[summarySheets.replace-pdf]', err);
+			return res.status(500).json({ error: err?.message || 'Failed to replace PDF' });
+		} finally {
+			cleanupSummaryTemp(file);
+		}
+	});
+
+	router.post('/:id/reindex', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		const existing = await prisma.summarySheet.findUnique({ where: { id: req.params.id } });
+		if (!existing) return res.status(404).json({ error: 'Summary sheet not found' });
+		if (existing.sourceType !== 'UPLOADED_PDF') return res.status(400).json({ error: 'Only uploaded PDF summary sheets can be re-indexed.' });
+		await prisma.summarySheet.update({
+			where: { id: existing.id },
+			data: { processingStatus: 'INDEXING', searchIndexStatus: 'INDEXING', processingError: null, processingAttempts: 0 }
+		});
+		enqueueSummarySheet(existing.id);
+		return res.json({ ok: true, message: 'PDF indexing queued.' });
+	});
+
+	router.put('/:id/pdf-metadata', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+		try {
+			const existing = await prisma.summarySheet.findUnique({ where: { id: req.params.id } });
+			if (!existing) return res.status(404).json({ error: 'Summary sheet not found' });
+			if (existing.sourceType !== 'UPLOADED_PDF') return res.status(400).json({ error: 'This is not an uploaded PDF summary sheet.' });
+			const courseId = String(req.body.courseId || existing.courseId || '');
+			const volumeId = String(req.body.volumeId || existing.volumeId || '');
+			const moduleId = String(req.body.moduleId || existing.moduleId || '');
+			const topicIds = typeof req.body.topicIds !== 'undefined' ? parseIdArray(req.body.topicIds) : (await prisma.summarySheetTopic.findMany({ where: { summarySheetId: existing.id }, select: { topicId: true } })).map(x => x.topicId);
+			const conceptIds = typeof req.body.conceptIds !== 'undefined' ? parseIdArray(req.body.conceptIds) : (await prisma.summarySheetConcept.findMany({ where: { summarySheetId: existing.id }, select: { conceptId: true } })).map(x => x.conceptId);
+			const validation = await validateSummaryMapping(prisma, { courseId, volumeId, moduleId, topicIds, conceptIds });
+			if (validation.errors.length) return res.status(400).json({ error: validation.errors[0], errors: validation.errors });
+			const nextStatus = req.body.status ? String(req.body.status).toUpperCase() : existing.status;
+			if (nextStatus === 'PUBLISHED' && (existing.processingStatus !== 'READY' || existing.pdfPageCount < 1)) {
+				return res.status(400).json({ error: 'Only fully indexed PDFs can be published.' });
+			}
+			const description = typeof req.body.description !== 'undefined' ? (String(req.body.description || '').trim().slice(0, 10000) || null) : existing.description;
+			const keywords = typeof req.body.keywords !== 'undefined' ? parseIdArray(req.body.keywords).map(k => String(k).trim()).filter(Boolean).slice(0, 40) : existing.keywords;
+			const updated = await prisma.$transaction(async (tx) => {
+				const row = await tx.summarySheet.update({
+					where: { id: existing.id },
+					data: {
+						title: req.body.title ? String(req.body.title).trim().slice(0, 300) : existing.title,
+						description,
+						keywords,
+						level: validation.course.level,
+						courseId,
+						volumeId,
+						moduleId,
+						topicId: topicIds[0] || null,
+						...(req.body.year ? { year: Number(req.body.year) } : {}),
+						status: nextStatus === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT'
+					},
+					include: defaultInclude
+				});
+				await tx.summarySheetTopic.deleteMany({ where: { summarySheetId: existing.id } });
+				await tx.summarySheetConcept.deleteMany({ where: { summarySheetId: existing.id } });
+				if (topicIds.length) await tx.summarySheetTopic.createMany({ data: topicIds.map(topicId => ({ summarySheetId: existing.id, topicId })), skipDuplicates: true });
+				if (conceptIds.length) await tx.summarySheetConcept.createMany({ data: conceptIds.map(conceptId => ({ summarySheetId: existing.id, conceptId })), skipDuplicates: true });
+				return row;
+			});
+			return res.json({ sheet: stripStorage(updated) });
+		} catch (err) {
+			if (err?.name === 'ZodError') return res.status(400).json({ error: 'Validation failed', details: err.errors });
+			console.error('[summarySheets.pdf-metadata]', err);
+			return res.status(500).json({ error: 'Failed to update PDF summary sheet' });
+		}
+	});
+
 	router.get('/:id', async (req, res) => {
 		try {
 			const sheet = await prisma.summarySheet.findUnique({
@@ -364,7 +802,7 @@ export function summarySheetsRouter(prisma, deps = {}) {
 				include: defaultInclude,
 			});
 			if (!sheet) return res.status(404).json({ error: 'Summary sheet not found' });
-			return res.json({ sheet });
+			return res.json({ sheet: stripStorage(sheet) });
 		} catch (err) {
 			console.error('[summarySheets.get]', err);
 			return res.status(500).json({ error: 'Failed to fetch summary sheet' });
@@ -393,6 +831,11 @@ export function summarySheetsRouter(prisma, deps = {}) {
 	router.put('/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		try {
 			const data = sheetSchema.partial().parse(req.body);
+			const existing = await prisma.summarySheet.findUnique({ where: { id: req.params.id }, select: { sourceType: true, processingStatus: true, pdfPageCount: true } });
+			if (!existing) return res.status(404).json({ error: 'Summary sheet not found' });
+			if (existing.sourceType === 'UPLOADED_PDF' && data.status === 'PUBLISHED' && (existing.processingStatus !== 'READY' || existing.pdfPageCount < 1)) {
+				return res.status(400).json({ error: 'Only fully indexed PDFs can be published.' });
+			}
 			const sheet = await prisma.summarySheet.update({
 				where: { id: req.params.id },
 				data,
@@ -414,7 +857,9 @@ export function summarySheetsRouter(prisma, deps = {}) {
 	// ─── DELETE (Admin only) ─────────────────────────────────
 	router.delete('/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		try {
+			const existing = await prisma.summarySheet.findUnique({ where: { id: req.params.id }, select: { sourceType: true } });
 			await prisma.summarySheet.delete({ where: { id: req.params.id } });
+			if (existing?.sourceType === 'UPLOADED_PDF') removeSummaryStorage(req.params.id);
 			return res.json({ success: true });
 		} catch (err) {
 			if (err?.code === 'P2025') {

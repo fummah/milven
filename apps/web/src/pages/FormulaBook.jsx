@@ -1,14 +1,16 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Tooltip, Collapse, Anchor, Grid, Tabs, Switch, Divider, Modal } from 'antd';
-import { BookOutlined, SearchOutlined, StarFilled, PrinterOutlined, FilterOutlined, UnorderedListOutlined, AppstoreOutlined, DownloadOutlined, EyeOutlined } from '@ant-design/icons';
+import { BookOutlined, SearchOutlined, StarFilled, PrinterOutlined, FilterOutlined, UnorderedListOutlined, AppstoreOutlined, DownloadOutlined, EyeOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { api } from '../lib/api';
 import { formatFormulaHtml, formatVariablesHtml, formatProseWithMath } from '../lib/formatFormula';
+import StudentFormulaBookPdfsTab from './student/StudentFormulaBookPdfsTab';
 
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 const LEVEL_COLORS = { LEVEL1: '#3b82f6', LEVEL2: '#8b5cf6', LEVEL3: '#f59e0b' };
 
 export function FormulaBook() {
 	const screens = Grid.useBreakpoint();
+	const [activeTab, setActiveTab] = useState('cards');
 	const isMobile = !screens.md;
 	const bookRef = useRef(null);
 
@@ -111,6 +113,27 @@ export function FormulaBook() {
 
 	const highYieldFormulas = useMemo(() => formulas.filter(f => f.highYield), [formulas]);
 
+	if (activeTab === 'pdf') {
+		return (
+			<div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? 8 : 0 }}>
+				<div style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 60%, #274a74 100%)', borderRadius: 20, padding: isMobile ? '28px 20px' : '32px 40px', marginBottom: 20 }}>
+					<Typography.Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 2, fontWeight: 600 }}>Milven Finance School</Typography.Text>
+					<Typography.Title level={isMobile ? 3 : 2} style={{ color: '#fff', margin: '8px 0 4px' }}>Formula Book</Typography.Title>
+					<Typography.Text style={{ color: 'rgba(255,255,255,0.75)' }}>Volume-level PDF Formula Books</Typography.Text>
+				</div>
+				<Tabs
+					activeKey={activeTab}
+					onChange={setActiveTab}
+					items={[
+						{ key: 'cards', label: 'Formula Cards' },
+						{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Formula Books</span> }
+					]}
+				/>
+				<StudentFormulaBookPdfsTab courses={courses} volumes={volumes} modules={modules} topics={topics} />
+			</div>
+		);
+	}
+
 	return (
 		<div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? 8 : 0 }}>
 			{/* ── Cover / Header ───────────────────────────── */}
@@ -145,6 +168,16 @@ export function FormulaBook() {
 					</div>
 				</div>
 			</div>
+
+			<Tabs
+				activeKey={activeTab}
+				onChange={setActiveTab}
+				style={{ marginBottom: 8 }}
+				items={[
+					{ key: 'cards', label: 'Formula Cards' },
+					{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Formula Books</span> }
+				]}
+			/>
 
 			{/* ── Toolbar ──────────────────────────────────── */}
 			<div style={{

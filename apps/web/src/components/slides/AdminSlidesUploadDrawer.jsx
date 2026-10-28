@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Drawer, Form, Input, Select, Radio, Button, Upload, Progress, Space, Typography, Alert, message
 } from 'antd';
 import { InboxOutlined, FilePptOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
+import { moduleBelongsTo, sameId, volumeBelongsToCourse } from '../../lib/slideUrls';
 
 const { TextArea } = Input;
 const { Dragger } = Upload;
@@ -35,6 +36,14 @@ export default function AdminSlidesUploadDrawer({
   const [topics, setTopics] = useState([]);
   const [concepts, setConcepts] = useState([]);
   const [loadingModules, setLoadingModules] = useState(false);
+  const [moduleError, setModuleError] = useState('');
+  const [loadingTopics, setLoadingTopics] = useState(false);
+  const [topicsError, setTopicsError] = useState('');
+  const [loadingConcepts, setLoadingConcepts] = useState(false);
+  const [conceptsError, setConceptsError] = useState('');
+  const [modulesReloadKey, setModulesReloadKey] = useState(0);
+  const modulesRequestRef = useRef(0);
+  const dependenciesRequestRef = useRef(0);
 
   const courseId = Form.useWatch('courseId', form);
   const volumeId = Form.useWatch('volumeId', form);
@@ -44,7 +53,7 @@ export default function AdminSlidesUploadDrawer({
 
   const volumeOptions = useMemo(() => {
     const list = courseId
-      ? allVolumes.filter(v => (v.courseLinks || []).some(l => l.courseId === courseId || l.course?.id === courseId))
+      ? allVolumes.filter(v => volumeBelongsToCourse(v, courseId))
       : allVolumes;
     return list.map(v => ({ value: v.id, label: v.name }));
   }, [allVolumes, courseId]);
@@ -89,51 +98,98 @@ export default function AdminSlidesUploadDrawer({
   useEffect(() => {
     if (!open || !courseId || !volumeId) {
       setModules([]);
+      setLoadingModules(false);
+      setModuleError('');
       return;
     }
     let cancelled = false;
+    const requestId = modulesRequestRef.current + 1;
+    modulesRequestRef.current = requestId;
     setModules([]);
+    setModuleError('');
     setLoadingModules(true);
     api.get('/api/cms/modules', { params: { courseId, volumeId } })
       .then(res => {
-        if (cancelled) return;
-        const list = res.data?.modules || [];
+        if (cancelled || requestId !== modulesRequestRef.current) return;
+        // The API filters by both keys; this guard also protects against any
+        // cached/misconfigured response and enforces exact ID relationships.
+        const list = (res.data?.modules || []).filter(module => moduleBelongsTo(module, { courseId, volumeId }));
         setModules(list);
-        if (mode === 'upload' && preselect?.moduleId && list.some(m => m.id === preselect.moduleId)) {
-          form.setFieldValue('moduleId', preselect.moduleId);
+        if (mode === 'upload' && preselect?.moduleId) {
+          const stillValid = list.some(module => sameId(module.id, preselect.moduleId));
+          form.setFieldValue('moduleId', stillValid ? preselect.moduleId : undefined);
         }
       })
-      .catch(() => !cancelled && setModules([]))
-      .finally(() => !cancelled && setLoadingModules(false));
+      .catch(() => {
+        if (cancelled || requestId !== modulesRequestRef.current) return;
+        setModules([]);
+        setModuleError('Unable to load learning modules. Please retry.');
+      })
+      .finally(() => {
+        if (cancelled || requestId !== modulesRequestRef.current) return;
+        setLoadingModules(false);
+      });
     return () => { cancelled = true; };
-  }, [open, courseId, volumeId, mode, preselect, form]);
+  }, [open, courseId, volumeId, mode, preselect?.moduleId, form, modulesReloadKey]);
 
   useEffect(() => {
     if (!open || !moduleId) {
       setTopics([]);
       setConcepts([]);
+      setLoadingTopics(false);
+      setLoadingConcepts(false);
+      setTopicsError('');
+      setConceptsError('');
       return;
     }
     let cancelled = false;
-    Promise.all([
+    const requestId = dependenciesRequestRef.current + 1;
+    dependenciesRequestRef.current = requestId;
+    setTopics([]);
+    setConcepts([]);
+    setTopicsError('');
+    setConceptsError('');
+    setLoadingTopics(true);
+    setLoadingConcepts(true);
+    Promise.allSettled([
       api.get('/api/cms/topics', { params: { moduleId } }),
       api.get('/api/cms/concepts', { params: { moduleId } })
-    ]).then(([topicsRes, conceptsRes]) => {
-      if (cancelled) return;
-      setTopics(topicsRes.data?.topics || []);
-      setConcepts(conceptsRes.data?.concepts || []);
-    }).catch(() => {
-      if (cancelled) return;
-      setTopics([]);
-      setConcepts([]);
+    ]).then(([topicsResult, conceptsResult]) => {
+      if (cancelled || requestId !== dependenciesRequestRef.current) return;
+      if (topicsResult.status === 'fulfilled') {
+        setTopics(topicsResult.value.data?.topics || []);
+      } else {
+        setTopics([]);
+        setTopicsError('Unable to load topics. Please retry.');
+      }
+      if (conceptsResult.status === 'fulfilled') {
+        setConcepts(conceptsResult.value.data?.concepts || []);
+      } else {
+        setConcepts([]);
+        setConceptsError('Unable to load concepts. Please retry.');
+      }
+    }).finally(() => {
+      if (cancelled || requestId !== dependenciesRequestRef.current) return;
+      setLoadingTopics(false);
+      setLoadingConcepts(false);
     });
     return () => { cancelled = true; };
   }, [open, moduleId]);
 
   const topicOptions = topics.map(t => ({ value: t.id, label: t.name }));
   const conceptOptions = concepts
-    .filter(c => selectedTopicIds.length === 0 || selectedTopicIds.includes(c.topicId))
+    .filter(c => selectedTopicIds.length === 0 || selectedTopicIds.some(id => sameId(id, c.topicId)))
     .map(c => ({ value: c.id, label: c.name }));
+
+  const moduleStatusText = (() => {
+    if (!courseId || !volumeId) return '';
+    if (loadingModules) return 'Loading learning modules...';
+    if (moduleError) return moduleError;
+    if (modules.length === 0) return 'No learning modules found for this volume.';
+    return '';
+  })();
+
+  const retryModules = () => setModulesReloadKey(key => key + 1);
 
   const handleClose = () => {
     if (saving) return;
@@ -236,7 +292,13 @@ export default function AdminSlidesUploadDrawer({
             optionFilterProp="label"
             placeholder="Select Course"
             options={courses.map(c => ({ value: c.id, label: `${c.name} (${LEVEL_OPTIONS.find(l => l.value === c.level)?.label || c.level || ''})` }))}
-            onChange={() => form.setFieldsValue({ volumeId: undefined, moduleId: undefined, topicIds: [], conceptIds: [] })}
+            onChange={() => {
+              form.setFieldsValue({ volumeId: undefined, moduleId: undefined, topicIds: [], conceptIds: [] });
+              setModules([]);
+              setTopics([]);
+              setConcepts([]);
+              setModuleError('');
+            }}
           />
         </Form.Item>
 
@@ -247,7 +309,13 @@ export default function AdminSlidesUploadDrawer({
             placeholder={courseId ? 'Select Volume' : 'Select a course first'}
             disabled={!courseId}
             options={volumeOptions}
-            onChange={() => form.setFieldsValue({ moduleId: undefined, topicIds: [], conceptIds: [] })}
+            onChange={() => {
+              form.setFieldsValue({ moduleId: undefined, topicIds: [], conceptIds: [] });
+              setModules([]);
+              setTopics([]);
+              setConcepts([]);
+              setModuleError('');
+            }}
           />
         </Form.Item>
 
@@ -256,9 +324,12 @@ export default function AdminSlidesUploadDrawer({
             name="moduleId"
             label="Learning Module"
             rules={[{ required: true, message: 'Select a Learning Module' }]}
-            extra={!loadingModules && courseId && volumeId && modules.length === 0
-              ? 'Learning Module not found. Please create or configure it under Courses → Learning Modules before uploading.'
-              : undefined}
+            extra={moduleStatusText ? (
+              <Space size={4}>
+                <Typography.Text type={moduleError ? 'danger' : 'secondary'}>{moduleStatusText}</Typography.Text>
+                {moduleError && <Button type="link" size="small" style={{ padding: 0 }} onClick={retryModules}>Retry</Button>}
+              </Space>
+            ) : undefined}
           >
             <Select
               showSearch
@@ -266,35 +337,52 @@ export default function AdminSlidesUploadDrawer({
               placeholder={volumeId ? 'Select Learning Module' : 'Select a volume first'}
               disabled={!volumeId}
               loading={loadingModules}
+              notFoundContent={moduleStatusText || 'No learning modules found for this volume.'}
               options={modules.map(m => ({ value: m.id, label: m.name }))}
-              onChange={() => form.setFieldsValue({ topicIds: [], conceptIds: [] })}
+              onChange={() => {
+                form.setFieldsValue({ topicIds: [], conceptIds: [] });
+                setTopics([]);
+                setConcepts([]);
+              }}
             />
           </Form.Item>
         )}
 
         {scope !== 'WHOLE_VOLUME' && (
           <>
-            <Form.Item name="topicIds" label="Topics (optional, multiple)">
+            <Form.Item name="topicIds" label="Topics (optional, multiple)" extra={topicsError ? <Typography.Text type="danger">{topicsError}</Typography.Text> : undefined}>
               <Select
                 mode="multiple"
                 allowClear
                 showSearch
                 optionFilterProp="label"
                 disabled={!moduleId}
+                loading={loadingTopics}
                 placeholder="Select topics"
                 options={topicOptions}
-                onChange={() => form.setFieldValue('conceptIds', [])}
+                notFoundContent={loadingTopics ? 'Loading topics...' : (moduleId ? 'No topics found for this module.' : 'Select a module first.')}
+                onChange={(selectedTopics) => {
+                  const allowedConcepts = new Set(
+                    concepts
+                      .filter(concept => selectedTopics.length === 0 || selectedTopics.some(id => sameId(id, concept.topicId)))
+                      .map(concept => concept.id)
+                  );
+                  const currentConcepts = form.getFieldValue('conceptIds') || [];
+                  form.setFieldValue('conceptIds', currentConcepts.filter(id => allowedConcepts.has(id)));
+                }}
               />
             </Form.Item>
-            <Form.Item name="conceptIds" label="Concepts (optional, multiple)">
+            <Form.Item name="conceptIds" label="Concepts (optional, multiple)" extra={conceptsError ? <Typography.Text type="danger">{conceptsError}</Typography.Text> : undefined}>
               <Select
                 mode="multiple"
                 allowClear
                 showSearch
                 optionFilterProp="label"
                 disabled={!moduleId}
+                loading={loadingConcepts}
                 placeholder="Select concepts"
                 options={conceptOptions}
+                notFoundContent={loadingConcepts ? 'Loading concepts...' : (moduleId ? 'No concepts found for the selected topics.' : 'Select a module first.')}
               />
             </Form.Item>
           </>

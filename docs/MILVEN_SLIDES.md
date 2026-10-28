@@ -140,6 +140,52 @@ Student (enrolment checked):
 - Soft delete removes slide rows, mappings, rendered assets and search entries
   from all user-visible responses.
 
+## Rate limiting, polling and processing status
+
+### 429 root cause
+
+The global Express rate limiter (default 1000 requests / 15 minutes / IP) was
+applied to every /api route. Slide thumbnails and previews under
+/api/slides/assets were counted in the same per-IP bucket as login, courses,
+questions and AI generation. A single 98-slide viewer could therefore consume a
+large part of the shared quota, and polling/other pages could push the same IP
+over the limit. Nginx/Caddy contain no matching request-rate rule; the observed
+429s originate from Express.
+
+### 429 fixes
+
+- Slide asset GETs are skipped by the global limiter and use a separate
+  per-IP asset limiter (default 20,000 / 15 minutes):
+  `SLIDE_ASSET_RATE_LIMIT_MAX`.
+- Login, uploads, AI generation and normal academic APIs remain under the strict
+  global limiter.
+- Versioned asset URLs return
+  `Cache-Control: private, max-age=31536000, immutable` so repeat views use the
+  browser cache.
+- Viewer thumbnails use IntersectionObserver so only visible/near-visible
+  thumbnails request bytes; the active preview loads first and adjacent previews
+  are prefetched.
+- Admin processing polling runs only while a visible row is PENDING/PROCESSING,
+  stops on READY/FAILED/unmount and backs off on 429 using Retry-After.
+- ZIP batch polling uses recursive timeouts, stops on terminal status/close and
+  backs off on 429.
+
+### Processing status
+
+- Upload, rendering and publication are separate states. Publication no longer
+  drives the processing indicator.
+- Worker transitions are PENDING -> PROCESSING -> READY/FAILED.
+- On restart, interrupted PROCESSING jobs are re-queued.
+- A watchdog marks jobs stuck in PROCESSING beyond
+  `SLIDES_STALL_TIMEOUT_MINUTES` (default 60) as FAILED with a retry message,
+  instead of leaving an endless spinner.
+- Admin library polls only while processing is genuinely active and refreshes
+  statistics when the last job completes.
+- Search text/index data is written in the same transaction as slide rows, so
+  READY means search data is ready; there is no independent indexing spinner
+  that can remain stuck. A failed transaction keeps the previous preview and
+  marks the job FAILED.
+
 ## Deployment requirements
 
 1. PostgreSQL with the new migration applied:
@@ -156,6 +202,9 @@ Student (enrolment checked):
    - optional `LIBREOFFICE_PATH`, `PDFTOPPM_PATH`
    - `SLIDES_CONCURRENCY` (default 2)
    - `SLIDES_MAX_ATTEMPTS` (default 3)
+   - `SLIDES_STALL_TIMEOUT_MINUTES` (default 60)
+   - `SLIDES_PREVIEW_WIDTH` (default 1920), `SLIDES_THUMB_WIDTH` (default 480)
+   - `SLIDE_ASSET_RATE_LIMIT_MAX` (default 20000)
 5. For multiple API replicas, replace the in-process queue with a shared job
    runner/lock so a presentation is not processed by more than one replica.
 
@@ -309,7 +358,13 @@ Functional checks executed:
 - Font preflight reported `Aptos` as missing on the Windows test host while
   `Cambria Math` was present. The production container will report both unless
   licensed fonts are mounted.
-- Server suite now includes renderer tests: **100 tests passed**.
+- Server suite now includes renderer, module-filter and stalled-job tests:
+  **104 tests passed**.
+- Rate-limit separation verified: asset responses advertise a 20,000/15min
+  bucket, normal APIs advertise 1,000/15min; 1,050 asset requests all returned
+  200 and a normal API request still returned 200 afterwards.
+- Viewer thumbnail requests are visibility-gated; full previews remain 1920x1080
+  and thumbnails 480x270.
 - Deletion removed the deck from student views, slide rows, mappings and
   storage assets.
 - Queue recovery logic re-queues interrupted `PROCESSING` jobs on restart.
