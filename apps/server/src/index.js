@@ -173,9 +173,26 @@ app.use(
     legacyHeaders: false,
     skip: (req) =>
       req.path?.startsWith('/uploads') ||
+      req.path?.startsWith('/api/slides/assets/') ||
       req.path === '/api/health'
   })
 );
+
+// Slide image assets are high-volume, cacheable GETs. They must not consume the
+// same quota as logins, academic APIs or AI generation, otherwise opening one
+// deck can trigger site-wide 429 responses. They keep their own abuse limit.
+const SLIDE_ASSET_RATE_LIMIT_MAX =
+  Number(process.env.SLIDE_ASSET_RATE_LIMIT_MAX ?? 20000);
+
+const slideAssetLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: SLIDE_ASSET_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS'
+});
+
+app.use('/api/slides/assets', slideAssetLimiter);
 
 /* ===========================
    ROUTES (WRAPPED SAFELY)

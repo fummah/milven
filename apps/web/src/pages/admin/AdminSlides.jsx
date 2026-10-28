@@ -81,15 +81,19 @@ export function AdminSlides() {
     }
   }, []);
 
+  const listParams = useMemo(() => {
+    const params = { page, limit: pageSize };
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') params[key] = value;
+    });
+    return params;
+  }, [filters, page, pageSize]);
+
   const loadList = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const params = { page, limit: pageSize };
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') params[key] = value;
-      });
-      const { data: res } = await api.get('/api/slides/admin/presentations', { params });
+      const { data: res } = await api.get('/api/slides/admin/presentations', { params: listParams });
       setData(res.presentations || []);
       setTotal(res.total || 0);
     } catch (err) {
@@ -99,10 +103,50 @@ export function AdminSlides() {
     } finally {
       setLoading(false);
     }
-  }, [filters, page, pageSize]);
+  }, [listParams]);
 
   useEffect(() => { loadBase(); }, [loadBase]);
   useEffect(() => { loadList(); }, [loadList]);
+
+  const hasProcessing = useMemo(
+    () => data.some(item => ['PENDING', 'PROCESSING'].includes(item.processingStatus)),
+    [data]
+  );
+
+  useEffect(() => {
+    if (!hasProcessing) return undefined;
+    let cancelled = false;
+    let timer = null;
+    let delay = 5000;
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const { data: res } = await api.get('/api/slides/admin/presentations', { params: listParams });
+        if (cancelled) return;
+        const rows = res.presentations || [];
+        setData(rows);
+        setTotal(res.total || 0);
+        const stillProcessing = rows.some(item => ['PENDING', 'PROCESSING'].includes(item.processingStatus));
+        if (!stillProcessing) {
+          api.get('/api/slides/admin/stats').then(statsRes => setStats(statsRes.data)).catch(() => {});
+          return;
+        }
+        delay = 5000;
+      } catch (err) {
+        if (cancelled) return;
+        const retryAfter = Number(err?.response?.headers?.['retry-after']) || 0;
+        delay = Math.min(60000, Math.max(15000, delay * 2, retryAfter * 1000));
+      }
+      timer = setTimeout(poll, delay);
+    };
+
+    timer = setTimeout(poll, 5000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [hasProcessing, listParams]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

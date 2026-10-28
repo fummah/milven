@@ -13,6 +13,22 @@ export const LEVEL_LABELS = {
 	NONE: 'None'
 };
 
+export function sameId(a, b) {
+	return a !== undefined && a !== null && b !== undefined && b !== null && String(a) === String(b);
+}
+
+export function volumeBelongsToCourse(volume, courseId) {
+	if (!courseId) return true;
+	return (volume?.courseLinks || []).some(link => sameId(link.courseId ?? link.course?.id, courseId));
+}
+
+export function moduleBelongsTo(module, { courseId, volumeId } = {}) {
+	if (!module) return false;
+	if (courseId !== undefined && courseId !== null && courseId !== '' && !sameId(module.courseId, courseId)) return false;
+	if (volumeId !== undefined && volumeId !== null && volumeId !== '' && !sameId(module.volumeId, volumeId)) return false;
+	return true;
+}
+
 export function levelLabel(level) {
 	return LEVEL_LABELS[level] || level || '';
 }
