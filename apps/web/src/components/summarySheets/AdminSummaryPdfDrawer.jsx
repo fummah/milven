@@ -3,6 +3,8 @@ import { Alert, Button, Drawer, Form, Input, InputNumber, Progress, Radio, Selec
 import { InboxOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { moduleBelongsTo, sameId, volumeBelongsToCourse } from '../../lib/slideUrls';
+import { RESOURCE_TYPES } from '../../lib/resourceTitles';
+import { useSuggestedResourceTitle } from '../../lib/useSuggestedResourceTitle';
 
 const { Dragger } = Upload;
 const { TextArea } = Input;
@@ -45,6 +47,17 @@ export default function AdminSummaryPdfDrawer({
     () => volumes.filter(volume => volumeBelongsToCourse(volume, courseId)).map(volume => ({ value: volume.id, label: volume.name })),
     [volumes, courseId]
   );
+
+  const selectedVolume = useMemo(() => volumes.find(volume => sameId(volume.id, volumeId)), [volumes, volumeId]);
+  const selectedLearningModule = useMemo(() => modules.find(module => sameId(module.id, moduleId)), [modules, moduleId]);
+  const { actionLabel, canRestore, handleTitleChange, restoreSuggestedTitle } = useSuggestedResourceTitle({
+    form,
+    open,
+    mode,
+    resourceType: RESOURCE_TYPES.SUMMARY_SHEET_PDF,
+    volume: selectedVolume,
+    learningModule: selectedLearningModule
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -240,7 +253,7 @@ export default function AdminSummaryPdfDrawer({
         <Form.Item name="year" label="Curriculum Year" rules={[{ required: true }]}><InputNumber min={2020} max={2040} style={{ width: '100%' }} /></Form.Item>
 
         <Typography.Title level={5}>Summary Details</Typography.Title>
-        <Form.Item name="title" label="Summary Sheet Title" rules={[{ required: true, message: 'Enter a title' }]}><Input maxLength={300} showCount /></Form.Item>
+        <Form.Item name="title" label="Summary Sheet Title" rules={[{ required: true, message: 'Enter a title' }]} extra={canRestore ? <Button type="link" size="small" style={{ padding: 0 }} onClick={restoreSuggestedTitle}>{actionLabel}</Button> : undefined}><Input maxLength={300} showCount onChange={handleTitleChange} /></Form.Item>
         <Form.Item name="description" label="Description"><TextArea rows={3} maxLength={10000} showCount /></Form.Item>
         <Form.Item name="keywords" label="Keywords / Tags"><Select mode="tags" tokenSeparators={[',', ';']} placeholder="Type a keyword and press Enter" /></Form.Item>
 

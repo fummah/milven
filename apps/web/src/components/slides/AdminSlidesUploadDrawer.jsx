@@ -5,6 +5,8 @@ import {
 import { InboxOutlined, FilePptOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { moduleBelongsTo, sameId, volumeBelongsToCourse } from '../../lib/slideUrls';
+import { RESOURCE_TYPES } from '../../lib/resourceTitles';
+import { useSuggestedResourceTitle } from '../../lib/useSuggestedResourceTitle';
 
 const { TextArea } = Input;
 const { Dragger } = Upload;
@@ -57,6 +59,18 @@ export default function AdminSlidesUploadDrawer({
       : allVolumes;
     return list.map(v => ({ value: v.id, label: v.name }));
   }, [allVolumes, courseId]);
+
+  const selectedVolume = useMemo(() => allVolumes.find(volume => sameId(volume.id, volumeId)), [allVolumes, volumeId]);
+  const selectedLearningModule = useMemo(() => modules.find(module => sameId(module.id, moduleId)), [modules, moduleId]);
+  const { actionLabel, canRestore, handleTitleChange, restoreSuggestedTitle } = useSuggestedResourceTitle({
+    form,
+    open,
+    mode,
+    resourceType: RESOURCE_TYPES.PRESENTATION,
+    presentationScope: scope,
+    volume: selectedVolume,
+    learningModule: selectedLearningModule
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -393,8 +407,8 @@ export default function AdminSlidesUploadDrawer({
         </Form.Item>
 
         <Typography.Title level={5}>Presentation Details</Typography.Title>
-        <Form.Item name="title" label="Title" rules={[{ required: true, message: 'Enter a title' }]}>
-          <Input placeholder="e.g. Bond Valuation — Prices and Yields" maxLength={300} showCount />
+        <Form.Item name="title" label="Title" rules={[{ required: true, message: 'Enter a title' }]} extra={canRestore ? <Button type="link" size="small" style={{ padding: 0 }} onClick={restoreSuggestedTitle}>{actionLabel}</Button> : undefined}>
+          <Input placeholder="e.g. Bond Valuation - Prices and Yields" maxLength={300} showCount onChange={handleTitleChange} />
         </Form.Item>
         <Form.Item name="description" label="Description">
           <TextArea rows={3} maxLength={10000} showCount placeholder="Short description shown to students" />
