@@ -120,6 +120,28 @@ function readCoreMetadata(xml) {
   return result;
 }
 
+// Collects fonts declared by the presentation itself (theme, masters, layouts,
+// slides and notes). Theme placeholders such as "+mn-lt" are intentionally
+// ignored; the concrete theme font is collected from themeN.xml instead.
+export function extractFontFamilies(xml) {
+  const families = new Set();
+  if (!xml) return families;
+  const re = /<a:(?:latin|ea|cs|sym)\b[^>]*\btypeface="([^"]*)"[^>]*\/?>/gi;
+  for (const match of String(xml).matchAll(re)) {
+    const value = decodeXml(match[1]).trim();
+    if (!value || value.startsWith('+')) continue;
+    families.add(value);
+  }
+  const fontScheme = String(xml).match(/<a:fontScheme\b[\s\S]*?<\/a:fontScheme>/i);
+  if (fontScheme) {
+    for (const match of fontScheme[0].matchAll(re)) {
+      const value = decodeXml(match[1]).trim();
+      if (value && !value.startsWith('+')) families.add(value);
+    }
+  }
+  return families;
+}
+
 function pageNumberFromPath(p) {
   const m = String(p).match(/(\d+)\.xml$/i);
   return m ? parseInt(m[1], 10) : null;
@@ -140,7 +162,10 @@ export async function inspectPptx(filePath) {
       name === 'ppt/_rels/presentation.xml.rels' ||
       /^ppt\/slides\/slide\d+\.xml$/i.test(name) ||
       /^ppt\/slides\/_rels\/slide\d+\.xml\.rels$/i.test(name) ||
-      /^ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(name)
+      /^ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(name) ||
+      /^ppt\/theme\/theme\d+\.xml$/i.test(name) ||
+      /^ppt\/slideMasters\/slideMaster\d+\.xml$/i.test(name) ||
+      /^ppt\/slideLayouts\/slideLayout\d+\.xml$/i.test(name)
     );
   });
 
@@ -197,11 +222,24 @@ export async function inspectPptx(filePath) {
 
   const core = readCoreMetadata(entries.get('docProps/core.xml')?.toString('utf8'));
 
+  const fontSet = new Set();
+  for (const [name, buffer] of entries) {
+    if (!/^ppt\/(theme|slideMasters|slideLayouts)\//i.test(name)) continue;
+    for (const family of extractFontFamilies(buffer.toString('utf8'))) fontSet.add(family);
+  }
+  for (const slide of slides) {
+    const slidePath = orderedSlidePaths[slide.slideNumber - 1];
+    const xml = entries.get(slidePath)?.toString('utf8');
+    if (!xml) continue;
+    for (const family of extractFontFamilies(xml)) fontSet.add(family);
+  }
+
   return {
     slides,
     slideCount: slides.length,
     coreTitle: core.title,
-    coreKeywords: core.keywords
+    coreKeywords: core.keywords,
+    requiredFonts: [...fontSet].sort((a, b) => a.localeCompare(b))
   };
 }
 

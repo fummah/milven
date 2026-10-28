@@ -7,7 +7,7 @@ import {
 import {
   AppstoreOutlined, CheckCircleOutlined, CloudUploadOutlined, DeleteOutlined, DownloadOutlined,
   EditOutlined, EyeOutlined, FilePptOutlined, FileZipOutlined, MoreOutlined, ReloadOutlined,
-  SearchOutlined, SyncOutlined, TableOutlined, UploadOutlined
+  SearchOutlined, SyncOutlined, TableOutlined, UploadOutlined, WarningOutlined
 } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { assetUrl, levelLabel, presentationViewerPath } from '../../lib/slideUrls';
@@ -286,6 +286,16 @@ export function AdminSlides() {
     }
   };
 
+  const regeneratePresentation = async (presentation) => {
+    try {
+      await api.post(`/api/slides/admin/presentations/${presentation.id}/regenerate`);
+      message.success('Preview regeneration queued. The previous preview stays visible until it succeeds.');
+      refreshAll();
+    } catch (err) {
+      message.error(err?.response?.data?.error || 'Could not queue preview regeneration.');
+    }
+  };
+
   const downloadOriginal = async (presentation) => {
     try {
       const response = await api.get(`/api/slides/admin/presentations/${presentation.id}/download`, { responseType: 'blob' });
@@ -341,6 +351,7 @@ export function AdminSlides() {
       { key: 'replace', icon: <UploadOutlined />, label: 'Replace PowerPoint', disabled: replacing },
       { key: 'publish', icon: <CheckCircleOutlined />, label: presentation.status === 'PUBLISHED' ? 'Unpublish' : 'Publish' },
       { key: 'download', icon: <DownloadOutlined />, label: 'Download Original' },
+      { key: 'regenerate', icon: <ReloadOutlined />, label: 'Regenerate Preview', disabled: ['PENDING', 'PROCESSING'].includes(presentation.processingStatus) },
       ...(presentation.processingStatus === 'FAILED'
         ? [{ key: 'retry', icon: <ReloadOutlined />, label: 'Retry Processing' }]
         : []),
@@ -357,7 +368,27 @@ export function AdminSlides() {
     if (key === 'publish') togglePublish(presentation);
     if (key === 'download') downloadOriginal(presentation);
     if (key === 'retry') retryPresentation(presentation);
+    if (key === 'regenerate') regeneratePresentation(presentation);
     if (key === 'delete') deletePresentation(presentation);
+  };
+
+  const diagnosticsTag = (presentation) => {
+    const warnings = presentation.renderingWarnings || [];
+    const missing = presentation.missingFonts || [];
+    if (!warnings.length && !missing.length) return null;
+    return (
+      <Tooltip
+        title={(
+          <div style={{ maxWidth: 340 }}>
+            {warnings.map((warning, index) => <div key={index} style={{ marginBottom: 6 }}>{warning}</div>)}
+            {missing.length > 0 && <div><strong>Missing fonts:</strong> {missing.join(', ')}</div>}
+            {presentation.previewWidth ? <div style={{ marginTop: 6 }}>Preview: {presentation.previewWidth}x{presentation.previewHeight} {String(presentation.previewFormat || '').toUpperCase()}</div> : null}
+          </div>
+        )}
+      >
+        <Tag color="warning" icon={<WarningOutlined />}>Font substitution</Tag>
+      </Tooltip>
+    );
   };
 
   const renderStatus = (presentation) => {
@@ -370,6 +401,7 @@ export function AdminSlides() {
         <Tooltip title={presentation.processingError || meta.label}>
           <Tag color={meta.color} icon={meta.icon}>{meta.label}</Tag>
         </Tooltip>
+        {diagnosticsTag(presentation)}
       </Space>
     );
   };

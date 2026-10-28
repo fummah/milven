@@ -175,17 +175,18 @@ function shape(presentation, user, { includeSlides = false } = {}) {
         kind: 'thumbnail',
         slideNumber: 1,
         userId: user?.id,
-        admin
+        admin,
+        version: presentation.renderVersion
       })
     : null;
   data.canDownloadOriginal = admin;
   if (includeSlides && Array.isArray(presentation.slides)) {
-    data.slides = presentation.slides.map(slide => slideForUser(slide, presentation.id, user));
+    data.slides = presentation.slides.map(slide => slideForUser(slide, presentation.id, user, presentation.renderVersion));
   }
   return data;
 }
 
-function slideForUser(slide, presentationId, user) {
+function slideForUser(slide, presentationId, user, version = null) {
   const admin = user?.role === 'ADMIN';
   return {
     id: slide.id,
@@ -193,10 +194,10 @@ function slideForUser(slide, presentationId, user) {
     text: slide.text || '',
     notes: slide.notes || '',
     previewUrl: slide.previewKey
-      ? signedAssetUrl({ presentationId, kind: 'preview', slideNumber: slide.slideNumber, userId: user?.id, admin })
+      ? signedAssetUrl({ presentationId, kind: 'preview', slideNumber: slide.slideNumber, userId: user?.id, admin, version })
       : null,
     thumbnailUrl: slide.thumbnailKey
-      ? signedAssetUrl({ presentationId, kind: 'thumbnail', slideNumber: slide.slideNumber, userId: user?.id, admin })
+      ? signedAssetUrl({ presentationId, kind: 'thumbnail', slideNumber: slide.slideNumber, userId: user?.id, admin, version })
       : null
   };
 }
@@ -406,7 +407,7 @@ export function slidesRouter(prisma) {
   router.get('/admin/presentations/:id/slides', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const presentation = await prisma.presentation.findUnique({
       where: { id: req.params.id },
-      select: { id: true, status: true, deletedAt: true }
+      select: { id: true, status: true, deletedAt: true, renderVersion: true }
     });
     if (!presentation || presentation.deletedAt) return res.status(404).json({ error: 'Not found' });
     const slides = await prisma.presentationSlide.findMany({
@@ -415,7 +416,7 @@ export function slidesRouter(prisma) {
     });
     return res.json({
       presentationId: presentation.id,
-      slides: slides.map(slide => slideForUser(slide, presentation.id, req.user))
+      slides: slides.map(slide => slideForUser(slide, presentation.id, req.user, presentation.renderVersion))
     });
   });
 
@@ -844,6 +845,31 @@ export function slidesRouter(prisma) {
     return res.json(result);
   });
 
+  router.post('/admin/presentations/:id/regenerate', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const existing = await prisma.presentation.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, deletedAt: true, processingStatus: true }
+    });
+    if (!existing || existing.deletedAt) return res.status(404).json({ error: 'Not found' });
+    if (['PENDING', 'PROCESSING'].includes(existing.processingStatus)) {
+      return res.status(409).json({ error: 'This presentation is already queued for rendering.' });
+    }
+    await prisma.presentation.update({
+      where: { id: existing.id },
+      data: {
+        processingStatus: 'PENDING',
+        processingError: null,
+        processingAttempts: 0,
+        renderingWarnings: []
+      }
+    });
+    enqueuePresentation(existing.id);
+    return res.json({
+      ok: true,
+      message: 'Preview regeneration queued. The current preview stays available until the new render succeeds.'
+    });
+  });
+
   router.post('/admin/presentations/:id/retry', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const existing = await prisma.presentation.findUnique({
       where: { id: req.params.id },
@@ -885,7 +911,7 @@ export function slidesRouter(prisma) {
     });
 
     const published = await prisma.presentation.findMany({
-      where: { courseId, deletedAt: null, status: 'PUBLISHED', processingStatus: 'READY' },
+      where: { courseId, deletedAt: null, status: 'PUBLISHED', slides: { some: {} } },
       select: { id: true, volumeId: true, moduleId: true, scope: true, slideCount: true, title: true, thumbnailKey: true }
     });
 
@@ -934,7 +960,7 @@ export function slidesRouter(prisma) {
       courseId,
       deletedAt: null,
       status: 'PUBLISHED',
-      processingStatus: 'READY',
+      slides: { some: {} },
       ...(volumeId ? { volumeId } : {}),
       ...(moduleId ? { moduleId } : {}),
       ...(scope ? { scope } : {}),
@@ -976,7 +1002,11 @@ export function slidesRouter(prisma) {
     if (presentation.status !== 'PUBLISHED' && req.user.role !== 'ADMIN') {
       return res.status(404).json({ error: 'Presentation not found' });
     }
-    if (presentation.processingStatus === 'READY' || req.user.role === 'ADMIN') {
+    if (
+      presentation.processingStatus === 'READY'
+      || req.user.role === 'ADMIN'
+      || (presentation.status === 'PUBLISHED' && presentation.slides.length > 0)
+    ) {
       return res.json({ presentation: shape(presentation, req.user, { includeSlides: true }) });
     }
     return res.status(409).json({ error: 'Presentation is still being processed.' });
@@ -985,7 +1015,7 @@ export function slidesRouter(prisma) {
   router.get('/presentations/:id/slides', requireAuth(), async (req, res) => {
     const presentation = await prisma.presentation.findUnique({
       where: { id: req.params.id },
-      select: { id: true, courseId: true, status: true, deletedAt: true, processingStatus: true }
+      select: { id: true, courseId: true, status: true, deletedAt: true, processingStatus: true, renderVersion: true }
     });
     if (!presentation || presentation.deletedAt) return res.status(404).json({ error: 'Not found' });
     if (!(await ensureCourseAccess(prisma, req.user, presentation.courseId))) {
@@ -1000,7 +1030,7 @@ export function slidesRouter(prisma) {
     });
     return res.json({
       presentationId: presentation.id,
-      slides: slides.map(slide => slideForUser(slide, presentation.id, req.user))
+      slides: slides.map(slide => slideForUser(slide, presentation.id, req.user, presentation.renderVersion))
     });
   });
 

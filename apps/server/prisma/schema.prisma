@@ -904,41 +904,50 @@ enum PresentationProcessingStatus {
 }
 
 model Presentation {
-  id                 String                       @id @default(cuid())
-  title              String
-  description        String?                      @db.Text
-  courseId           String
-  course             Course                       @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  volumeId           String
-  volume             Volume                       @relation(fields: [volumeId], references: [id], onDelete: Cascade)
-  moduleId           String?
-  module             Module?                      @relation(fields: [moduleId], references: [id], onDelete: SetNull)
-  year               Int                          @default(2027)
-  scope              PresentationScope            @default(LEARNING_MODULE)
-  originalFilename   String
-  fileStorageKey     String
-  fileHash           String
-  fileSize           Int                          @default(0)
-  mimeType           String                       @default("application/vnd.openxmlformats-officedocument.presentationml.presentation")
-  thumbnailKey       String?
-  pdfKey             String?
-  slideCount         Int                          @default(0)
-  status             PresentationStatus           @default(DRAFT)
-  processingStatus   PresentationProcessingStatus @default(PENDING)
-  processingError    String?                      @db.Text
-  processingAttempts Int                          @default(0)
-  publishWhenReady   Boolean                      @default(false)
-  tags               String[]                     @default([])
-  importBatchId      String?
-  importBatch        PresentationBatch?           @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
-  createdById        String?
-  createdBy          User?                        @relation("PresentationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt          DateTime                     @default(now())
-  updatedAt          DateTime                     @updatedAt
-  deletedAt          DateTime?
-  slides             PresentationSlide[]
-  topicLinks         PresentationTopic[]
-  conceptLinks       PresentationConcept[]
+  id                   String                       @id @default(cuid())
+  title                String
+  description          String?                      @db.Text
+  courseId             String
+  course               Course                       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  volumeId             String
+  volume               Volume                       @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  moduleId             String?
+  module               Module?                      @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  year                 Int                          @default(2027)
+  scope                PresentationScope            @default(LEARNING_MODULE)
+  originalFilename     String
+  fileStorageKey       String
+  fileHash             String
+  fileSize             Int                          @default(0)
+  mimeType             String                       @default("application/vnd.openxmlformats-officedocument.presentationml.presentation")
+  thumbnailKey         String?
+  pdfKey               String?
+  slideCount           Int                          @default(0)
+  status               PresentationStatus           @default(DRAFT)
+  processingStatus     PresentationProcessingStatus @default(PENDING)
+  processingError      String?                      @db.Text
+  processingAttempts   Int                          @default(0)
+  publishWhenReady     Boolean                      @default(false)
+  renderVersion        String?
+  requiredFonts        String[]                     @default([])
+  missingFonts         String[]                     @default([])
+  renderingWarnings    String[]                     @default([])
+  renderingDiagnostics Json?
+  previewWidth         Int?
+  previewHeight        Int?
+  previewFormat        String?
+  renderDurationMs     Int?
+  tags                 String[]                     @default([])
+  importBatchId        String?
+  importBatch          PresentationBatch?           @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  createdById          String?
+  createdBy            User?                        @relation("PresentationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+  deletedAt            DateTime?
+  slides               PresentationSlide[]
+  topicLinks           PresentationTopic[]
+  conceptLinks         PresentationConcept[]
 
   @@index([courseId, volumeId, moduleId])
   @@index([status, processingStatus])
