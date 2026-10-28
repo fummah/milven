@@ -94,3 +94,18 @@ export function signedModuleNotePdfUrl({ id, userId = null, admin = false, versi
   if (version) query.set('v', String(version));
   return `/api/module-note-pdfs/assets/${encodeURIComponent(id)}/pdf?${query.toString()}`;
 }
+
+export function moduleNotePdfThumbnailKey(id, version) {
+  return moduleNotePdfKey('books', safeSegment(id), 'versions', safeSegment(version || 'v1'), 'thumbnail.png');
+}
+
+export function resolveModuleNotePdfThumbnailKey(key) {
+  return resolveModuleNotePdfKey(key);
+}
+
+export function signedModuleNotePdfThumbnailUrl({ id, userId = null, admin = false, version = null }) {
+  const token = moduleNotePdfToken({ id, userId, admin });
+  const query = new URLSearchParams({ token });
+  if (version) query.set('v', String(version));
+  return `/api/module-note-pdfs/assets/${encodeURIComponent(id)}/thumbnail?${query.toString()}`;
+}

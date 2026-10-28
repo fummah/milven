@@ -2,8 +2,11 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
+import { optionalAuth } from '../middleware/optionalAuth.js';
 import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, validateFormulaItems, autoRepairLatex } from '../lib/openai.js';
 import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion, AI_PROVIDERS } from '../lib/aiProvider.js';
+import { searchFormulaBookPdfs, serializeBook as serializeFormulaBookPdf } from '../lib/formulaBooks/search.js';
+import { normalizeNoteSource, paginateResources, resourceCounts, sortResources } from '../lib/unifiedResources.js';
 
 /**
  * Build a formula-focused curriculum excerpt that prioritises formula sections
@@ -167,6 +170,146 @@ export function formulasRouter(prisma, deps = {}) {
 	// ─── GROUPED (for formula book view) ───────────────────────
 	// Returns formulas grouped by volume → module → topic
 	// NOTE: Must be before /:id to prevent 'book' matching as an id
+	// Unified Formula Cards + PDF Formula Books listing.
+	router.get('/unified', optionalAuth(), async (req, res) => {
+		try {
+			const { courseId, volumeId, moduleId, topicId, conceptId, level, year, highYield, search, source, status, sort, page, limit } = req.query;
+			const isAdmin = req.user?.role === 'ADMIN';
+			const allowedIds = isAdmin || !req.user
+				? null
+				: (await prisma.enrollment.findMany({ where: { userId: req.user.id }, select: { courseId: true } })).map(row => row.courseId);
+			const term = String(search || '').trim();
+			const sourceFilter = String(source || '').toUpperCase();
+			const scopedCourseId = courseId && allowedIds ? (allowedIds.includes(courseId) ? courseId : '__none__') : courseId;
+			const wantsFormulas = !['UPLOAD', 'UPLOADED_PDF'].includes(sourceFilter);
+			const wantsPdfs = !['AI', 'AI_GENERATED', 'MANUAL'].includes(sourceFilter);
+			const resources = [];
+
+			if (wantsFormulas && (!status || status === 'PUBLISHED')) {
+				if (!allowedIds || allowedIds.length) {
+					const formulaWhere = {};
+					if (scopedCourseId) formulaWhere.courseId = scopedCourseId;
+					if (volumeId) formulaWhere.volumeId = volumeId;
+					if (moduleId) formulaWhere.moduleId = moduleId;
+					if (topicId) formulaWhere.topicId = topicId;
+					if (level) formulaWhere.level = level;
+					if (year) formulaWhere.year = Number(year);
+					if (highYield === 'true') formulaWhere.highYield = true;
+					if (sourceFilter === 'AI' || sourceFilter === 'AI_GENERATED') formulaWhere.sourceType = 'AI_GENERATED';
+					if (sourceFilter === 'MANUAL') formulaWhere.sourceType = 'MANUAL';
+					if (allowedIds) formulaWhere.courseId = scopedCourseId || { in: allowedIds };
+					const rows = await prisma.formula.findMany({
+						where: formulaWhere,
+						include: defaultInclude,
+						orderBy: [{ createdAt: 'desc' }, { order: 'asc' }],
+						take: 2000
+					});
+					const needle = term.toLowerCase();
+					for (const row of rows) {
+						if (needle && !JSON.stringify(row).toLowerCase().includes(needle)) continue;
+						resources.push({
+							...row,
+							id: row.id,
+							resourceId: row.id,
+							resourceKey: `formula:${row.id}`,
+							resourceId: row.id,
+							type: 'FORMULA',
+							source: normalizeNoteSource(row.sourceType),
+							title: row.name,
+							status: 'PUBLISHED',
+							thumbnailUrl: null,
+							pageCount: null,
+							matchPage: null
+						});
+					}
+				}
+			}
+
+			if (wantsPdfs) {
+				const pdfBaseWhere = {
+					...(scopedCourseId ? { courseId: scopedCourseId } : {}),
+					...(volumeId ? { volumeId } : {}),
+					...(year ? { year: Number(year) } : {}),
+					...(status ? { publicationStatus: status } : isAdmin ? {} : { publicationStatus: 'PUBLISHED' }),
+					...(allowedIds ? { courseId: scopedCourseId || { in: allowedIds } } : {}),
+					...(moduleId ? { pageMaps: { some: { moduleId } } } : {}),
+					...(topicId ? { pageMaps: { some: { topicId } } } : {}),
+					...(conceptId ? { pageMaps: { some: { conceptId } } } : {})
+				};
+				if (!allowedIds || allowedIds.length) {
+					const pdfs = new Map();
+					if (term.length >= 2) {
+						const found = await searchFormulaBookPdfs(prisma, {
+							q: term,
+							user: req.user,
+							courseId: scopedCourseId || null,
+							volumeId: volumeId || null,
+							moduleId: moduleId || null,
+							topicId: topicId || null,
+							conceptId: conceptId || null,
+							year: year ? Number(year) : null,
+							includeDrafts: isAdmin,
+							limit: 2000
+						});
+						for (const result of found.results) {
+							const current = pdfs.get(result.formulaBookPdfId);
+							if (!current || (current.matchType === 'BOOK' && result.matchType === 'PAGE')) {
+								pdfs.set(result.formulaBookPdfId, { book: result.book, matchPage: result.pageNumber, matchType: result.matchType, academic: result.academic?.[0] || null });
+							}
+						}
+					} else {
+						const rows = await prisma.formulaBookPdf.findMany({
+							where: pdfBaseWhere,
+							include: {
+								course: { select: { id: true, name: true, level: true } },
+								volume: { select: { id: true, name: true } },
+								pageMaps: { select: { pageStart: true, pageEnd: true, module: { select: { id: true, name: true } }, topic: { select: { id: true, name: true } }, concept: { select: { id: true, name: true } } } }
+							},
+							orderBy: { createdAt: 'desc' },
+							take: 2000
+						});
+						for (const row of rows) {
+							const first = row.pageMaps?.[0] || null;
+							pdfs.set(row.id, { book: serializeFormulaBookPdf(row, req.user), matchPage: 1, matchType: 'BOOK', academic: first ? { module: first.module, topic: first.topic, concept: first.concept } : null });
+						}
+					}
+
+					for (const entry of pdfs.values()) {
+						const book = entry.book;
+						if (!book) continue;
+						if (level && book.course?.level !== level) continue;
+						if (status && book.publicationStatus !== status) continue;
+						if (sourceFilter === 'UPLOAD' || sourceFilter === 'UPLOADED_PDF') { /* PDF only */ }
+						resources.push({
+							...book,
+							id: book.id,
+							resourceId: book.id,
+							resourceKey: `pdf:${book.id}`,
+							resourceId: book.id,
+							type: 'PDF',
+							source: 'UPLOAD',
+							title: book.title,
+							status: book.publicationStatus,
+							level: book.course?.level || '',
+							learningModuleId: entry.academic?.module?.id || null,
+							module: entry.academic?.module || null,
+							topic: entry.academic?.topic || null,
+							matchPage: entry.matchPage || 1,
+							pageMaps: undefined
+						});
+					}
+				}
+			}
+
+			const sorted = sortResources(resources, sort);
+			const paged = paginateResources(sorted, { page, limit });
+			return res.json({ ...paged, counts: resourceCounts(sorted) });
+		} catch (err) {
+			console.error('[formulas.unified]', err);
+			return res.status(500).json({ error: 'Failed to list formula resources' });
+		}
+	});
+
 	router.get('/book/grouped', async (req, res) => {
 		try {
 			const { courseId, level, year } = req.query;
@@ -250,7 +393,7 @@ export function formulasRouter(prisma, deps = {}) {
 			if (!Array.isArray(items) || items.length === 0) {
 				return res.status(400).json({ error: 'formulas array required' });
 			}
-			const validated = items.map(item => formulaSchema.parse(item));
+			const validated = items.map(item => ({ ...formulaSchema.parse(item), sourceType: 'MANUAL' }));
 			const count = await prisma.formula.createMany({ data: validated });
 			return res.status(201).json({ created: count.count });
 		} catch (err) {
@@ -700,6 +843,7 @@ Generate ${isComprehensive ? `at least ${count}` : `exactly ${count}`} formula c
 						rows.push(await tx.formula.create({
 							data: {
 								name: String(item.name || `Formula ${i + 1}`).slice(0, 255),
+								sourceType: 'AI_GENERATED',
 								formula: autoRepairLatex(String(item.formula || '')),
 								variables: autoRepairLatex(String(item.variables || '')),
 								interpretation: String(item.interpretation || ''),
@@ -942,6 +1086,7 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 					const formula = await prisma.formula.create({
 						data: {
 							name: String(item.name || `Formula ${i + 1}`).slice(0, 255),
+							sourceType: 'AI_GENERATED',
 							formula: autoRepairLatex(String(item.formula || '')),
 							variables: autoRepairLatex(String(item.variables || '')),
 							interpretation: String(item.interpretation || ''),
@@ -978,7 +1123,7 @@ Generate exactly ${count} formula cards. Return ONLY valid JSON.`;
 	// ─── CREATE (Admin only) ───────────────────────────────────
 	router.post('/', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		try {
-			const data = formulaSchema.parse(req.body);
+			const data = { ...formulaSchema.parse(req.body), sourceType: 'MANUAL' };
 			const formula = await prisma.formula.create({
 				data,
 				include: defaultInclude,

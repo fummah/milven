@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Spin, Checkbox, Tabs } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, StarFilled, StarOutlined, FilePdfOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Spin, Checkbox, Pagination } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, StarFilled, StarOutlined, FilePdfOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import MathText from '../../components/MathText';
 import { ModuleNotePreviewCard } from '../../components/ModuleNotePreviewCard';
-import AdminModuleNotePdfsTab from '../../components/moduleNotePdfs/AdminModuleNotePdfsTab';
+import AdminModuleNotePdfDrawer from '../../components/moduleNotePdfs/AdminModuleNotePdfDrawer';
+import ModuleNoteResourceCard from '../../components/resources/ModuleNoteResourceCard';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -16,8 +18,8 @@ const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III
 const STATUS_COLORS = { DRAFT: 'default', PUBLISHED: 'green' };
 
 export function AdminModuleNotes() {
+	const navigate = useNavigate();
 	const [form] = Form.useForm();
-	const [activeTab, setActiveTab] = useState('notes');
 	const [notes, setNotes] = useState([]);
 	const [loading, setLoading] = useState(false);
 	const [total, setTotal] = useState(0);
@@ -28,6 +30,11 @@ export function AdminModuleNotes() {
 	const [submitting, setSubmitting] = useState(false);
 	const [previewOpen, setPreviewOpen] = useState(false);
 	const [previewNote, setPreviewNote] = useState(null);
+	const [pdfDrawerOpen, setPdfDrawerOpen] = useState(false);
+	const [pdfEditing, setPdfEditing] = useState(null);
+	const [replacePdfTarget, setReplacePdfTarget] = useState(null);
+	const [pdfReplacing, setPdfReplacing] = useState(false);
+	const replacePdfInputRef = React.useRef(null);
 
 	// AI Generate
 	const [aiModalOpen, setAiModalOpen] = useState(false);
@@ -57,7 +64,11 @@ export function AdminModuleNotes() {
 	// Filters
 	const [filterLevel, setFilterLevel] = useState(null);
 	const [filterCourseId, setFilterCourseId] = useState(null);
+	const [filterVolumeId, setFilterVolumeId] = useState(null);
+	const [filterModuleId, setFilterModuleId] = useState(null);
+	const [filterTopicId, setFilterTopicId] = useState(null);
 	const [filterStatus, setFilterStatus] = useState(null);
+	const [filterSource, setFilterSource] = useState(null);
 	const [searchText, setSearchText] = useState('');
 
 	// Lookup data
@@ -77,6 +88,9 @@ export function AdminModuleNotes() {
 	const aiVolumes = useMemo(() => !aiCourseId ? volumes : volumes.filter(v => v.courseLinks?.some(cl => cl.courseId === aiCourseId)), [aiCourseId, volumes]);
 	const aiModules = useMemo(() => { let l = modules; if (aiCourseId) l = l.filter(m => m.courseId === aiCourseId); if (aiVolumeId) l = l.filter(m => m.volumeId === aiVolumeId); return l; }, [aiCourseId, aiVolumeId, modules]);
 	const aiTopics = useMemo(() => { let l = topics; if (aiCourseId) l = l.filter(t => t.courseId === aiCourseId); if (aiModuleId) l = l.filter(t => t.moduleId === aiModuleId); return l; }, [aiCourseId, aiModuleId, topics]);
+	const resourceVolumes = useMemo(() => filterCourseId ? volumes.filter(v => v.courseLinks?.some(cl => cl.courseId === filterCourseId)) : volumes, [filterCourseId, volumes]);
+	const resourceModules = useMemo(() => modules.filter(m => (!filterCourseId || m.courseId === filterCourseId) && (!filterVolumeId || m.volumeId === filterVolumeId)), [modules, filterCourseId, filterVolumeId]);
+	const resourceTopics = useMemo(() => topics.filter(t => (!filterCourseId || t.courseId === filterCourseId) && (!filterModuleId || t.moduleId === filterModuleId)), [topics, filterCourseId, filterModuleId]);
 
 	useEffect(() => {
 		api.get('/api/cms/courses').then(r => setCourses(r.data?.courses || [])).catch(() => {});
@@ -90,15 +104,33 @@ export function AdminModuleNotes() {
 			const params = { page, limit: pageSize };
 			if (filterLevel) params.level = filterLevel;
 			if (filterCourseId) params.courseId = filterCourseId;
+			if (filterVolumeId) params.volumeId = filterVolumeId;
+			if (filterModuleId) params.moduleId = filterModuleId;
+			if (filterTopicId) params.topicId = filterTopicId;
 			if (filterStatus) params.status = filterStatus;
+			if (filterSource) params.source = filterSource;
 			if (searchText) params.search = searchText;
-			const res = await api.get('/api/module-notes', { params });
-			setNotes(res.data?.notes || []);
+			const res = await api.get('/api/module-notes/unified', { params });
+			setNotes(res.data?.resources || []);
 			setTotal(res.data?.total || 0);
 		} catch { message.error('Failed to load module notes'); } finally { setLoading(false); }
-	}, [page, pageSize, filterLevel, filterCourseId, filterStatus, searchText]);
+	}, [page, pageSize, filterLevel, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, filterStatus, filterSource, searchText]);
 
 	useEffect(() => { fetchNotes(); }, [fetchNotes]);
+
+	const hasProcessingPdf = useMemo(() => notes.some(item => item.type === 'PDF' && ['UPLOADED', 'INDEXING'].includes(item.processingStatus)), [notes]);
+	useEffect(() => {
+		if (!hasProcessingPdf) return undefined;
+		let cancelled = false;
+		let timer = null;
+		const poll = async () => {
+			if (cancelled) return;
+			try { await fetchNotes(); } catch {}
+			if (!cancelled) timer = setTimeout(poll, 6000);
+		};
+		timer = setTimeout(poll, 6000);
+		return () => { cancelled = true; if (timer) clearTimeout(timer); };
+	}, [hasProcessingPdf, fetchNotes]);
 
 	const openCreate = () => { setEditingId(null); form.resetFields(); form.setFieldsValue({ level: 'LEVEL1', order: 0, status: 'DRAFT', year: 2026, studyRoadmap: null }); setFormCourseId(null); setFormVolumeId(null); setFormModuleId(null); setDrawerOpen(true); };
 
@@ -125,6 +157,56 @@ export function AdminModuleNotes() {
 	const handleDelete = (id) => { Modal.confirm({ title: 'Delete Module Note', content: 'This cannot be undone.', okText: 'Delete', okType: 'danger', onOk: async () => { try { await api.delete(`/api/module-notes/${id}`); message.success('Deleted'); fetchNotes(); } catch { message.error('Failed to delete'); } } }); };
 
 	const toggleStatus = async (record) => { try { const s = record.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED'; await api.put(`/api/module-notes/${record.id}`, { status: s }); message.success(s === 'PUBLISHED' ? 'Published' : 'Moved to draft'); fetchNotes(); } catch { message.error('Failed to update status'); } };
+
+	const openPdfResource = resource => navigate(`/learning/module-notes-pdf/${resource.resourceId || resource.id}${resource.matchPage ? `?page=${resource.matchPage}` : ''}`);
+	const editPdfResource = resource => { setPdfEditing(resource); setPdfDrawerOpen(true); };
+	const togglePdfStatus = async resource => {
+		try {
+			const publicationStatus = resource.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED';
+			await api.put(`/api/module-note-pdfs/${resource.resourceId || resource.id}`, { publicationStatus });
+			message.success(publicationStatus === 'PUBLISHED' ? 'Published' : 'Moved to draft');
+			fetchNotes();
+		} catch (err) { message.error(err?.response?.data?.error || 'Failed to update PDF status'); }
+	};
+	const downloadPdf = async resource => {
+		try {
+			const res = await api.get(`/api/module-note-pdfs/${resource.resourceId || resource.id}/download`, { responseType: 'blob' });
+			const url = URL.createObjectURL(res.data);
+			const anchor = document.createElement('a');
+			anchor.href = url; anchor.download = resource.originalFilename || 'module-notes.pdf'; anchor.click();
+			URL.revokeObjectURL(url);
+		} catch { message.error('Could not download this PDF'); }
+	};
+	const triggerPdfReplace = resource => { setReplacePdfTarget(resource); setTimeout(() => replacePdfInputRef.current?.click(), 0); };
+	const replacePdfFile = async event => {
+		const file = event.target.files?.[0];
+		event.target.value = '';
+		if (!file || !replacePdfTarget) return;
+		setPdfReplacing(true);
+		try {
+			const body = new FormData();
+			body.append('file', file);
+			await api.post(`/api/module-note-pdfs/${replacePdfTarget.resourceId || replacePdfTarget.id}/replace`, body, { headers: { 'Content-Type': 'multipart/form-data' } });
+			message.success('Replacement PDF uploaded. Indexing has started.');
+			fetchNotes();
+		} catch (err) { message.error(err?.response?.data?.error || 'Could not replace the PDF'); }
+		finally { setPdfReplacing(false); setReplacePdfTarget(null); }
+	};
+	const deleteResource = resource => {
+		if (resource.type === 'PDF') {
+			Modal.confirm({ title: 'Delete PDF Module Notes', content: 'The PDF and its indexed pages will be removed. This cannot be undone.', okText: 'Delete', okType: 'danger', onOk: async () => {
+				try { await api.delete(`/api/module-note-pdfs/${resource.resourceId || resource.id}`); message.success('Deleted'); fetchNotes(); }
+				catch (err) { message.error(err?.response?.data?.error || 'Failed to delete'); }
+			} });
+			return;
+		}
+		handleDelete(resource.resourceId || resource.id);
+	};
+	const toggleResourceStatus = resource => resource.type === 'PDF' ? togglePdfStatus(resource) : toggleStatus(resource);
+	const resourcePreview = resource => {
+		if (resource.type === 'PDF') openPdfResource(resource);
+		else { setPreviewNote(resource); setPreviewOpen(true); }
+	};
 
 	const fetchAiModels = async (provider) => {
 		const prov = provider || aiProvider || aiActiveProvider || 'openai';
@@ -173,7 +255,7 @@ export function AdminModuleNotes() {
 			const payload = { courseId: aiCourseId, volumeId: aiVolumeId || undefined, moduleId: aiModuleId || undefined, topicId: aiTopicId || undefined, level: selectedCourse.level, year: aiYear, count: aiCount || undefined, provider: aiProvider || undefined, model: aiModel || undefined };
 			Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
 			// Uses fetch+SSE so heartbeats keep the connection alive through Nginx
-			const API_URL = import.meta.env.VITE_API_URL - 'http://localhost:4000';
+			const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 			const response = await fetch(`${API_URL}/api/module-notes/generate-ai/preview`, {
 				method: 'POST',
 				headers: {
@@ -197,7 +279,7 @@ export function AdminModuleNotes() {
 				if (done) break;
 				buffer += decoder.decode(value, { stream: true });
 				const parts = buffer.split('\n\n');
-				buffer = parts.pop() - '';
+				buffer = parts.pop() || '';
 				for (const part of parts) {
 					if (part.startsWith('event: result\ndata: ')) {
 						data = JSON.parse(part.slice('event: result\ndata: '.length));
@@ -242,28 +324,6 @@ export function AdminModuleNotes() {
 		} finally { setAiAcceptLoading(false); }
 	};
 
-	if (activeTab === 'pdf') {
-		return (
-			<div>
-				<div style={{ marginBottom: 16 }}>
-					<div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-						<div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><BookOutlined style={{ fontSize: 22, color: '#fff' }} /></div>
-						<div><Typography.Title level={3} style={{ margin: 0, color: '#102540' }}>CFA Learning Module Notes</Typography.Title><Typography.Text type="secondary">Volume-level PDF module notes</Typography.Text></div>
-					</div>
-				</div>
-				<Tabs
-					activeKey={activeTab}
-					onChange={setActiveTab}
-					items={[
-						{ key: 'notes', label: 'Learning Notes' },
-						{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Notes</span> }
-					]}
-				/>
-				<AdminModuleNotePdfsTab courses={courses} volumes={volumes} />
-			</div>
-		);
-	}
-
 	return (
 		<div>
 			{/* Header */}
@@ -280,96 +340,77 @@ export function AdminModuleNotes() {
 			</div>
 
 			{/* Filters */}
-			<Tabs
-				activeKey={activeTab}
-				onChange={setActiveTab}
-				style={{ marginBottom: 8 }}
-				items={[
-					{ key: 'notes', label: 'Learning Notes' },
-					{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Notes</span> }
-				]}
-			/>
-
 			<Card size="small" style={{ marginBottom: 16, borderRadius: 12, border: '1px solid #e2e8f0' }}>
 				<Row gutter={[12, 12]} align="middle">
-					<Col xs={24} sm={12} md={4}><Input prefix={<SearchOutlined />} placeholder="Search notes..." value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear /></Col>
-					<Col xs={12} sm={6} md={3}><Select placeholder="Level" value={filterLevel} onChange={v => { setFilterLevel(v); setPage(1); }} options={[{ value: null, label: 'All Levels' }, ...LEVELS]} style={{ width: '100%' }} allowClear /></Col>
-					<Col xs={12} sm={6} md={4}><Select placeholder="Course" value={filterCourseId} onChange={v => { setFilterCourseId(v); setPage(1); }} options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
-					<Col xs={12} sm={6} md={3}><Select placeholder="Status" value={filterStatus} onChange={v => { setFilterStatus(v); setPage(1); }} options={[{ value: null, label: 'All' }, { value: 'DRAFT', label: 'Draft' }, { value: 'PUBLISHED', label: 'Published' }]} style={{ width: '100%' }} allowClear /></Col>
-					<Col xs={24} sm={12} md={6} style={{ textAlign: 'right' }}>
-						<Space>
+					<Col xs={24} sm={12} md={5}><Input prefix={<SearchOutlined />} placeholder="Search notes and PDFs..." value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear /></Col>
+					<Col xs={12} sm={6} md={2}><Select placeholder="Level" value={filterLevel} onChange={v => { setFilterLevel(v); setPage(1); }} options={[{ value: null, label: 'All Levels' }, ...LEVELS]} style={{ width: '100%' }} allowClear /></Col>
+					<Col xs={12} sm={6} md={3}><Select placeholder="Course" value={filterCourseId} onChange={v => { setFilterCourseId(v); setFilterVolumeId(null); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={12} sm={6} md={3}><Select placeholder="Volume" value={filterVolumeId} onChange={v => { setFilterVolumeId(v); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Volumes' }, ...resourceVolumes.map(v => ({ value: v.id, label: v.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={12} sm={6} md={3}><Select placeholder="Module" value={filterModuleId} onChange={v => { setFilterModuleId(v); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Modules' }, ...resourceModules.map(m => ({ value: m.id, label: m.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={12} sm={6} md={3}><Select placeholder="Topic" value={filterTopicId} onChange={v => { setFilterTopicId(v); setPage(1); }} options={[{ value: null, label: 'All Topics' }, ...resourceTopics.map(t => ({ value: t.id, label: t.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={12} sm={6} md={2}><Select placeholder="Source" value={filterSource} onChange={v => { setFilterSource(v); setPage(1); }} options={[{ value: null, label: 'All Sources' }, { value: 'AI', label: 'AI Generated' }, { value: 'MANUAL', label: 'Manual' }, { value: 'UPLOADED_PDF', label: 'Uploaded PDF' }]} style={{ width: '100%' }} allowClear /></Col>
+					<Col xs={12} sm={6} md={2}><Select placeholder="Status" value={filterStatus} onChange={v => { setFilterStatus(v); setPage(1); }} options={[{ value: null, label: 'All' }, { value: 'DRAFT', label: 'Draft' }, { value: 'PUBLISHED', label: 'Published' }]} style={{ width: '100%' }} allowClear /></Col>
+					<Col xs={24} md={24} style={{ textAlign: 'right' }}>
+						<Space wrap>
 							<Button icon={<RobotOutlined />} onClick={openAiModal} style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6', color: '#fff' }}>AI Generate</Button>
 							<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} style={{ background: '#102540', borderColor: '#102540' }}>Add Note</Button>
+							<Button icon={<FilePdfOutlined />} onClick={() => { setPdfEditing(null); setPdfDrawerOpen(true); }}>Upload PDF</Button>
 						</Space>
 					</Col>
 				</Row>
 			</Card>
 
-			{/* Table */}
+			{/* Unified resources */}
 			{loading ? (
 				<div style={{ padding: 60, textAlign: 'center' }}><Spin size="large" /></div>
 			) : notes.length === 0 ? (
 				<Card style={{ borderRadius: 12, border: '1px solid #e2e8f0', textAlign: 'center', padding: 40 }}>
-					<Empty description="No module notes found" />
+					<Empty description="No module notes or PDFs found" />
 				</Card>
 			) : (
 				<>
-					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16 }}>
-						{notes.map((record) => {
-							const losCount = Array.isArray(record.losStatements) ? record.losStatements.length : 0;
-							const conceptCount = Array.isArray(record.concepts) ? record.concepts.length : 0;
-							const formulaCount = Array.isArray(record.formulaRecap) ? record.formulaRecap.length : 0;
-							const practiceCount = Array.isArray(record.practiceSet) ? record.practiceSet.length : 0;
-							return (
-								<Card
-									key={record.id}
-									hoverable
-									style={{
-										borderRadius: 14,
-										border: '1px solid #e2e8f0',
-										boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-									}}
-									styles={{ body: { padding: 0 } }}
-								>
-									<div style={{ padding: 16 }}>
-										<div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-											<div style={{ flex: 1, minWidth: 0 }}>
-												<div style={{ fontWeight: 700, fontSize: 15, color: '#102540', lineHeight: 1.3 }}>{record.title}</div>
-												{record.module?.name && <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{record.module.name}</div>}
-											</div>
-											<Tag color={STATUS_COLORS[record.status]} style={{ flexShrink: 0, marginTop: 2 }}>{record.status}</Tag>
-										</div>
-										<div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap' }}>
-											<Tag color={LEVEL_COLORS[record.level]} style={{ fontSize: 11 }}>{LEVEL_LABELS[record.level]}</Tag>
-											{record.difficulty && <Tag style={{ fontSize: 11 }}>{record.difficulty}</Tag>}
-											{record.studyTime && <Tag color="geekblue" style={{ fontSize: 11 }}>{record.studyTime}</Tag>}
-										</div>
-										{record.overview && <div style={{ fontSize: 13, color: '#475569', marginTop: 8, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{record.overview}</div>}
-										<div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
-											{losCount > 0 && <Tag color="blue" style={{ fontSize: 11, borderRadius: 6 }}>{losCount} LOS</Tag>}
-											{conceptCount > 0 && <Tag color="purple" style={{ fontSize: 11, borderRadius: 6 }}>{conceptCount} concepts</Tag>}
-											{formulaCount > 0 && <Tag color="cyan" style={{ fontSize: 11, borderRadius: 6 }}>{formulaCount} formulas</Tag>}
-											{practiceCount > 0 && <Tag color="green" style={{ fontSize: 11, borderRadius: 6 }}>{practiceCount} practice Qs</Tag>}
-										</div>
-									</div>
-									<div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 12px', display: 'flex', justifyContent: 'flex-end', gap: 2, background: '#fafafa' }}>
-										<Tooltip title="Preview"><Button size="small" type="text" icon={<EyeOutlined />} onClick={() => { setPreviewNote(record); setPreviewOpen(true); }} /></Tooltip>
-										<Tooltip title="Edit"><Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} /></Tooltip>
-										<Tooltip title={record.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}><Button size="small" type="text" icon={record.status === 'PUBLISHED' ? <StarFilled style={{ color: '#22c55e' }} /> : <StarOutlined />} onClick={() => toggleStatus(record)} /></Tooltip>
-										<Tooltip title="Delete"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} /></Tooltip>
-									</div>
-								</Card>
-							);
-						})}
+					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: 16 }}>
+						{notes.map(resource => (
+							<ModuleNoteResourceCard
+								key={resource.resourceKey || resource.id}
+								resource={resource}
+								isAdmin
+								onPreview={resourcePreview}
+								onEdit={openEdit}
+								onToggleStatus={toggleResourceStatus}
+								onDelete={deleteResource}
+								onOpenPdf={openPdfResource}
+								onEditPdf={editPdfResource}
+								onReplacePdf={triggerPdfReplace}
+								onDownloadPdf={downloadPdf}
+								onTogglePdfStatus={togglePdfStatus}
+							/>
+						))}
 					</div>
 					<div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
-						<Space>
-							<Typography.Text style={{ color: '#64748b', fontSize: 13 }}>{total} note{total !== 1 ? 's' : ''}</Typography.Text>
-							<Select value={pageSize} onChange={(v) => { setPageSize(v); setPage(1); }} options={[{ value: 10, label: '10/page' }, { value: 25, label: '25/page' }, { value: 50, label: '50/page' }]} style={{ width: 100 }} />
-						</Space>
+						<Pagination
+							current={page}
+							pageSize={pageSize}
+							total={total}
+							showSizeChanger
+							showTotal={count => `${count} resource${count === 1 ? '' : 's'}`}
+							pageSizeOptions={[10, 25, 50]}
+							onChange={(nextPage, nextSize) => { setPage(nextSize !== pageSize ? 1 : nextPage); setPageSize(nextSize); }}
+						/>
 					</div>
 				</>
 			)}
+
+			<AdminModuleNotePdfDrawer
+				open={pdfDrawerOpen}
+				mode={pdfEditing ? 'edit' : 'upload'}
+				book={pdfEditing ? { ...pdfEditing, id: pdfEditing.resourceId || pdfEditing.id } : null}
+				courses={courses}
+				volumes={volumes}
+				onClose={() => { setPdfDrawerOpen(false); setPdfEditing(null); }}
+				onSaved={fetchNotes}
+			/>
+			<input ref={replacePdfInputRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={replacePdfFile} />
 
 			{/* Create/Edit Drawer */}
 			<Drawer title={editingId ? 'Edit Module Note' : 'Create Module Note'} placement="right" width={Math.min(680, typeof window !== 'undefined' ? window.innerWidth * 0.9 : 680)} open={drawerOpen} onClose={() => setDrawerOpen(false)}

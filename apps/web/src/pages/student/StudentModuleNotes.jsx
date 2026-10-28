@@ -1,14 +1,15 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Card, Modal, Grid, Tabs } from 'antd';
+import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Card, Modal, Grid } from 'antd';
 import { BookOutlined, SearchOutlined, MenuOutlined, CloseOutlined, RightOutlined, DownOutlined, AppstoreOutlined, FolderOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { ModuleNotePreviewCard } from '../../components/ModuleNotePreviewCard';
-import StudentModuleNotePdfsTab from './StudentModuleNotePdfsTab';
+import ModuleNoteResourceCard from '../../components/resources/ModuleNoteResourceCard';
 
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 
 export function StudentModuleNotes() {
+	const navigate = useNavigate();
 	const screens = Grid.useBreakpoint();
 	const isMobile = !screens.md;
 	const [loading, setLoading] = useState(false);
@@ -23,6 +24,7 @@ export function StudentModuleNotes() {
 	const [filterModuleId, setFilterModuleId] = useState(null);
 	const [filterTopicId, setFilterTopicId] = useState(null);
 	const [searchText, setSearchText] = useState('');
+	const [filterSource, setFilterSource] = useState(null);
 	const [page, setPage] = useState(1);
 	const [previewOpen, setPreviewOpen] = useState(false);
 	const [previewNote, setPreviewNote] = useState(null);
@@ -60,22 +62,37 @@ export function StudentModuleNotes() {
 		});
 	}, [volumes, modules, topics, filterCourseId, treeSearch]);
 
-	const fetchNotes = useCallback(async () => {
-		setLoading(true);
+	const fetchNotes = useCallback(async (silent = false) => {
+		if (!silent) setLoading(true);
 		try {
-			const params = { page, limit: 50, status: 'PUBLISHED' };
+			const params = { page, limit: 24, status: 'PUBLISHED' };
 			if (filterCourseId) params.courseId = filterCourseId;
 			if (filterVolumeId) params.volumeId = filterVolumeId;
 			if (filterModuleId) params.moduleId = filterModuleId;
 			if (filterTopicId) params.topicId = filterTopicId;
 			if (searchText) params.search = searchText;
-			const res = await api.get('/api/module-notes', { params });
-			setNotes(res.data?.notes || []);
+			if (filterSource) params.source = filterSource;
+			const res = await api.get('/api/module-notes/unified', { params });
+			setNotes(res.data?.resources || []);
 			setTotal(res.data?.total || 0);
-		} catch { } finally { setLoading(false); }
-	}, [page, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, searchText]);
+		} catch { } finally { if (!silent) setLoading(false); }
+	}, [page, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, filterSource, searchText]);
 
 	useEffect(() => { fetchNotes(); }, [fetchNotes]);
+
+	const hasProcessingPdf = useMemo(() => notes.some(item => item.type === 'PDF' && ['UPLOADED', 'INDEXING'].includes(item.processingStatus)), [notes]);
+	useEffect(() => {
+		if (!hasProcessingPdf) return undefined;
+		let cancelled = false;
+		let timer = null;
+		const poll = async () => {
+			if (cancelled) return;
+			try { await fetchNotes(true); } catch {}
+			if (!cancelled) timer = setTimeout(poll, 6000);
+		};
+		timer = setTimeout(poll, 6000);
+		return () => { cancelled = true; if (timer) clearTimeout(timer); };
+	}, [hasProcessingPdf, fetchNotes]);
 
 	const selectTreeItem = (type, id) => {
 		if (type === 'volume') { setFilterVolumeId(id); setFilterModuleId(null); setFilterTopicId(null); }
@@ -95,18 +112,7 @@ export function StudentModuleNotes() {
 				? volumes.find(v => v.id === filterVolumeId)?.name
 				: null;
 
-	if (activeTab === 'pdf') {
-		return (
-			<div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? 8 : 0 }}>
-				<div style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 60%, #274a74 100%)', borderRadius: 20, padding: isMobile ? '28px 20px' : '32px 40px', marginBottom: 16 }}>
-					<Typography.Title level={isMobile ? 3 : 2} style={{ color: '#fff', margin: '8px 0 4px' }}>CFA Learning Module Notes</Typography.Title>
-					<Typography.Text style={{ color: 'rgba(255,255,255,0.75)' }}>Volume-level PDF notes</Typography.Text>
-				</div>
-				<Tabs activeKey={activeTab} onChange={setActiveTab} items={[{ key: 'notes', label: 'Learning Notes' }, { key: 'pdf', label: <span><FilePdfOutlined /> PDF Notes</span> }]} />
-				<StudentModuleNotePdfsTab courses={courses} volumes={volumes} modules={modules} topics={topics} />
-			</div>
-		);
-	}
+	const openPdfResource = resource => navigate(`/learning/module-notes-pdf/${resource.resourceId || resource.id}${resource.matchPage ? `?page=${resource.matchPage}` : ''}`);
 
 	return (
 		<div style={{ display: 'flex', height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
@@ -242,12 +248,10 @@ export function StudentModuleNotes() {
 					</div>
 				</div>
 
-			<Tabs activeKey={activeTab} onChange={setActiveTab} style={{ padding: '0 8px' }} items={[{ key: 'notes', label: 'Learning Notes' }, { key: 'pdf', label: <span><FilePdfOutlined /> PDF Notes</span> }]} />
-
 				{/* Search */}
 				<div style={{ marginBottom: 16 }}>
 
-					<Input prefix={<SearchOutlined />} placeholder="Search notes..." value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear style={{ maxWidth: 400 }} />
+					<Space wrap><Input prefix={<SearchOutlined />} placeholder="Search notes and PDFs..." value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear style={{ width: 360 }} /><Select placeholder="Source" value={filterSource} onChange={v => { setFilterSource(v); setPage(1); }} options={[{ value: null, label: 'All Sources' }, { value: 'AI', label: 'AI Generated' }, { value: 'MANUAL', label: 'Manual' }, { value: 'UPLOADED_PDF', label: 'Uploaded PDF' }]} style={{ width: 160 }} allowClear /></Space>
 						{filterModuleId && (
 							<Button
 								size="small"
@@ -268,40 +272,23 @@ export function StudentModuleNotes() {
 					<Empty description="No module notes available" style={{ padding: 60 }} />
 				) : (
 					<>
-						<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
-							{notes.map(n => {
-								const losCount = Array.isArray(n.losStatements) ? n.losStatements.length : 0;
-								const conceptCount = Array.isArray(n.concepts) ? n.concepts.length : 0;
-								const formulaCount = Array.isArray(n.formulaRecap) ? n.formulaRecap.length : 0;
-								const practiceCount = Array.isArray(n.practiceSet) ? n.practiceSet.length : 0;
-								return (
-									<Card hoverable key={n.id} style={{ borderRadius: 14, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 0 } }} onClick={() => { setPreviewNote(n); setPreviewOpen(true); }}>
-										<div style={{ padding: 16 }}>
-											<div style={{ fontWeight: 700, fontSize: 15, color: '#102540', lineHeight: 1.3 }}>{n.title}</div>
-											{n.module?.name && <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{n.module.name}</div>}
-											<div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap' }}>
-												<Tag color="blue" style={{ fontSize: 11 }}>{LEVEL_LABELS[n.level]}</Tag>
-												{n.difficulty && <Tag style={{ fontSize: 11 }}>{n.difficulty}</Tag>}
-												{n.studyTime && <Tag color="geekblue" style={{ fontSize: 11 }}>{n.studyTime}</Tag>}
-											</div>
-											{n.overview && <div style={{ fontSize: 13, color: '#475569', marginTop: 8, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{n.overview}</div>}
-											<div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
-												{losCount > 0 && <Tag color="blue" style={{ fontSize: 11, borderRadius: 6 }}>{losCount} LOS</Tag>}
-												{conceptCount > 0 && <Tag color="purple" style={{ fontSize: 11, borderRadius: 6 }}>{conceptCount} concepts</Tag>}
-												{formulaCount > 0 && <Tag color="cyan" style={{ fontSize: 11, borderRadius: 6 }}>{formulaCount} formulas</Tag>}
-												{practiceCount > 0 && <Tag color="green" style={{ fontSize: 11, borderRadius: 6 }}>{practiceCount} practice Qs</Tag>}
-											</div>
-										</div>
-									</Card>
-								);
-							})}
+						<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: 16 }}>
+							{notes.map(resource => (
+								<ModuleNoteResourceCard
+									key={resource.resourceKey || resource.id}
+									resource={resource}
+									onPreview={resource => { if (resource.type !== 'PDF') { setPreviewNote(resource); setPreviewOpen(true); } }}
+									onOpenPdf={openPdfResource}
+								/>
+							))}
 						</div>
-						{total > 50 && (
+
+						{total > 24 && (
 							<div style={{ textAlign: 'center', marginTop: 20 }}>
 								<Space>
 									<Button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
-									<Typography.Text type="secondary">Page {page} of {Math.ceil(total / 50)}</Typography.Text>
-									<Button disabled={notes.length < 50} onClick={() => setPage(p => p + 1)}>Next</Button>
+									<Typography.Text type="secondary">Page {page} of {Math.ceil(total / 24)}</Typography.Text>
+									<Button disabled={notes.length < 24} onClick={() => setPage(p => p + 1)}>Next</Button>
 								</Space>
 							</div>
 						)}

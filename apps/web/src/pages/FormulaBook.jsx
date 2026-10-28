@@ -1,21 +1,24 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Tooltip, Collapse, Anchor, Grid, Tabs, Switch, Divider, Modal } from 'antd';
+import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Tooltip, Collapse, Anchor, Grid, Switch, Divider, Modal } from 'antd';
 import { BookOutlined, SearchOutlined, StarFilled, PrinterOutlined, FilterOutlined, UnorderedListOutlined, AppstoreOutlined, DownloadOutlined, EyeOutlined, FilePdfOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { formatFormulaHtml, formatVariablesHtml, formatProseWithMath } from '../lib/formatFormula';
-import StudentFormulaBookPdfsTab from './student/StudentFormulaBookPdfsTab';
+import FormulaResourceCard from '../components/resources/FormulaResourceCard';
+import { ResourceSourceTag } from '../components/resources/ResourceVisuals';
 
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 const LEVEL_COLORS = { LEVEL1: '#3b82f6', LEVEL2: '#8b5cf6', LEVEL3: '#f59e0b' };
 
 export function FormulaBook() {
+	const navigate = useNavigate();
 	const screens = Grid.useBreakpoint();
-	const [activeTab, setActiveTab] = useState('cards');
 	const isMobile = !screens.md;
 	const bookRef = useRef(null);
 
 	const [loading, setLoading] = useState(false);
 	const [formulas, setFormulas] = useState([]);
+	const [pdfResources, setPdfResources] = useState([]);
 	const [total, setTotal] = useState(0);
 	const [courses, setCourses] = useState([]);
 	const [volumes, setVolumes] = useState([]);
@@ -29,6 +32,8 @@ export function FormulaBook() {
 	const [topicId, setTopicId] = useState(null);
 	const [search, setSearch] = useState('');
 	const [highYieldOnly, setHighYieldOnly] = useState(false);
+	const [filterSource, setFilterSource] = useState(null);
+	const [refreshTick, setRefreshTick] = useState(0);
 	const [viewMode, setViewMode] = useState('book'); // 'book' | 'list'
 
 	// Load courses + lookup data
@@ -43,24 +48,35 @@ export function FormulaBook() {
 		api.get('/api/learning/topics/public').then(r => setTopics(r.data?.topics || [])).catch(() => {});
 	}, []);
 
-	// Load formulas
+	// Load unified formula resources
 	useEffect(() => {
 		setLoading(true);
-		const params = { limit: 200 };
+		const params = { limit: 500 };
 		if (courseId) params.courseId = courseId;
 		if (volumeId) params.volumeId = volumeId;
 		if (moduleId) params.moduleId = moduleId;
 		if (topicId) params.topicId = topicId;
 		if (search) params.search = search;
 		if (highYieldOnly) params.highYield = 'true';
-		api.get('/api/formulas', { params })
+		if (filterSource) params.source = filterSource;
+		api.get('/api/formulas/unified', { params })
 			.then(r => {
-				setFormulas(r.data?.formulas || []);
-				setTotal(r.data?.total || 0);
+				const resources = r.data?.resources || [];
+				const formulaRows = resources.filter(item => item.type === 'FORMULA');
+				setFormulas(formulaRows);
+				setPdfResources(resources.filter(item => item.type === 'PDF'));
+				setTotal(formulaRows.length);
 			})
-			.catch(() => setFormulas([]))
+			.catch(() => { setFormulas([]); setPdfResources([]); })
 			.finally(() => setLoading(false));
-	}, [courseId, volumeId, moduleId, topicId, search, highYieldOnly]);
+	}, [courseId, volumeId, moduleId, topicId, search, highYieldOnly, filterSource, refreshTick]);
+
+		useEffect(() => {
+		const processing = pdfResources.some(item => ['UPLOADED', 'INDEXING'].includes(item.processingStatus));
+		if (!processing) return undefined;
+		const timer = setTimeout(() => setRefreshTick(value => value + 1), 6000);
+		return () => clearTimeout(timer);
+	}, [pdfResources]);
 
 	// Cascading filter options
 	const filteredVolumes = useMemo(() => {
@@ -111,28 +127,9 @@ export function FormulaBook() {
 		window.print();
 	};
 
-	const highYieldFormulas = useMemo(() => formulas.filter(f => f.highYield), [formulas]);
+	const openPdfResource = resource => navigate(`/learning/formula-books/${resource.resourceId || resource.id}${resource.matchPage ? `?page=${resource.matchPage}` : ''}`);
 
-	if (activeTab === 'pdf') {
-		return (
-			<div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? 8 : 0 }}>
-				<div style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 60%, #274a74 100%)', borderRadius: 20, padding: isMobile ? '28px 20px' : '32px 40px', marginBottom: 20 }}>
-					<Typography.Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 2, fontWeight: 600 }}>Milven Finance School</Typography.Text>
-					<Typography.Title level={isMobile ? 3 : 2} style={{ color: '#fff', margin: '8px 0 4px' }}>Formula Book</Typography.Title>
-					<Typography.Text style={{ color: 'rgba(255,255,255,0.75)' }}>Volume-level PDF Formula Books</Typography.Text>
-				</div>
-				<Tabs
-					activeKey={activeTab}
-					onChange={setActiveTab}
-					items={[
-						{ key: 'cards', label: 'Formula Cards' },
-						{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Formula Books</span> }
-					]}
-				/>
-				<StudentFormulaBookPdfsTab courses={courses} volumes={volumes} modules={modules} topics={topics} />
-			</div>
-		);
-	}
+	const highYieldFormulas = useMemo(() => formulas.filter(f => f.highYield), [formulas]);
 
 	return (
 		<div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? 8 : 0 }}>
@@ -168,16 +165,6 @@ export function FormulaBook() {
 					</div>
 				</div>
 			</div>
-
-			<Tabs
-				activeKey={activeTab}
-				onChange={setActiveTab}
-				style={{ marginBottom: 8 }}
-				items={[
-					{ key: 'cards', label: 'Formula Cards' },
-					{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Formula Books</span> }
-				]}
-			/>
 
 			{/* ── Toolbar ──────────────────────────────────── */}
 			<div style={{
@@ -241,6 +228,7 @@ export function FormulaBook() {
 					>
 						High-Yield
 					</Button>
+					<Select placeholder="Source" value={filterSource} onChange={setFilterSource} options={[{ value: null, label: 'All Sources' }, { value: 'AI', label: 'AI Generated' }, { value: 'MANUAL', label: 'Manual' }, { value: 'UPLOADED_PDF', label: 'Uploaded PDF' }]} style={{ width: 160 }} allowClear />
 				</Space>
 				<Space>
 					<Tooltip title="Print / Export PDF">
@@ -259,13 +247,27 @@ export function FormulaBook() {
 				</Space>
 			</div>
 
+			{pdfResources.length > 0 && (
+				<div style={{ marginBottom: 26 }}>
+					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+						<Typography.Title level={4} style={{ margin: 0, color: '#102540' }}><FilePdfOutlined style={{ color: '#ef4444', marginRight: 8 }} />PDF Formula Books</Typography.Title>
+						<Typography.Text type="secondary">{pdfResources.length} volume-level PDF{pdfResources.length === 1 ? '' : 's'}</Typography.Text>
+					</div>
+					<div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+						{pdfResources.map(resource => (
+							<FormulaResourceCard key={resource.resourceKey || resource.id} resource={resource} onOpenPdf={openPdfResource} />
+						))}
+					</div>
+				</div>
+			)}
+
 			{/* ── Content ──────────────────────────────────── */}
 			{loading ? (
 				<div style={{ textAlign: 'center', padding: 80 }}>
 					<Spin size="large" />
 					<div style={{ marginTop: 16, color: '#64748b' }}>Loading formula book…</div>
 				</div>
-			) : formulas.length === 0 ? (
+			) : formulas.length === 0 && pdfResources.length === 0 ? (
 				<Empty
 					image={Empty.PRESENTED_IMAGE_SIMPLE}
 					description={
@@ -478,11 +480,12 @@ function FormulaCard({ formula }) {
 				borderBottom: '1px solid #e2e8f0',
 				display: 'flex', justifyContent: 'space-between', alignItems: 'center',
 			}}>
-				<Space size={6}>
+				<Space size={6} wrap>
 					{formula.highYield && <StarFilled style={{ color: '#f59e0b', fontSize: 12 }} />}
 					<Typography.Text strong style={{ color: '#102540', fontSize: 13 }}>
 						{formula.name}
 					</Typography.Text>
+					<ResourceSourceTag type="FORMULA" source={formula.source} />
 				</Space>
 			</div>
 

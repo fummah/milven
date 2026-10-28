@@ -786,11 +786,13 @@ model Formula {
   order          Int      @default(0) // Display order within topic
   highYield      Boolean  @default(false) // Flagged for recap pages
   year           Int      @default(2026) // Version year
+  sourceType     String   @default("AI_GENERATED") // AI_GENERATED | MANUAL
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   @@index([courseId, volumeId, moduleId, topicId])
   @@index([level, highYield])
+  @@index([sourceType])
 }
 
 // ─── CFA Summary Sheet Master ─────────────────────────────
@@ -937,11 +939,13 @@ model ModuleNote {
   // Meta
   order           Int      @default(0)
   status          String   @default("DRAFT") // DRAFT | PUBLISHED
+  sourceType      String   @default("AI_GENERATED") // AI_GENERATED | MANUAL
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([courseId, volumeId, moduleId, topicId])
   @@index([level, status])
+  @@index([sourceType])
 }
 
 // Weak Topics - Topics identified for focused study
