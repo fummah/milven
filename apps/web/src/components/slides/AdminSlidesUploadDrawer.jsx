@@ -92,13 +92,14 @@ export default function AdminSlidesUploadDrawer({
       return;
     }
     let cancelled = false;
+    setModules([]);
     setLoadingModules(true);
     api.get('/api/cms/modules', { params: { courseId, volumeId } })
       .then(res => {
         if (cancelled) return;
         const list = res.data?.modules || [];
         setModules(list);
-        if (mode === 'upload' && preselect?.moduleId) {
+        if (mode === 'upload' && preselect?.moduleId && list.some(m => m.id === preselect.moduleId)) {
           form.setFieldValue('moduleId', preselect.moduleId);
         }
       })

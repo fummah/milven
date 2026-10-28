@@ -1520,9 +1520,11 @@ export function cmsRouter(prisma, deps = {}) {
 		const level = req.query.level;
 		const courseId = (req.query.courseId ?? '').toString().trim();
 		const volumeId = (req.query.volumeId ?? '').toString().trim();
-		const where = courseId
-			? { courseId }
-			: (volumeId ? { volumeId } : (level ? { level } : {}));
+		const where = {
+			...(courseId ? { courseId } : {}),
+			...(volumeId ? { volumeId } : {}),
+			...(!courseId && !volumeId && level ? { level } : {})
+		};
 		const modules = await prisma.module.findMany({
 			where,
 			orderBy: [{ level: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
