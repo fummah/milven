@@ -1,8 +1,16 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { inspectPptx } from './pptx.js';
-import { convertPptxToPdf, renderSlides, readPdfPageCount } from './renderer.js';
+import {
+  convertPptxToPdf,
+  renderSlides,
+  readPdfInfo,
+  readImageDimensions,
+  detectFontSupport,
+  getRendererInfo
+} from './renderer.js';
 import {
   presentationDir,
   resolveStorageKey,
@@ -114,10 +122,9 @@ function absoluteKey(key) {
 async function refreshBatch(prisma, batchId) {
   if (!batchId) return;
   try {
-    const [total, failed, ready, processing, slides] = await Promise.all([
+    const [total, failed, processing, slides] = await Promise.all([
       prisma.presentation.count({ where: { importBatchId: batchId, deletedAt: null } }),
       prisma.presentation.count({ where: { importBatchId: batchId, deletedAt: null, processingStatus: 'FAILED' } }),
-      prisma.presentation.count({ where: { importBatchId: batchId, deletedAt: null, processingStatus: 'READY' } }),
       prisma.presentation.count({ where: { importBatchId: batchId, deletedAt: null, processingStatus: { in: ['PENDING', 'PROCESSING'] } } }),
       prisma.presentation.aggregate({
         where: { importBatchId: batchId, deletedAt: null },
@@ -167,6 +174,16 @@ export async function processPresentation(prisma, presentationId) {
     return;
   }
 
+  const previousAssets = await prisma.presentation.findUnique({
+    where: { id: presentationId },
+    select: {
+      thumbnailKey: true,
+      pdfKey: true,
+      renderVersion: true,
+      slides: { select: { previewKey: true, thumbnailKey: true } }
+    }
+  }).catch(() => null);
+
   const attempts = presentation.processingAttempts + 1;
   await prisma.presentation.update({
     where: { id: presentationId },
@@ -179,33 +196,54 @@ export async function processPresentation(prisma, presentationId) {
 
   const workDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'milven-slides-'));
   const originalPath = absoluteKey(presentation.fileStorageKey);
+  const version = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+  const versionRoot = path.join(presentationDir(presentationId), 'versions', version);
 
   try {
     if (!fs.existsSync(originalPath)) {
       throw new Error('Original PowerPoint file is missing from storage.');
     }
 
+    const startedAt = Date.now();
     const parsed = await inspectPptx(originalPath);
+    const fontSupport = await detectFontSupport(parsed.requiredFonts || []);
+    const rendererInfo = await getRendererInfo();
+
+    const warnings = [];
+    if (!fontSupport.available) {
+      warnings.push('Font validation was unavailable on the rendering host. Preview fidelity could not be fully verified.');
+    }
+    if (fontSupport.missingFonts.length) {
+      const substitutions = Object.entries(fontSupport.substitutions || {})
+        .map(([from, to]) => `${from} → ${to}`)
+        .join(', ');
+      warnings.push(
+        `Preview generated with font substitutions for: ${fontSupport.missingFonts.join(', ')}. ` +
+        `Some PowerPoint text may differ from the original.` +
+        (substitutions ? ` Substituted with: ${substitutions}.` : '')
+      );
+      console.warn(`[slides] ${presentationId} missing fonts: ${fontSupport.missingFonts.join(', ')}`);
+    }
 
     const pdfPath = await convertPptxToPdf(originalPath, workDir);
-    const pdfPageCount = await readPdfPageCount(pdfPath);
-    const dir = presentationDir(presentationId);
-    const pdfKey = storageKeyFor('presentations', presentationId, 'presentation.pdf');
-    const storedPdf = absoluteKey(pdfKey);
-    ensureStorageDir(path.dirname(storedPdf));
-    fs.copyFileSync(pdfPath, storedPdf);
-
-    const previewDir = ensureStorageDir(path.join(dir, 'preview'));
-    const thumbDir = ensureStorageDir(path.join(dir, 'thumbs'));
-    removeStaleImages(previewDir, 'slide-');
-    removeStaleImages(thumbDir, 'thumb-');
-
-    const rendered = await renderSlides(pdfPath, previewDir, thumbDir);
+    const pdfInfo = await readPdfInfo(pdfPath);
+    const versionPreviews = ensureStorageDir(path.join(versionRoot, 'preview'));
+    const versionThumbs = ensureStorageDir(path.join(versionRoot, 'thumbs'));
+    const rendered = await renderSlides(pdfPath, versionPreviews, versionThumbs);
     if (!rendered.previewFiles.length) {
       throw new Error('No slide previews were rendered. Verify LibreOffice and Poppler are installed.');
     }
 
-    const total = Math.max(parsed.slides.length, rendered.pageCount, pdfPageCount || 0);
+    const pdfKey = storageKeyFor('presentations', presentationId, 'versions', version, 'presentation.pdf');
+    const storedPdf = absoluteKey(pdfKey);
+    ensureStorageDir(path.dirname(storedPdf));
+    fs.copyFileSync(pdfPath, storedPdf);
+
+    const total = Math.max(
+      parsed.slides.length,
+      rendered.pageCount,
+      pdfInfo.pageCount || 0
+    );
     const slides = [];
     for (let index = 0; index < total; index += 1) {
       const number = index + 1;
@@ -213,7 +251,7 @@ export async function processPresentation(prisma, presentationId) {
       const previewFile = rendered.previewFiles[index] || null;
       const thumbFile = rendered.thumbFiles[index] || null;
       const previewKey = previewFile
-        ? storageKeyFor('presentations', presentationId, 'preview', previewFile)
+        ? storageKeyFor('presentations', presentationId, 'versions', version, 'preview', previewFile)
         : null;
       slides.push({
         presentationId,
@@ -222,12 +260,43 @@ export async function processPresentation(prisma, presentationId) {
         notes: parsedSlide.notes || null,
         previewKey,
         thumbnailKey: thumbFile
-          ? storageKeyFor('presentations', presentationId, 'thumbs', thumbFile)
+          ? storageKeyFor('presentations', presentationId, 'versions', version, 'thumbs', thumbFile)
           : previewKey
       });
     }
 
+    const firstPreview = rendered.previewFiles[0]
+      ? path.join(versionPreviews, rendered.previewFiles[0])
+      : null;
+    const dimensions = firstPreview ? readImageDimensions(firstPreview) : null;
     const firstThumb = slides.find(s => s.thumbnailKey)?.thumbnailKey || null;
+    const durationMs = Date.now() - startedAt;
+
+    const diagnostics = {
+      renderer: rendererInfo,
+      requiredFonts: parsed.requiredFonts || [],
+      missingFonts: fontSupport.missingFonts,
+      fontSubstitutions: fontSupport.substitutions || {},
+      fontValidation: {
+        available: fontSupport.available,
+        source: fontSupport.source,
+        installedCount: fontSupport.installedCount,
+        error: fontSupport.error
+      },
+      pdf: {
+        pageCount: pdfInfo.pageCount,
+        pageWidthPt: pdfInfo.pageWidthPt,
+        pageHeightPt: pdfInfo.pageHeightPt
+      },
+      output: {
+        format: rendered.previewFormat,
+        width: dimensions?.width || null,
+        height: dimensions?.height || null,
+        thumbnailFormat: 'jpeg'
+      },
+      durationMs,
+      warnings
+    };
 
     await prisma.$transaction([
       prisma.presentationSlide.deleteMany({ where: { presentationId } }),
@@ -241,11 +310,23 @@ export async function processPresentation(prisma, presentationId) {
           processingStatus: 'READY',
           processingError: null,
           publishWhenReady: false,
-          ...(presentation.publishWhenReady ? { status: 'PUBLISHED' } : {})
+          ...(presentation.publishWhenReady ? { status: 'PUBLISHED' } : {}),
+          renderVersion: version,
+          requiredFonts: parsed.requiredFonts || [],
+          missingFonts: fontSupport.missingFonts,
+          renderingWarnings: warnings,
+          renderingDiagnostics: diagnostics,
+          previewWidth: dimensions?.width || null,
+          previewHeight: dimensions?.height || null,
+          previewFormat: rendered.previewFormat,
+          renderDurationMs: durationMs
         }
       })
     ]);
 
+    try { cleanupOldAssets(presentationId, previousAssets, version); } catch (cleanupErr) {
+      console.warn('[slides] old preview cleanup failed:', cleanupErr?.message ?? cleanupErr);
+    }
     await refreshBatch(prisma, presentation.importBatchId);
   } catch (err) {
     const message = String(err?.message || err || 'Slide processing failed.').slice(0, 4000);
@@ -258,6 +339,9 @@ export async function processPresentation(prisma, presentationId) {
         ...(existingSlides < 1 ? { status: 'DRAFT' } : {})
       }
     }).catch(() => {});
+    // The failed version is never referenced by the database and can be
+    // removed immediately. The previous working previews remain untouched.
+    try { fs.rmSync(versionRoot, { recursive: true, force: true }); } catch {}
     await refreshBatch(prisma, presentation.importBatchId);
     console.error(`[slides] failed presentation ${presentationId}:`, message);
   } finally {
@@ -265,12 +349,31 @@ export async function processPresentation(prisma, presentationId) {
   }
 }
 
-function removeStaleImages(dir, prefix) {
+function cleanupOldAssets(presentationId, previous, currentVersion) {
+  const keepPathFragment = `/versions/${currentVersion}/`;
+  const oldKeys = new Set();
+  if (previous?.pdfKey) oldKeys.add(previous.pdfKey);
+  if (previous?.thumbnailKey) oldKeys.add(previous.thumbnailKey);
+  for (const slide of previous?.slides || []) {
+    if (slide.previewKey) oldKeys.add(slide.previewKey);
+    if (slide.thumbnailKey) oldKeys.add(slide.thumbnailKey);
+  }
+  for (const key of oldKeys) {
+    if (!key || key.includes(keepPathFragment)) continue;
+    removeStorageKey(key);
+  }
+
+  const dir = presentationDir(presentationId);
+  for (const legacy of ['preview', 'thumbs']) {
+    try { fs.rmSync(path.join(dir, legacy), { recursive: true, force: true }); } catch {}
+  }
+  try { fs.rmSync(path.join(dir, 'presentation.pdf'), { force: true }); } catch {}
+
+  const versionsRoot = path.join(dir, 'versions');
   try {
-    for (const name of fs.readdirSync(dir)) {
-      if (name.startsWith(prefix) && /\.(jpe?g|png)$/i.test(name)) {
-        try { fs.unlinkSync(path.join(dir, name)); } catch {}
-      }
+    for (const name of fs.readdirSync(versionsRoot)) {
+      if (name === currentVersion) continue;
+      try { fs.rmSync(path.join(versionsRoot, name), { recursive: true, force: true }); } catch {}
     }
   } catch {}
 }

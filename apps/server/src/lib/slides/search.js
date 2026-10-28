@@ -41,6 +41,12 @@ function presentationSelect() {
     processingStatus: true,
     slideCount: true,
     thumbnailKey: true,
+    renderVersion: true,
+    previewWidth: true,
+    previewHeight: true,
+    previewFormat: true,
+    missingFonts: true,
+    renderingWarnings: true,
     tags: true,
     createdAt: true,
     updatedAt: true,
@@ -66,7 +72,8 @@ export function serializePresentation(presentation, userId, admin = false) {
           kind: 'thumbnail',
           slideNumber: 1,
           userId,
-          admin
+          admin,
+          version: presentation.renderVersion
         })
       : null
   };
@@ -171,7 +178,8 @@ export async function searchSlideText(prisma, {
           kind: 'thumbnail',
           slideNumber: row.slideNumber,
           userId: user?.id || null,
-          admin: user?.role === 'ADMIN'
+          admin: user?.role === 'ADMIN',
+          version: presentation?.renderVersion || null
         }),
         presentation: serializePresentation(presentation, user?.id || null, user?.role === 'ADMIN')
       };
@@ -250,7 +258,8 @@ export async function combinedSearch(prisma, options) {
         kind: 'thumbnail',
         slideNumber: 1,
         userId: options.user?.id || null,
-        admin: options.user?.role === 'ADMIN'
+        admin: options.user?.role === 'ADMIN',
+        version: p.renderVersion
       }),
       presentation: serializePresentation(p, options.user?.id || null, options.user?.role === 'ADMIN')
     });

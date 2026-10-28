@@ -116,9 +116,10 @@ export function verifyAssetToken(token) {
   }
 }
 
-export function signedAssetUrl({ presentationId, kind, slideNumber = null, userId = null, admin = false }) {
+export function signedAssetUrl({ presentationId, kind, slideNumber = null, userId = null, admin = false, version = null }) {
   const token = assetToken({ presentationId, kind, slideNumber, userId, admin });
   const q = new URLSearchParams({ token });
+  if (version) q.set('v', String(version));
   const suffix = slideNumber == null ? '' : `/${slideNumber}`;
   return `/api/slides/assets/${encodeURIComponent(presentationId)}/${encodeURIComponent(kind)}${suffix}?${q.toString()}`;
 }

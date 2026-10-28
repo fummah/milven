@@ -64,12 +64,21 @@ export function resolvePdfinfoBinary() {
   return findPopplerBinary('pdfinfo');
 }
 
+function resolveFcListBinary() {
+  return findOnPath(process.platform === 'win32' ? ['fc-list.exe', 'fc-list'] : ['fc-list']);
+}
+
+function resolveFcMatchBinary() {
+  return findOnPath(process.platform === 'win32' ? ['fc-match.exe', 'fc-match'] : ['fc-match']);
+}
+
 export function rendererStatus() {
   const soffice = resolveSofficeBinary();
   const pdftoppm = resolvePdftoppmBinary();
   return {
     libreOffice: soffice || null,
     pdftoppm: pdftoppm || null,
+    fontConfig: Boolean(resolveFcListBinary()) || process.platform === 'win32',
     available: Boolean(soffice && pdftoppm)
   };
 }
@@ -109,6 +118,97 @@ function runProcess(command, args, { timeoutMs = 15 * 60 * 1000, cwd } = {}) {
   });
 }
 
+let rendererInfoPromise = null;
+export function getRendererInfo() {
+  if (rendererInfoPromise) return rendererInfoPromise;
+  rendererInfoPromise = (async () => {
+    const soffice = resolveSofficeBinary();
+    const pdftoppm = resolvePdftoppmBinary();
+    let version = process.env.LIBREOFFICE_VERSION || null;
+    // Windows LibreOffice can hang on `--version` when another instance is
+    // running, so only probe the version automatically on Linux containers.
+    if (!version && soffice && process.platform !== 'win32') {
+      try {
+        const { stdout } = await runProcess(soffice, ['--version'], { timeoutMs: 10_000 });
+        version = String(stdout || '').split(/\r?\n/).find(Boolean)?.trim() || null;
+      } catch {}
+    }
+    return {
+      engine: 'LibreOffice Impress',
+      version,
+      converter: soffice || null,
+      rasterizer: pdftoppm || null
+    };
+  })();
+  return rendererInfoPromise;
+}
+
+function normalizeFamily(value) {
+  return String(value || '').toLowerCase().replace(/['"]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+export async function listInstalledFontFamilies() {
+  const fcList = resolveFcListBinary();
+  if (fcList) {
+    try {
+      const { stdout } = await runProcess(fcList, ['--format', '%{family}\n'], { timeoutMs: 30_000 });
+      const families = stdout
+        .split(/\r?\n/)
+        .flatMap(line => line.split(','))
+        .map(line => line.trim())
+        .filter(Boolean);
+      return { available: true, source: 'fc-list', families: [...new Set(families)] };
+    } catch (err) {
+      return { available: false, source: 'fc-list', families: [], error: String(err?.message || err) };
+    }
+  }
+
+  if (process.platform === 'win32') {
+    try {
+      const script = 'Add-Type -AssemblyName System.Drawing; (New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name }';
+      const { stdout } = await runProcess('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeoutMs: 30_000 });
+      const families = stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      return { available: true, source: 'windows-fonts', families: [...new Set(families)] };
+    } catch (err) {
+      return { available: false, source: 'windows-fonts', families: [], error: String(err?.message || err) };
+    }
+  }
+
+  return { available: false, source: 'none', families: [], error: 'Font enumeration is unavailable on this host.' };
+}
+
+export async function detectFontSupport(requiredFonts = []) {
+  const installed = await listInstalledFontFamilies();
+  const normalizedFamilies = new Set(installed.families.map(normalizeFamily));
+  const missingFonts = [];
+  const substitutions = {};
+
+  for (const family of requiredFonts) {
+    const normalized = normalizeFamily(family);
+    if (!normalized) continue;
+    if (!normalizedFamilies.has(normalized)) {
+      missingFonts.push(family);
+      const fcMatch = resolveFcMatchBinary();
+      if (fcMatch) {
+        try {
+          const { stdout } = await runProcess(fcMatch, ['--format', '%{family}', family], { timeoutMs: 15_000 });
+          const match = String(stdout || '').split(',').map(v => v.trim()).filter(Boolean)[0];
+          if (match) substitutions[family] = match;
+        } catch {}
+      }
+    }
+  }
+
+  return {
+    available: installed.available,
+    source: installed.source,
+    installedCount: installed.families.length,
+    missingFonts,
+    substitutions,
+    error: installed.error || null
+  };
+}
+
 export async function convertPptxToPdf(inputPath, outputDir) {
   const soffice = resolveSofficeBinary();
   if (!soffice) {
@@ -121,23 +221,22 @@ export async function convertPptxToPdf(inputPath, outputDir) {
   const profileDir = path.join(outputDir, `.lo-profile-${process.pid}-${Date.now()}`);
   ensureStorageDir(profileDir);
   const profileUrl = pathToFileURL(profileDir).href;
+  const baseArgs = [
+    '--headless',
+    '--norestore',
+    '--nolockcheck',
+    '--nodefault',
+    '--nofirststartwizard',
+    `-env:UserInstallation=${profileUrl}`
+  ];
 
   try {
+    // LibreOffice's PDF export keeps text and vector graphics as vectors. The
+    // CLI JSON filter-data form is not reliably parsed on every platform, so
+    // use the stable named filter and control image quality at raster time.
     await runProcess(
       soffice,
-      [
-        '--headless',
-        '--norestore',
-        '--nolockcheck',
-        '--nodefault',
-        '--nofirststartwizard',
-        `-env:UserInstallation=${profileUrl}`,
-        '--convert-to',
-        'pdf:impress_pdf_Export',
-        '--outdir',
-        outputDir,
-        inputPath
-      ],
+      [...baseArgs, '--convert-to', 'pdf:impress_pdf_Export', '--outdir', outputDir, inputPath],
       { timeoutMs: 20 * 60 * 1000 }
     );
   } finally {
@@ -155,7 +254,11 @@ function naturalSort(a, b) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
 
-async function renderPdfPages(pdfPath, outputDir, prefix, extraArgs) {
+async function renderPdfPages(pdfPath, outputDir, prefix, {
+  format = 'png',
+  scale = 1920,
+  jpegQuality = 86
+} = {}) {
   const pdftoppm = resolvePdftoppmBinary();
   if (!pdftoppm) {
     throw Object.assign(
@@ -169,22 +272,24 @@ async function renderPdfPages(pdfPath, outputDir, prefix, extraArgs) {
       try { fs.unlinkSync(path.join(outputDir, name)); } catch {}
     }
   }
-  const outPrefix = path.join(outputDir, prefix);
-  await runProcess(
-    pdftoppm,
-    ['-jpeg', '-jpegopt', 'quality=82', ...extraArgs, pdfPath, outPrefix],
-    { timeoutMs: 20 * 60 * 1000 }
-  );
 
+  const outPrefix = path.join(outputDir, prefix);
+  const scaleArgs = scale ? ['-scale-to', String(scale)] : [];
+  const args = format === 'png'
+    ? ['-png', ...scaleArgs, '-aa', 'yes', '-aaVector', 'yes', pdfPath, outPrefix]
+    : ['-jpeg', '-jpegopt', `quality=${jpegQuality}`, ...scaleArgs, '-aa', 'yes', '-aaVector', 'yes', pdfPath, outPrefix];
+
+  await runProcess(pdftoppm, args, { timeoutMs: 20 * 60 * 1000 });
+
+  const extension = format === 'png' ? 'png' : 'jpg';
   const generated = fs.readdirSync(outputDir)
-    .filter(name => name.startsWith(`${prefix}-`) && /\.jpe?g$/i.test(name))
+    .filter(name => name.startsWith(`${prefix}-`) && new RegExp(`\\.${extension}$`, 'i').test(name))
     .sort(naturalSort);
 
   const normalized = [];
   generated.forEach((name, index) => {
-    const number = index + 1;
-    const padded = String(number).padStart(4, '0');
-    const finalName = `${prefix}-${padded}.jpg`;
+    const padded = String(index + 1).padStart(4, '0');
+    const finalName = `${prefix}-${padded}.${extension}`;
     const source = path.join(outputDir, name);
     const target = path.join(outputDir, finalName);
     if (source !== target) {
@@ -195,27 +300,72 @@ async function renderPdfPages(pdfPath, outputDir, prefix, extraArgs) {
   return normalized;
 }
 
-export async function renderSlides(pdfPath, previewDir, thumbDir) {
-  const previewFiles = await renderPdfPages(pdfPath, previewDir, 'slide', ['-r', '96']);
-  const thumbFiles = await renderPdfPages(pdfPath, thumbDir, 'thumb', [
-    '-scale-to-x', '320',
-    '-scale-to-y', '180'
-  ]).catch(() => []);
+export async function renderSlides(pdfPath, previewDir, thumbDir, {
+  previewWidth = Number(process.env.SLIDES_PREVIEW_WIDTH) || 1920,
+  thumbWidth = Number(process.env.SLIDES_THUMB_WIDTH) || 480,
+  previewFormat = process.env.SLIDES_PREVIEW_FORMAT === 'jpeg' ? 'jpeg' : 'png'
+} = {}) {
+  const previewFiles = await renderPdfPages(pdfPath, previewDir, 'slide', {
+    format: previewFormat,
+    scale: previewWidth
+  });
+  const thumbFiles = await renderPdfPages(pdfPath, thumbDir, 'thumb', {
+    format: 'jpeg',
+    scale: thumbWidth,
+    jpegQuality: 86
+  }).catch(() => []);
   return {
     previewFiles,
     thumbFiles,
+    previewFormat,
     pageCount: previewFiles.length
   };
 }
 
-export async function readPdfPageCount(pdfPath) {
+export function readImageDimensions(filePath) {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const header = Buffer.alloc(32);
+    const bytes = fs.readSync(fd, header, 0, 32, 0);
+    fs.closeSync(fd);
+    if (bytes >= 24 && header[0] === 0x89 && header.toString('ascii', 1, 4) === 'PNG') {
+      return { width: header.readUInt32BE(16), height: header.readUInt32BE(20), format: 'png' };
+    }
+    if (bytes >= 4 && header[0] === 0xff && header[1] === 0xd8) {
+      // Scan JPEG segments for a Start Of Frame marker.
+      const data = fs.readFileSync(filePath);
+      let offset = 2;
+      while (offset + 9 < data.length) {
+        if (data[offset] !== 0xff) { offset += 1; continue; }
+        const marker = data[offset + 1];
+        if (marker >= 0xc0 && marker <= 0xc3) {
+          return { width: data.readUInt16BE(offset + 7), height: data.readUInt16BE(offset + 5), format: 'jpeg' };
+        }
+        const length = data.readUInt16BE(offset + 2);
+        offset += 2 + length;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+export async function readPdfInfo(pdfPath) {
   const pdfinfo = resolvePdfinfoBinary();
-  if (!pdfinfo) return null;
+  if (!pdfinfo) return { pageCount: null, pageWidthPt: null, pageHeightPt: null };
   try {
     const { stdout } = await runProcess(pdfinfo, [pdfPath], { timeoutMs: 60_000 });
-    const match = stdout.match(/Pages:\s+(\d+)/i);
-    return match ? parseInt(match[1], 10) : null;
+    const pages = stdout.match(/Pages:\s+(\d+)/i);
+    const size = stdout.match(/Page size:\s+([\d.]+)\s+x\s+([\d.]+)\s+pts/i);
+    return {
+      pageCount: pages ? parseInt(pages[1], 10) : null,
+      pageWidthPt: size ? parseFloat(size[1]) : null,
+      pageHeightPt: size ? parseFloat(size[2]) : null
+    };
   } catch {
-    return null;
+    return { pageCount: null, pageWidthPt: null, pageHeightPt: null };
   }
+}
+
+export async function readPdfPageCount(pdfPath) {
+  return (await readPdfInfo(pdfPath)).pageCount;
 }

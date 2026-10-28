@@ -44,7 +44,7 @@ text).
 - `apps/server/src/lib/slides/pptx.js` — PPTX validation, slide order, text and
   speaker-note extraction (Open XML, no AI, no layout re-creation).
 - `apps/server/src/lib/slides/renderer.js` — LibreOffice headless PPTX → PDF,
-  Poppler PDF → JPEG full-size previews and thumbnails.
+  Poppler PDF → 1920x1080 PNG previews and 480x270 JPEG thumbnails.
 - `apps/server/src/lib/slides/worker.js` — concurrency-limited background
   processing, retries, batch counters, restart recovery.
 - `apps/server/src/lib/slides/zipImport.js` — safe ZIP analysis, conservative
@@ -72,9 +72,9 @@ Originals and rendered assets are stored outside the public `/uploads` folder:
 ```text
 SLIDES_STORAGE_DIR/
   presentations/<presentation-id>/original.pptx
-  presentations/<presentation-id>/presentation.pdf
-  presentations/<presentation-id>/preview/slide-0001.jpg
-  presentations/<presentation-id>/thumbs/thumb-0001.jpg
+  presentations/<presentation-id>/versions/<render-version>/presentation.pdf
+  presentations/<presentation-id>/versions/<render-version>/preview/slide-0001.png
+  presentations/<presentation-id>/versions/<render-version>/thumbs/thumb-0001.jpg
   imports/<batch-id>/archive.zip
 ```
 
@@ -86,7 +86,7 @@ Processing pipeline:
 
 ```text
 Upload → private original → background queue → LibreOffice PDF
-       → per-slide JPEG previews + thumbnails → slide text extraction
+       → per-slide 1920x1080 PNG previews + 480x270 JPEG thumbnails → slide text extraction
        → PostgreSQL search indexes → READY (publishable)
 ```
 
@@ -105,6 +105,7 @@ Admin (ADMIN role required):
 - `PATCH /api/slides/admin/presentations/:id/publish`
 - `DELETE /api/slides/admin/presentations/:id`
 - `GET /api/slides/admin/presentations/:id/download`
+- `POST /api/slides/admin/presentations/:id/regenerate`
 - `POST /api/slides/admin/presentations/:id/retry`
 - `GET /api/slides/admin/module-counts`
 - `POST /api/slides/admin/zip/analyze`
@@ -158,8 +159,98 @@ Student (enrolment checked):
 5. For multiple API replicas, replace the in-process queue with a shared job
    runner/lock so a presentation is not processed by more than one replica.
 
-The API Dockerfile now installs `libreoffice-impress`, `poppler-utils` and
-Liberation fonts. The image is correspondingly larger.
+The API Dockerfile now installs `libreoffice-impress`, `poppler-utils`,
+fontconfig, Liberation, Carlito, Caladea and Latin Modern Math fonts. Exact
+Microsoft **Aptos** and **Cambria Math** are proprietary and are not bundled.
+
+Deliberate metric-compatible substitutions are configured in
+`apps/server/docker/fonts.conf`:
+
+- Aptos / Aptos Display / Calibri -> Carlito
+- Cambria -> Caladea
+- Cambria Math -> Latin Modern Math
+- Arial -> Liberation Sans
+- Times New Roman -> Liberation Serif
+
+These substitutions prevent arbitrary font fallback. They do **not** reproduce
+Aptos exactly. If true Office fidelity is required, mount licensed Aptos and
+Cambria Math fonts into `/usr/share/fonts/truetype/milven` in the API container
+and run `fc-cache -f`; the preflight will then stop reporting those fonts as
+missing.
+
+Preview sizing is configurable with `SLIDES_PREVIEW_WIDTH` (default 1920) and
+`SLIDES_THUMB_WIDTH` (default 480).
+
+## Rendering fidelity fix
+
+### Root cause
+
+The supplied deck declares only **Aptos** (8,826 runs) and **Cambria Math**
+(261 runs). The Debian API container installed Liberation fonts only. Aptos and
+Cambria Math were therefore absent, and LibreOffice/fontconfig chose an
+arbitrary fallback with different glyph widths. That changed line breaking and
+produced the wide/stretched character spacing seen in the browser preview.
+The old pipeline also rasterized at only 96 DPI (1280x720 JPEG), so the browser
+had to upscale text on larger displays.
+
+### Fixes
+
+- Extract required font families from the PPTX theme, masters, layouts and
+  slides during processing.
+- Preflight exact installed families with `fc-list` (Linux) or the Windows font
+  collection; `fc-match` results are only recorded as substitutes and are never
+  treated as installed proof.
+- Install licensed OFL fonts (Carlito, Caladea, Latin Modern Math, Liberation)
+  and deterministic fontconfig aliases. Do not download or redistribute Aptos
+  or Cambria Math.
+- Keep LibreOffice PDF as the master and render full-size previews at
+  1920x1080 PNG (`-scale-to 1920`, vector anti-aliasing enabled). Thumbnails are
+  separate 480x270 JPEGs.
+- Version all rendered assets under
+  `presentations/<id>/versions/<version>/`. Database keys switch only after a
+  successful transaction; a failed reprocess leaves the previous previews and
+  search index intact.
+- Add cache-busting `v=<renderVersion>` to signed asset URLs.
+- Add **Regenerate Preview** to the presentation actions menu. It reuses the
+  stored original and preserves ID, title, hierarchy, mappings and status.
+  To migrate an existing library: Admin -> Milven Slides -> presentation menu
+  (...) -> **Regenerate Preview**. Repeat per deck; the old previews remain live
+  until each replacement succeeds.
+- Record required/missing fonts, substitutions, renderer, PDF page dimensions,
+  output format/dimensions, duration and warnings in the database and show a
+  **Font substitution** warning tag to administrators.
+- The viewer now sets `height: auto`, `display: block` and
+  `image-rendering: auto`, retaining `object-fit: contain` so previews are not
+  stretched.
+
+### Reference comparison
+
+Reference PNGs were exported from the installed Microsoft PowerPoint for slides
+1, 2, 8, 16, 24 and 45 and compared with the corrected LibreOffice output.
+Slides 1, 8, 16 and 24 were visually near-identical (headings, text spacing,
+formula, chart and table alignment). On slide 45 the LO header cell
+"Gross ending NAV" wrapped to two lines while PowerPoint kept it on one line.
+That is a residual metric difference from Aptos being unavailable on the test
+machine; it is reported by diagnostics rather than claimed as exact fidelity.
+A production-like Ubuntu container test was also run with the same package set
+as the Dockerfile. Exact `fc-list` families confirmed that **Aptos** and
+**Cambria Math** are not installed. Before the fontconfig rules, `fc-match
+Aptos` returned DejaVu Sans (the arbitrary wide fallback that caused the
+original spacing problem). After the rules:
+
+- `fc-match Aptos` -> Carlito
+- `fc-match "Cambria Math"` -> Latin Modern Math
+
+The same container rendered the 98-slide deck as a 960.009x540 pt PDF, 98 PNG
+previews at 1920x1080 and 98 JPEG thumbnails at 480x270. Sampled pixel
+comparison against the PowerPoint reference gave mean absolute differences of
+8.38-12.30/255 and 6.28-9.56% changed pixels across slides 1, 2, 8, 16, 24 and
+45. The corrected Linux render keeps the slide-45 header on one line.
+
+Residual differences are font glyph shapes (Carlito is not Aptos), occasional
+line-break differences and minor table-border rendering differences between
+PowerPoint and LibreOffice. Exact Aptos/Cambria Math fidelity still requires
+licensed fonts (or a licensed Microsoft/Office rendering service).
 
 ## Verified test results
 
@@ -183,7 +274,8 @@ Learning Module IDs):
 - Slides: **1,982**
 - All 20 presentations: `READY` and `PUBLISHED`
 - Slide rows: 1,982; missing preview/thumbnail keys: 0
-- Rendered previews: 1,982 JPEGs; thumbnails: 1,982 JPEGs; PDFs: 20
+- Existing rendered previews remain valid; newly rendered previews use
+  1920x1080 PNG with separate 480x270 JPEG thumbnails
 - Student hierarchy: 20 presentations across 19 modules + 1 volume review
 - Student library: 20 presentations / 1,982 slides
 
@@ -197,23 +289,41 @@ Functional checks executed:
   unmatched files left for administrator review).
 - Slide text search for “modified duration” returned 83 matches; the first
   result opened slide 28 of “Yield-Based Bond Duration Measures and Properties”
-  and served a 200 JPEG preview.
+  and served a 200 image preview.
 - In-presentation search and signed slide thumbnails worked.
 - Draft gating: after unpublishing one deck, student library dropped to 19 decks
   / 1,886 slides and direct access returned 404; republishing restored 20 /
   1,982.
 - Replacement regenerated 96 previews and the search index while retaining the
   presentation ID and mapping.
+- The supplied **98-slide Alternative Investment Performance and Returns** deck
+  was uploaded and processed successfully: 98 slides, 960.009x540 pt PDF,
+  1920x1080 PNG previews, 480x270 JPEG thumbnails, 42 s processing time.
+- **Regenerate Preview** was exercised on that deck and on an existing legacy
+  96-slide Fixed Income deck. Both retained their ID, hierarchy, mappings and
+  publication status; render versions changed and old flat preview folders were
+  removed.
+- Failure atomicity was tested by temporarily making the stored original
+  unavailable during regeneration: processing failed, but the previous 98
+  slide previews still returned HTTP 200 and remained searchable.
+- Font preflight reported `Aptos` as missing on the Windows test host while
+  `Cambria Math` was present. The production container will report both unless
+  licensed fonts are mounted.
+- Server suite now includes renderer tests: **100 tests passed**.
 - Deletion removed the deck from student views, slide rows, mappings and
   storage assets.
 - Queue recovery logic re-queues interrupted `PROCESSING` jobs on restart.
 - `apps/server/test/slides.integration.test.mjs` covers hierarchy access,
   draft visibility, signed assets, publishing gates, hierarchy validation and
-  restart recovery. Full server suite: **98 tests passed**.
+  restart recovery. Full server suite: **100 tests passed**.
 - Frontend production build completed successfully.
 
 ## Known limitations
 
+- Exact Aptos/Cambria Math fidelity cannot be guaranteed without licensed
+  Microsoft fonts. The container uses Carlito/Latin Modern Math substitutions;
+  diagnostics explicitly report this. The local Office reference comparison
+  showed one residual line-wrap difference (slide 45) caused by missing Aptos.
 - Rendering fidelity depends on LibreOffice, installed fonts and the source
   deck. Animations, transitions and interactive PowerPoint features are not
   reproduced; each slide is a static image (formulas, charts and layout are
