@@ -3,6 +3,7 @@ import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Row, Col, C
 import { FileTextOutlined, SearchOutlined, EyeOutlined, PrinterOutlined, MenuOutlined, CloseOutlined, RightOutlined, DownOutlined, BookOutlined, AppstoreOutlined, FolderOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { highlightParts } from '../../lib/slideUrls';
 import MathText, { MathVariables } from '../../components/MathText';
 
 // ─── Safe render: stringify objects that React can't render ──
@@ -85,6 +86,37 @@ export function StudentSummarySheets() {
 	}, [page, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, searchText]);
 
 	useEffect(() => { fetchSheets(); }, [fetchSheets]);
+
+	useEffect(() => {
+		const term = searchText.trim();
+		if (term.length < 2) {
+			setPdfSearchResults([]);
+			setPdfSearchError('');
+			return undefined;
+		}
+		let cancelled = false;
+		const timer = setTimeout(async () => {
+			setPdfSearchLoading(true);
+			setPdfSearchError('');
+			try {
+				const params = { q: term, limit: 20 };
+				if (filterCourseId) params.courseId = filterCourseId;
+				if (filterVolumeId) params.volumeId = filterVolumeId;
+				if (filterModuleId) params.moduleId = filterModuleId;
+				if (filterTopicId) params.topicId = filterTopicId;
+				const { data } = await api.get('/api/summary-sheets/search', { params });
+				if (!cancelled) setPdfSearchResults(data.results || []);
+			} catch (err) {
+				if (!cancelled) {
+					setPdfSearchResults([]);
+					setPdfSearchError(err?.response?.data?.error || 'PDF content search is unavailable.');
+				}
+			} finally {
+				if (!cancelled) setPdfSearchLoading(false);
+			}
+		}, 350);
+		return () => { cancelled = true; clearTimeout(timer); };
+	}, [searchText, filterCourseId, filterVolumeId, filterModuleId, filterTopicId]);
 
 	const selectTreeItem = (type, id) => {
 		if (type === 'volume') { setFilterVolumeId(id); setFilterModuleId(null); setFilterTopicId(null); }
@@ -251,6 +283,44 @@ export function StudentSummarySheets() {
 						)}
 				</div>
 
+				{searchText.trim().length >= 2 && (
+					<Card size="small" style={{ marginBottom: 16, borderRadius: 12, border: '1px solid #e2e8f0' }}>
+						<Space direction="vertical" size={8} style={{ width: '100%' }}>
+							<Typography.Text strong style={{ color: '#102540' }}>
+								Matching PDF pages
+							</Typography.Text>
+							{pdfSearchLoading ? <Spin size="small" /> : pdfSearchError ? (
+								<Typography.Text type="danger">{pdfSearchError}</Typography.Text>
+							) : pdfSearchResults.length === 0 ? (
+								<Typography.Text type="secondary">No uploaded-PDF page matches in the selected curriculum.</Typography.Text>
+							) : pdfSearchResults.map((result, index) => (
+								<Card
+									key={`${result.summarySheetId}-${result.pageNumber}-${index}`}
+									size="small"
+									hoverable
+									onClick={() => navigate(`/learning/summary-sheets/${result.summarySheetId}?page=${result.pageNumber}`)}
+									style={{ borderRadius: 8 }}
+								>
+									<Space direction="vertical" size={3} style={{ width: '100%' }}>
+										<Space wrap>
+											<Typography.Text strong>{result.sheet?.title || 'PDF Summary Sheet'}</Typography.Text>
+											<Tag color="blue">Page {result.pageNumber}</Tag>
+										</Space>
+										<Typography.Text type="secondary" style={{ fontSize: 12 }}>
+											{[result.sheet?.course?.name, result.sheet?.volume?.name, result.sheet?.module?.name].filter(Boolean).join(' ? ')}
+										</Typography.Text>
+										<Typography.Paragraph style={{ margin: 0, fontSize: 13, color: '#475569' }} ellipsis={{ rows: 2 }}>
+											{highlightParts(result.excerpt, searchText).map((part, index) => part.match
+												? <mark key={index} style={{ background: '#fde68a', padding: 0 }}>{part.text}</mark>
+												: <React.Fragment key={index}>{part.text}</React.Fragment>)}
+										</Typography.Paragraph>
+									</Space>
+								</Card>
+							))}
+						</Space>
+					</Card>
+				)}
+
 				{/* Sheets Grid */}
 				{loading ? (
 					<div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
@@ -261,7 +331,7 @@ export function StudentSummarySheets() {
 						<Row gutter={[16, 16]}>
 							{sheets.map(s => (
 								<Col xs={24} sm={12} lg={8} key={s.id}>
-									<Card hoverable style={{ borderRadius: 14, overflow: 'hidden', border: '1px solid #e2e8f0', height: '100%' }} bodyStyle={{ padding: 0 }} onClick={() => { setPreviewSheet(s); setPreviewOpen(true); }}>
+									<Card hoverable style={{ borderRadius: 14, overflow: 'hidden', border: '1px solid #e2e8f0', height: '100%' }} bodyStyle={{ padding: 0 }} onClick={() => { if (s.sourceType === 'UPLOADED_PDF') navigate(`/learning/summary-sheets/${s.id}`); else { setPreviewSheet(s); setPreviewOpen(true); } }}>
 										<div style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', padding: '16px 20px' }}>
 											<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
 												{LEVEL_LABELS[s.level]} {s.volume?.name ? `| ${s.volume.name}` : ''}

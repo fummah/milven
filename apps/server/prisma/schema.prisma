@@ -41,6 +41,9 @@ model User {
   pathwayVolumeId        String?
   presentations          Presentation[]          @relation("PresentationCreatedBy")
   presentationBatches    PresentationBatch[]     @relation("BatchCreatedBy")
+  summarySheets          SummarySheet[]          @relation("SummarySheetCreatedBy")
+  formulaBookPdfs        FormulaBookPdf[]        @relation("FormulaBookPdfCreatedBy")
+  moduleNotePdfs         ModuleNotePdf[]         @relation("ModuleNotePdfCreatedBy")
 }
 
 enum UserRole {
@@ -80,6 +83,8 @@ model Volume {
   curriculumDocuments  CurriculumDocument[]
   formulas             Formula[]
   summarySheets        SummarySheet[]
+  formulaBookPdfs      FormulaBookPdf[]
+  moduleNotePdfs       ModuleNotePdf[]
   moduleNotes          ModuleNote[]
   pdfMappings          PdfMapping[]
   presentations        Presentation[]
@@ -112,6 +117,8 @@ model Module {
   topics        Topic[]
   formulas      Formula[]
   summarySheets SummarySheet[]
+  formulaBookPageMaps FormulaBookPdfPageMap[]
+  moduleNotePageMaps ModuleNotePdfPageMap[]
   moduleNotes   ModuleNote[]
   presentations Presentation[]
 
@@ -145,6 +152,9 @@ model Topic {
   summarySheets            SummarySheet[]
   moduleNotes              ModuleNote[]
   presentationLinks        PresentationTopic[]
+  summarySheetLinks        SummarySheetTopic[]
+  formulaBookPageMaps      FormulaBookPdfPageMap[]
+  moduleNotePageMaps       ModuleNotePdfPageMap[]
 
   @@index([moduleId, order])
 }
@@ -163,6 +173,9 @@ model Concept {
   materials                LearningMaterial[]
   questions                Question[]            @relation("QuestionConcepts")
   presentationLinks        PresentationConcept[]
+  summarySheetLinks        SummarySheetConcept[]
+  formulaBookPageMaps      FormulaBookPdfPageMap[]
+  moduleNotePageMaps       ModuleNotePdfPageMap[]
 
   @@index([topicId, order])
 }
@@ -394,6 +407,8 @@ model Course {
   curriculumDocuments  CurriculumDocument[]
   formulas             Formula[]
   summarySheets        SummarySheet[]
+  formulaBookPdfs      FormulaBookPdf[]
+  moduleNotePdfs       ModuleNotePdf[]
   moduleNotes          ModuleNote[]
   Presentation         Presentation[]
 }
@@ -780,43 +795,105 @@ model Formula {
 
 // ─── CFA Summary Sheet Master ─────────────────────────────
 model SummarySheet {
-  id              String   @id @default(cuid())
-  title           String // Sheet title (e.g. "Rates and Returns")
-  level           CfaLevel
-  courseId        String?
-  course          Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  volumeId        String?
-  volume          Volume?  @relation(fields: [volumeId], references: [id], onDelete: SetNull)
-  moduleId        String?
-  module          Module?  @relation(fields: [moduleId], references: [id], onDelete: SetNull)
-  topicId         String?
-  topic           Topic?   @relation(fields: [topicId], references: [id], onDelete: SetNull)
-  year            Int      @default(2026)
-  // Section 1 — Module Snapshot
-  snapshot        String? // What this sheet covers (max 4 lines)
-  useCase         String? // Use case description
-  // Section 2 — Core Concepts (key definitions as JSON array)
-  coreDefinitions Json? // [{term, definition}]
-  // Section 3 — Formula Zone (JSON array)
-  formulas        Json? // [{formula, variables, whenToUse}]
-  // Section 4 — Distinctions / Traps
-  distinctions    Json? // [{left, right, difference}]
-  diagrams        Json? // [{title, description}]
-  examTraps       Json? // [{trap}]
-  // Section 5 — Memory Hooks
-  memoryHooks     Json? // [{hook}]
-  // Section 6 — Quick Drills
-  quickDrills     Json? // [{question}]
-  // Section 7 — Revision Checklist
-  revisionCheck   Json? // [{item, checked}]
+  id                String                @id @default(cuid())
+  title             String // Sheet title (e.g. "Rates and Returns")
+  level             CfaLevel
+  courseId          String?
+  course            Course?               @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  volumeId          String?
+  volume            Volume?               @relation(fields: [volumeId], references: [id], onDelete: SetNull)
+  moduleId          String?
+  module            Module?               @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  topicId           String?
+  topic             Topic?                @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  year              Int                   @default(2026)
+  // Section 1 ??" Module Snapshot
+  snapshot          String? // What this sheet covers (max 4 lines)
+  useCase           String? // Use case description
+  // Section 2 ??" Core Concepts (key definitions as JSON array)
+  coreDefinitions   Json? // [{term, definition}]
+  // Section 3 ??" Formula Zone (JSON array)
+  formulas          Json? // [{formula, variables, whenToUse}]
+  // Section 4 ??" Distinctions / Traps
+  distinctions      Json? // [{left, right, difference}]
+  diagrams          Json? // [{title, description}]
+  examTraps         Json? // [{trap}]
+  // Section 5 ??" Memory Hooks
+  memoryHooks       Json? // [{hook}]
+  // Section 6 ??" Quick Drills
+  quickDrills       Json? // [{question}]
+  // Section 7 ??" Revision Checklist
+  revisionCheck     Json? // [{item, checked}]
   // Meta
-  order           Int      @default(0)
-  status          String   @default("DRAFT") // DRAFT | PUBLISHED
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  order             Int                   @default(0)
+  status            String                @default("DRAFT") // DRAFT | PUBLISHED
+  // Uploaded PDF support. Existing AI-generated sheets keep the defaults.
+  sourceType        String                @default("AI_GENERATED") // AI_GENERATED | UPLOADED_PDF
+  description       String?               @db.Text
+  keywords          String[]              @default([])
+  pdfStorageKey     String?
+  originalFilename  String?
+  pdfFileHash       String?
+  pdfFileSize       Int                   @default(0)
+  pdfPageCount      Int                   @default(0)
+  pdfVersion        String?
+  processingStatus  String                @default("READY") // UPLOADING | UPLOADED | INDEXING | READY | FAILED
+  searchIndexStatus String                @default("READY") // PENDING | INDEXING | READY | FAILED
+  processingError   String?               @db.Text
+  processingWarning String?               @db.Text
+  processingAttempts Int                  @default(0)
+  searchIndexedAt   DateTime?
+  pendingPdfKey     String?
+  pendingPdfHash    String?
+  pendingPdfSize    Int?
+  pendingPdfVersion String?
+  pendingFilename   String?
+  createdById       String?
+  createdBy         User?                 @relation("SummarySheetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  pages             SummarySheetPage[]
+  topicLinks        SummarySheetTopic[]
+  conceptLinks      SummarySheetConcept[]
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
   @@index([courseId, volumeId, moduleId, topicId])
   @@index([level, status])
+  @@index([sourceType, status])
+}
+
+model SummarySheetPage {
+  id             String       @id @default(cuid())
+  summarySheetId String
+  summarySheet   SummarySheet @relation(fields: [summarySheetId], references: [id], onDelete: Cascade)
+  pageNumber     Int
+  text           String?      @db.Text
+  normalizedText String?      @db.Text
+  thumbnailKey   String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([summarySheetId, pageNumber])
+  @@index([summarySheetId, pageNumber])
+}
+
+model SummarySheetTopic {
+  summarySheetId String
+  topicId        String
+  summarySheet   SummarySheet @relation(fields: [summarySheetId], references: [id], onDelete: Cascade)
+  topic          Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([summarySheetId, topicId])
+  @@index([topicId])
+}
+
+model SummarySheetConcept {
+  summarySheetId String
+  conceptId      String
+  summarySheet   SummarySheet @relation(fields: [summarySheetId], references: [id], onDelete: Cascade)
+  concept        Concept      @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@id([summarySheetId, conceptId])
+  @@index([conceptId])
 }
 
 // ─── CFA Learning Module Notes ────────────────────────────
@@ -1014,4 +1091,158 @@ model PresentationBatch {
   presentations     Presentation[]
 
   @@index([createdAt])
+}
+
+// Volume-level PDF Formula Books. These are NOT attached to a Learning Module.
+model FormulaBookPdf {
+  id                String   @id @default(cuid())
+  title             String
+  description       String?  @db.Text
+  level             CfaLevel
+  courseId          String
+  course            Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  volumeId          String
+  volume            Volume   @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  year              Int      @default(2026)
+  keywords          String[] @default([])
+  originalFilename  String
+  storageKey        String
+  fileHash          String
+  fileSize          Int      @default(0)
+  pageCount         Int      @default(0)
+  pdfVersion        String?
+  processingStatus  String   @default("UPLOADED") // UPLOADED | INDEXING | READY | FAILED
+  searchIndexStatus String   @default("PENDING") // PENDING | INDEXING | READY | FAILED
+  publicationStatus String   @default("DRAFT") // DRAFT | PUBLISHED
+  processingError   String?  @db.Text
+  processingWarning String?  @db.Text
+  processingAttempts Int     @default(0)
+  searchIndexedAt   DateTime?
+  pendingStorageKey String?
+  pendingFileHash   String?
+  pendingFileSize   Int?
+  pendingPdfVersion String?
+  pendingFilename   String?
+  createdById       String?
+  createdBy         User?    @relation("FormulaBookPdfCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  pages             FormulaBookPdfPage[]
+  pageMaps          FormulaBookPdfPageMap[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([courseId, volumeId])
+  @@index([publicationStatus, processingStatus])
+}
+
+model FormulaBookPdfPage {
+  id               String        @id @default(cuid())
+  formulaBookPdfId String
+  formulaBookPdf   FormulaBookPdf @relation(fields: [formulaBookPdfId], references: [id], onDelete: Cascade)
+  pageNumber       Int
+  text             String?       @db.Text
+  normalizedText   String?       @db.Text
+  thumbnailKey     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@unique([formulaBookPdfId, pageNumber])
+  @@index([formulaBookPdfId, pageNumber])
+}
+
+model FormulaBookPdfPageMap {
+  id               String         @id @default(cuid())
+  formulaBookPdfId String
+  formulaBookPdf   FormulaBookPdf @relation(fields: [formulaBookPdfId], references: [id], onDelete: Cascade)
+  pageStart        Int
+  pageEnd          Int
+  moduleId         String?
+  module           Module?        @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  topicId          String?
+  topic            Topic?         @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  conceptId        String?
+  concept          Concept?       @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([formulaBookPdfId, pageStart, pageEnd])
+  @@index([moduleId])
+  @@index([topicId])
+  @@index([conceptId])
+}
+
+// Volume-level PDF Module Notess. These are NOT attached to a Learning Module.
+model ModuleNotePdf {
+  id                String   @id @default(cuid())
+  title             String
+  description       String?  @db.Text
+  level             CfaLevel
+  courseId          String
+  course            Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  volumeId          String
+  volume            Volume   @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  year              Int      @default(2026)
+  keywords          String[] @default([])
+  originalFilename  String
+  storageKey        String
+  fileHash          String
+  fileSize          Int      @default(0)
+  pageCount         Int      @default(0)
+  pdfVersion        String?
+  processingStatus  String   @default("UPLOADED") // UPLOADED | INDEXING | READY | FAILED
+  searchIndexStatus String   @default("PENDING") // PENDING | INDEXING | READY | FAILED
+  publicationStatus String   @default("DRAFT") // DRAFT | PUBLISHED
+  processingError   String?  @db.Text
+  processingWarning String?  @db.Text
+  processingAttempts Int     @default(0)
+  searchIndexedAt   DateTime?
+  pendingStorageKey String?
+  pendingFileHash   String?
+  pendingFileSize   Int?
+  pendingPdfVersion String?
+  pendingFilename   String?
+  createdById       String?
+  createdBy         User?    @relation("ModuleNotePdfCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  pages             ModuleNotePdfPage[]
+  pageMaps          ModuleNotePdfPageMap[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([courseId, volumeId])
+  @@index([publicationStatus, processingStatus])
+}
+
+model ModuleNotePdfPage {
+  id               String        @id @default(cuid())
+  moduleNotePdfId String
+  moduleNotePdf   ModuleNotePdf @relation(fields: [moduleNotePdfId], references: [id], onDelete: Cascade)
+  pageNumber       Int
+  text             String?       @db.Text
+  normalizedText   String?       @db.Text
+  thumbnailKey     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@unique([moduleNotePdfId, pageNumber])
+  @@index([moduleNotePdfId, pageNumber])
+}
+
+model ModuleNotePdfPageMap {
+  id               String         @id @default(cuid())
+  moduleNotePdfId String
+  moduleNotePdf   ModuleNotePdf @relation(fields: [moduleNotePdfId], references: [id], onDelete: Cascade)
+  pageStart        Int
+  pageEnd          Int
+  moduleId         String?
+  module           Module?        @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  topicId          String?
+  topic            Topic?         @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  conceptId        String?
+  concept          Concept?       @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([moduleNotePdfId, pageStart, pageEnd])
+  @@index([moduleId])
+  @@index([topicId])
+  @@index([conceptId])
 }

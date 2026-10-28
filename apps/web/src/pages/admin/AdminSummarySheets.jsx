@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Spin, Checkbox, Tabs } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, FileTextOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, CopyOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, FileTextOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, CopyOutlined, StarFilled, StarOutlined, UploadOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import MathText, { MathVariables } from '../../components/MathText';
+import AdminSummaryPdfDrawer from '../../components/summarySheets/AdminSummaryPdfDrawer';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -14,6 +16,8 @@ const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III
 const STATUS_COLORS = { DRAFT: 'default', PUBLISHED: 'green' };
 
 export function AdminSummarySheets() {
+	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
 	const [form] = Form.useForm();
 	const [sheets, setSheets] = useState([]);
 	const [loading, setLoading] = useState(false);
@@ -25,6 +29,12 @@ export function AdminSummarySheets() {
 	const [submitting, setSubmitting] = useState(false);
 	const [previewOpen, setPreviewOpen] = useState(false);
 	const [previewSheet, setPreviewSheet] = useState(null);
+	const [filterSource, setFilterSource] = useState(null);
+	const [pdfDrawerOpen, setPdfDrawerOpen] = useState(false);
+	const [pdfEditing, setPdfEditing] = useState(null);
+	const [pdfPreselect, setPdfPreselect] = useState(null);
+	const [replaceTarget, setReplaceTarget] = useState(null);
+	const replaceInputRef = useRef(null);
 
 	// AI Generate
 	const [aiModalOpen, setAiModalOpen] = useState(false);
@@ -54,6 +64,8 @@ export function AdminSummarySheets() {
 	// Filters
 	const [filterLevel, setFilterLevel] = useState(null);
 	const [filterCourseId, setFilterCourseId] = useState(null);
+	const [filterVolumeId, setFilterVolumeId] = useState(null);
+	const [filterModuleId, setFilterModuleId] = useState(null);
 	const [filterStatus, setFilterStatus] = useState(null);
 	const [searchText, setSearchText] = useState('');
 
@@ -78,6 +90,19 @@ export function AdminSummarySheets() {
 		if (formVolumeId) list = list.filter(m => m.volumeId === formVolumeId);
 		return list;
 	}, [formCourseId, formVolumeId, modules]);
+
+	const filterVolumeOptions = useMemo(() => {
+		let list = volumes;
+		if (filterCourseId) list = list.filter(volume => volume.courseLinks?.some(link => link.courseId === filterCourseId));
+		return list.map(volume => ({ value: volume.id, label: volume.name }));
+	}, [volumes, filterCourseId]);
+
+	const filterModuleOptions = useMemo(() => {
+		let list = modules;
+		if (filterCourseId) list = list.filter(module => module.courseId === filterCourseId);
+		if (filterVolumeId) list = list.filter(module => module.volumeId === filterVolumeId);
+		return list.map(module => ({ value: module.id, label: module.name }));
+	}, [modules, filterCourseId, filterVolumeId]);
 
 
 	// AI modal cascading
@@ -113,7 +138,10 @@ export function AdminSummarySheets() {
 			const params = { page, limit: pageSize };
 			if (filterLevel) params.level = filterLevel;
 			if (filterCourseId) params.courseId = filterCourseId;
+			if (filterVolumeId) params.volumeId = filterVolumeId;
+			if (filterModuleId) params.moduleId = filterModuleId;
 			if (filterStatus) params.status = filterStatus;
+			if (filterSource) params.source = filterSource;
 			if (searchText) params.search = searchText;
 			const res = await api.get('/api/summary-sheets', { params });
 			setSheets(res.data?.sheets || []);
@@ -123,7 +151,7 @@ export function AdminSummarySheets() {
 		} finally {
 			setLoading(false);
 		}
-	}, [page, pageSize, filterLevel, filterCourseId, filterStatus, searchText]);
+	}, [page, pageSize, filterLevel, filterCourseId, filterVolumeId, filterModuleId, filterStatus, filterSource, searchText]);
 
 	useEffect(() => { fetchSheets(); }, [fetchSheets]);
 
@@ -307,6 +335,96 @@ export function AdminSummarySheets() {
 		}
 	};
 
+	const openPdfUpload = () => {
+		setPdfEditing(null);
+		setPdfPreselect(null);
+		setPdfDrawerOpen(true);
+	};
+
+	useEffect(() => {
+		if (searchParams.get('uploadPdf') !== '1') return;
+		setPdfEditing(null);
+		setPdfPreselect({
+			courseId: searchParams.get('courseId') || undefined,
+			volumeId: searchParams.get('volumeId') || undefined,
+			moduleId: searchParams.get('moduleId') || undefined,
+			year: 2026
+		});
+		setPdfDrawerOpen(true);
+	}, [searchParams]);
+
+	const openPdfEdit = (record) => {
+		setPdfEditing(record);
+		setPdfDrawerOpen(true);
+	};
+
+	const triggerReplacePdf = (record) => {
+		setReplaceTarget(record);
+		setTimeout(() => replaceInputRef.current?.click(), 0);
+	};
+
+	const handleReplaceFile = async (event) => {
+		const file = event.target.files?.[0];
+		event.target.value = '';
+		if (!file || !replaceTarget) return;
+		if (!/\.pdf$/i.test(file.name)) {
+			message.error('Select a PDF file.');
+			return;
+		}
+		const key = 'summary-replace';
+		message.open({ key, type: 'loading', content: 'Uploading replacement PDF...', duration: 0 });
+		try {
+			const body = new FormData();
+			body.append('file', file);
+			await api.post(`/api/summary-sheets/${replaceTarget.id}/replace-pdf`, body, {
+				headers: { 'Content-Type': 'multipart/form-data' }
+			});
+			message.open({ key, type: 'success', content: 'Replacement uploaded. Indexing is running; the current PDF stays available.', duration: 5 });
+			fetchSheets();
+		} catch (err) {
+			message.open({ key, type: 'error', content: err?.response?.data?.error || 'Could not replace PDF.', duration: 5 });
+		} finally {
+			setReplaceTarget(null);
+		}
+	};
+
+	const openPreviewRecord = (record) => {
+		if (record.sourceType === 'UPLOADED_PDF') {
+			navigate(`/learning/summary-sheets/${record.id}`);
+		} else {
+			setPreviewSheet(record);
+			setPreviewOpen(true);
+		}
+	};
+
+	const hasIndexing = useMemo(
+		() => sheets.some(sheet => sheet.sourceType === 'UPLOADED_PDF' && ['UPLOADED', 'INDEXING'].includes(sheet.processingStatus)),
+		[sheets]
+	);
+
+	useEffect(() => {
+		if (!hasIndexing) return undefined;
+		let cancelled = false;
+		const timer = setTimeout(async () => {
+			try {
+				const params = { page, limit: pageSize };
+				if (filterLevel) params.level = filterLevel;
+				if (filterCourseId) params.courseId = filterCourseId;
+				if (filterVolumeId) params.volumeId = filterVolumeId;
+				if (filterModuleId) params.moduleId = filterModuleId;
+				if (filterStatus) params.status = filterStatus;
+				if (filterSource) params.source = filterSource;
+				if (searchText) params.search = searchText;
+				const res = await api.get('/api/summary-sheets', { params });
+				if (!cancelled) {
+					setSheets(res.data?.sheets || []);
+					setTotal(res.data?.total || 0);
+				}
+			} catch {}
+		}, 6000);
+		return () => { cancelled = true; clearTimeout(timer); };
+	}, [hasIndexing, sheets, page, pageSize, filterLevel, filterCourseId, filterVolumeId, filterModuleId, filterStatus, filterSource, searchText]);
+
 	const columns = [
 		{
 			title: 'Title',
@@ -335,25 +453,49 @@ export function AdminSummarySheets() {
 			render: (_, r) => r.module?.name || <Typography.Text type="secondary">—</Typography.Text>,
 		},
 		{
+			title: 'Source',
+			key: 'source',
+			width: 120,
+			render: (_, record) => record.sourceType === 'UPLOADED_PDF'
+				? <Tag color="volcano" icon={<FilePdfOutlined />}>PDF</Tag>
+				: <Tag color="purple">AI</Tag>,
+		},
+		{
+			title: 'Pages',
+			key: 'pages',
+			width: 80,
+			render: (_, record) => record.sourceType === 'UPLOADED_PDF' ? (record.pdfPageCount || 0) : '?',
+		},
+		{
 			title: 'Status',
 			dataIndex: 'status',
 			key: 'status',
 			width: 100,
-			render: (s) => <Tag color={STATUS_COLORS[s]}>{s}</Tag>,
+			render: (s, record) => (
+				<Space size={4} wrap>
+					<Tag color={STATUS_COLORS[s]}>{s}</Tag>
+					{record.sourceType === 'UPLOADED_PDF' && record.processingStatus !== 'READY' && <Tag color="processing">Indexing</Tag>}
+				</Space>
+			),
 		},
 		{
 			title: 'Actions',
 			key: 'actions',
-			width: 180,
+			width: 230,
 			fixed: 'right',
 			render: (_, record) => (
 				<Space size={4}>
 					<Tooltip title="Preview">
-						<Button size="small" type="text" icon={<EyeOutlined />} onClick={() => { setPreviewSheet(record); setPreviewOpen(true); }} />
+						<Button size="small" type="text" icon={<EyeOutlined />} onClick={() => openPreviewRecord(record)} />
 					</Tooltip>
 					<Tooltip title="Edit">
-						<Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
+						<Button size="small" type="text" icon={<EditOutlined />} onClick={() => record.sourceType === 'UPLOADED_PDF' ? openPdfEdit(record) : openEdit(record)} />
 					</Tooltip>
+					{record.sourceType === 'UPLOADED_PDF' && (
+						<Tooltip title="Replace PDF">
+							<Button size="small" type="text" icon={<UploadOutlined />} onClick={() => triggerReplacePdf(record)} />
+						</Tooltip>
+					)}
 					<Tooltip title={record.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}>
 						<Button size="small" type="text" icon={record.status === 'PUBLISHED' ? <StarFilled style={{ color: '#22c55e' }} /> : <StarOutlined />} onClick={() => toggleStatus(record)} />
 					</Tooltip>
@@ -414,8 +556,32 @@ export function AdminSummarySheets() {
 						<Select
 							placeholder="Course"
 							value={filterCourseId}
-							onChange={v => { setFilterCourseId(v); setPage(1); }}
+							onChange={v => { setFilterCourseId(v); setFilterVolumeId(null); setFilterModuleId(null); setPage(1); }}
 							options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]}
+							style={{ width: '100%' }}
+							allowClear
+							showSearch
+							optionFilterProp="label"
+						/>
+					</Col>
+					<Col xs={12} sm={6} md={3}>
+						<Select
+							placeholder="Volume"
+							value={filterVolumeId}
+							onChange={v => { setFilterVolumeId(v); setFilterModuleId(null); setPage(1); }}
+							options={[{ value: null, label: 'All Volumes' }, ...filterVolumeOptions]}
+							style={{ width: '100%' }}
+							allowClear
+							showSearch
+							optionFilterProp="label"
+						/>
+					</Col>
+					<Col xs={12} sm={6} md={3}>
+						<Select
+							placeholder="Learning Module"
+							value={filterModuleId}
+							onChange={v => { setFilterModuleId(v); setPage(1); }}
+							options={[{ value: null, label: 'All Modules' }, ...filterModuleOptions]}
 							style={{ width: '100%' }}
 							allowClear
 							showSearch
@@ -432,8 +598,19 @@ export function AdminSummarySheets() {
 							allowClear
 						/>
 					</Col>
+					<Col xs={12} sm={6} md={3}>
+						<Select
+							placeholder="Source"
+							value={filterSource}
+							onChange={v => { setFilterSource(v); setPage(1); }}
+							options={[{ value: null, label: 'All Sources' }, { value: 'AI_GENERATED', label: 'AI Generated' }, { value: 'UPLOADED_PDF', label: 'Uploaded PDF' }]}
+							style={{ width: '100%' }}
+							allowClear
+						/>
+					</Col>
 					<Col xs={24} sm={12} md={6} style={{ textAlign: 'right' }}>
-						<Space>
+						<Space wrap>
+							<Button icon={<FilePdfOutlined />} onClick={openPdfUpload}>Upload PDF</Button>
 							<Button icon={<RobotOutlined />} onClick={openAiModal}
 								style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6', color: '#fff' }}>
 								AI Generate
@@ -771,6 +948,18 @@ export function AdminSummarySheets() {
 					<Typography.Text type="secondary" style={{ fontSize: 12 }}>Review sheets before adding to the system</Typography.Text>
 				</div>
 			</Modal>
+
+			<AdminSummaryPdfDrawer
+				open={pdfDrawerOpen}
+				mode={pdfEditing ? 'edit' : 'upload'}
+				sheet={pdfEditing}
+				preselect={pdfPreselect}
+				courses={courses}
+				volumes={volumes}
+				onClose={() => { setPdfDrawerOpen(false); setPdfEditing(null); }}
+				onSaved={fetchSheets}
+			/>
+			<input ref={replaceInputRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={handleReplaceFile} />
 
 			{/* Preview Modal */}
 			<Modal

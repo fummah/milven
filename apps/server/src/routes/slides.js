@@ -248,6 +248,12 @@ function batchResultsShape(batch) {
 export function slidesRouter(prisma) {
   const router = Router();
 
+  // Administrative status must never be served from a stale browser/proxy cache.
+  router.use('/admin', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+
   /* ─────────────────────────────────────────────────────────────
      Signed slide assets (thumbnails / previews / PDFs)
   ───────────────────────────────────────────────────────────── */

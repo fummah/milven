@@ -17,6 +17,8 @@ import AdminSlidesZipWizard from '../../components/slides/AdminSlidesZipWizard';
 const { Text, Title, Paragraph } = Typography;
 const { useBreakpoint } = Grid;
 
+const PROCESSING_STATES = ['PENDING', 'QUEUED', 'PROCESSING', 'RETRYING'];
+
 const PROCESSING_META = {
   PENDING: { color: 'default', label: 'Queued', icon: <SyncOutlined spin /> },
   PROCESSING: { color: 'processing', label: 'Processing', icon: <SyncOutlined spin /> },
@@ -109,8 +111,8 @@ export function AdminSlides() {
   useEffect(() => { loadList(); }, [loadList]);
 
   const hasProcessing = useMemo(
-    () => data.some(item => ['PENDING', 'PROCESSING'].includes(item.processingStatus)),
-    [data]
+    () => data.some(item => PROCESSING_STATES.includes(item.processingStatus)) || Number(stats?.processing || 0) > 0,
+    [data, stats]
   );
 
   useEffect(() => {
@@ -121,17 +123,23 @@ export function AdminSlides() {
 
     const poll = async () => {
       if (cancelled) return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        timer = setTimeout(poll, 5000);
+        return;
+      }
       try {
-        const { data: res } = await api.get('/api/slides/admin/presentations', { params: listParams });
+        const [listResponse, statsResponse] = await Promise.all([
+          api.get('/api/slides/admin/presentations', { params: listParams }),
+          api.get('/api/slides/admin/stats').catch(() => null)
+        ]);
         if (cancelled) return;
-        const rows = res.presentations || [];
+        const rows = listResponse.data?.presentations || [];
         setData(rows);
-        setTotal(res.total || 0);
-        const stillProcessing = rows.some(item => ['PENDING', 'PROCESSING'].includes(item.processingStatus));
-        if (!stillProcessing) {
-          api.get('/api/slides/admin/stats').then(statsRes => setStats(statsRes.data)).catch(() => {});
-          return;
-        }
+        setTotal(listResponse.data?.total || 0);
+        if (statsResponse?.data) setStats(statsResponse.data);
+        const rowProcessing = rows.some(item => PROCESSING_STATES.includes(item.processingStatus));
+        const statsProcessing = Number(statsResponse?.data?.processing || 0) > 0;
+        if (!rowProcessing && !statsProcessing) return;
         delay = 5000;
       } catch (err) {
         if (cancelled) return;

@@ -29,6 +29,11 @@ import { moduleNotesRouter } from './routes/moduleNotes.js';
 import { pdfMappingRouter } from './routes/pdfMapping.js';
 import { slidesRouter } from './routes/slides.js';
 import { initSlideWorker } from './lib/slides/worker.js';
+import { initSummarySheetWorker } from './lib/summarySheets/worker.js';
+import { formulaBookPdfsRouter } from './routes/formulaBookPdfs.js';
+import { initFormulaBookPdfWorker } from './lib/formulaBooks/worker.js';
+import { moduleNotePdfsRouter } from './routes/moduleNotePdfs.js';
+import { initModuleNotePdfWorker } from './lib/moduleNotePdfs/worker.js';
 
 /* ===========================
    DATABASE URL COMPOSITION
@@ -174,6 +179,9 @@ app.use(
     skip: (req) =>
       req.path?.startsWith('/uploads') ||
       req.path?.startsWith('/api/slides/assets/') ||
+      req.path?.startsWith('/api/summary-sheets/assets/') ||
+      req.path?.startsWith('/api/formula-books/assets/') ||
+      req.path?.startsWith('/api/module-note-pdfs/assets/') ||
       req.path === '/api/health'
   })
 );
@@ -193,6 +201,9 @@ const slideAssetLimiter = rateLimit({
 });
 
 app.use('/api/slides/assets', slideAssetLimiter);
+app.use('/api/summary-sheets/assets', slideAssetLimiter);
+app.use('/api/formula-books/assets', slideAssetLimiter);
+app.use('/api/module-note-pdfs/assets', slideAssetLimiter);
 
 /* ===========================
    ROUTES (WRAPPED SAFELY)
@@ -223,6 +234,8 @@ app.use('/api/reports', safe(reportsRouter));
 app.use('/api/settings', safe(settingsRouter));
 app.use('/api/formulas', safe(formulasRouter));
 app.use('/api/summary-sheets', safe(summarySheetsRouter));
+app.use('/api/formula-books', safe(formulaBookPdfsRouter));
+app.use('/api/module-note-pdfs', safe(moduleNotePdfsRouter));
 app.use('/api/module-notes', safe(moduleNotesRouter));
 app.use('/api/pdf-mapping', safe(pdfMappingRouter));
 app.use('/api/slides', safe(slidesRouter));
@@ -265,6 +278,9 @@ const PORT = Number(process.env.PORT ?? 4000);
 
 ensureDefaultAdmin().finally(() => {
   initSlideWorker(prisma);
+  initSummarySheetWorker(prisma);
+  initFormulaBookPdfWorker(prisma);
+  initModuleNotePdfWorker(prisma);
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`API listening on http://0.0.0.0:${PORT}`);
   });

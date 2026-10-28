@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Tabs, Spin, Progress, Checkbox, Collapse } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, FilterOutlined, StarOutlined, StarFilled, CopyOutlined, OrderedListOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, FilterOutlined, StarOutlined, StarFilled, CopyOutlined, OrderedListOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { formatFormulaHtml, formatVariablesHtml, formatProseWithMath } from '../../lib/formatFormula';
 import { readSseStream } from '../../lib/sse';
+import AdminFormulaBookPdfsTab from '../../components/formulaBooks/AdminFormulaBookPdfsTab';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -16,6 +17,7 @@ const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III
 
 export function AdminFormulas() {
 	const [form] = Form.useForm();
+	const [activeTab, setActiveTab] = useState('cards');
 	const [formulas, setFormulas] = useState([]);
 	const [loading, setLoading] = useState(false);
 	const [total, setTotal] = useState(0);
@@ -505,6 +507,33 @@ export function AdminFormulas() {
 		},
 	];
 
+	if (activeTab === 'pdf') {
+		return (
+			<div>
+				<div style={{ marginBottom: 16 }}>
+					<div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+						<div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+							<BookOutlined style={{ fontSize: 22, color: '#fff' }} />
+						</div>
+						<div>
+							<Typography.Title level={3} style={{ margin: 0, color: '#102540' }}>Formula Book Master</Typography.Title>
+							<Typography.Text type="secondary">Volume-level PDF Formula Books. Simplified. Exam-focused.</Typography.Text>
+						</div>
+					</div>
+				</div>
+				<Tabs
+					activeKey={activeTab}
+					onChange={setActiveTab}
+					items={[
+						{ key: 'cards', label: 'Formula Cards' },
+						{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Formula Books</span> }
+					]}
+				/>
+				<AdminFormulaBookPdfsTab courses={courses} volumes={volumes} />
+			</div>
+		);
+	}
+
 	return (
 		<div>
 			{/* Header */}
@@ -527,6 +556,15 @@ export function AdminFormulas() {
 					</div>
 				</div>
 			</div>
+
+			<Tabs
+				activeKey={activeTab}
+				onChange={setActiveTab}
+				items={[
+					{ key: 'cards', label: 'Formula Cards' },
+					{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Formula Books</span> }
+				]}
+			/>
 
 			{/* Filters */}
 			<Card size="small" style={{ marginBottom: 16, borderRadius: 12, border: '1px solid #e2e8f0' }}>

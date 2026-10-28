@@ -75,6 +75,9 @@ import { StudentSummarySheets } from './pages/student/StudentSummarySheets.jsx';
 import { StudentModuleNotes } from './pages/student/StudentModuleNotes.jsx';
 import StudentSlides from './pages/student/StudentSlides.jsx';
 import SlideViewerPage from './pages/student/SlideViewerPage.jsx';
+import SummarySheetPdfViewer from './pages/student/SummarySheetPdfViewer.jsx';
+import FormulaBookPdfViewer from './pages/student/FormulaBookPdfViewer.jsx';
+import ModuleNotePdfViewer from './pages/student/ModuleNotePdfViewer.jsx';
 import { useSettings } from './contexts/SettingsContext.jsx';
 import { api } from './lib/api.js';
 
@@ -650,7 +653,11 @@ export default function App() {
 		return children;
 	}
 	const isSlideViewer = /^\/learning\/slides\/[^/]+/.test(location.pathname);
-	const isPublicPage = !isSlideViewer && !location.pathname.startsWith('/admin') && !location.pathname.startsWith('/student') && location.pathname !== '/account';
+	const isSummaryViewer = /^\/learning\/summary-sheets\/[^/]+/.test(location.pathname);
+	const isFormulaViewer = /^\/learning\/formula-books\/[^/]+/.test(location.pathname);
+	const isModuleNotesPdfViewer = /^\/learning\/module-notes-pdf\/[^/]+/.test(location.pathname);
+	const isFullScreenViewer = isSlideViewer || isSummaryViewer || isFormulaViewer || isModuleNotesPdfViewer;
+	const isPublicPage = !isFullScreenViewer && !location.pathname.startsWith('/admin') && !location.pathname.startsWith('/student') && location.pathname !== '/account';
 
 	return (
 		<Layout style={{ minHeight: '100vh' }} className="bg-gray-50">
@@ -710,7 +717,7 @@ export default function App() {
 					</div>
 				</div>
 			)}
-			{!isSlideViewer && <PublicHeader
+			{!isFullScreenViewer && <PublicHeader
 				logoUrl={logoUrl}
 				brandName={brandName}
 				exploreMenu={exploreMenu}
@@ -770,7 +777,7 @@ export default function App() {
 				</div>
 			</div>
 			)}
-			<Content style={isSlideViewer ? { padding: 0, maxWidth: '100%', width: '100%' } : { padding: screens.md ? '24px' : '12px', maxWidth: '100%', margin: '0 auto', width: '100%' }}>
+			<Content style={isFullScreenViewer ? { padding: 0, maxWidth: '100%', width: '100%' } : { padding: screens.md ? '24px' : '12px', maxWidth: '100%', margin: '0 auto', width: '100%' }}>
 				<Routes>
 					<Route path="/" element={<Home />} />
 					<Route path="/login" element={<LoginPage />} />
@@ -854,6 +861,9 @@ export default function App() {
 						<Route path="learn/:id" element={<AdminCoursePreview />} />
 					</Route>
 					<Route path="/learning/slides/:presentationId" element={<RequireAuth><SlideViewerPage /></RequireAuth>} />
+					<Route path="/learning/summary-sheets/:id" element={<RequireAuth><SummarySheetPdfViewer /></RequireAuth>} />
+					<Route path="/learning/formula-books/:id" element={<RequireAuth><FormulaBookPdfViewer /></RequireAuth>} />
+					<Route path="/learning/module-notes-pdf/:id" element={<RequireAuth><ModuleNotePdfViewer /></RequireAuth>} />
 					{/* Learning route */}
 					{/* removed standalone /learn; now under /student/learn/:id */}
 					<Route path="/admin/login" element={<AdminLoginPage />} />
@@ -862,7 +872,7 @@ export default function App() {
 					<Route path="/admin/videos" element={<AdminVideos />} />
 				</Routes>
 			</Content>
-			{!isSlideViewer && (location.pathname.startsWith('/admin') || location.pathname.startsWith('/student') ? (
+			{!isFullScreenViewer && (location.pathname.startsWith('/admin') || location.pathname.startsWith('/student') ? (
 				<Footer className="bg-[#102540] text-white" style={{ padding: '12px 24px' }}>
 					<div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
 						<Typography.Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>
