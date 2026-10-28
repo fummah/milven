@@ -1,16 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Alert, Button, Drawer, Empty, Input, Spin, Tag, Tooltip, Typography, Grid, message } from 'antd';
+import { Alert, Button, Drawer, Empty, Input, Space, Spin, Tag, Tooltip, Typography, Grid, message } from 'antd';
 import {
   ArrowLeftOutlined, CloseOutlined, DownloadOutlined, FullscreenExitOutlined, FullscreenOutlined,
   LeftOutlined, MenuOutlined, RightOutlined, SearchOutlined, ZoomInOutlined, ZoomOutOutlined
 } from '@ant-design/icons';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { api } from '../../lib/api';
-import { assetUrl, highlightParts, levelLabel } from '../../lib/slideUrls';
+import { highlightParts, levelLabel } from '../../lib/slideUrls';
+import { getPdfErrorInfo, loadPdfDocument } from '../../lib/pdfViewer';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -110,6 +108,8 @@ export default function SummarySheetPdfViewer() {
   const [loading, setLoading] = useState(true);
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [fitMode, setFitMode] = useState('page');
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -130,14 +130,18 @@ export default function SummarySheetPdfViewer() {
 
   useEffect(() => {
     let cancelled = false;
+    let loadingTask = null;
     setLoading(true);
     setError('');
+    setErrorCode('');
+    setPdfDoc(null);
+    setNumPages(0);
     api.get(`/api/summary-sheets/${id}/pdf-access`)
       .then(async res => {
         if (cancelled) return;
         setMeta(res.data);
-        const task = pdfjsLib.getDocument({ url: assetUrl(res.data.pdfUrl), withCredentials: false });
-        const doc = await task.promise;
+        loadingTask = loadPdfDocument(res.data.pdfUrl);
+        const doc = await loadingTask.promise;
         if (cancelled) return;
         setPdfDoc(doc);
         setNumPages(doc.numPages);
@@ -147,11 +151,16 @@ export default function SummarySheetPdfViewer() {
       })
       .catch(err => {
         if (cancelled) return;
-        setError(err?.response?.data?.error || 'Could not open this PDF.');
+        const info = getPdfErrorInfo(err);
+        setError(info.message);
+        setErrorCode(info.code);
       })
       .finally(() => !cancelled && setLoading(false));
-    return () => { cancelled = true; };
-  }, [id]);
+    return () => {
+      cancelled = true;
+      loadingTask?.destroy?.();
+    };
+  }, [id, reloadKey]);
 
   useEffect(() => {
     const requested = parseInt(searchParams.get('page'), 10);
@@ -198,7 +207,11 @@ export default function SummarySheetPdfViewer() {
         renderTaskRef.current = task;
         await task.promise;
       } catch (err) {
-        if (err?.name !== 'RenderingCancelledException') setError('Could not render this page.');
+        if (err?.name !== 'RenderingCancelledException') {
+          const info = getPdfErrorInfo(err, 'The PDF page could not be rendered. Please retry.');
+          setError(info.message);
+          setErrorCode(info.code);
+        }
       } finally {
         if (!cancelled) setRendering(false);
       }
@@ -352,7 +365,23 @@ export default function SummarySheetPdfViewer() {
   if (error || !pdfDoc) {
     return (
       <div style={{ position: 'fixed', inset: 0, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <Alert type="error" showIcon message="PDF unavailable" description={error || 'Could not load this PDF.'} action={<Button onClick={() => navigate(backPath)}>Back to Summary Sheets</Button>} />
+        <Alert
+          type="error"
+          showIcon
+          message="PDF unavailable"
+          description={(
+            <div>
+              <div>{error || 'Could not load this PDF.'}</div>
+              {isAdmin && errorCode && <div style={{ marginTop: 6, fontSize: 11, opacity: 0.75 }}>Reference: {errorCode}</div>}
+            </div>
+          )}
+          action={(
+            <Space>
+              <Button onClick={() => setReloadKey(value => value + 1)}>Retry</Button>
+              <Button onClick={() => navigate(backPath)}>Back to Summary Sheets</Button>
+            </Space>
+          )}
+        />
       </div>
     );
   }
