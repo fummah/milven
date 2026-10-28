@@ -112,9 +112,12 @@ jobs:
             echo "Building new API and frontend images..."
             docker compose -f docker-compose.prod.yml build api frontend
 
-            echo "Checking Prisma migration status..."
+            echo "Checking Prisma migration status (informational)..."
+            # `prisma migrate status` exits non-zero when migrations are pending.
+            # That is expected here; `migrate deploy` below applies them and still
+            # fails loudly on a real migration/connection error.
             docker compose -f docker-compose.prod.yml run --rm api \
-              npx prisma migrate status
+              npx prisma migrate status || true
 
             echo "Applying pending Prisma migrations..."
             docker compose -f docker-compose.prod.yml run --rm api \
