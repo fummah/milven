@@ -47,6 +47,10 @@ jobs:
         working-directory: apps/server
         run: npm test
 
+      - name: Run frontend unit tests
+        working-directory: apps/web
+        run: npm test
+
       - name: Build frontend
         working-directory: apps/web
         run: npm run build
