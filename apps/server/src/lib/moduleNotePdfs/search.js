@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { signedModuleNotePdfUrl } from './storage.js';
+import { signedModuleNotePdfUrl, signedModuleNotePdfThumbnailUrl } from './storage.js';
 
 const BOOK_SELECT = {
   id: true,
@@ -14,6 +14,10 @@ const BOOK_SELECT = {
   searchIndexStatus: true,
   pdfVersion: true,
   keywords: true,
+  originalFilename: true,
+  fileSize: true,
+  createdAt: true,
+  updatedAt: true,
   course: { select: { id: true, name: true, level: true } },
   volume: { select: { id: true, name: true } },
   pageMaps: {
@@ -48,6 +52,12 @@ function serializeBook(book, user) {
     ...book,
     pageMaps: undefined,
     pdfUrl: signedModuleNotePdfUrl({
+      id: book.id,
+      userId: user?.id || null,
+      admin: user?.role === 'ADMIN',
+      version: book.pdfVersion
+    }),
+    thumbnailUrl: signedModuleNotePdfThumbnailUrl({
       id: book.id,
       userId: user?.id || null,
       admin: user?.role === 'ADMIN',

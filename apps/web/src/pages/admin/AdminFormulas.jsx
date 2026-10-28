@@ -1,10 +1,14 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Tabs, Spin, Progress, Checkbox, Collapse } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, FilterOutlined, StarOutlined, StarFilled, CopyOutlined, OrderedListOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, FilePdfOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Spin, Progress, Checkbox, Collapse, Pagination } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, FilterOutlined, StarOutlined, StarFilled, CopyOutlined, OrderedListOutlined, AppstoreOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, FilePdfOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { formatFormulaHtml, formatVariablesHtml, formatProseWithMath } from '../../lib/formatFormula';
 import { readSseStream } from '../../lib/sse';
-import AdminFormulaBookPdfsTab from '../../components/formulaBooks/AdminFormulaBookPdfsTab';
+import AdminFormulaBookPdfDrawer from '../../components/formulaBooks/AdminFormulaBookPdfDrawer';
+import FormulaResourceCard from '../../components/resources/FormulaResourceCard';
+import MathText from '../../components/MathText';
+import { ResourceSourceTag, ResourceTypeTag } from '../../components/resources/ResourceVisuals';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -16,8 +20,8 @@ const LEVEL_COLORS = { LEVEL1: 'blue', LEVEL2: 'purple', LEVEL3: 'gold' };
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 
 export function AdminFormulas() {
+	const navigate = useNavigate();
 	const [form] = Form.useForm();
-	const [activeTab, setActiveTab] = useState('cards');
 	const [formulas, setFormulas] = useState([]);
 	const [loading, setLoading] = useState(false);
 	const [total, setTotal] = useState(0);
@@ -28,6 +32,11 @@ export function AdminFormulas() {
 	const [submitting, setSubmitting] = useState(false);
 	const [previewOpen, setPreviewOpen] = useState(false);
 	const [previewFormula, setPreviewFormula] = useState(null);
+	const [pdfDrawerOpen, setPdfDrawerOpen] = useState(false);
+	const [pdfEditing, setPdfEditing] = useState(null);
+	const [replacePdfTarget, setReplacePdfTarget] = useState(null);
+	const [pdfReplacing, setPdfReplacing] = useState(false);
+	const replacePdfInputRef = React.useRef(null);
 
 	// AI Generate
 	const [aiModalOpen, setAiModalOpen] = useState(false);
@@ -61,7 +70,10 @@ export function AdminFormulas() {
 	const [filterModuleId, setFilterModuleId] = useState(null);
 	const [filterTopicId, setFilterTopicId] = useState(null);
 	const [filterHighYield, setFilterHighYield] = useState(false);
+	const [filterSource, setFilterSource] = useState(null);
+	const [filterStatus, setFilterStatus] = useState(null);
 	const [searchText, setSearchText] = useState('');
+	const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.formula-resources.view') || 'cards');
 
 	// Lookup data
 	const [courses, setCourses] = useState([]);
@@ -96,6 +108,9 @@ export function AdminFormulas() {
 		if (aiModuleId) list = list.filter(t => t.moduleId === aiModuleId);
 		return list;
 	}, [aiCourseId, aiModuleId, topics]);
+	const filterVolumesList = useMemo(() => filterCourseId ? volumes.filter(v => v.courseLinks?.some(cl => cl.courseId === filterCourseId)) : volumes, [filterCourseId, volumes]);
+	const filterModulesList = useMemo(() => modules.filter(m => (!filterCourseId || m.courseId === filterCourseId) && (!filterVolumeId || m.volumeId === filterVolumeId)), [modules, filterCourseId, filterVolumeId]);
+	const filterTopicsList = useMemo(() => topics.filter(t => (!filterCourseId || t.courseId === filterCourseId) && (!filterModuleId || t.moduleId === filterModuleId)), [topics, filterCourseId, filterModuleId]);
 
 	// Load lookup data
 	useEffect(() => {
@@ -142,7 +157,7 @@ export function AdminFormulas() {
 		}
 	}, [formModuleId, formCourseId, topics]);
 
-	// Load formulas
+	// Load unified formula resources
 	const fetchFormulas = useCallback(async () => {
 		setLoading(true);
 		try {
@@ -153,18 +168,35 @@ export function AdminFormulas() {
 			if (filterModuleId) params.moduleId = filterModuleId;
 			if (filterTopicId) params.topicId = filterTopicId;
 			if (filterHighYield) params.highYield = 'true';
+			if (filterSource) params.source = filterSource;
+			if (filterStatus) params.status = filterStatus;
 			if (searchText) params.search = searchText;
-			const res = await api.get('/api/formulas', { params });
-			setFormulas(res.data?.formulas || []);
+			const res = await api.get('/api/formulas/unified', { params });
+			setFormulas(res.data?.resources || []);
 			setTotal(res.data?.total || 0);
 		} catch {
-			message.error('Failed to load formulas');
+			message.error('Failed to load formula resources');
 		} finally {
 			setLoading(false);
 		}
-	}, [page, pageSize, filterLevel, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, filterHighYield, searchText]);
+	}, [page, pageSize, filterLevel, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, filterHighYield, filterSource, filterStatus, searchText]);
 
 	useEffect(() => { fetchFormulas(); }, [fetchFormulas]);
+
+	const hasProcessingPdf = useMemo(() => formulas.some(item => item.type === 'PDF' && ['UPLOADED', 'INDEXING'].includes(item.processingStatus)), [formulas]);
+	useEffect(() => {
+		if (!hasProcessingPdf) return undefined;
+		let cancelled = false;
+		let timer = null;
+		const poll = async () => {
+			if (cancelled) return;
+			try { await fetchFormulas(); } catch {}
+			if (!cancelled) timer = setTimeout(poll, 6000);
+		};
+		timer = setTimeout(poll, 6000);
+		return () => { cancelled = true; if (timer) clearTimeout(timer); };
+	}, [hasProcessingPdf, fetchFormulas]);
+
 
 	// Open drawer for create/edit
 	const openCreate = () => {
@@ -250,6 +282,56 @@ export function AdminFormulas() {
 		} catch {
 			message.error('Failed to update');
 		}
+	};
+
+	const openPdfResource = resource => navigate(`/learning/formula-books/${resource.resourceId || resource.id}${resource.matchPage ? `?page=${resource.matchPage}` : ''}`);
+	const editPdfResource = resource => { setPdfEditing(resource); setPdfDrawerOpen(true); };
+	const togglePdfStatus = async resource => {
+		try {
+			const publicationStatus = resource.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED';
+			await api.put(`/api/formula-books/${resource.resourceId || resource.id}`, { publicationStatus });
+			message.success(publicationStatus === 'PUBLISHED' ? 'Published' : 'Moved to draft');
+			fetchFormulas();
+		} catch (err) { message.error(err?.response?.data?.error || 'Failed to update PDF status'); }
+	};
+	const downloadPdf = async resource => {
+		try {
+			const res = await api.get(`/api/formula-books/${resource.resourceId || resource.id}/download`, { responseType: 'blob' });
+			const url = URL.createObjectURL(res.data);
+			const anchor = document.createElement('a');
+			anchor.href = url; anchor.download = resource.originalFilename || 'formula-book.pdf'; anchor.click();
+			URL.revokeObjectURL(url);
+		} catch { message.error('Could not download this PDF'); }
+	};
+	const triggerPdfReplace = resource => { setReplacePdfTarget(resource); setTimeout(() => replacePdfInputRef.current?.click(), 0); };
+	const replacePdfFile = async event => {
+		const file = event.target.files?.[0];
+		event.target.value = '';
+		if (!file || !replacePdfTarget) return;
+		setPdfReplacing(true);
+		try {
+			const body = new FormData();
+			body.append('file', file);
+			await api.post(`/api/formula-books/${replacePdfTarget.resourceId || replacePdfTarget.id}/replace`, body, { headers: { 'Content-Type': 'multipart/form-data' } });
+			message.success('Replacement PDF uploaded. Indexing has started.');
+			fetchFormulas();
+		} catch (err) { message.error(err?.response?.data?.error || 'Could not replace the PDF'); }
+		finally { setPdfReplacing(false); setReplacePdfTarget(null); }
+	};
+	const deleteResource = resource => {
+		if (resource.type === 'PDF') {
+			Modal.confirm({ title: 'Delete PDF Formula Book', content: 'The PDF and its indexed pages will be removed. This cannot be undone.', okText: 'Delete', okType: 'danger', onOk: async () => {
+				try { await api.delete(`/api/formula-books/${resource.resourceId || resource.id}`); message.success('Deleted'); fetchFormulas(); }
+				catch (err) { message.error(err?.response?.data?.error || 'Failed to delete'); }
+			} });
+			return;
+		}
+		handleDelete(resource.id);
+	};
+	const toggleResourceStatus = resource => resource.type === 'PDF' ? togglePdfStatus(resource) : undefined;
+	const resourcePreview = resource => {
+		if (resource.type === 'PDF') openPdfResource(resource);
+		else { setPreviewFormula(resource); setPreviewOpen(true); }
 	};
 
 	const fetchAiModels = async (provider) => {
@@ -433,106 +515,75 @@ export function AdminFormulas() {
 
 	const columns = [
 		{
-			title: 'Formula Name',
-			dataIndex: 'name',
-			key: 'name',
-			width: 220,
-			render: (text, record) => (
-				<Space>
-					{record.highYield && <StarFilled style={{ color: '#f59e0b' }} />}
-					<span style={{ fontWeight: 600, color: '#102540' }}>{text}</span>
+			title: 'Resource',
+			key: 'resource',
+			width: 330,
+			render: (_, record) => (
+				<Space align="start">
+					{record.type === 'PDF' ? <FilePdfOutlined style={{ color: '#ef4444', fontSize: 20, marginTop: 3 }} /> : record.highYield ? <StarFilled style={{ color: '#f59e0b', marginTop: 4 }} /> : <BookOutlined style={{ color: '#2563eb', marginTop: 4 }} />}
+					<div style={{ minWidth: 0 }}>
+						<div style={{ fontWeight: 600, color: '#102540' }}>{record.title}</div>
+						{record.type === 'FORMULA' && <MathText text={record.formula} tag="div" style={{ fontSize: 12, color: '#475569', marginTop: 4, maxHeight: 42, overflow: 'hidden' }} />}
+						{record.type === 'PDF' && record.originalFilename && <Typography.Text type="secondary" style={{ fontSize: 11 }} ellipsis>{record.originalFilename}</Typography.Text>}
+					</div>
 				</Space>
-			),
+			)
+		},
+		{
+			title: 'Type',
+			key: 'type',
+			width: 180,
+			render: (_, record) => <Space size={4} wrap><ResourceTypeTag type={record.type} /><ResourceSourceTag type={record.type} source={record.source} /></Space>
 		},
 		{
 			title: 'Level',
-			dataIndex: 'level',
 			key: 'level',
 			width: 90,
-			render: (l) => <Tag color={LEVEL_COLORS[l]}>{LEVEL_LABELS[l]}</Tag>,
+			render: (_, record) => <Tag color={LEVEL_COLORS[record.level]}>{LEVEL_LABELS[record.level]}</Tag>
 		},
 		{
 			title: 'Volume',
 			key: 'volume',
-			width: 140,
-			render: (_, r) => r.volume?.name || <Typography.Text type="secondary">—</Typography.Text>,
+			width: 150,
+			render: (_, record) => record.volume?.name || <Typography.Text type="secondary">-</Typography.Text>
 		},
 		{
 			title: 'Module',
 			key: 'module',
-			width: 160,
-			render: (_, r) => r.module?.name || <Typography.Text type="secondary">—</Typography.Text>,
+			width: 170,
+			render: (_, record) => record.type === 'PDF' ? <Tag>Whole Volume</Tag> : record.module?.name || <Typography.Text type="secondary">-</Typography.Text>
 		},
 		{
-			title: 'Topic',
-			key: 'topic',
-			width: 180,
-			render: (_, r) => r.topic?.name || <Typography.Text type="secondary">—</Typography.Text>,
-		},
-		{
-			title: 'Formula',
-			dataIndex: 'formula',
-			key: 'formula',
-			ellipsis: true,
-			render: (text) => (
-				<Typography.Text code style={{ fontSize: 12 }}>
-					{text?.length > 60 ? text.slice(0, 60) + '…' : text}
-				</Typography.Text>
-			),
+			title: 'Status',
+			key: 'status',
+			width: 110,
+			render: (_, record) => <Tag color={record.status === 'PUBLISHED' ? 'green' : 'default'}>{record.status === 'PUBLISHED' ? 'Published' : 'Draft'}</Tag>
 		},
 		{
 			title: 'Actions',
 			key: 'actions',
-			width: 180,
+			width: 230,
 			fixed: 'right',
-			render: (_, record) => (
-				<Space size={4}>
-					<Tooltip title="Preview">
-						<Button size="small" type="text" icon={<EyeOutlined />} onClick={() => { setPreviewFormula(record); setPreviewOpen(true); }} />
-					</Tooltip>
-					<Tooltip title="Edit">
-						<Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
-					</Tooltip>
-					<Tooltip title={record.highYield ? 'Remove High-Yield' : 'Mark High-Yield'}>
-						<Button size="small" type="text" icon={record.highYield ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />} onClick={() => toggleHighYield(record)} />
-					</Tooltip>
-					<Tooltip title="Duplicate">
-						<Button size="small" type="text" icon={<CopyOutlined />} onClick={() => duplicateFormula(record)} />
-					</Tooltip>
-					<Tooltip title="Delete">
-						<Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
-					</Tooltip>
+			render: (_, record) => record.type === 'PDF' ? (
+				<Space size={2}>
+					<Tooltip title="Preview PDF"><Button size="small" type="text" icon={<EyeOutlined />} onClick={() => openPdfResource(record)} /></Tooltip>
+					<Tooltip title="Edit details"><Button size="small" type="text" icon={<EditOutlined />} onClick={() => editPdfResource(record)} /></Tooltip>
+					<Tooltip title="Replace PDF"><Button size="small" type="text" icon={<UploadOutlined />} onClick={() => triggerPdfReplace(record)} /></Tooltip>
+					<Tooltip title={record.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}><Button size="small" type="text" icon={record.status === 'PUBLISHED' ? <StarFilled style={{ color: '#22c55e' }} /> : <StarOutlined />} onClick={() => togglePdfStatus(record)} /></Tooltip>
+					<Tooltip title="Download"><Button size="small" type="text" icon={<DownloadOutlined />} onClick={() => downloadPdf(record)} /></Tooltip>
+					<Tooltip title="Delete"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => deleteResource(record)} /></Tooltip>
 				</Space>
-			),
-		},
+			) : (
+				<Space size={2}>
+					<Tooltip title="Preview"><Button size="small" type="text" icon={<EyeOutlined />} onClick={() => resourcePreview(record)} /></Tooltip>
+					<Tooltip title="Edit"><Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} /></Tooltip>
+					<Tooltip title={record.highYield ? 'Remove High-Yield' : 'Mark High-Yield'}><Button size="small" type="text" icon={record.highYield ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />} onClick={() => toggleHighYield(record)} /></Tooltip>
+					<Tooltip title="Duplicate"><Button size="small" type="text" icon={<CopyOutlined />} onClick={() => duplicateFormula(record)} /></Tooltip>
+					<Tooltip title="Delete"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => deleteResource(record)} /></Tooltip>
+				</Space>
+			)
+		}
 	];
-
-	if (activeTab === 'pdf') {
-		return (
-			<div>
-				<div style={{ marginBottom: 16 }}>
-					<div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-						<div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-							<BookOutlined style={{ fontSize: 22, color: '#fff' }} />
-						</div>
-						<div>
-							<Typography.Title level={3} style={{ margin: 0, color: '#102540' }}>Formula Book Master</Typography.Title>
-							<Typography.Text type="secondary">Volume-level PDF Formula Books. Simplified. Exam-focused.</Typography.Text>
-						</div>
-					</div>
-				</div>
-				<Tabs
-					activeKey={activeTab}
-					onChange={setActiveTab}
-					items={[
-						{ key: 'cards', label: 'Formula Cards' },
-						{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Formula Books</span> }
-					]}
-				/>
-				<AdminFormulaBookPdfsTab courses={courses} volumes={volumes} />
-			</div>
-		);
-	}
 
 	return (
 		<div>
@@ -557,117 +608,93 @@ export function AdminFormulas() {
 				</div>
 			</div>
 
-			<Tabs
-				activeKey={activeTab}
-				onChange={setActiveTab}
-				items={[
-					{ key: 'cards', label: 'Formula Cards' },
-					{ key: 'pdf', label: <span><FilePdfOutlined /> PDF Formula Books</span> }
-				]}
-			/>
-
 			{/* Filters */}
 			<Card size="small" style={{ marginBottom: 16, borderRadius: 12, border: '1px solid #e2e8f0' }}>
 				<Row gutter={[12, 12]} align="middle">
-					<Col xs={24} sm={12} md={4}>
-						<Input
-							prefix={<SearchOutlined />}
-							placeholder="Search formulas…"
-							value={searchText}
-							onChange={e => { setSearchText(e.target.value); setPage(1); }}
-							allowClear
-						/>
-					</Col>
-					<Col xs={12} sm={6} md={3}>
-						<Select
-							placeholder="Level"
-							value={filterLevel}
-							onChange={v => { setFilterLevel(v); setPage(1); }}
-							options={[{ value: null, label: 'All Levels' }, ...LEVELS]}
-							style={{ width: '100%' }}
-							allowClear
-						/>
-					</Col>
-					<Col xs={12} sm={6} md={4}>
-						<Select
-							placeholder="Course"
-							value={filterCourseId}
-							onChange={v => { setFilterCourseId(v); setPage(1); }}
-							options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]}
-							style={{ width: '100%' }}
-							allowClear
-							showSearch
-							optionFilterProp="label"
-						/>
-					</Col>
-					<Col xs={12} sm={6} md={3}>
-						<Select
-							placeholder="Volume"
-							value={filterVolumeId}
-							onChange={v => { setFilterVolumeId(v); setPage(1); }}
-							options={[{ value: null, label: 'All Volumes' }, ...volumes.map(v => ({ value: v.id, label: v.name }))]}
-							style={{ width: '100%' }}
-							allowClear
-							showSearch
-							optionFilterProp="label"
-						/>
-					</Col>
-					<Col xs={12} sm={6} md={3}>
-						<Select
-							placeholder="Module"
-							value={filterModuleId}
-							onChange={v => { setFilterModuleId(v); setPage(1); }}
-							options={[{ value: null, label: 'All Modules' }, ...modules.map(m => ({ value: m.id, label: m.name }))]}
-							style={{ width: '100%' }}
-							allowClear
-							showSearch
-							optionFilterProp="label"
-						/>
-					</Col>
-					<Col xs={12} sm={6} md={3}>
-						<Button
-							type={filterHighYield ? 'primary' : 'default'}
-							icon={<StarFilled />}
-							onClick={() => { setFilterHighYield(!filterHighYield); setPage(1); }}
-							style={filterHighYield ? { background: '#f59e0b', borderColor: '#f59e0b' } : {}}
-						>
-							High-Yield
-						</Button>
-					</Col>
-					<Col xs={24} sm={12} md={4} style={{ textAlign: 'right' }}>
-						<Space>
-							<Button icon={<RobotOutlined />} onClick={openAiModal}
-								style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6', color: '#fff' }}>
-								AI Generate
-							</Button>
-							<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}
-								style={{ background: '#102540', borderColor: '#102540' }}>
-								Add Formula
-							</Button>
+					<Col xs={24} sm={12} md={5}><Input prefix={<SearchOutlined />} placeholder="Search formulas and PDFs..." value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear /></Col>
+					<Col xs={12} sm={6} md={2}><Select placeholder="Level" value={filterLevel} onChange={v => { setFilterLevel(v); setPage(1); }} options={[{ value: null, label: 'All Levels' }, ...LEVELS]} style={{ width: '100%' }} allowClear /></Col>
+					<Col xs={12} sm={6} md={3}><Select placeholder="Course" value={filterCourseId} onChange={v => { setFilterCourseId(v); setFilterVolumeId(null); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={12} sm={6} md={3}><Select placeholder="Volume" value={filterVolumeId} onChange={v => { setFilterVolumeId(v); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Volumes' }, ...filterVolumesList.map(v => ({ value: v.id, label: v.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={12} sm={6} md={3}><Select placeholder="Module" value={filterModuleId} onChange={v => { setFilterModuleId(v); setFilterTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Modules' }, ...filterModulesList.map(m => ({ value: m.id, label: m.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={12} sm={6} md={3}><Select placeholder="Topic" value={filterTopicId} onChange={v => { setFilterTopicId(v); setPage(1); }} options={[{ value: null, label: 'All Topics' }, ...filterTopicsList.map(t => ({ value: t.id, label: t.name }))]} style={{ width: '100%' }} allowClear showSearch optionFilterProp="label" /></Col>
+					<Col xs={12} sm={6} md={2}><Select placeholder="Source" value={filterSource} onChange={v => { setFilterSource(v); setPage(1); }} options={[{ value: null, label: 'All Sources' }, { value: 'AI', label: 'AI Generated' }, { value: 'MANUAL', label: 'Manual' }, { value: 'UPLOADED_PDF', label: 'Uploaded PDF' }]} style={{ width: '100%' }} allowClear /></Col>
+					<Col xs={12} sm={6} md={2}><Select placeholder="Status" value={filterStatus} onChange={v => { setFilterStatus(v); setPage(1); }} options={[{ value: null, label: 'All' }, { value: 'DRAFT', label: 'Draft' }, { value: 'PUBLISHED', label: 'Published' }]} style={{ width: '100%' }} allowClear /></Col>
+					<Col xs={12} sm={6} md={2}><Button type={filterHighYield ? 'primary' : 'default'} icon={<StarFilled />} onClick={() => { setFilterHighYield(!filterHighYield); setPage(1); }} style={filterHighYield ? { background: '#f59e0b', borderColor: '#f59e0b' } : { width: '100%' }} block>High-Yield</Button></Col>
+					<Col xs={24} md={24} style={{ textAlign: 'right' }}>
+						<Space wrap>
+							<Button.Group>
+								<Tooltip title="Card view"><Button type={viewMode === 'cards' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => { setViewMode('cards'); localStorage.setItem('milven.formula-resources.view', 'cards'); }} /></Tooltip>
+								<Tooltip title="Table view"><Button type={viewMode === 'table' ? 'primary' : 'default'} icon={<OrderedListOutlined />} onClick={() => { setViewMode('table'); localStorage.setItem('milven.formula-resources.view', 'table'); }} /></Tooltip>
+							</Button.Group>
+							<Button icon={<RobotOutlined />} onClick={openAiModal} style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6', color: '#fff' }}>AI Generate</Button>
+							<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} style={{ background: '#102540', borderColor: '#102540' }}>Add Formula</Button>
+							<Button icon={<FilePdfOutlined />} onClick={() => { setPdfEditing(null); setPdfDrawerOpen(true); }}>Upload PDF</Button>
 						</Space>
 					</Col>
 				</Row>
 			</Card>
 
-			{/* Table */}
-			<Card bodyStyle={{ padding: 0 }} style={{ borderRadius: 12, border: '1px solid #e2e8f0' }}>
-				<Table
-					dataSource={formulas}
-					columns={columns}
-					rowKey="id"
-					loading={loading}
-					scroll={{ x: 1100 }}
-					pagination={{
-						current: page,
-						pageSize,
-						total,
-						showSizeChanger: true,
-						pageSizeOptions: ['10', '25', '50', '100'],
-						onChange: (p, ps) => { setPage(p); setPageSize(ps); },
-						showTotal: (t) => <span style={{ color: '#64748b' }}>{t} formula{t !== 1 ? 's' : ''}</span>,
-					}}
-				/>
-			</Card>
+			{/* Unified resources */}
+			{loading ? (
+				<div style={{ padding: 60, textAlign: 'center' }}><Spin size="large" /></div>
+			) : formulas.length === 0 ? (
+				<Card style={{ borderRadius: 12, border: '1px solid #e2e8f0', textAlign: 'center', padding: 40 }}><Empty description="No formula cards or PDFs found" /></Card>
+			) : viewMode === 'cards' ? (
+				<>
+					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: 16 }}>
+						{formulas.map(resource => (
+							<FormulaResourceCard
+								key={resource.resourceKey || resource.id}
+								resource={resource}
+								isAdmin
+								onPreview={resourcePreview}
+								onEdit={openEdit}
+								onToggleHighYield={toggleHighYield}
+								onDuplicate={duplicateFormula}
+								onDelete={deleteResource}
+								onOpenPdf={openPdfResource}
+								onEditPdf={editPdfResource}
+								onReplacePdf={triggerPdfReplace}
+								onDownloadPdf={downloadPdf}
+								onTogglePdfStatus={togglePdfStatus}
+							/>
+						))}
+					</div>
+					<div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+						<Pagination current={page} pageSize={pageSize} total={total} showSizeChanger showTotal={count => `${count} resource${count === 1 ? '' : 's'}`} pageSizeOptions={[12, 24, 48]} onChange={(nextPage, nextSize) => { setPage(nextSize !== pageSize ? 1 : nextPage); setPageSize(nextSize); }} />
+					</div>
+				</>
+			) : (
+				<Card bodyStyle={{ padding: 0 }} style={{ borderRadius: 12, border: '1px solid #e2e8f0' }}>
+					<Table
+						dataSource={formulas}
+						columns={columns}
+						rowKey={record => record.resourceKey || record.id}
+						loading={loading}
+						scroll={{ x: 1250 }}
+						pagination={{
+							current: page,
+							pageSize,
+							total,
+							showSizeChanger: true,
+							pageSizeOptions: ['10', '25', '50', '100'],
+							onChange: (nextPage, nextSize) => { setPage(nextSize !== pageSize ? 1 : nextPage); setPageSize(nextSize); },
+							showTotal: count => `${count} resource${count === 1 ? '' : 's'}`
+						}}
+					/>
+				</Card>
+			)}
+
+			<AdminFormulaBookPdfDrawer
+				open={pdfDrawerOpen}
+				mode={pdfEditing ? 'edit' : 'upload'}
+				book={pdfEditing ? { ...pdfEditing, id: pdfEditing.resourceId || pdfEditing.id } : null}
+				courses={courses}
+				volumes={volumes}
+				onClose={() => { setPdfDrawerOpen(false); setPdfEditing(null); }}
+				onSaved={fetchFormulas}
+			/>
+			<input ref={replacePdfInputRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={replacePdfFile} />
 
 			{/* Create / Edit Drawer */}
 			<Drawer

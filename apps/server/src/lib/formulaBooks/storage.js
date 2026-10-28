@@ -94,3 +94,18 @@ export function signedFormulaBookPdfUrl({ id, userId = null, admin = false, vers
   if (version) query.set('v', String(version));
   return `/api/formula-books/assets/${encodeURIComponent(id)}/pdf?${query.toString()}`;
 }
+
+export function formulaBookThumbnailKey(id, version) {
+  return formulaBookKey('books', safeSegment(id), 'versions', safeSegment(version || 'v1'), 'thumbnail.png');
+}
+
+export function resolveFormulaBookThumbnailKey(key) {
+  return resolveFormulaBookKey(key);
+}
+
+export function signedFormulaBookThumbnailUrl({ id, userId = null, admin = false, version = null }) {
+  const token = formulaBookPdfToken({ id, userId, admin });
+  const query = new URLSearchParams({ token });
+  if (version) query.set('v', String(version));
+  return `/api/formula-books/assets/${encodeURIComponent(id)}/thumbnail?${query.toString()}`;
+}

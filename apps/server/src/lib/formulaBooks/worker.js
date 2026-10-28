@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { extractPdfPages } from './pdf.js';
-import { resolveFormulaBookKey, removeFormulaBookKey } from './storage.js';
+import { resolveFormulaBookKey, removeFormulaBookKey, formulaBookThumbnailKey, resolveFormulaBookThumbnailKey } from './storage.js';
+import { generatePdfThumbnail } from '../pdfThumbnails.js';
 
 const MAX_CONCURRENCY = Math.max(1, Math.min(4, Number(process.env.FORMULA_BOOK_CONCURRENCY ?? 2)));
 const MAX_ATTEMPTS = Math.max(1, Number(process.env.FORMULA_BOOK_MAX_ATTEMPTS ?? 3));
@@ -159,6 +160,13 @@ export async function processFormulaBookPdf(prisma, id) {
     const previousKey = sheet.storageKey;
     const nextKey = sheet.pendingStorageKey || sheet.storageKey;
     const nextVersion = sheet.pendingPdfVersion || `pdf-${Date.now().toString(36)}`;
+    let thumbnailWarning = null;
+    try {
+      await generatePdfThumbnail(absolute, resolveFormulaBookThumbnailKey(formulaBookThumbnailKey(id, nextVersion)));
+    } catch (err) {
+      thumbnailWarning = `Thumbnail generation failed: ${String(err?.message || err).slice(0, 300)}`;
+    }
+    const processingWarning = [parsed.warning, thumbnailWarning].filter(Boolean).join(' ') || null;
 
     await prisma.$transaction([
       prisma.formulaBookPdfPage.deleteMany({ where: { formulaBookPdfId: id } }),
@@ -182,7 +190,7 @@ export async function processFormulaBookPdf(prisma, id) {
           processingStatus: 'READY',
           searchIndexStatus: 'READY',
           processingError: null,
-          processingWarning: parsed.warning,
+          processingWarning: processingWarning,
           searchIndexedAt: new Date(),
           pendingStorageKey: null,
           pendingFileHash: null,

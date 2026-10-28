@@ -9,6 +9,7 @@ import { requireRole } from '../middleware/requireRole.js';
 import { extractPdfPages, looksLikePdfBuffer } from '../lib/summarySheets/pdf.js';
 import { searchModuleNotePdfs, searchWithinModuleNote, serializeBook } from '../lib/moduleNotePdfs/search.js';
 import { enqueueModuleNotePdf } from '../lib/moduleNotePdfs/worker.js';
+import { generatePdfThumbnail } from '../lib/pdfThumbnails.js';
 import {
   moduleNotePdfDir,
   moduleNotePdfKey,
@@ -16,6 +17,9 @@ import {
   moveFile,
   hashFile,
   signedModuleNotePdfUrl,
+  signedModuleNotePdfThumbnailUrl,
+  moduleNotePdfThumbnailKey,
+  resolveModuleNotePdfThumbnailKey,
   verifyModuleNotePdfToken,
   resolveModuleNotePdfKey,
   removeModuleNotePdfStorage
@@ -118,6 +122,30 @@ export function moduleNotePdfsRouter(prisma) {
       return res.sendFile(absolute);
     } catch {
       return res.status(400).json({ error: 'Invalid PDF storage path' });
+    }
+  });
+
+  router.get('/assets/:id/thumbnail', async (req, res) => {
+    const payload = verifyModuleNotePdfToken(String(req.query.token || ''));
+    if (!payload || payload.sid !== req.params.id) return res.status(401).json({ error: 'Invalid or expired thumbnail link' });
+    const book = await prisma.moduleNotePdf.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, publicationStatus: true, storageKey: true, pdfVersion: true }
+    });
+    if (!book || !book.storageKey) return res.status(404).json({ error: 'PDF not found' });
+    if (book.publicationStatus !== 'PUBLISHED' && !payload.adm) return res.status(403).json({ error: 'PDF is not published' });
+    try {
+      const pdfPath = resolveModuleNotePdfKey(book.storageKey);
+      if (!fs.existsSync(pdfPath)) return res.status(404).json({ error: 'PDF file is missing' });
+      const thumbnailKey = moduleNotePdfThumbnailKey(book.id, book.pdfVersion || 'v1');
+      const thumbnailPath = resolveModuleNotePdfThumbnailKey(thumbnailKey);
+      await generatePdfThumbnail(pdfPath, thumbnailPath);
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+      return res.sendFile(thumbnailPath);
+    } catch (err) {
+      console.error('[module-note-pdfs.thumbnail]', { id: req.params.id, message: err?.message });
+      return res.status(404).json({ error: 'PDF thumbnail is not available' });
     }
   });
 

@@ -5,6 +5,8 @@ import { requireRole } from '../middleware/requireRole.js';
 import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION } from '../lib/openai.js';
 import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion, AI_PROVIDERS } from '../lib/aiProvider.js';
 import { stripJsonFences, extractCurriculumExcerpt } from '../lib/aiContent.js';
+import { searchModuleNotePdfs, serializeBook as serializeModuleNotePdf } from '../lib/moduleNotePdfs/search.js';
+import { normalizeNoteSource, paginateResources, resourceCounts, sortResources } from '../lib/unifiedResources.js';
 
 const MAX_TARGET_TOPICS = 20;
 
@@ -292,6 +294,146 @@ export function moduleNotesRouter(prisma, deps = {}) {
 	});
 
 	// ─── GET ONE ──────────────────────────────────────────────
+	// Unified Learning Notes + PDF Module Notes listing.
+	router.get('/unified', requireAuth(), async (req, res) => {
+		try {
+			const { courseId, volumeId, moduleId, topicId, conceptId, level, status, year, search, source, sort, page, limit } = req.query;
+			const isAdmin = req.user.role === 'ADMIN';
+			const allowedIds = isAdmin
+				? null
+				: (await prisma.enrollment.findMany({ where: { userId: req.user.id }, select: { courseId: true } })).map(row => row.courseId);
+			const term = String(search || '').trim();
+			const sourceFilter = String(source || '').toUpperCase();
+			const wantsNotes = !['UPLOAD', 'UPLOADED_PDF'].includes(sourceFilter);
+			const wantsPdfs = !['AI', 'AI_GENERATED', 'MANUAL'].includes(sourceFilter);
+			const resources = [];
+			const scopedCourseId = courseId && allowedIds ? (allowedIds.includes(courseId) ? courseId : '__none__') : courseId;
+
+			if (wantsNotes) {
+				if (!allowedIds || allowedIds.length) {
+					const noteWhere = {};
+					if (scopedCourseId) noteWhere.courseId = scopedCourseId;
+					if (volumeId) noteWhere.volumeId = volumeId;
+					if (moduleId) noteWhere.moduleId = moduleId;
+					if (topicId) noteWhere.topicId = topicId;
+					if (level) noteWhere.level = level;
+					if (year) noteWhere.year = Number(year);
+					noteWhere.status = isAdmin ? (status || undefined) : 'PUBLISHED';
+					if (!noteWhere.status) delete noteWhere.status;
+					if (sourceFilter === 'AI' || sourceFilter === 'AI_GENERATED') noteWhere.sourceType = 'AI_GENERATED';
+					if (sourceFilter === 'MANUAL') noteWhere.sourceType = 'MANUAL';
+					if (allowedIds) noteWhere.courseId = scopedCourseId || { in: allowedIds };
+					const rows = await prisma.moduleNote.findMany({
+						where: noteWhere,
+							include: defaultInclude,
+							orderBy: [{ createdAt: 'desc' }, { order: 'asc' }],
+							take: 2000
+						});
+					const needle = term.toLowerCase();
+					for (const row of rows) {
+						if (needle && !JSON.stringify(row).toLowerCase().includes(needle)) continue;
+						resources.push({
+							...row,
+							id: row.id,
+							resourceId: row.id,
+							resourceKey: `note:${row.id}`,
+							resourceId: row.id,
+							type: 'NOTE',
+							source: normalizeNoteSource(row.sourceType),
+							title: row.title,
+							status: row.status,
+							thumbnailUrl: null,
+							pageCount: null,
+							matchPage: null
+						});
+					}
+				}
+			}
+
+			if (wantsPdfs) {
+				const pdfBaseWhere = {
+					...(scopedCourseId ? { courseId: scopedCourseId } : {}),
+					...(volumeId ? { volumeId } : {}),
+					...(year ? { year: Number(year) } : {}),
+					...(status ? { publicationStatus: status } : isAdmin ? {} : { publicationStatus: 'PUBLISHED' }),
+					...(allowedIds ? { courseId: scopedCourseId || { in: allowedIds } } : {}),
+					...(moduleId ? { pageMaps: { some: { moduleId } } } : {}),
+					...(topicId ? { pageMaps: { some: { topicId } } } : {}),
+					...(conceptId ? { pageMaps: { some: { conceptId } } } : {})
+				};
+				if (!allowedIds || allowedIds.length) {
+					const pdfs = new Map();
+					if (term.length >= 2) {
+						const found = await searchModuleNotePdfs(prisma, {
+							q: term,
+							user: req.user,
+							courseId: scopedCourseId || null,
+							volumeId: volumeId || null,
+							moduleId: moduleId || null,
+							topicId: topicId || null,
+							conceptId: conceptId || null,
+							year: year ? Number(year) : null,
+							includeDrafts: isAdmin,
+							limit: 2000
+						});
+						for (const result of found.results) {
+							const current = pdfs.get(result.moduleNotePdfId);
+							if (!current || (current.matchType === 'BOOK' && result.matchType === 'PAGE')) {
+								pdfs.set(result.moduleNotePdfId, { book: result.book, matchPage: result.pageNumber, matchType: result.matchType, academic: result.academic?.[0] || null });
+							}
+						}
+					} else {
+						const rows = await prisma.moduleNotePdf.findMany({
+							where: pdfBaseWhere,
+							include: {
+								course: { select: { id: true, name: true, level: true } },
+								volume: { select: { id: true, name: true } },
+								pageMaps: { select: { pageStart: true, pageEnd: true, module: { select: { id: true, name: true } }, topic: { select: { id: true, name: true } }, concept: { select: { id: true, name: true } } } }
+							},
+							orderBy: { createdAt: 'desc' },
+							take: 2000
+						});
+						for (const row of rows) {
+							const first = row.pageMaps?.[0] || null;
+							pdfs.set(row.id, { book: serializeModuleNotePdf(row, req.user), matchPage: 1, matchType: 'BOOK', academic: first ? { module: first.module, topic: first.topic, concept: first.concept } : null });
+						}
+					}
+
+					for (const entry of pdfs.values()) {
+						const book = entry.book;
+						if (!book) continue;
+						if (level && book.course?.level !== level) continue;
+						if (status && book.publicationStatus !== status) continue;
+						resources.push({
+							...book,
+							id: book.id,
+							resourceId: book.id,
+							resourceKey: `pdf:${book.id}`,
+							resourceId: book.id,
+							type: 'PDF',
+							source: 'UPLOAD',
+							title: book.title,
+							status: book.publicationStatus,
+							level: book.course?.level || '',
+							learningModuleId: entry.academic?.module?.id || null,
+							module: entry.academic?.module || null,
+							topic: entry.academic?.topic || null,
+							matchPage: entry.matchPage || 1,
+							pageMaps: undefined
+						});
+					}
+				}
+			}
+
+			const sorted = sortResources(resources, sort);
+			const paged = paginateResources(sorted, { page, limit });
+			return res.json({ ...paged, counts: resourceCounts(sorted) });
+		} catch (err) {
+			console.error('[moduleNotes.unified]', err);
+			return res.status(500).json({ error: 'Failed to list module note resources' });
+		}
+	});
+
 	router.get('/:id', async (req, res) => {
 		try {
 			const note = await prisma.moduleNote.findUnique({
@@ -309,7 +451,7 @@ export function moduleNotesRouter(prisma, deps = {}) {
 	// ─── CREATE (Admin only) ─────────────────────────────────
 	router.post('/', requireAuth(), requireRole('ADMIN'), async (req, res) => {
 		try {
-			const data = noteSchema.parse(req.body);
+			const data = { ...noteSchema.parse(req.body), sourceType: 'MANUAL' };
 			const note = await prisma.moduleNote.create({ data, include: defaultInclude });
 			return res.status(201).json({ note });
 		} catch (err) {
@@ -626,6 +768,7 @@ export function moduleNotesRouter(prisma, deps = {}) {
 					const note = await prisma.moduleNote.create({
 						data: {
 							title: String(item.title || `Topic Note ${idx + 1}`).slice(0, 255),
+							sourceType: 'AI_GENERATED',
 							level: itemLevel,
 							courseId: itemCourseId,
 							volumeId: item.volumeId || volumeId || null,
