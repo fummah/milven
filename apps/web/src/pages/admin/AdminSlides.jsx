@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert, Button, Card, Col, Dropdown, Empty, Input, Pagination, Row, Select, Skeleton, Space,
-  Statistic, Table, Tag, Tooltip, Typography, Modal, message, Grid
+  Table, Tag, Tooltip, Typography, Modal, message, Grid
 } from 'antd';
 import {
   AppstoreOutlined, CheckCircleOutlined, CloudUploadOutlined, DeleteOutlined, DownloadOutlined,
@@ -13,11 +13,13 @@ import { api } from '../../lib/api';
 import { assetUrl, levelLabel, presentationViewerPath } from '../../lib/slideUrls';
 import AdminSlidesUploadDrawer from '../../components/slides/AdminSlidesUploadDrawer';
 import AdminSlidesZipWizard from '../../components/slides/AdminSlidesZipWizard';
+import { Presentation, CheckCircle2, FileEdit, LoaderCircle, AlertCircle, Layers3 } from 'lucide-react';
 
 const { Text, Title, Paragraph } = Typography;
 const { useBreakpoint } = Grid;
 
 const PROCESSING_STATES = ['PENDING', 'QUEUED', 'PROCESSING', 'RETRYING'];
+const formatStatValue = value => Number(value || 0).toLocaleString('en-US');
 
 const PROCESSING_META = {
   PENDING: { color: 'default', label: 'Queued', icon: <SyncOutlined spin /> },
@@ -295,7 +297,7 @@ export function AdminSlides() {
   };
 
   const openPreview = (presentation) => {
-    navigate(presentationViewerPath(presentation.id));
+    navigate(presentationViewerPath(presentation.id, 1));
   };
 
   const togglePublish = async (presentation) => {
@@ -458,30 +460,62 @@ export function AdminSlides() {
     );
   };
 
-  const Thumb = ({ presentation, height = 150 }) => (
-    <div
-      style={{
-        height,
-        background: 'linear-gradient(135deg, #eef4ff 0%, #e2e8f0 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-        position: 'relative'
-      }}
-    >
-      <FilePptOutlined style={{ fontSize: 42, color: '#94a3b8', position: 'absolute' }} />
-      {presentation.thumbnailUrl && (
-        <img
-          src={assetUrl(presentation.thumbnailUrl)}
-          alt=""
-          loading="lazy"
-          style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#0f172a', position: 'relative' }}
-          onError={(event) => { event.currentTarget.style.display = 'none'; }}
-        />
-      )}
-    </div>
-  );
+  const Thumb = ({ presentation, height = 150, onPreview, compact = false }) => {
+    const [hovered, setHovered] = useState(false);
+    const [focused, setFocused] = useState(false);
+    const interactive = typeof onPreview === 'function';
+    return (
+      <button
+        type="button"
+        onClick={interactive ? onPreview : undefined}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={event => {
+          if (!interactive) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onPreview();
+          }
+        }}
+        aria-label={interactive ? `Preview ${presentation.title}` : undefined}
+        style={{
+          height,
+          width: '100%',
+          padding: 0,
+          border: 0,
+          borderRadius: 0,
+          background: 'linear-gradient(135deg, #eef4ff 0%, #e2e8f0 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          position: 'relative',
+          cursor: interactive ? 'pointer' : 'default',
+          outline: focused ? '2px solid #3b82f6' : 'none',
+          outlineOffset: -2
+        }}
+      >
+        <FilePptOutlined style={{ fontSize: compact ? 22 : 42, color: '#94a3b8', position: 'absolute' }} />
+        {presentation.thumbnailUrl && (
+          <img
+            src={assetUrl(presentation.thumbnailUrl)}
+            alt=""
+            loading="lazy"
+            style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#0f172a', position: 'relative', transition: 'filter 160ms ease' }}
+            onError={(event) => { event.currentTarget.style.display = 'none'; }}
+          />
+        )}
+        {interactive && (
+          <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: compact ? 'row' : 'column', gap: 6, background: 'rgba(15, 23, 42, 0.48)', color: '#fff', opacity: hovered || focused ? 1 : 0, transition: 'opacity 160ms ease', pointerEvents: 'none' }}>
+            <EyeOutlined style={{ fontSize: compact ? 16 : 22 }} />
+            {!compact && <span style={{ fontSize: 12, fontWeight: 600 }}>Preview Presentation</span>}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   const cardView = (
     <>
@@ -492,7 +526,7 @@ export function AdminSlides() {
               hoverable
               size="small"
               styles={{ body: { padding: 14 } }}
-              cover={<Thumb presentation={presentation} />}
+              cover={<Thumb presentation={presentation} onPreview={() => openPreview(presentation)} />}
             >
               <Space direction="vertical" size={8} style={{ width: '100%' }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -557,7 +591,7 @@ export function AdminSlides() {
       render: (_, presentation) => (
         <Space>
           <div style={{ width: 76, height: 44, overflow: 'hidden', borderRadius: 4, flexShrink: 0 }}>
-            <Thumb presentation={presentation} height={44} />
+            <Thumb presentation={presentation} height={44} onPreview={() => openPreview(presentation)} compact />
           </div>
           <div style={{ minWidth: 0 }}>
             <Text strong ellipsis={{ tooltip: presentation.title }} style={{ maxWidth: 210, display: 'block' }}>
@@ -625,24 +659,43 @@ export function AdminSlides() {
         </Space>
       </div>
 
-      {stats && (
-        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-          {[
-            { title: 'Presentations', value: stats.total, color: '#102540' },
-            { title: 'Published', value: stats.published, color: '#16a34a' },
-            { title: 'Drafts', value: stats.draft, color: '#64748b' },
-            { title: 'Processing', value: stats.processing, color: '#2563eb' },
-            { title: 'Failed', value: stats.failed, color: stats.failed ? '#dc2626' : '#94a3b8' },
-            { title: 'Slides', value: stats.slides, color: '#7c3aed' }
-          ].map(item => (
-            <Col xs={12} sm={8} md={4} key={item.title}>
-              <Card size="small" styles={{ body: { padding: '10px 12px' } }}>
-                <Statistic title={<span style={{ fontSize: 12 }}>{item.title}</span>} value={item.value} valueStyle={{ color: item.color, fontSize: 20 }} />
-              </Card>
-            </Col>
-          ))}
-        </Row>
-      )}
+      {stats && (() => {
+        const failedCount = Number(stats.failed || 0);
+        const cards = [
+          { title: 'Presentations', value: stats.total, description: 'Total presentations', icon: Presentation, accent: '#2563eb', tint: '#eff6ff' },
+          { title: 'Published', value: stats.published, description: 'Available to students', icon: CheckCircle2, accent: '#16a34a', tint: '#ecfdf5' },
+          { title: 'Drafts', value: stats.draft, description: 'Not yet published', icon: FileEdit, accent: '#d97706', tint: '#fffbeb' },
+          { title: 'Processing', value: stats.processing, description: 'Currently processing', icon: LoaderCircle, accent: '#7c3aed', tint: '#f5f3ff' },
+          { title: 'Failed', value: stats.failed, description: 'Requires attention', icon: AlertCircle, accent: failedCount ? '#dc2626' : '#64748b', tint: failedCount ? '#fef2f2' : '#f1f5f9' },
+          { title: 'Slides', value: stats.slides, description: 'Total slide pages', icon: Layers3, accent: '#4f46e5', tint: '#eef2ff' }
+        ];
+        return (
+          <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+            {cards.map(item => {
+              const Icon = item.icon;
+              return (
+                <Col xs={12} sm={12} md={8} lg={8} xl={4} key={item.title}>
+                  <Card
+                    styles={{ body: { padding: '14px 16px' } }}
+                    style={{ height: '100%', minHeight: 132, borderRadius: 14, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(16,37,64,0.04)' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                      <Text style={{ color: '#475569', fontSize: 13, fontWeight: 600 }}>{item.title}</Text>
+                      <span style={{ width: 34, height: 34, borderRadius: 10, background: item.tint, color: item.accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Icon size={18} strokeWidth={2} />
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 10, color: '#102540', fontSize: 30, lineHeight: 1.1, fontWeight: 700, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+                      {formatStatValue(item.value)}
+                    </div>
+                    <div style={{ marginTop: 6, color: '#94a3b8', fontSize: 11.5 }}>{item.description}</div>
+                  </Card>
+                </Col>
+              );
+            })}
+          </Row>
+        );
+      })()}
 
       {stats?.renderer && !stats.renderer.available && (
         <Alert
