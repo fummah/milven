@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Alert, Button, Drawer, Empty, Input, Skeleton, Spin, Tag, Tooltip, Typography, Grid } from 'antd';
+import { Alert, Button, Drawer, Empty, Input, Skeleton, Tag, Tooltip, Typography, Grid } from 'antd';
 import {
   ArrowLeftOutlined, CloseOutlined, DownloadOutlined, FullscreenExitOutlined, FullscreenOutlined,
   LeftOutlined, MenuOutlined, MinusOutlined, PlusOutlined, RightOutlined, SearchOutlined,
@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { assetUrl, highlightParts, levelLabel } from '../../lib/slideUrls';
+import { ContentStageError, ContentStageLoader } from '../../components/viewers/ContentStageFeedback';
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -72,6 +73,9 @@ export default function SlideViewerPage() {
   const [currentSlide, setCurrentSlide] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [imageLoading, setImageLoading] = useState(true);
+  const [imageError, setImageError] = useState('');
+  const [displayedSlideNumber, setDisplayedSlideNumber] = useState(null);
+  const [imageReloadKey, setImageReloadKey] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -85,6 +89,8 @@ export default function SlideViewerPage() {
   const mainRef = useRef(null);
   const thumbRefs = useRef(new Map());
   const touchStart = useRef(null);
+  const slideCacheRef = useRef(new Map());
+  const imageRequestRef = useRef(0);
 
   const user = useMemo(() => {
     try { return JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch { return null; }
@@ -120,14 +126,38 @@ export default function SlideViewerPage() {
     if (!slides.length || !Number.isFinite(requested)) return;
     const next = clamp(requested, 1, slides.length);
     setCurrentSlide(prev => (prev === next ? prev : next));
-    setImageLoading(true);
   }, [searchParams, slides.length]);
+
+  const preloadSlide = useCallback(slide => {
+    const url = slide?.previewUrl;
+    if (!url) return Promise.resolve(null);
+    const existing = slideCacheRef.current.get(url);
+    if (existing?.status === 'ready') return Promise.resolve(existing.image);
+    if (existing?.promise) return existing.promise;
+
+    const image = new Image();
+    const entry = { status: 'loading', image, promise: null };
+    entry.promise = new Promise((resolve, reject) => {
+      image.onload = () => { entry.status = 'ready'; resolve(image); };
+      image.onerror = () => {
+        entry.status = 'error';
+        slideCacheRef.current.delete(url);
+        reject(new Error('Slide image failed to load.'));
+      };
+      image.src = assetUrl(url);
+    });
+    slideCacheRef.current.set(url, entry);
+    if (slideCacheRef.current.size > 10) {
+      const oldest = slideCacheRef.current.keys().next().value;
+      if (oldest && oldest !== url) slideCacheRef.current.delete(oldest);
+    }
+    return entry.promise;
+  }, []);
 
   const goToSlide = useCallback((number) => {
     if (!slides.length) return;
     const next = clamp(Number(number) || 1, 1, slides.length);
     setCurrentSlide(next);
-    setImageLoading(true);
     setMobileNavOpen(false);
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('slide', String(next));
@@ -165,16 +195,44 @@ export default function SlideViewerPage() {
     if (active && typeof active.scrollIntoView === 'function' && !isMobile) {
       active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
+
     const slide = slides[currentSlide - 1];
-    if (!slide?.previewUrl) return;
-    [currentSlide - 1, currentSlide + 1].forEach((index) => {
+    if (!slide?.previewUrl) {
+      imageRequestRef.current += 1;
+      setDisplayedSlideNumber(currentSlide);
+      setImageLoading(false);
+      setImageError('');
+      return undefined;
+    }
+
+    const requestId = imageRequestRef.current + 1;
+    imageRequestRef.current = requestId;
+    setImageError('');
+    const cached = slideCacheRef.current.get(slide.previewUrl);
+    if (cached?.status === 'ready') {
+      setDisplayedSlideNumber(currentSlide);
+      setImageLoading(false);
+    } else {
+      setImageLoading(true);
+      preloadSlide(slide)
+        .then(() => {
+          if (requestId !== imageRequestRef.current) return;
+          setDisplayedSlideNumber(currentSlide);
+          setImageLoading(false);
+        })
+        .catch(() => {
+          if (requestId !== imageRequestRef.current) return;
+          setImageLoading(false);
+          setImageError('Could not load this slide.');
+        });
+    }
+
+    [currentSlide - 2, currentSlide, currentSlide + 1].forEach(index => {
       const neighbor = slides[index];
-      if (neighbor?.previewUrl) {
-        const image = new Image();
-        image.src = assetUrl(neighbor.previewUrl);
-      }
+      if (neighbor?.previewUrl && neighbor.previewUrl !== slide.previewUrl) preloadSlide(neighbor);
     });
-  }, [currentSlide, slides, isMobile]);
+    return undefined;
+  }, [currentSlide, slides, isMobile, imageReloadKey, preloadSlide]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -229,6 +287,13 @@ export default function SlideViewerPage() {
     else previousSlide();
   };
 
+  const retryCurrentSlide = () => {
+    const slide = slides[currentSlide - 1];
+    if (slide?.previewUrl) slideCacheRef.current.delete(slide.previewUrl);
+    setImageError('');
+    setImageReloadKey(key => key + 1);
+  };
+
   const downloadCurrentSlide = async () => {
     const slide = slides[currentSlide - 1];
     if (!slide?.previewUrl) return;
@@ -262,6 +327,7 @@ export default function SlideViewerPage() {
   };
 
   const activeSlide = slides[currentSlide - 1];
+  const displayedSlide = slides[displayedSlideNumber - 1] || null;
   const thumbnails = searchTerm.length >= 2 ? searchResults : slides;
 
   const navigatorPanel = (
@@ -425,6 +491,7 @@ export default function SlideViewerPage() {
 
         <div
           ref={mainRef}
+          data-viewer-content-stage="true"
           style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', padding: 12, position: 'relative' }}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
@@ -433,33 +500,30 @@ export default function SlideViewerPage() {
             <Empty description={<span style={{ color: '#94a3b8' }}>This slide has no rendered preview.</span>} />
           ) : (
             <>
-              {imageLoading && (
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                  <Spin size="large" />
-                </div>
+              {displayedSlide?.previewUrl && (
+                <img
+                  key={displayedSlide.previewUrl}
+                  src={assetUrl(displayedSlide.previewUrl)}
+                  alt={`${presentation?.title} - slide ${displayedSlide.slideNumber}`}
+                  decoding="async"
+                  fetchpriority="high"
+                  style={{
+                    maxWidth: zoom <= 1 ? '100%' : 'none',
+                    maxHeight: zoom <= 1 ? '100%' : 'none',
+                    width: zoom > 1 ? `${Math.round(100 * zoom)}%` : undefined,
+                    height: 'auto',
+                    display: 'block',
+                    imageRendering: 'auto',
+                    objectFit: 'contain',
+                    boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
+                    background: '#020617',
+                    borderRadius: 4,
+                    transition: 'width 0.15s ease'
+                  }}
+                />
               )}
-              <img
-                key={activeSlide.previewUrl}
-                src={assetUrl(activeSlide.previewUrl)}
-                alt={`${presentation?.title} — slide ${currentSlide}`}
-                onLoad={() => setImageLoading(false)}
-                onError={() => setImageLoading(false)}
-                decoding="async"
-                fetchpriority="high"
-                style={{
-                  maxWidth: zoom <= 1 ? '100%' : 'none',
-                  maxHeight: zoom <= 1 ? '100%' : 'none',
-                  width: zoom > 1 ? `${Math.round(100 * zoom)}%` : undefined,
-                  height: 'auto',
-                  display: 'block',
-                  imageRendering: 'auto',
-                  objectFit: 'contain',
-                  boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
-                  background: '#020617',
-                  borderRadius: 4,
-                  transition: 'width 0.15s ease'
-                }}
-              />
+              {imageLoading && <ContentStageLoader label={`Loading slide ${currentSlide} of ${slides.length}...`} />}
+              {imageError && <ContentStageError message={imageError} onRetry={retryCurrentSlide} onBack={() => navigate(backPath)} backLabel="Back to Slides" />}
             </>
           )}
 

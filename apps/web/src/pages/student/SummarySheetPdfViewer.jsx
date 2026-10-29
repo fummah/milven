@@ -8,6 +8,7 @@ import {
 import { api } from '../../lib/api';
 import { highlightParts, levelLabel } from '../../lib/slideUrls';
 import { getPdfErrorInfo, loadPdfDocument } from '../../lib/pdfViewer';
+import { ContentStageError, ContentStageLoader } from '../../components/viewers/ContentStageFeedback';
 
 
 const { Text } = Typography;
@@ -107,6 +108,9 @@ export default function SummarySheetPdfViewer() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [rendering, setRendering] = useState(false);
+  const [pageError, setPageError] = useState('');
+  const [pageErrorCode, setPageErrorCode] = useState('');
+  const [pageRenderKey, setPageRenderKey] = useState(0);
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
@@ -145,6 +149,8 @@ export default function SummarySheetPdfViewer() {
         if (cancelled) return;
         setPdfDoc(doc);
         setNumPages(doc.numPages);
+        setPageError('');
+        setPageErrorCode('');
         const requested = parseInt(searchParams.get('page'), 10);
         setPage(doc.numPages ? clamp(Number.isFinite(requested) ? requested : 1, 1, doc.numPages) : 1);
         if (res.data.sheet?.title) document.title = `${res.data.sheet.title} - Milven Summary Sheets`;
@@ -181,6 +187,8 @@ export default function SummarySheetPdfViewer() {
     if (!pdfDoc || !canvasRef.current) return undefined;
     let cancelled = false;
     setRendering(true);
+    setPageError('');
+    setPageErrorCode('');
     (async () => {
       try {
         const pdfPage = await pdfDoc.getPage(page);
@@ -209,15 +217,21 @@ export default function SummarySheetPdfViewer() {
       } catch (err) {
         if (err?.name !== 'RenderingCancelledException') {
           const info = getPdfErrorInfo(err, 'The PDF page could not be rendered. Please retry.');
-          setError(info.message);
-          setErrorCode(info.code);
+          setPageError(info.message);
+          setPageErrorCode(info.code);
         }
       } finally {
         if (!cancelled) setRendering(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [pdfDoc, page, zoom, fitMode, containerSize.width, containerSize.height]);
+    return () => {
+      cancelled = true;
+      if (renderTaskRef.current) {
+        try { renderTaskRef.current.cancel(); } catch {}
+        renderTaskRef.current = null;
+      }
+    };
+  }, [pdfDoc, page, zoom, fitMode, containerSize.width, containerSize.height, pageRenderKey]);
 
   useEffect(() => {
     const onKey = event => {
@@ -419,12 +433,19 @@ export default function SummarySheetPdfViewer() {
         )}
         <div
           ref={mainRef}
+          data-viewer-content-stage="true"
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           style={{ flex: 1, minWidth: 0, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 12, position: 'relative', background: '#1e293b' }}
         >
           <canvas ref={canvasRef} style={{ display: 'block', background: '#fff', boxShadow: '0 12px 40px rgba(0,0,0,0.45)' }} />
-          {rendering && <div style={{ position: 'absolute', top: 12, right: 12 }}><Spin /></div>}
+          {rendering && <ContentStageLoader label={`Loading page ${page} of ${numPages}...`} />}
+          {pageError && (
+            <ContentStageError
+              message={isAdmin && pageErrorCode ? `${pageError} (Reference: ${pageErrorCode})` : pageError}
+              onRetry={() => { setPageError(''); setPageErrorCode(''); setPageRenderKey(key => key + 1); }}
+            />
+          )}
         </div>
       </div>
 

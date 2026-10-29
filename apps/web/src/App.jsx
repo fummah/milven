@@ -624,34 +624,34 @@ export default function App() {
 				}
 		  ];
 
-	// Route guards
-	function RequireAuth({ children }) {
-		const token = localStorage.getItem('token');
-		if (!token) return <Navigate to="/" replace />;
-		if (authLoading || !user) return <div />; // wait for /me without redirecting
-		return children;
-	}
-
-	function RequireAdmin({ children }) {
-		const token = localStorage.getItem('token');
-		if (!token) return <Navigate to="/" replace />;
-		if (authLoading || !user) return <div />; // wait for /me without redirecting
-		if (user.role !== 'ADMIN') {
-			return <Navigate to="/" replace />;
+	// Route guards are memoized so location changes do not create new component
+	// identities and remount the active viewer on every page/slide navigation.
+	const { RequireAuth, RequireAdmin, RequireStudent } = React.useMemo(() => {
+		function RequireAuth({ children }) {
+			const token = localStorage.getItem('token');
+			if (!token) return <Navigate to="/" replace />;
+			if (authLoading || !user) return <div />;
+			return children;
 		}
-		return children;
-	}
 
-	function RequireStudent({ children }) {
-		const token = localStorage.getItem('token');
-		if (!token) return <Navigate to="/" replace />;
-		if (authLoading || !user) return <div />; // wait for /me without redirecting
-		if (user.role !== 'STUDENT') {
-			// Admins use admin preview route, not student learn pages
-			return <Navigate to="/" replace />;
+		function RequireAdmin({ children }) {
+			const token = localStorage.getItem('token');
+			if (!token) return <Navigate to="/" replace />;
+			if (authLoading || !user) return <div />;
+			if (user.role !== 'ADMIN') return <Navigate to="/" replace />;
+			return children;
 		}
-		return children;
-	}
+
+		function RequireStudent({ children }) {
+			const token = localStorage.getItem('token');
+			if (!token) return <Navigate to="/" replace />;
+			if (authLoading || !user) return <div />;
+			if (user.role !== 'STUDENT') return <Navigate to="/" replace />;
+			return children;
+		}
+
+		return { RequireAuth, RequireAdmin, RequireStudent };
+	}, [authLoading, user]);
 	const isSlideViewer = /^\/learning\/slides\/[^/]+/.test(location.pathname);
 	const isSummaryViewer = /^\/learning\/summary-sheets\/[^/]+/.test(location.pathname);
 	const isFormulaViewer = /^\/learning\/formula-books\/[^/]+/.test(location.pathname);
