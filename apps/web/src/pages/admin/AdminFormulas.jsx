@@ -8,7 +8,7 @@ import { readSseStream } from '../../lib/sse';
 import AdminFormulaBookPdfDrawer from '../../components/formulaBooks/AdminFormulaBookPdfDrawer';
 import FormulaResourceCard from '../../components/resources/FormulaResourceCard';
 import MathText from '../../components/MathText';
-import { ResourceSourceTag, ResourceTypeTag } from '../../components/resources/ResourceVisuals';
+import { PdfThumbnail, ResourceSourceTag, ResourceTypeTag } from '../../components/resources/ResourceVisuals';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -73,7 +73,7 @@ export function AdminFormulas() {
 	const [filterSource, setFilterSource] = useState(null);
 	const [filterStatus, setFilterStatus] = useState(null);
 	const [searchText, setSearchText] = useState('');
-	const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.formula-resources.view') || 'cards');
+	const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.formula-resources.view') || 'table');
 
 	// Lookup data
 	const [courses, setCourses] = useState([]);
@@ -520,7 +520,7 @@ export function AdminFormulas() {
 			width: 330,
 			render: (_, record) => (
 				<Space align="start">
-					{record.type === 'PDF' ? <FilePdfOutlined style={{ color: '#ef4444', fontSize: 20, marginTop: 3 }} /> : record.highYield ? <StarFilled style={{ color: '#f59e0b', marginTop: 4 }} /> : <BookOutlined style={{ color: '#2563eb', marginTop: 4 }} />}
+					{record.type === 'PDF' ? <div style={{ width: 76, height: 44, overflow: 'hidden', borderRadius: 4, flexShrink: 0 }}><PdfThumbnail url={record.thumbnailUrl} title={record.title} height={44} /></div> : record.highYield ? <StarFilled style={{ color: '#f59e0b', marginTop: 4 }} /> : <BookOutlined style={{ color: '#2563eb', marginTop: 4 }} />}
 					<div style={{ minWidth: 0 }}>
 						<div style={{ fontWeight: 600, color: '#102540' }}>{record.title}</div>
 						{record.type === 'FORMULA' && <MathText text={record.formula} tag="div" style={{ fontSize: 12, color: '#475569', marginTop: 4, maxHeight: 42, overflow: 'hidden' }} />}

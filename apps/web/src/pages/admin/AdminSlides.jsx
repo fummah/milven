@@ -51,7 +51,7 @@ export function AdminSlides() {
     topicId: undefined, conceptId: undefined, year: undefined, status: undefined, scope: undefined
   });
   const [searchInput, setSearchInput] = useState('');
-  const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.slides.view') || 'cards');
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.slides.view') || 'table');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(24);
   const [loading, setLoading] = useState(true);

@@ -115,7 +115,7 @@ export default function SummarySheetPdfViewer() {
   const [errorCode, setErrorCode] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [zoom, setZoom] = useState(1);
-  const [fitMode, setFitMode] = useState('page');
+  const [fitMode, setFitMode] = useState('width');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -427,7 +427,7 @@ export default function SummarySheetPdfViewer() {
         {!isMobile && (
           <div style={{ width: 24, flexShrink: 0, background: '#111827', borderRight: '1px solid #1f2937', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Tooltip title={sidebarCollapsed ? 'Show pages' : 'Hide pages'} placement="right">
-              <Button type="text" size="small" onClick={() => setSidebarCollapsed(v => !v)} icon={sidebarCollapsed ? <RightOutlined /> : <LeftOutlined />} style={{ color: '#94a3b8' }} />
+              <Button type="text" size="small" aria-label="Toggle page navigator" onClick={() => setSidebarCollapsed(v => !v)} icon={sidebarCollapsed ? <RightOutlined /> : <LeftOutlined />} style={{ color: '#94a3b8' }} />
             </Tooltip>
           </div>
         )}

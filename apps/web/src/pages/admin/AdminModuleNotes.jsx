@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Select, message, Space, Typography, Table, Modal, Drawer, Tag, Tooltip, Switch, InputNumber, Row, Col, Divider, Empty, Spin, Checkbox, Pagination } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, StarFilled, StarOutlined, FilePdfOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, SearchOutlined, BookOutlined, RobotOutlined, ThunderboltOutlined, CheckCircleOutlined, StarFilled, StarOutlined, FilePdfOutlined, UploadOutlined, DownloadOutlined, AppstoreOutlined, OrderedListOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import MathText from '../../components/MathText';
 import { ModuleNotePreviewCard } from '../../components/ModuleNotePreviewCard';
 import AdminModuleNotePdfDrawer from '../../components/moduleNotePdfs/AdminModuleNotePdfDrawer';
 import ModuleNoteResourceCard from '../../components/resources/ModuleNoteResourceCard';
+import { PdfThumbnail, ResourceSourceTag, ResourceTypeTag } from '../../components/resources/ResourceVisuals';
 
 const LEVELS = [
 	{ value: 'LEVEL1', label: 'Level I' },
@@ -34,6 +35,7 @@ export function AdminModuleNotes() {
 	const [pdfEditing, setPdfEditing] = useState(null);
 	const [replacePdfTarget, setReplacePdfTarget] = useState(null);
 	const [pdfReplacing, setPdfReplacing] = useState(false);
+	const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.module-notes.view') || 'table');
 	const replacePdfInputRef = React.useRef(null);
 
 	// AI Generate
@@ -203,6 +205,11 @@ export function AdminModuleNotes() {
 		handleDelete(resource.resourceId || resource.id);
 	};
 	const toggleResourceStatus = resource => resource.type === 'PDF' ? togglePdfStatus(resource) : toggleStatus(resource);
+	const changeView = mode => {
+		setViewMode(mode);
+		try { localStorage.setItem('milven.module-notes.view', mode); } catch {}
+	};
+
 	const resourcePreview = resource => {
 		if (resource.type === 'PDF') openPdfResource(resource);
 		else { setPreviewNote(resource); setPreviewOpen(true); }
@@ -324,6 +331,64 @@ export function AdminModuleNotes() {
 		} finally { setAiAcceptLoading(false); }
 	};
 
+	const moduleColumns = [
+		{
+			title: 'Resource',
+			key: 'resource',
+			width: 330,
+			render: (_, resource) => (
+				<Space align="start">
+					{resource.type === 'PDF' ? (
+						<div style={{ width: 76, height: 44, overflow: 'hidden', borderRadius: 4, flexShrink: 0 }}>
+							<PdfThumbnail url={resource.thumbnailUrl} title={resource.title} height={44} />
+						</div>
+					) : (
+						<div style={{ width: 44, height: 44, borderRadius: 10, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+							<BookOutlined style={{ color: '#2563eb', fontSize: 20 }} />
+						</div>
+					)}
+					<div style={{ minWidth: 0 }}>
+						<div style={{ fontWeight: 600, color: '#102540' }}>{resource.title}</div>
+						{resource.type === 'PDF' && resource.originalFilename && <Typography.Text type="secondary" style={{ fontSize: 11 }} ellipsis>{resource.originalFilename}</Typography.Text>}
+					</div>
+				</Space>
+			)
+		},
+		{
+			title: 'Type',
+			key: 'type',
+			width: 190,
+			render: (_, resource) => <Space size={4} wrap><ResourceTypeTag type={resource.type} /><ResourceSourceTag type={resource.type} source={resource.source} /></Space>
+		},
+		{ title: 'Level', key: 'level', width: 95, render: (_, resource) => <Tag color={LEVEL_COLORS[resource.level]}>{LEVEL_LABELS[resource.level] || resource.level}</Tag> },
+		{ title: 'Volume', key: 'volume', width: 150, render: (_, resource) => resource.volume?.name || <Typography.Text type="secondary">-</Typography.Text> },
+		{ title: 'Module', key: 'module', width: 180, render: (_, resource) => resource.type === 'PDF' ? <Tag>Whole Volume</Tag> : resource.module?.name || <Typography.Text type="secondary">-</Typography.Text> },
+		{ title: 'Status', key: 'status', width: 110, render: (_, resource) => <Tag color={resource.status === 'PUBLISHED' ? 'green' : 'default'}>{resource.status === 'PUBLISHED' ? 'Published' : 'Draft'}</Tag> },
+		{
+			title: 'Actions',
+			key: 'actions',
+			width: 230,
+			fixed: 'right',
+			render: (_, resource) => resource.type === 'PDF' ? (
+				<Space size={2}>
+					<Tooltip title="Preview PDF"><Button size="small" type="text" icon={<EyeOutlined />} onClick={() => openPdfResource(resource)} /></Tooltip>
+					<Tooltip title="Edit details"><Button size="small" type="text" icon={<EditOutlined />} onClick={() => editPdfResource(resource)} /></Tooltip>
+					<Tooltip title="Replace PDF"><Button size="small" type="text" icon={<UploadOutlined />} onClick={() => triggerPdfReplace(resource)} /></Tooltip>
+					<Tooltip title={resource.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}><Button size="small" type="text" icon={resource.status === 'PUBLISHED' ? <StarFilled style={{ color: '#22c55e' }} /> : <StarOutlined />} onClick={() => togglePdfStatus(resource)} /></Tooltip>
+					<Tooltip title="Download"><Button size="small" type="text" icon={<DownloadOutlined />} onClick={() => downloadPdf(resource)} /></Tooltip>
+					<Tooltip title="Delete"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => deleteResource(resource)} /></Tooltip>
+				</Space>
+			) : (
+				<Space size={2}>
+					<Tooltip title="Preview"><Button size="small" type="text" icon={<EyeOutlined />} onClick={() => resourcePreview(resource)} /></Tooltip>
+					<Tooltip title="Edit"><Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEdit(resource)} /></Tooltip>
+					<Tooltip title={resource.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}><Button size="small" type="text" icon={resource.status === 'PUBLISHED' ? <StarFilled style={{ color: '#22c55e' }} /> : <StarOutlined />} onClick={() => toggleResourceStatus(resource)} /></Tooltip>
+					<Tooltip title="Delete"><Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={() => deleteResource(resource)} /></Tooltip>
+				</Space>
+			)
+		}
+	];
+
 	return (
 		<div>
 			{/* Header */}
@@ -352,6 +417,10 @@ export function AdminModuleNotes() {
 					<Col xs={12} sm={6} md={2}><Select placeholder="Status" value={filterStatus} onChange={v => { setFilterStatus(v); setPage(1); }} options={[{ value: null, label: 'All' }, { value: 'DRAFT', label: 'Draft' }, { value: 'PUBLISHED', label: 'Published' }]} style={{ width: '100%' }} allowClear /></Col>
 					<Col xs={24} md={24} style={{ textAlign: 'right' }}>
 						<Space wrap>
+							<Button.Group>
+								<Tooltip title="Card view"><Button type={viewMode === 'cards' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => changeView('cards')} /></Tooltip>
+								<Tooltip title="Table view"><Button type={viewMode === 'table' ? 'primary' : 'default'} icon={<OrderedListOutlined />} onClick={() => changeView('table')} /></Tooltip>
+							</Button.Group>
 							<Button icon={<RobotOutlined />} onClick={openAiModal} style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', borderColor: '#8b5cf6', color: '#fff' }}>AI Generate</Button>
 							<Button type="primary" icon={<PlusOutlined />} onClick={openCreate} style={{ background: '#102540', borderColor: '#102540' }}>Add Note</Button>
 							<Button icon={<FilePdfOutlined />} onClick={() => { setPdfEditing(null); setPdfDrawerOpen(true); }}>Upload PDF</Button>
@@ -366,6 +435,25 @@ export function AdminModuleNotes() {
 			) : notes.length === 0 ? (
 				<Card style={{ borderRadius: 12, border: '1px solid #e2e8f0', textAlign: 'center', padding: 40 }}>
 					<Empty description="No module notes or PDFs found" />
+				</Card>
+			) : viewMode === 'table' ? (
+				<Card bodyStyle={{ padding: 0 }} style={{ borderRadius: 12, border: '1px solid #e2e8f0' }}>
+					<Table
+						dataSource={notes}
+						columns={moduleColumns}
+						rowKey={resource => resource.resourceKey || resource.id}
+						loading={loading}
+						scroll={{ x: 1250 }}
+						pagination={{
+							current: page,
+							pageSize,
+							total,
+							showSizeChanger: true,
+							pageSizeOptions: ['10', '25', '50'],
+							onChange: (nextPage, nextSize) => { setPage(nextSize !== pageSize ? 1 : nextPage); setPageSize(nextSize); },
+							showTotal: count => `${count} resource${count === 1 ? '' : 's'}`
+						}}
+					/>
 				</Card>
 			) : (
 				<>
