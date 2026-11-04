@@ -11,7 +11,9 @@ export function ResourceSourceTag({ type, source }) {
 }
 
 export function ResourceTypeTag({ type }) {
-  return <Tag color={type === 'PDF' ? 'volcano' : type === 'NOTE' ? 'blue' : 'cyan'} style={{ marginInlineEnd: 0 }}>{type === 'PDF' ? 'PDF' : type === 'NOTE' ? 'Note' : 'Formula Card'}</Tag>;
+  const label = type === 'PDF' ? 'PDF' : type === 'NOTE' ? 'Note' : type === 'SUMMARY' ? 'Summary Sheet' : 'Formula Card';
+  const color = type === 'PDF' ? 'volcano' : type === 'NOTE' ? 'blue' : type === 'SUMMARY' ? 'magenta' : 'cyan';
+  return <Tag color={color} style={{ marginInlineEnd: 0 }}>{label}</Tag>;
 }
 
 export function PdfThumbnail({ url, title = 'PDF', height = 180 }) {

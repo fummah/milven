@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Row, Col, Card, Modal, Grid, Divider } from 'antd';
-import { FileTextOutlined, SearchOutlined, EyeOutlined, PrinterOutlined, MenuOutlined, CloseOutlined, RightOutlined, DownOutlined, BookOutlined, AppstoreOutlined, FolderOutlined } from '@ant-design/icons';
+import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Row, Col, Card, Modal, Grid, Divider, Table, Pagination } from 'antd';
+import { FileTextOutlined, SearchOutlined, EyeOutlined, PrinterOutlined, MenuOutlined, CloseOutlined, RightOutlined, DownOutlined, BookOutlined, AppstoreOutlined, FolderOutlined, OrderedListOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { highlightParts } from '../../lib/slideUrls';
 import MathText, { MathVariables } from '../../components/MathText';
+import SummaryResourceCard from '../../components/resources/SummaryResourceCard';
+import { PdfThumbnail, ResourceSourceTag, ResourceTypeTag } from '../../components/resources/ResourceVisuals';
 
 // ─── Safe render: stringify objects that React can't render ──
 function safeRender(val) {
@@ -19,12 +21,16 @@ function safeRender(val) {
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 
 export function StudentSummarySheets() {
+	const navigate = useNavigate();
 	const screens = Grid.useBreakpoint();
 	const isMobile = !screens.md;
 	const [loading, setLoading] = useState(false);
 	const [sheets, setSheets] = useState([]);
 	const [total, setTotal] = useState(0);
+	const [counts, setCounts] = useState({ ai: 0, manual: 0, uploadedPdf: 0 });
 	const [courses, setCourses] = useState([]);
+	const [coursesLoaded, setCoursesLoaded] = useState(false);
+	const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.student-summary.view') || 'table');
 	const [volumes, setVolumes] = useState([]);
 	const [modules, setModules] = useState([]);
 	const [topics, setTopics] = useState([]);
@@ -33,6 +39,8 @@ export function StudentSummarySheets() {
 	const [filterModuleId, setFilterModuleId] = useState(null);
 	const [filterTopicId, setFilterTopicId] = useState(null);
 	const [searchText, setSearchText] = useState('');
+	const [searchTerm, setSearchTerm] = useState('');
+	const [filterSource, setFilterSource] = useState(null);
 	const [page, setPage] = useState(1);
 	const [previewOpen, setPreviewOpen] = useState(false);
 	const [previewSheet, setPreviewSheet] = useState(null);
@@ -45,18 +53,23 @@ export function StudentSummarySheets() {
 		api.get('/api/learning/me/courses').then(r => {
 			const enrollments = r.data?.courses || [];
 			setCourses(enrollments.map(e => ({ id: e.courseId, name: e.name, level: e.level })).filter(e => e.id));
-		}).catch(() => {});
+		}).catch(() => {}).finally(() => setCoursesLoaded(true));
 		api.get('/api/learning/volumes/public').then(r => setVolumes(r.data?.volumes || [])).catch(() => {});
 		api.get('/api/learning/modules/public').then(r => setModules(r.data?.modules || [])).catch(() => {});
 		api.get('/api/learning/topics/public').then(r => setTopics(r.data?.topics || [])).catch(() => {});
 	}, []);
 
 	// Build hierarchy tree: Volume → Module → Topic
+	const accessibleCourseIds = useMemo(() => new Set(courses.map(course => course.id)), [courses]);
+
 	const hierarchyTree = useMemo(() => {
-		let volList = filterCourseId ? volumes.filter(v => v.courseLinks?.some(cl => cl.courseId === filterCourseId)) : volumes;
+		const inAccessibleCourse = row => row?.courseId ? accessibleCourseIds.has(row.courseId) : row?.courseLinks?.some(link => accessibleCourseIds.has(link.courseId));
+		let volList = filterCourseId
+			? volumes.filter(v => v.courseLinks?.some(cl => cl.courseId === filterCourseId))
+			: volumes.filter(v => v.courseLinks?.some(cl => accessibleCourseIds.has(cl.courseId)));
 		const search = treeSearch.toLowerCase().trim();
 		return volList.map(vol => {
-			const volModules = modules.filter(m => m.volumeId === vol.id && (!filterCourseId || m.courseId === filterCourseId));
+			const volModules = modules.filter(m => m.volumeId === vol.id && (filterCourseId ? m.courseId === filterCourseId : inAccessibleCourse(m)));
 			const modulesWithTopics = volModules.map(mod => {
 				const modTopics = topics.filter(t => t.moduleId === mod.id);
 				return { ...mod, topics: modTopics };
@@ -68,55 +81,31 @@ export function StudentSummarySheets() {
 			const hasChild = vol.modules.some(m => m.name?.toLowerCase().includes(search) || m.topics.some(t => t.name?.toLowerCase().includes(search)));
 			return volMatch || hasChild;
 		});
-	}, [volumes, modules, topics, filterCourseId, treeSearch]);
+	}, [volumes, modules, topics, filterCourseId, treeSearch, accessibleCourseIds]);
+
+	useEffect(() => {
+		const timer = setTimeout(() => { setSearchTerm(searchText.trim()); setPage(1); }, 300);
+		return () => clearTimeout(timer);
+	}, [searchText]);
 
 	const fetchSheets = useCallback(async () => {
 		setLoading(true);
 		try {
-			const params = { page, limit: 50, status: 'PUBLISHED' };
+			const params = { page, limit: 24, status: 'PUBLISHED' };
 			if (filterCourseId) params.courseId = filterCourseId;
 			if (filterVolumeId) params.volumeId = filterVolumeId;
 			if (filterModuleId) params.moduleId = filterModuleId;
 			if (filterTopicId) params.topicId = filterTopicId;
-			if (searchText) params.search = searchText;
-			const res = await api.get('/api/summary-sheets', { params });
-			setSheets(res.data?.sheets || []);
+			if (searchTerm) params.search = searchTerm;
+			if (filterSource) params.source = filterSource;
+			const res = await api.get('/api/summary-sheets/unified', { params });
+			setSheets(res.data?.resources || []);
 			setTotal(res.data?.total || 0);
+			setCounts(res.data?.counts || { ai: 0, manual: 0, uploadedPdf: 0 });
 		} catch { } finally { setLoading(false); }
-	}, [page, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, searchText]);
+	}, [page, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, filterSource, searchTerm]);
 
 	useEffect(() => { fetchSheets(); }, [fetchSheets]);
-
-	useEffect(() => {
-		const term = searchText.trim();
-		if (term.length < 2) {
-			setPdfSearchResults([]);
-			setPdfSearchError('');
-			return undefined;
-		}
-		let cancelled = false;
-		const timer = setTimeout(async () => {
-			setPdfSearchLoading(true);
-			setPdfSearchError('');
-			try {
-				const params = { q: term, limit: 20 };
-				if (filterCourseId) params.courseId = filterCourseId;
-				if (filterVolumeId) params.volumeId = filterVolumeId;
-				if (filterModuleId) params.moduleId = filterModuleId;
-				if (filterTopicId) params.topicId = filterTopicId;
-				const { data } = await api.get('/api/summary-sheets/search', { params });
-				if (!cancelled) setPdfSearchResults(data.results || []);
-			} catch (err) {
-				if (!cancelled) {
-					setPdfSearchResults([]);
-					setPdfSearchError(err?.response?.data?.error || 'PDF content search is unavailable.');
-				}
-			} finally {
-				if (!cancelled) setPdfSearchLoading(false);
-			}
-		}, 350);
-		return () => { cancelled = true; clearTimeout(timer); };
-	}, [searchText, filterCourseId, filterVolumeId, filterModuleId, filterTopicId]);
 
 	const selectTreeItem = (type, id) => {
 		if (type === 'volume') { setFilterVolumeId(id); setFilterModuleId(null); setFilterTopicId(null); }
@@ -136,7 +125,38 @@ export function StudentSummarySheets() {
 				? volumes.find(v => v.id === filterVolumeId)?.name
 				: null;
 
-	return (
+
+	const changeView = mode => {
+		setViewMode(mode);
+		try { localStorage.setItem('milven.student-summary.view', mode); } catch {}
+	};
+
+	const openResource = resource => {
+		if (resource.type === 'PDF') navigate(`/learning/summary-sheets/${resource.resourceId || resource.id}${resource.matchPage ? `?page=${resource.matchPage}` : ''}`);
+		else { setPreviewSheet(resource); setPreviewOpen(true); }
+	};
+
+	const summaryColumns = [
+		{
+			title: 'Resource', key: 'resource', width: 340,
+			render: (_, resource) => (
+				<Space align="start">
+					{resource.type === 'PDF' ? (
+						<button type="button" onClick={() => openResource(resource)} aria-label={`View ${resource.title}`} style={{ width: 76, height: 44, overflow: 'hidden', borderRadius: 4, flexShrink: 0, padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}><PdfThumbnail url={resource.thumbnailUrl} title={resource.title} height={44} /></button>
+					) : (
+						<div style={{ width: 44, height: 44, borderRadius: 10, background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileTextOutlined style={{ color: '#7c3aed', fontSize: 20 }} /></div>
+					)}
+					<div style={{ minWidth: 0 }}><div style={{ fontWeight: 600, color: '#102540' }}>{resource.title}</div>{resource.type === 'PDF' && resource.originalFilename && <Typography.Text type="secondary" style={{ fontSize: 11 }} ellipsis>{resource.originalFilename}</Typography.Text>}</div>
+				</Space>
+			)
+		},
+		{ title: 'Type', key: 'type', width: 190, render: (_, resource) => <Space size={4} wrap><ResourceTypeTag type={resource.type === 'PDF' ? 'PDF' : 'SUMMARY'} /><ResourceSourceTag type={resource.type === 'PDF' ? 'PDF' : 'SUMMARY'} source={resource.source} /></Space> },
+		{ title: 'Level', key: 'level', width: 95, render: (_, resource) => <Tag color={resource.level === 'LEVEL1' ? 'blue' : resource.level === 'LEVEL2' ? 'purple' : 'gold'}>{LEVEL_LABELS[resource.level] || resource.level}</Tag> },
+		{ title: 'Volume', key: 'volume', width: 150, render: (_, resource) => resource.volume?.name || <Typography.Text type="secondary">-</Typography.Text> },
+		{ title: 'Learning Module', key: 'module', width: 190, render: (_, resource) => resource.type === 'PDF' ? <Tag>Whole Volume</Tag> : resource.module?.name || <Typography.Text type="secondary">-</Typography.Text> },
+		{ title: 'Status', key: 'status', width: 100, render: (_, resource) => <Tag color={resource.status === 'PUBLISHED' ? 'green' : 'default'}>{resource.status === 'PUBLISHED' ? 'Published' : 'Draft'}</Tag> },
+		{ title: 'Actions', key: 'actions', width: 120, fixed: 'right', render: (_, resource) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openResource(resource)}>{resource.type === 'PDF' ? 'View PDF' : 'View'}</Button> }
+	];	return (
 		<div style={{ display: 'flex', height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
 			{/* Mobile overlay */}
 			{isMobile && sidebarOpen && (
@@ -267,97 +287,59 @@ export function StudentSummarySheets() {
 					</div>
 				</div>
 
-				{/* Search */}
-				<div style={{ marginBottom: 16 }}>
-					<Input prefix={<SearchOutlined />} placeholder="Search sheets…" value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear style={{ maxWidth: 400 }} />
-						{filterModuleId && (
-							<Button
-								size="small"
-								onClick={() => {
-									const mod = modules.find(m => m.id === filterModuleId);
-									navigate(`/student/slides?courseId=${mod?.courseId || filterCourseId || ''}&volumeId=${filterVolumeId || mod?.volumeId || ''}&moduleId=${filterModuleId}`);
-								}}
-							>
-								Open Slides
-							</Button>
-						)}
-				</div>
+				{/* Statistics */}
+				<Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+					{[{ label: 'Available resources', value: total }, { label: 'AI summary sheets', value: counts.ai || 0 }, { label: 'Uploaded PDFs', value: counts.uploadedPdf || 0 }].map(item => (
+						<Col xs={12} sm={8} lg={8} key={item.label}>
+							<Card size="small" style={{ borderRadius: 12, border: '1px solid #e2e8f0' }} styles={{ body: { padding: '12px 14px' } }}>
+								<Typography.Text type="secondary" style={{ fontSize: 11 }}>{item.label}</Typography.Text>
+								<div style={{ fontSize: 24, fontWeight: 700, color: '#102540', fontVariantNumeric: 'tabular-nums' }}>{Number(item.value || 0).toLocaleString('en-US')}</div>
+							</Card>
+						</Col>
+					))}
+				</Row>
 
-				{searchText.trim().length >= 2 && (
-					<Card size="small" style={{ marginBottom: 16, borderRadius: 12, border: '1px solid #e2e8f0' }}>
-						<Space direction="vertical" size={8} style={{ width: '100%' }}>
-							<Typography.Text strong style={{ color: '#102540' }}>
-								Matching PDF pages
-							</Typography.Text>
-							{pdfSearchLoading ? <Spin size="small" /> : pdfSearchError ? (
-								<Typography.Text type="danger">{pdfSearchError}</Typography.Text>
-							) : pdfSearchResults.length === 0 ? (
-								<Typography.Text type="secondary">No uploaded-PDF page matches in the selected curriculum.</Typography.Text>
-							) : pdfSearchResults.map((result, index) => (
-								<Card
-									key={`${result.summarySheetId}-${result.pageNumber}-${index}`}
-									size="small"
-									hoverable
-									onClick={() => navigate(`/learning/summary-sheets/${result.summarySheetId}?page=${result.pageNumber}`)}
-									style={{ borderRadius: 8 }}
-								>
-									<Space direction="vertical" size={3} style={{ width: '100%' }}>
-										<Space wrap>
-											<Typography.Text strong>{result.sheet?.title || 'PDF Summary Sheet'}</Typography.Text>
-											<Tag color="blue">Page {result.pageNumber}</Tag>
-										</Space>
-										<Typography.Text type="secondary" style={{ fontSize: 12 }}>
-											{[result.sheet?.course?.name, result.sheet?.volume?.name, result.sheet?.module?.name].filter(Boolean).join(' ? ')}
-										</Typography.Text>
-										<Typography.Paragraph style={{ margin: 0, fontSize: 13, color: '#475569' }} ellipsis={{ rows: 2 }}>
-											{highlightParts(result.excerpt, searchText).map((part, index) => part.match
-												? <mark key={index} style={{ background: '#fde68a', padding: 0 }}>{part.text}</mark>
-												: <React.Fragment key={index}>{part.text}</React.Fragment>)}
-										</Typography.Paragraph>
-									</Space>
-								</Card>
-							))}
-						</Space>
-					</Card>
-				)}
+				<Card size="small" style={{ marginBottom: 16, borderRadius: 12, border: '1px solid #e2e8f0' }} styles={{ body: { padding: 12 } }}>
+					<Row gutter={[10, 10]} align="middle">
+						<Col xs={24} md={12}><Space wrap><Input prefix={<SearchOutlined />} placeholder="Search summary sheets and PDFs..." value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear style={{ width: 340 }} /><Select placeholder="Source" value={filterSource} onChange={v => { setFilterSource(v); setPage(1); }} options={[{ value: null, label: 'All Sources' }, { value: 'AI', label: 'AI Generated' }, { value: 'UPLOADED_PDF', label: 'Uploaded PDF' }]} style={{ width: 160 }} allowClear /></Space></Col>
+						<Col xs={24} md={12} style={{ textAlign: 'right' }}>
+							<Space wrap>
+								{filterModuleId && <Button size="small" onClick={() => { const mod = modules.find(m => m.id === filterModuleId); navigate(`/student/slides?courseId=${mod?.courseId || filterCourseId || ''}&volumeId=${filterVolumeId || mod?.volumeId || ''}&moduleId=${filterModuleId}`); }}>Open Slides</Button>}
+								<Button.Group>
+									<Button type={viewMode === 'cards' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => changeView('cards')} aria-label="Card view" />
+									<Button type={viewMode === 'table' ? 'primary' : 'default'} icon={<OrderedListOutlined />} onClick={() => changeView('table')} aria-label="Table view" />
+								</Button.Group>
+							</Space>
+						</Col>
+					</Row>
+				</Card>
 
-				{/* Sheets Grid */}
 				{loading ? (
 					<div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
+				) : coursesLoaded && courses.length === 0 ? (
+					<Card style={{ borderRadius: 12, textAlign: 'center', padding: 30 }}>
+						<Empty description="You don't currently have access to any learning courses.">
+							<Button type="primary" onClick={() => navigate('/courses')}>Browse Courses</Button>
+						</Empty>
+					</Card>
 				) : sheets.length === 0 ? (
-					<Empty description="No summary sheets available" style={{ padding: 60 }} />
+					<Card style={{ borderRadius: 12, textAlign: 'center', padding: 30 }}>
+						<Empty description={searchText || filterSource || filterVolumeId || filterModuleId || filterTopicId ? 'No resources match your selected filters.' : 'No learning resources are available for your enrolled course yet.'}>
+							{(searchText || filterSource || filterVolumeId || filterModuleId || filterTopicId) && <Button onClick={() => { setSearchText(''); setFilterSource(null); setFilterVolumeId(null); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }}>Clear Filters</Button>}
+						</Empty>
+					</Card>
+				) : viewMode === 'table' ? (
+					<Card style={{ borderRadius: 12, border: '1px solid #e2e8f0' }} styles={{ body: { padding: 0 } }}>
+						<Table dataSource={sheets} columns={summaryColumns} rowKey={resource => resource.resourceKey || resource.id} scroll={{ x: 1250 }} pagination={{ current: page, pageSize: 24, total, showSizeChanger: false, onChange: nextPage => setPage(nextPage), showTotal: count => `${count} resource${count === 1 ? '' : 's'}` }} />
+					</Card>
 				) : (
 					<>
 						<Row gutter={[16, 16]}>
-							{sheets.map(s => (
-								<Col xs={24} sm={12} lg={8} key={s.id}>
-									<Card hoverable style={{ borderRadius: 14, overflow: 'hidden', border: '1px solid #e2e8f0', height: '100%' }} bodyStyle={{ padding: 0 }} onClick={() => { if (s.sourceType === 'UPLOADED_PDF') navigate(`/learning/summary-sheets/${s.id}`); else { setPreviewSheet(s); setPreviewOpen(true); } }}>
-										<div style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', padding: '16px 20px' }}>
-											<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
-												{LEVEL_LABELS[s.level]} {s.volume?.name ? `| ${s.volume.name}` : ''}
-											</Typography.Text>
-											<Typography.Title level={5} style={{ color: '#fff', margin: '4px 0 0' }}>{s.title}</Typography.Title>
-										</div>
-										<div style={{ padding: '12px 20px' }}>
-											{s.snapshot && <div style={{ color: '#475569', fontSize: 13, lineHeight: 1.5, marginBottom: 8, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{s.snapshot}</div>}
-											<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-												{s.useCase && <Tag color="blue" style={{ fontSize: 11 }}>{s.useCase}</Tag>}
-												<Tag style={{ fontSize: 11 }}>{s.year}</Tag>
-											</div>
-										</div>
-									</Card>
-								</Col>
+							{sheets.map(resource => (
+								<Col xs={24} sm={12} lg={8} key={resource.resourceKey || resource.id}><SummaryResourceCard resource={resource} onOpen={openResource} /></Col>
 							))}
 						</Row>
-						{total > 50 && (
-							<div style={{ textAlign: 'center', marginTop: 20 }}>
-								<Space>
-									<Button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
-									<Typography.Text type="secondary">Page {page} of {Math.ceil(total / 50)}</Typography.Text>
-									<Button disabled={sheets.length < 50} onClick={() => setPage(p => p + 1)}>Next</Button>
-								</Space>
-							</div>
-						)}
+						{total > 24 && <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}><Pagination current={page} pageSize={24} total={total} onChange={setPage} showTotal={count => `${count} resources`} /></div>}
 					</>
 				)}
 

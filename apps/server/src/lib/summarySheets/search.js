@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
-import { signedSummaryPdfUrl } from './storage.js';
+import { signedSummaryPdfUrl, signedSummaryThumbnailUrl } from './storage.js';
+import { getAccessibleCourseIds } from '../entitlements.js';
 
 const SHEET_SELECT = {
   id: true,
@@ -55,14 +56,20 @@ function serializeSheet(sheet, user) {
           admin: user?.role === 'ADMIN',
           version: sheet.pdfVersion
         })
+      : null,
+    thumbnailUrl: sheet.sourceType === 'UPLOADED_PDF'
+      ? signedSummaryThumbnailUrl({
+          id: sheet.id,
+          userId: user?.id || null,
+          admin: user?.role === 'ADMIN',
+          version: sheet.pdfVersion
+        })
       : null
   };
 }
 
 async function allowedCourseIds(prisma, user) {
-  if (!user || user.role === 'ADMIN') return null;
-  const rows = await prisma.enrollment.findMany({ where: { userId: user.id }, select: { courseId: true } });
-  return rows.map(row => row.courseId);
+  return getAccessibleCourseIds(prisma, user);
 }
 
 function accessSql({ user, allowedIds, courseId, includeDrafts }) {

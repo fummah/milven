@@ -7,6 +7,7 @@ import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCo
 import { stripJsonFences, extractCurriculumExcerpt } from '../lib/aiContent.js';
 import { searchModuleNotePdfs, serializeBook as serializeModuleNotePdf } from '../lib/moduleNotePdfs/search.js';
 import { normalizeNoteSource, paginateResources, resourceCounts, sortResources } from '../lib/unifiedResources.js';
+import { getAccessibleCourseIds } from '../lib/entitlements.js';
 
 const MAX_TARGET_TOPICS = 20;
 
@@ -253,16 +254,21 @@ export function moduleNotesRouter(prisma, deps = {}) {
 	});
 
 	// ─── LIST ─────────────────────────────────────────────────
-	router.get('/', async (req, res) => {
+	router.get('/', requireAuth(), async (req, res) => {
 		try {
 			const { courseId, volumeId, moduleId, topicId, level, status, year, search, page, limit } = req.query;
+			const isAdmin = req.user.role === 'ADMIN';
+			const allowedIds = isAdmin ? null : await getAccessibleCourseIds(prisma, req.user);
+			if (allowedIds && allowedIds.length === 0) return res.json({ notes: [], total: 0, page: 1, limit: Number(limit) || 25 });
+			const scopedCourseId = courseId && allowedIds ? (allowedIds.includes(courseId) ? courseId : '__none__') : courseId;
 			const where = {};
-			if (courseId) where.courseId = courseId;
+			if (scopedCourseId) where.courseId = scopedCourseId;
 			if (volumeId) where.volumeId = volumeId;
 			if (moduleId) where.moduleId = moduleId;
 			if (topicId) where.topicId = topicId;
 			if (level) where.level = level;
-			if (status) where.status = status;
+			where.status = isAdmin ? (status || undefined) : 'PUBLISHED';
+			if (!where.status) delete where.status;
 			if (year) where.year = Number(year);
 			if (search) {
 				where.OR = [
@@ -271,6 +277,7 @@ export function moduleNotesRouter(prisma, deps = {}) {
 				];
 			}
 
+			if (allowedIds) where.courseId = scopedCourseId || { in: allowedIds };
 			const pageNum = Math.max(1, Number(page) || 1);
 			const pageSize = Math.min(200, Math.max(1, Number(limit) || 25));
 			const skip = (pageNum - 1) * pageSize;
@@ -299,9 +306,7 @@ export function moduleNotesRouter(prisma, deps = {}) {
 		try {
 			const { courseId, volumeId, moduleId, topicId, conceptId, level, status, year, search, source, sort, page, limit } = req.query;
 			const isAdmin = req.user.role === 'ADMIN';
-			const allowedIds = isAdmin
-				? null
-				: (await prisma.enrollment.findMany({ where: { userId: req.user.id }, select: { courseId: true } })).map(row => row.courseId);
+			const allowedIds = isAdmin ? null : await getAccessibleCourseIds(prisma, req.user);
 			const term = String(search || '').trim();
 			const sourceFilter = String(source || '').toUpperCase();
 			const wantsNotes = !['UPLOAD', 'UPLOADED_PDF'].includes(sourceFilter);
@@ -434,13 +439,17 @@ export function moduleNotesRouter(prisma, deps = {}) {
 		}
 	});
 
-	router.get('/:id', async (req, res) => {
+	router.get('/:id', requireAuth(), async (req, res) => {
 		try {
 			const note = await prisma.moduleNote.findUnique({
 				where: { id: req.params.id },
 				include: defaultInclude,
 			});
 			if (!note) return res.status(404).json({ error: 'Module note not found' });
+			if (req.user.role !== 'ADMIN') {
+				const allowed = await getAccessibleCourseIds(prisma, req.user);
+				if (note.status !== 'PUBLISHED' || !note.courseId || !allowed.includes(note.courseId)) return res.status(403).json({ error: 'You do not have access to this module note.' });
+			}
 			return res.json({ note });
 		} catch (err) {
 			console.error('[moduleNotes.get]', err);

@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Tooltip, Collapse, Anchor, Grid, Switch, Divider, Modal } from 'antd';
+import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Tooltip, Collapse, Anchor, Grid, Switch, Divider, Modal, Card, Row, Col, Table, Pagination } from 'antd';
 import { BookOutlined, SearchOutlined, StarFilled, PrinterOutlined, FilterOutlined, UnorderedListOutlined, AppstoreOutlined, DownloadOutlined, EyeOutlined, FilePdfOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { formatFormulaHtml, formatVariablesHtml, formatProseWithMath } from '../lib/formatFormula';
 import FormulaResourceCard from '../components/resources/FormulaResourceCard';
-import { ResourceSourceTag } from '../components/resources/ResourceVisuals';
+import { PdfThumbnail, ResourceSourceTag, ResourceTypeTag } from '../components/resources/ResourceVisuals';
 
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 const LEVEL_COLORS = { LEVEL1: '#3b82f6', LEVEL2: '#8b5cf6', LEVEL3: '#f59e0b' };
@@ -14,18 +14,20 @@ export function FormulaBook() {
 	const navigate = useNavigate();
 	const screens = Grid.useBreakpoint();
 	const isMobile = !screens.md;
-	const bookRef = useRef(null);
 
 	const [loading, setLoading] = useState(false);
 	const [formulas, setFormulas] = useState([]);
 	const [pdfResources, setPdfResources] = useState([]);
+	const [resourceRows, setResourceRows] = useState([]);
 	const [total, setTotal] = useState(0);
+	const [counts, setCounts] = useState({ ai: 0, manual: 0, uploadedPdf: 0 });
+	const [page, setPage] = useState(1);
+	const pageSize = 24;
+	const [searchTerm, setSearchTerm] = useState('');
 	const [courses, setCourses] = useState([]);
 	const [volumes, setVolumes] = useState([]);
 	const [modules, setModules] = useState([]);
 	const [topics, setTopics] = useState([]);
-
-	// Filters
 	const [courseId, setCourseId] = useState(null);
 	const [volumeId, setVolumeId] = useState(null);
 	const [moduleId, setModuleId] = useState(null);
@@ -34,11 +36,10 @@ export function FormulaBook() {
 	const [highYieldOnly, setHighYieldOnly] = useState(false);
 	const [filterSource, setFilterSource] = useState(null);
 	const [refreshTick, setRefreshTick] = useState(0);
-	const [viewMode, setViewMode] = useState('book'); // 'book' | 'list'
+	const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.student-formula.view') || 'table');
+	const [previewFormula, setPreviewFormula] = useState(null);
 
-	// Load courses + lookup data
 	useEffect(() => {
-		api.get('/api/formulas/book/stats').catch(() => {});
 		api.get('/api/learning/me/courses').then(r => {
 			const enrollments = r.data?.courses || [];
 			setCourses(enrollments.map(e => ({ id: e.courseId, name: e.name, level: e.level })).filter(e => e.id));
@@ -48,520 +49,111 @@ export function FormulaBook() {
 		api.get('/api/learning/topics/public').then(r => setTopics(r.data?.topics || [])).catch(() => {});
 	}, []);
 
-	// Load unified formula resources
+	useEffect(() => {
+		const timer = setTimeout(() => { setSearchTerm(search.trim()); setPage(1); }, 300);
+		return () => clearTimeout(timer);
+	}, [search]);
+
 	useEffect(() => {
 		setLoading(true);
-		const params = { limit: 500 };
+		const params = { page, limit: pageSize };
 		if (courseId) params.courseId = courseId;
 		if (volumeId) params.volumeId = volumeId;
 		if (moduleId) params.moduleId = moduleId;
 		if (topicId) params.topicId = topicId;
-		if (search) params.search = search;
+		if (searchTerm) params.search = searchTerm;
 		if (highYieldOnly) params.highYield = 'true';
 		if (filterSource) params.source = filterSource;
 		api.get('/api/formulas/unified', { params })
 			.then(r => {
 				const resources = r.data?.resources || [];
-				const formulaRows = resources.filter(item => item.type === 'FORMULA');
-				setFormulas(formulaRows);
+				setResourceRows(resources);
+				setFormulas(resources.filter(item => item.type === 'FORMULA'));
 				setPdfResources(resources.filter(item => item.type === 'PDF'));
-				setTotal(formulaRows.length);
+				setTotal(r.data?.total || 0);
+				setCounts(r.data?.counts || { ai: 0, manual: 0, uploadedPdf: 0 });
 			})
-			.catch(() => { setFormulas([]); setPdfResources([]); })
+			.catch(() => { setResourceRows([]); setFormulas([]); setPdfResources([]); })
 			.finally(() => setLoading(false));
-	}, [courseId, volumeId, moduleId, topicId, search, highYieldOnly, filterSource, refreshTick]);
+	}, [courseId, volumeId, moduleId, topicId, searchTerm, highYieldOnly, filterSource, refreshTick, page]);
 
-		useEffect(() => {
+	useEffect(() => {
 		const processing = pdfResources.some(item => ['UPLOADED', 'INDEXING'].includes(item.processingStatus));
 		if (!processing) return undefined;
 		const timer = setTimeout(() => setRefreshTick(value => value + 1), 6000);
 		return () => clearTimeout(timer);
 	}, [pdfResources]);
 
-	// Cascading filter options
-	const filteredVolumes = useMemo(() => {
-		if (!courseId) return volumes;
-		return volumes.filter(v => v.courseLinks?.some(cl => cl.courseId === courseId));
-	}, [courseId, volumes]);
+	const accessibleCourseIds = useMemo(() => new Set(courses.map(course => course.id)), [courses]);
+	const filteredVolumes = useMemo(() => (courseId ? volumes.filter(v => v.courseLinks?.some(cl => cl.courseId === courseId)) : volumes.filter(v => v.courseLinks?.some(cl => accessibleCourseIds.has(cl.courseId)))), [courseId, volumes, accessibleCourseIds]);
+	const filteredModules = useMemo(() => modules.filter(m => (courseId ? m.courseId === courseId : accessibleCourseIds.has(m.courseId)) && (!volumeId || m.volumeId === volumeId)), [modules, courseId, volumeId, accessibleCourseIds]);
+	const filteredTopics = useMemo(() => topics.filter(t => (courseId ? t.courseId === courseId : accessibleCourseIds.has(t.courseId)) && (!moduleId || t.moduleId === moduleId)), [topics, courseId, moduleId, accessibleCourseIds]);
+	const highYieldCount = useMemo(() => formulas.filter(f => f.highYield).length, [formulas]);
+	const resources = resourceRows;
 
-	const filteredModules = useMemo(() => {
-		let list = modules;
-		if (courseId) list = list.filter(m => m.courseId === courseId);
-		if (volumeId) list = list.filter(m => m.volumeId === volumeId);
-		return list;
-	}, [courseId, volumeId, modules]);
-
-	const filteredTopics = useMemo(() => {
-		let list = topics;
-		if (courseId) list = list.filter(t => t.courseId === courseId);
-		if (moduleId) list = list.filter(t => t.moduleId === moduleId);
-		return list;
-	}, [courseId, moduleId, topics]);
-
-	// Group formulas by volume → module → topic
-	const grouped = useMemo(() => {
-		const map = {};
-		for (const f of formulas) {
-			const vKey = f.volumeId || '_none';
-			const vName = f.volume?.name || 'General';
-			const mKey = f.moduleId || '_none';
-			const mName = f.module?.name || 'General';
-			const tKey = f.topicId || '_none';
-			const tName = f.topic?.name || 'General';
-
-			if (!map[vKey]) map[vKey] = { id: vKey, name: vName, modules: {} };
-			if (!map[vKey].modules[mKey]) map[vKey].modules[mKey] = { id: mKey, name: mName, topics: {} };
-			if (!map[vKey].modules[mKey].topics[tKey]) map[vKey].modules[mKey].topics[tKey] = { id: tKey, name: tName, formulas: [] };
-			map[vKey].modules[mKey].topics[tKey].formulas.push(f);
-		}
-		return Object.values(map).map(v => ({
-			...v,
-			modules: Object.values(v.modules).map(m => ({
-				...m,
-				topics: Object.values(m.topics),
-			})),
-		}));
-	}, [formulas]);
-
-	const handlePrint = () => {
-		window.print();
+	const changeView = mode => {
+		setViewMode(mode);
+		try { localStorage.setItem('milven.student-formula.view', mode); } catch {}
 	};
 
-	const openPdfResource = resource => navigate(`/learning/formula-books/${resource.resourceId || resource.id}${resource.matchPage ? `?page=${resource.matchPage}` : ''}`);
+	const openResource = resource => {
+		if (resource.type === 'PDF') navigate(`/learning/formula-books/${resource.resourceId || resource.id}${resource.matchPage ? `?page=${resource.matchPage}` : ''}`);
+		else setPreviewFormula(resource);
+	};
 
-	const highYieldFormulas = useMemo(() => formulas.filter(f => f.highYield), [formulas]);
+	const columns = [
+		{ title: 'Resource', key: 'resource', width: 340, render: (_, resource) => (
+			<Space align="start">
+				{resource.type === 'PDF' ? <button type="button" onClick={() => openResource(resource)} aria-label={`View ${resource.title}`} style={{ width: 76, height: 44, overflow: 'hidden', borderRadius: 4, flexShrink: 0, padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}><PdfThumbnail url={resource.thumbnailUrl} title={resource.title} height={44} /></button> : <div style={{ width: 44, height: 44, borderRadius: 10, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><BookOutlined style={{ color: '#2563eb', fontSize: 20 }} /></div>}
+				<div style={{ minWidth: 0 }}><div style={{ fontWeight: 600, color: '#102540' }}>{resource.title}</div>{resource.type === 'PDF' && resource.originalFilename && <Typography.Text type="secondary" style={{ fontSize: 11 }} ellipsis>{resource.originalFilename}</Typography.Text>}</div>
+			</Space>
+		) },
+		{ title: 'Type', key: 'type', width: 190, render: (_, resource) => <Space size={4} wrap><ResourceTypeTag type={resource.type === 'PDF' ? 'PDF' : 'FORMULA'} /><ResourceSourceTag type={resource.type === 'PDF' ? 'PDF' : 'FORMULA'} source={resource.source} /></Space> },
+		{ title: 'Level', key: 'level', width: 95, render: (_, resource) => <Tag color={resource.level === 'LEVEL1' ? 'blue' : resource.level === 'LEVEL2' ? 'purple' : 'gold'}>{LEVEL_LABELS[resource.level] || resource.level}</Tag> },
+		{ title: 'Volume', key: 'volume', width: 150, render: (_, resource) => resource.volume?.name || <Typography.Text type="secondary">-</Typography.Text> },
+		{ title: 'Learning Module', key: 'module', width: 190, render: (_, resource) => resource.type === 'PDF' ? <Tag>Whole Volume</Tag> : resource.module?.name || <Typography.Text type="secondary">-</Typography.Text> },
+		{ title: 'Status', key: 'status', width: 100, render: (_, resource) => <Tag color={resource.status === 'PUBLISHED' ? 'green' : 'default'}>{resource.status === 'PUBLISHED' ? 'Published' : 'Draft'}</Tag> },
+		{ title: 'Actions', key: 'actions', width: 150, fixed: 'right', render: (_, resource) => <Space size={2}><Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openResource(resource)}>{resource.type === 'PDF' ? 'View PDF' : 'View Formula'}</Button>{resource.type === 'FORMULA' && resource.highYield && <StarFilled style={{ color: '#f59e0b' }} />}</Space> }
+	];
 
 	return (
-		<div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? 8 : 0 }}>
-			{/* ── Cover / Header ───────────────────────────── */}
-			<div style={{
-				background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 60%, #274a74 100%)',
-				borderRadius: 20, padding: isMobile ? '28px 20px' : '40px 48px',
-				marginBottom: 28, position: 'relative', overflow: 'hidden',
-			}}>
-				<div style={{ position: 'absolute', top: -40, right: -40, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.03)' }} />
-				<div style={{ position: 'absolute', bottom: -20, left: -20, width: 120, height: 120, borderRadius: '50%', background: 'rgba(255,255,255,0.02)' }} />
-				<div style={{ position: 'relative', zIndex: 1 }}>
-					<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 2, fontWeight: 600 }}>
-						Milven Finance School
-					</Typography.Text>
-					<Typography.Title level={isMobile ? 3 : 2} style={{ color: '#fff', margin: '8px 0 4px', fontWeight: 700 }}>
-						CFA Formula Book
-					</Typography.Title>
-					<Typography.Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 15 }}>
-						Simplified. Exam-focused. Built to help you pass.
-					</Typography.Text>
-					<div style={{ display: 'flex', gap: 24, marginTop: 16, flexWrap: 'wrap' }}>
-						<div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>
-							<strong style={{ color: '#fff' }}>{total}</strong> formulas
-						</div>
-						<div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>
-							<StarFilled style={{ color: '#f59e0b', marginRight: 4 }} />
-							<strong style={{ color: '#fff' }}>{highYieldFormulas.length}</strong> high-yield
-						</div>
-						<div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>
-							<strong style={{ color: '#fff' }}>{grouped.length}</strong> volumes
-						</div>
-					</div>
-				</div>
+		<div style={{ maxWidth: 1180, margin: '0 auto', padding: isMobile ? 8 : 0 }}>
+			<div style={{ background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 60%, #274a74 100%)', borderRadius: 20, padding: isMobile ? '28px 20px' : '34px 42px', marginBottom: 20 }}>
+				<Typography.Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 2, fontWeight: 600 }}>Milven Finance School</Typography.Text>
+				<Typography.Title level={isMobile ? 3 : 2} style={{ color: '#fff', margin: '8px 0 4px' }}>CFA Formula Book</Typography.Title>
+				<Typography.Text style={{ color: 'rgba(255,255,255,0.75)' }}>Formula cards and Volume-level PDF formula books.</Typography.Text>
 			</div>
-
-			{/* ── Toolbar ──────────────────────────────────── */}
-			<div style={{
-				display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20,
-				alignItems: 'center', justifyContent: 'space-between',
-			}}>
-				<Space wrap size={8}>
-					<Input
-						prefix={<SearchOutlined />}
-						placeholder="Search formulas…"
-						value={search}
-						onChange={e => setSearch(e.target.value)}
-						allowClear
-						style={{ width: 200 }}
-					/>
-					<Select
-						placeholder="Course"
-						value={courseId}
-						onChange={v => { setCourseId(v); setVolumeId(null); setModuleId(null); setTopicId(null); }}
-						options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]}
-						style={{ width: 170 }}
-						allowClear
-						showSearch
-						optionFilterProp="label"
-					/>
-					<Select
-						placeholder="Volume"
-						value={volumeId}
-						onChange={v => { setVolumeId(v); setModuleId(null); setTopicId(null); }}
-						options={[{ value: null, label: 'All Volumes' }, ...filteredVolumes.map(v => ({ value: v.id, label: v.name }))]}
-						style={{ width: 160 }}
-						allowClear
-						showSearch
-						optionFilterProp="label"
-					/>
-					<Select
-						placeholder="Learning Module"
-						value={moduleId}
-						onChange={v => { setModuleId(v); setTopicId(null); }}
-						options={[{ value: null, label: 'All Modules' }, ...filteredModules.map(m => ({ value: m.id, label: m.name }))]}
-						style={{ width: 180 }}
-						allowClear
-						showSearch
-						optionFilterProp="label"
-					/>
-					<Select
-						placeholder="Topic"
-						value={topicId}
-						onChange={setTopicId}
-						options={[{ value: null, label: 'All Topics' }, ...filteredTopics.map(t => ({ value: t.id, label: t.name }))]}
-						style={{ width: 170 }}
-						allowClear
-						showSearch
-						optionFilterProp="label"
-					/>
-					<Button
-						type={highYieldOnly ? 'primary' : 'default'}
-						icon={<StarFilled />}
-						onClick={() => setHighYieldOnly(!highYieldOnly)}
-						style={highYieldOnly ? { background: '#f59e0b', borderColor: '#f59e0b' } : {}}
-					>
-						High-Yield
-					</Button>
-					<Select placeholder="Source" value={filterSource} onChange={setFilterSource} options={[{ value: null, label: 'All Sources' }, { value: 'AI', label: 'AI Generated' }, { value: 'MANUAL', label: 'Manual' }, { value: 'UPLOADED_PDF', label: 'Uploaded PDF' }]} style={{ width: 160 }} allowClear />
-				</Space>
-				<Space>
-					<Tooltip title="Print / Export PDF">
-						<Button icon={<PrinterOutlined />} onClick={handlePrint}>Print</Button>
-					</Tooltip>
-					<Button.Group>
-						<Tooltip title="Book View">
-							<Button type={viewMode === 'book' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => setViewMode('book')}
-								style={viewMode === 'book' ? { background: '#102540', borderColor: '#102540' } : {}} />
-						</Tooltip>
-						<Tooltip title="List View">
-							<Button type={viewMode === 'list' ? 'primary' : 'default'} icon={<UnorderedListOutlined />} onClick={() => setViewMode('list')}
-								style={viewMode === 'list' ? { background: '#102540', borderColor: '#102540' } : {}} />
-						</Tooltip>
-					</Button.Group>
-				</Space>
-			</div>
-
-			{pdfResources.length > 0 && (
-				<div style={{ marginBottom: 26 }}>
-					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-						<Typography.Title level={4} style={{ margin: 0, color: '#102540' }}><FilePdfOutlined style={{ color: '#ef4444', marginRight: 8 }} />PDF Formula Books</Typography.Title>
-						<Typography.Text type="secondary">{pdfResources.length} volume-level PDF{pdfResources.length === 1 ? '' : 's'}</Typography.Text>
-					</div>
-					<div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-						{pdfResources.map(resource => (
-							<FormulaResourceCard key={resource.resourceKey || resource.id} resource={resource} onOpenPdf={openPdfResource} />
-						))}
-					</div>
-				</div>
-			)}
-
-			{/* ── Content ──────────────────────────────────── */}
-			{loading ? (
-				<div style={{ textAlign: 'center', padding: 80 }}>
-					<Spin size="large" />
-					<div style={{ marginTop: 16, color: '#64748b' }}>Loading formula book…</div>
-				</div>
-			) : formulas.length === 0 && pdfResources.length === 0 ? (
-				<Empty
-					image={Empty.PRESENTED_IMAGE_SIMPLE}
-					description={
-						<span style={{ color: '#64748b' }}>
-							No formulas found.{search ? ` Search: "${search}"` : ''}
-						</span>
-					}
-				/>
-			) : viewMode === 'list' ? (
-				<div id="formula-book-print">
-					<FormulaListView formulas={formulas} />
-				</div>
+			<Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+				{[{ label: 'Available resources', value: total }, { label: 'Formula cards', value: (counts.ai || 0) + (counts.manual || 0) }, { label: 'PDF formula books', value: counts.uploadedPdf || 0 }, { label: 'Manual formulas', value: counts.manual || 0 }].map(item => (
+					<Col xs={12} sm={12} lg={6} key={item.label}><Card size="small" style={{ borderRadius: 12, border: '1px solid #e2e8f0' }} styles={{ body: { padding: '12px 14px' } }}><Typography.Text type="secondary" style={{ fontSize: 11 }}>{item.label}</Typography.Text><div style={{ fontSize: 24, fontWeight: 700, color: '#102540', fontVariantNumeric: 'tabular-nums' }}>{Number(item.value || 0).toLocaleString('en-US')}</div></Card></Col>
+				))}
+			</Row>
+			<Card size="small" style={{ marginBottom: 16, borderRadius: 12, border: '1px solid #e2e8f0' }} styles={{ body: { padding: 12 } }}>
+				<Row gutter={[10, 10]} align="middle">
+					<Col xs={24} lg={17}><Space wrap size={8}>
+						<Input prefix={<SearchOutlined />} placeholder="Search formulas and PDFs..." value={search} onChange={e => setSearch(e.target.value)} allowClear style={{ width: 210 }} />
+						<Select placeholder="Course" value={courseId} onChange={v => { setCourseId(v); setVolumeId(null); setModuleId(null); setTopicId(null); setPage(1); }} options={[{ value: null, label: 'All My Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]} style={{ width: 160 }} allowClear showSearch optionFilterProp="label" />
+						<Select placeholder="Volume" value={volumeId} onChange={v => { setVolumeId(v); setModuleId(null); setTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Volumes' }, ...filteredVolumes.map(v => ({ value: v.id, label: v.name }))]} style={{ width: 150 }} allowClear showSearch optionFilterProp="label" />
+						<Select placeholder="Learning Module" value={moduleId} onChange={v => { setModuleId(v); setTopicId(null); setPage(1); }} options={[{ value: null, label: 'All Modules' }, ...filteredModules.map(m => ({ value: m.id, label: m.name }))]} style={{ width: 180 }} allowClear showSearch optionFilterProp="label" />
+						<Select placeholder="Topic" value={topicId} onChange={v => { setTopicId(v); setPage(1); }} options={[{ value: null, label: 'All Topics' }, ...filteredTopics.map(t => ({ value: t.id, label: t.name }))]} style={{ width: 165 }} allowClear showSearch optionFilterProp="label" />
+						<Select placeholder="Source" value={filterSource} onChange={v => { setFilterSource(v); setPage(1); }} options={[{ value: null, label: 'All Sources' }, { value: 'AI', label: 'AI Generated' }, { value: 'MANUAL', label: 'Manual' }, { value: 'UPLOADED_PDF', label: 'Uploaded PDF' }]} style={{ width: 155 }} allowClear />
+						<Button type={highYieldOnly ? 'primary' : 'default'} icon={<StarFilled />} onClick={() => { setHighYieldOnly(!highYieldOnly); setPage(1); }} style={highYieldOnly ? { background: '#f59e0b', borderColor: '#f59e0b' } : {}}>High-Yield</Button>
+					</Space></Col>
+					<Col xs={24} lg={7} style={{ textAlign: 'right' }}><Space wrap><Button icon={<PrinterOutlined />} onClick={() => window.print()}>Print</Button><Button.Group><Button type={viewMode === 'cards' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => changeView('cards')} aria-label="Card view" /><Button type={viewMode === 'table' ? 'primary' : 'default'} icon={<UnorderedListOutlined />} onClick={() => changeView('table')} aria-label="Table view" /></Button.Group></Space></Col>
+				</Row>
+			</Card>
+			{loading ? <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div> : resources.length === 0 ? <Card style={{ borderRadius: 12, textAlign: 'center', padding: 30 }}><Empty description={courses.length === 0 ? "You don't currently have access to any learning courses." : 'No formula resources are available for your enrolled course yet.'}>{courses.length === 0 && <Button type="primary" onClick={() => navigate('/courses')}>Browse Courses</Button>}</Empty></Card> : viewMode === 'table' ? (
+				<Card style={{ borderRadius: 12, border: '1px solid #e2e8f0' }} styles={{ body: { padding: 0 } }}><Table dataSource={resources} columns={columns} rowKey={resource => resource.resourceKey || resource.id} scroll={{ x: 1250 }} pagination={{ current: page, pageSize, total, showSizeChanger: false, onChange: setPage, showTotal: count => `${count} resources` }} /></Card>
 			) : (
-				<div ref={bookRef} id="formula-book-print">
-					{grouped.map((vol, vi) => (
-						<VolumeSection key={vol.id} volume={vol} volumeIndex={vi} isMobile={isMobile} />
-					))}
-
-					{/* ── High-Yield Recap ──────────────── */}
-					{highYieldFormulas.length > 0 && (
-						<div style={{ marginTop: 32 }}>
-							<div style={{
-								background: 'linear-gradient(135deg, #fef3c7, #fff7ed)',
-								borderRadius: 16, padding: '24px 28px',
-								border: '1px solid #fde68a',
-							}}>
-								<Typography.Title level={4} style={{ margin: '0 0 16px', color: '#92400e' }}>
-									<StarFilled style={{ color: '#f59e0b', marginRight: 8 }} />
-									High-Yield Formula Recap
-								</Typography.Title>
-								<div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
-									{highYieldFormulas.map(f => (
-										<div key={f.id} style={{
-											background: '#fff', borderRadius: 10, padding: '12px 16px',
-											border: '1px solid #fde68a', display: 'flex', flexDirection: 'column', gap: 4,
-										}}>
-											<div style={{ fontWeight: 600, color: '#102540', fontSize: 13 }}>{f.name}</div>
-											<div style={{
-												fontFamily: "'Cambria Math', Georgia, serif",
-												fontSize: 14, color: '#1e3a5f',
-											}}>
-												<span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(f.formula) }} />
-											</div>
-											<div style={{ fontSize: 11, color: '#64748b' }}>{f.whenToUse}</div>
-										</div>
-									))}
-								</div>
-							</div>
-						</div>
-					)}
-
-					{/* ── Footer ───────────────────────── */}
-					<div style={{
-						marginTop: 36, textAlign: 'center', padding: '20px 0',
-						borderTop: '1px solid #e2e8f0',
-					}}>
-						<Typography.Text style={{ color: '#94a3b8', fontSize: 12 }}>
-							Milven Finance School | CFA Formula Book {new Date().getFullYear()}
-						</Typography.Text>
-						<br />
-						<Typography.Text style={{ color: '#cbd5e1', fontSize: 11 }}>
-							Precise. Calm. Premium. Exam-focused.
-						</Typography.Text>
-					</div>
+				<div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(310px, 1fr))', gap: 16 }}>
+					{resources.map(resource => <FormulaResourceCard key={resource.resourceKey || resource.id} resource={resource} onOpenPdf={() => openResource(resource)} onPreview={() => openResource(resource)} />)}
 				</div>
 			)}
-
-			{/* Print styles */}
-			<style>{`
-				@media print {
-					/* Hide everything outside the formula content */
-					body * { visibility: hidden !important; }
-					#formula-book-print,
-					#formula-book-print * { visibility: visible !important; }
-					#formula-book-print {
-						position: absolute !important;
-						left: 0 !important;
-						top: 0 !important;
-						width: 100% !important;
-						padding: 20px 20px 60px 20px !important;
-					}
-					/* Hide interactive controls */
-					.ant-layout-header,
-					.ant-layout-sider,
-					.ant-layout-footer,
-					.ant-btn,
-					.ant-select,
-					.ant-input-affix-wrapper,
-					.ant-drawer,
-					.ant-modal-root { display: none !important; }
-					/* Page-break helpers */
-					.formula-card-hover { break-inside: avoid; page-break-inside: avoid; }
-					/* Force backgrounds to print */
-					#formula-book-print * {
-						-webkit-print-color-adjust: exact !important;
-						print-color-adjust: exact !important;
-						color-adjust: exact !important;
-					}
-					/* Fixed footer on every printed page */
-					.print-page-footer {
-						visibility: visible !important;
-						position: fixed !important;
-						bottom: 0 !important;
-						left: 0 !important;
-						right: 0 !important;
-						text-align: center !important;
-						padding: 8px 0 !important;
-						border-top: 1px solid #cbd5e1 !important;
-						background: #fff !important;
-						font-size: 10px !important;
-						color: #64748b !important;
-						z-index: 99999 !important;
-					}
-					.print-page-footer * { visibility: visible !important; }
-					/* Hide footer on screen */
-				}
-				.print-page-footer { display: none; }
-				@media print { .print-page-footer { display: block; } }
-			`}</style>
-
-			{/* Fixed footer on every printed page */}
-			<div className="print-page-footer">
-				<div>Milven Finance School | CFA Formula Book {new Date().getFullYear()}</div>
-				<div style={{ fontSize: 9, color: '#94a3b8', marginTop: 2 }}>Precise. Calm. Premium. Exam-focused.</div>
-			</div>
+			{viewMode === 'cards' && total > pageSize && <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}><Pagination current={page} pageSize={pageSize} total={total} onChange={setPage} showTotal={count => `${count} resources`} /></div>}
+			<Modal open={Boolean(previewFormula)} onCancel={() => setPreviewFormula(null)} footer={null} width={900} centered title={null} styles={{ body: { padding: 0 } }}>{previewFormula && <FormulaCard formula={previewFormula} />}</Modal>
 		</div>
 	);
 }
-
-// ─── Volume Section ─────────────────────────────────────────
-function VolumeSection({ volume, volumeIndex, isMobile }) {
-	return (
-		<div style={{ marginBottom: 32 }}>
-			{/* Volume Divider */}
-			<div style={{
-				background: 'linear-gradient(135deg, #102540, #1b3a5b)',
-				borderRadius: 14, padding: isMobile ? '14px 18px' : '16px 24px',
-				marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-			}}>
-				<div>
-					<Typography.Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5 }}>
-						CFA Formula Book
-					</Typography.Text>
-					<Typography.Title level={4} style={{ color: '#fff', margin: '2px 0 0' }}>
-						{volume.name}
-					</Typography.Title>
-				</div>
-				<Tag style={{
-					background: 'rgba(255,255,255,0.1)', border: 'none',
-					color: 'rgba(255,255,255,0.8)', fontWeight: 600,
-				}}>
-					Formula Book {new Date().getFullYear()}
-				</Tag>
-			</div>
-
-			{volume.modules.map((mod, mi) => (
-				<div key={mod.id} style={{ marginBottom: 24 }}>
-					{/* Module header */}
-					<div style={{
-						padding: '10px 18px', marginBottom: 12,
-						background: '#f8fafc', borderRadius: 10,
-						borderLeft: `3px solid ${LEVEL_COLORS[mod.topics?.[0]?.formulas?.[0]?.level] || '#3b82f6'}`,
-					}}>
-						<Typography.Text strong style={{ color: '#102540', fontSize: 14 }}>
-							Learning Module: {mod.name}
-						</Typography.Text>
-					</div>
-
-					{mod.topics.map((topic) => (
-						<div key={topic.id} style={{ marginBottom: 20, paddingLeft: 12 }}>
-							{/* Topic label */}
-							<Typography.Text style={{ color: '#64748b', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600, marginBottom: 8, display: 'block' }}>
-								Topic: {topic.name}
-							</Typography.Text>
-
-							{/* Formula cards grid */}
-							<div style={{
-								display: 'grid',
-								gridTemplateColumns: isMobile ? '1fr' : topic.formulas.length === 1 ? '1fr' : '1fr 1fr',
-								gap: 14,
-							}}>
-								{topic.formulas.map(f => (
-									<FormulaCard key={f.id} formula={f} />
-								))}
-							</div>
-						</div>
-					))}
-				</div>
-			))}
-		</div>
-	);
-}
-
-// ─── Formula Card (Book View) ───────────────────────────────
-function FormulaCard({ formula }) {
-	const level = formula.level;
-	return (
-		<div style={{
-			background: '#fff', borderRadius: 14, overflow: 'hidden',
-			border: '1px solid #e2e8f0',
-			boxShadow: '0 1px 4px rgba(16,37,64,0.06)',
-			transition: 'box-shadow 0.2s, transform 0.2s',
-		}}
-			className="formula-card-hover"
-		>
-			{/* Card header */}
-			<div style={{
-				padding: '12px 16px',
-				background: `linear-gradient(135deg, ${(LEVEL_COLORS[level] || '#3b82f6')}15, ${(LEVEL_COLORS[level] || '#3b82f6')}08)`,
-				borderBottom: '1px solid #e2e8f0',
-				display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-			}}>
-				<Space size={6} wrap>
-					{formula.highYield && <StarFilled style={{ color: '#f59e0b', fontSize: 12 }} />}
-					<Typography.Text strong style={{ color: '#102540', fontSize: 13 }}>
-						{formula.name}
-					</Typography.Text>
-					<ResourceSourceTag type="FORMULA" source={formula.source} />
-				</Space>
-			</div>
-
-			{/* Formula display */}
-			<div style={{
-				padding: '14px 16px', background: '#f8fafc',
-				borderBottom: '1px solid #f1f5f9',
-			}}>
-				<div style={{
-					fontFamily: "'Cambria Math', 'Latin Modern Math', Georgia, serif",
-					fontSize: 16, fontWeight: 600, color: '#102540',
-					lineHeight: 1.5, whiteSpace: 'pre-wrap',
-				}}>
-					<span dangerouslySetInnerHTML={{ __html: formatFormulaHtml(formula.formula) }} />
-				</div>
-			</div>
-
-			{/* Fields */}
-			<div style={{ padding: '12px 16px', fontSize: 12, color: '#374151', lineHeight: 1.6 }}>
-				<div style={{ marginBottom: 8 }}>
-					<span style={{ fontWeight: 600, color: '#102540', textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}>Variables: </span>
-					<span dangerouslySetInnerHTML={{ __html: formatVariablesHtml(formula.variables) }} />
-				</div>
-				<div style={{
-					marginBottom: 8, padding: '6px 10px',
-					background: '#f0f7ff', borderRadius: 6,
-					borderLeft: '2px solid #3b82f6',
-				}}>
-					<span style={{ fontWeight: 600, color: '#102540', textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}>Interpretation: </span>
-					{formula.interpretation}
-				</div>
-				<div style={{ marginBottom: 8 }}>
-					<Tag color="blue" style={{ fontSize: 10, lineHeight: '18px' }}>WHEN TO USE</Tag>
-					<span style={{ marginLeft: 4 }}>{formula.whenToUse}</span>
-				</div>
-				<div style={{
-					padding: '6px 10px', background: '#fef3c7',
-					borderRadius: 6, borderLeft: '2px solid #f59e0b',
-				}}>
-					<span style={{ fontWeight: 600, color: '#92400e', textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}>Watch-Out: </span>
-					<span style={{ color: '#92400e' }}>{formula.watchOut}</span>
-				</div>
-				{formula.calculatorCue && (
-					<div style={{
-						marginTop: 8, padding: '6px 10px', background: '#f0fdf4',
-						borderRadius: 6, borderLeft: '2px solid #22c55e',
-					}}>
-						<span style={{ fontWeight: 600, color: '#166534', textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}>Calculator: </span>
-						<span style={{ color: '#166534' }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(formula.calculatorCue) }} />
-					</div>
-				)}
-			</div>
-
-			{/* LOS footer */}
-			{formula.losTag && (
-				<div style={{
-					padding: '6px 16px 10px', borderTop: '1px solid #f1f5f9',
-				}}>
-					<Typography.Text style={{ fontSize: 10, color: '#94a3b8' }}>
-						LOS: {formula.losTag}
-					</Typography.Text>
-				</div>
-			)}
-
-			{/* Hover style */}
-			<style>{`
-				.formula-card-hover:hover {
-					box-shadow: 0 4px 16px rgba(16,37,64,0.12) !important;
-					transform: translateY(-1px);
-				}
-			`}</style>
-		</div>
-	);
-}
-
-// ─── List View ──────────────────────────────────────────────
 function FormulaListView({ formulas }) {
 	const [previewOpen, setPreviewOpen] = useState(false);
 	const [previewFormula, setPreviewFormula] = useState(null);

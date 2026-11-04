@@ -94,3 +94,18 @@ export function signedSummaryPdfUrl({ id, userId = null, admin = false, version 
   if (version) query.set('v', String(version));
   return `/api/summary-sheets/assets/${encodeURIComponent(id)}/pdf?${query.toString()}`;
 }
+
+export function summarySheetThumbnailKey(id, version) {
+  return summaryKey('sheets', safeSegment(id), 'versions', safeSegment(version || 'v1'), 'thumbnail.png');
+}
+
+export function resolveSummaryThumbnailKey(key) {
+  return resolveSummaryKey(key);
+}
+
+export function signedSummaryThumbnailUrl({ id, userId = null, admin = false, version = null }) {
+  const token = summaryPdfToken({ id, userId, admin });
+  const query = new URLSearchParams({ token });
+  if (version) query.set('v', String(version));
+  return `/api/summary-sheets/assets/${encodeURIComponent(id)}/thumbnail?${query.toString()}`;
+}

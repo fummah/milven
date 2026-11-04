@@ -10,6 +10,7 @@ import { extractPdfPages, looksLikePdfBuffer } from '../lib/summarySheets/pdf.js
 import { searchModuleNotePdfs, searchWithinModuleNote, serializeBook } from '../lib/moduleNotePdfs/search.js';
 import { enqueueModuleNotePdf } from '../lib/moduleNotePdfs/worker.js';
 import { generatePdfThumbnail } from '../lib/pdfThumbnails.js';
+import { canAccessCourse, hasActiveCourseAccess } from '../lib/entitlements.js';
 import {
   moduleNotePdfDir,
   moduleNotePdfKey,
@@ -89,11 +90,7 @@ async function canAccess(prisma, user, book) {
   if (!user) return false;
   if (user.role === 'ADMIN') return true;
   if (book.publicationStatus !== 'PUBLISHED') return false;
-  const enrollment = await prisma.enrollment.findUnique({
-    where: { userId_courseId: { userId: user.id, courseId: book.courseId } },
-    select: { id: true }
-  });
-  return Boolean(enrollment);
+  return canAccessCourse(prisma, user, book.courseId);
 }
 
 function cleanupTemp(file) {
@@ -108,10 +105,11 @@ export function moduleNotePdfsRouter(prisma) {
     if (!payload || payload.sid !== req.params.id) return res.status(401).json({ error: 'Invalid or expired PDF link' });
     const book = await prisma.moduleNotePdf.findUnique({
       where: { id: req.params.id },
-      select: { id: true, publicationStatus: true, storageKey: true, originalFilename: true }
+      select: { id: true, courseId: true, publicationStatus: true, storageKey: true, originalFilename: true }
     });
     if (!book || !book.storageKey) return res.status(404).json({ error: 'PDF not found' });
     if (book.publicationStatus !== 'PUBLISHED' && !payload.adm) return res.status(403).json({ error: 'PDF is not published' });
+    if (!payload.adm && !(await hasActiveCourseAccess(prisma, payload.uid, book.courseId))) return res.status(403).json({ error: 'You do not have access to this PDF.' });
     try {
       const absolute = resolveModuleNotePdfKey(book.storageKey);
       if (!fs.existsSync(absolute)) return res.status(404).json({ error: 'PDF file is missing' });
@@ -130,10 +128,11 @@ export function moduleNotePdfsRouter(prisma) {
     if (!payload || payload.sid !== req.params.id) return res.status(401).json({ error: 'Invalid or expired thumbnail link' });
     const book = await prisma.moduleNotePdf.findUnique({
       where: { id: req.params.id },
-      select: { id: true, publicationStatus: true, storageKey: true, pdfVersion: true }
+      select: { id: true, courseId: true, publicationStatus: true, storageKey: true, pdfVersion: true }
     });
     if (!book || !book.storageKey) return res.status(404).json({ error: 'PDF not found' });
     if (book.publicationStatus !== 'PUBLISHED' && !payload.adm) return res.status(403).json({ error: 'PDF is not published' });
+    if (!payload.adm && !(await hasActiveCourseAccess(prisma, payload.uid, book.courseId))) return res.status(403).json({ error: 'You do not have access to this PDF.' });
     try {
       const pdfPath = resolveModuleNotePdfKey(book.storageKey);
       if (!fs.existsSync(pdfPath)) return res.status(404).json({ error: 'PDF file is missing' });

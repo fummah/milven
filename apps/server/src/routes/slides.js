@@ -28,6 +28,7 @@ import {
   serializePresentation
 } from '../lib/slides/search.js';
 import { rendererStatus } from '../lib/slides/renderer.js';
+import { canAccessCourse, hasActiveCourseAccess } from '../lib/entitlements.js';
 
 const MAX_PPTX_BYTES = 500 * 1024 * 1024;
 const MAX_ZIP_BYTES = 2 * 1024 * 1024 * 1024;
@@ -206,14 +207,7 @@ function slideForUser(slide, presentationId, user, version = null) {
 }
 
 async function ensureCourseAccess(prisma, user, courseId) {
-  if (!user) return false;
-  if (user.role === 'ADMIN') return true;
-  if (!courseId) return false;
-  const enrollment = await prisma.enrollment.findUnique({
-    where: { userId_courseId: { userId: user.id, courseId } },
-    select: { id: true }
-  });
-  return Boolean(enrollment);
+  return canAccessCourse(prisma, user, courseId);
 }
 
 async function getPresentation(prisma, id) {
@@ -265,11 +259,14 @@ export function slidesRouter(prisma) {
     }
     const presentation = await prisma.presentation.findUnique({
       where: { id: req.params.presentationId },
-      select: { id: true, status: true, deletedAt: true, pdfKey: true }
+      select: { id: true, courseId: true, status: true, deletedAt: true, pdfKey: true }
     });
     if (!presentation || presentation.deletedAt) return res.status(404).json({ error: 'Presentation not found' });
     if (presentation.status !== 'PUBLISHED' && !payload.adm) {
       return res.status(403).json({ error: 'Presentation is not published' });
+    }
+    if (!payload.adm && !(await hasActiveCourseAccess(prisma, payload.uid, presentation.courseId))) {
+      return res.status(403).json({ error: 'You do not have access to this presentation.' });
     }
 
     const kind = String(req.params.kind || '');
@@ -958,6 +955,27 @@ export function slidesRouter(prisma) {
     return res.json({ courseId, volumes });
   });
 
+  router.get('/library/stats', requireAuth(), async (req, res) => {
+    const courseId = String(req.query.courseId || '').trim();
+    if (!courseId) return res.status(400).json({ error: 'courseId is required' });
+    if (!(await ensureCourseAccess(prisma, req.user, courseId))) {
+      return res.status(403).json({ error: 'You do not have access to this course.' });
+    }
+    const where = { courseId, deletedAt: null, status: 'PUBLISHED', slides: { some: {} } };
+    const [presentations, wholeVolume, slideAgg, moduleGroups] = await Promise.all([
+      prisma.presentation.count({ where }),
+      prisma.presentation.count({ where: { ...where, scope: 'WHOLE_VOLUME' } }),
+      prisma.presentation.aggregate({ where, _sum: { slideCount: true } }),
+      prisma.presentation.groupBy({ by: ['moduleId'], where: { ...where, moduleId: { not: null } } })
+    ]);
+    return res.json({
+      presentations,
+      slides: slideAgg._sum.slideCount || 0,
+      modules: moduleGroups.length,
+      wholeVolume
+    });
+  });
+
   router.get('/library/presentations', requireAuth(), async (req, res) => {
     const courseId = String(req.query.courseId || '').trim();
     if (!courseId) return res.status(400).json({ error: 'courseId is required' });
@@ -967,6 +985,7 @@ export function slidesRouter(prisma) {
     const volumeId = String(req.query.volumeId || '').trim();
     const moduleId = String(req.query.moduleId || '').trim();
     const scope = String(req.query.scope || '').trim();
+    const year = parseIntSafe(req.query.year, null);
     const q = String(req.query.q || '').trim();
     const page = Math.max(1, parseIntSafe(req.query.page, 1));
     const limit = Math.min(60, Math.max(1, parseIntSafe(req.query.limit, 24)));
@@ -979,6 +998,7 @@ export function slidesRouter(prisma) {
       ...(volumeId ? { volumeId } : {}),
       ...(moduleId ? { moduleId } : {}),
       ...(scope ? { scope } : {}),
+      ...(year ? { year } : {}),
       ...(q ? {
         OR: [
           { title: { contains: q, mode: 'insensitive' } },

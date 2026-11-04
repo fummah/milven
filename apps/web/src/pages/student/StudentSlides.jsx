@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert, Button, Card, Col, Empty, Input, Pagination, Row, Select, Skeleton, Space, Tag,
-  Typography, Grid, Drawer
+  Typography, Grid, Drawer, Table, Tooltip
 } from 'antd';
 import {
   ArrowLeftOutlined, ArrowRightOutlined, BookOutlined, CloseOutlined, DownOutlined,
   FilePptOutlined, FileTextOutlined, FolderOutlined, FunctionOutlined, MenuOutlined,
-  RightOutlined, SearchOutlined, SnippetsOutlined
+  RightOutlined, SearchOutlined, SnippetsOutlined, AppstoreOutlined, TableOutlined, EyeOutlined
 } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { assetUrl, highlightParts, levelLabel, presentationViewerPath } from '../../lib/slideUrls';
@@ -29,6 +29,7 @@ export default function StudentSlides() {
   });
 
   const [courses, setCourses] = useState([]);
+  const [coursesLoaded, setCoursesLoaded] = useState(false);
   const [courseId, setCourseId] = useState(undefined);
   const [volumes, setVolumes] = useState([]);
   const [hierarchyLoading, setHierarchyLoading] = useState(false);
@@ -40,6 +41,8 @@ export default function StudentSlides() {
 
   const [presentations, setPresentations] = useState([]);
   const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState(null);
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.student-slides.view') || 'table');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(24);
   const [loading, setLoading] = useState(true);
@@ -61,11 +64,18 @@ export default function StudentSlides() {
         const chosen = list.find(c => c.id === requested)?.id || list[0]?.id;
         setCourseId(chosen);
       })
-      .catch(() => setError('Could not load your enrolled courses.'));
+      .catch(() => setError('Could not load your enrolled courses.'))
+      .finally(() => setCoursesLoaded(true));
   }, []);
 
   useEffect(() => {
-    if (!courseId) return;
+    if (!courseId) {
+      setVolumes([]);
+      setStats(null);
+      setHierarchyLoading(false);
+      return undefined;
+    }
+    api.get('/api/slides/library/stats', { params: { courseId } }).then(res => setStats(res.data || null)).catch(() => setStats(null));
     setHierarchyLoading(true);
     setPresentations([]);
     api.get('/api/slides/library/hierarchy', { params: { courseId } })
@@ -108,7 +118,14 @@ export default function StudentSlides() {
   }, [searchInput]);
 
   useEffect(() => {
-    if (!courseId) return;
+    if (!courseId) {
+      setLoading(false);
+      setPresentations([]);
+      setTotal(0);
+      setSearchResults([]);
+      setSearchTotal(0);
+      return undefined;
+    }
     const term = searchTerm.trim();
     if (term.length >= 2) {
       setSearching(true);
@@ -205,6 +222,32 @@ export default function StudentSlides() {
   const openPresentation = (presentation, slideNumber) => {
     navigate(presentationViewerPath(presentation.id, slideNumber));
   };
+
+  const changeView = mode => {
+    setViewMode(mode);
+    try { localStorage.setItem('milven.student-slides.view', mode); } catch {}
+  };
+
+  const presentationColumns = [
+    {
+      title: 'Presentation', key: 'presentation', width: 360,
+      render: (_, presentation) => (
+        <Space align="start">
+          <PresentationThumb presentation={presentation} onOpen={() => openPresentation(presentation)} compact />
+          <div style={{ minWidth: 0 }}>
+            <Text strong style={{ color: '#102540', display: 'block' }} ellipsis={{ tooltip: presentation.title }}>{presentation.title}</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{presentation.originalFilename || ''}</Text>
+          </div>
+        </Space>
+      )
+    },
+    { title: 'Level', key: 'level', width: 95, render: (_, p) => <Tag color={p.course?.level === 'LEVEL1' ? 'blue' : p.course?.level === 'LEVEL2' ? 'purple' : 'gold'}>{levelLabel(p.course?.level)}</Tag> },
+    { title: 'Volume', key: 'volume', width: 150, render: (_, p) => p.volume?.name || <Text type="secondary">-</Text> },
+    { title: 'Learning Module', key: 'module', width: 200, render: (_, p) => p.scope === 'WHOLE_VOLUME' ? <Tag color="gold">Whole Volume Review</Tag> : p.module?.name || <Text type="secondary">-</Text> },
+    { title: 'Slides', key: 'slides', width: 90, render: (_, p) => <Tag>{p.slideCount || 0}</Tag> },
+    { title: 'Year', key: 'year', width: 90, render: (_, p) => p.year || '-' },
+    { title: 'View', key: 'view', width: 100, fixed: 'right', render: (_, p) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openPresentation(p)}>View</Button> }
+  ];
 
   const activeLabel = wholeVolumeOnly
     ? `${selectedVolume?.name || 'Volume'} — Whole Volume Review`
@@ -370,10 +413,19 @@ export default function StudentSlides() {
               onChange={(event) => setSearchInput(event.target.value)}
               style={{ maxWidth: 360, width: isMobile ? '100%' : 360 }}
             />
+            <Button.Group>
+              <Button type={viewMode === 'cards' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => changeView('cards')} aria-label="Card view" />
+              <Button type={viewMode === 'table' ? 'primary' : 'default'} icon={<TableOutlined />} onClick={() => changeView('table')} aria-label="Table view" />
+            </Button.Group>
           </div>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? 12 : 18 }}>
+          {stats && <Row gutter={[10, 10]} style={{ marginBottom: 14 }}>
+            {[{ label: 'Presentations', value: stats.presentations, color: '#2563eb' }, { label: 'Total slides', value: stats.slides, color: '#4f46e5' }, { label: 'Learning modules', value: stats.modules, color: '#16a34a' }, { label: 'Whole volume reviews', value: stats.wholeVolume, color: '#d97706' }].map(item => (
+              <Col xs={12} sm={6} key={item.label}><Card size="small" styles={{ body: { padding: '10px 12px' } }} style={{ borderRadius: 12, border: '1px solid #e2e8f0' }}><Text type="secondary" style={{ fontSize: 11 }}>{item.label}</Text><div style={{ fontSize: 22, fontWeight: 700, color: '#102540', fontVariantNumeric: 'tabular-nums' }}>{Number(item.value || 0).toLocaleString('en-US')}</div></Card></Col>
+            ))}
+          </Row>}
           {selectedModule && !searchMode && moduleResourceLinks}
 
           {selectedModule && !searchMode && (
@@ -408,8 +460,10 @@ export default function StudentSlides() {
           ) : error ? (
             <Alert type="error" showIcon message={error} />
           ) : presentations.length === 0 ? (
-            <Card>
-              <Empty description="No published presentations are available in this section yet." />
+            <Card><Empty description={coursesLoaded && courses.length === 0 ? "You do not currently have access to any learning courses." : "No learning resources are available for your enrolled course yet."}>{coursesLoaded && courses.length === 0 && <Button type="primary" onClick={() => navigate('/courses')}>Browse Courses</Button>}</Empty></Card>
+          ) : viewMode === 'table' ? (
+            <Card style={{ borderRadius: 12, border: '1px solid #e2e8f0' }} styles={{ body: { padding: 0 } }}>
+              <Table dataSource={presentations} columns={presentationColumns} rowKey="id" scroll={{ x: 1100 }} pagination={{ current: page, pageSize, total, showSizeChanger: true, pageSizeOptions: [12, 24, 48], onChange: (nextPage, nextSize) => { setPage(nextPage); setPageSize(nextSize || pageSize); }, showTotal: count => `${count} presentations` }} />
             </Card>
           ) : (
             <>
@@ -437,6 +491,38 @@ function AppstoreIcon() {
   return <FilePptOutlined style={{ fontSize: 13, color: '#2563eb' }} />;
 }
 
+function PresentationThumb({ presentation, onOpen, compact = false }) {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <button
+      type="button"
+      onClick={event => { event.stopPropagation(); onOpen?.(); }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      aria-label={`View ${presentation.title}`}
+      style={{
+        width: compact ? 90 : '100%', height: compact ? 52 : 145, padding: 0,
+        border: 0, borderRadius: compact ? 5 : 0, background: '#0f172a', overflow: 'hidden',
+        cursor: 'pointer', position: 'relative', flexShrink: 0
+      }}
+    >
+      <FilePptOutlined style={{ color: '#94a3b8', fontSize: compact ? 22 : 36, position: 'absolute', inset: 0, margin: 'auto', width: 36, height: 36 }} />
+      {presentation.thumbnailUrl && (
+        <img
+          src={assetUrl(presentation.thumbnailUrl)}
+          alt=""
+          loading="lazy"
+          style={{ width: '100%', height: '100%', objectFit: 'contain', position: 'relative' }}
+          onError={event => { event.currentTarget.style.display = 'none'; }}
+        />
+      )}
+      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, background: 'rgba(15,23,42,0.48)', color: '#fff', opacity: hovered ? 1 : 0, transition: 'opacity 160ms ease', pointerEvents: 'none', fontSize: compact ? 11 : 12, fontWeight: 600 }}>
+        <EyeOutlined /> {!compact && 'Preview Presentation'}
+      </span>
+    </button>
+  );
+}
+
 function PresentationCard({ presentation, onOpen }) {
   return (
     <Card
@@ -444,20 +530,7 @@ function PresentationCard({ presentation, onOpen }) {
       size="small"
       onClick={onOpen}
       styles={{ body: { padding: 12 } }}
-      cover={(
-        <div style={{ height: 145, background: '#0f172a', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <FilePptOutlined style={{ color: '#94a3b8', fontSize: 36, position: 'absolute' }} />
-          {presentation.thumbnailUrl && (
-            <img
-              src={assetUrl(presentation.thumbnailUrl)}
-              alt=""
-              loading="lazy"
-              style={{ width: '100%', height: '100%', objectFit: 'contain', position: 'relative' }}
-              onError={(event) => { event.currentTarget.style.display = 'none'; }}
-            />
-          )}
-        </div>
-      )}
+      cover={<PresentationThumb presentation={presentation} onOpen={onOpen} />}
     >
       <Space direction="vertical" size={6} style={{ width: '100%' }}>
         <Text strong ellipsis={{ tooltip: presentation.title }} style={{ fontSize: 14 }}>{presentation.title}</Text>

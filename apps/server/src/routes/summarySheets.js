@@ -13,6 +13,9 @@ import { stripJsonFences, worstStatus, extractCurriculumExcerpt, STATUS_RANK } f
 import { extractPdfPages, looksLikePdfBuffer } from '../lib/summarySheets/pdf.js';
 import { enqueueSummarySheet } from '../lib/summarySheets/worker.js';
 import { searchSummarySheets, searchWithinSummarySheet, serializeSheet } from '../lib/summarySheets/search.js';
+import { getAccessibleCourseIds, canAccessCourse, hasActiveCourseAccess } from '../lib/entitlements.js';
+import { normalizeNoteSource, paginateResources, resourceCounts, sortResources } from '../lib/unifiedResources.js';
+import { generatePdfThumbnail } from '../lib/pdfThumbnails.js';
 import {
   summarySheetDir,
   summaryKey,
@@ -20,6 +23,9 @@ import {
   moveFile,
   hashFile,
   signedSummaryPdfUrl,
+  signedSummaryThumbnailUrl,
+  summarySheetThumbnailKey,
+  resolveSummaryThumbnailKey,
   verifySummaryPdfToken,
   resolveSummaryKey,
   removeSummaryStorage
@@ -362,12 +368,7 @@ async function canAccessSummarySheet(prisma, user, sheet) {
   if (!user) return false;
   if (user.role === 'ADMIN') return true;
   if (sheet.status !== 'PUBLISHED') return false;
-  if (!sheet.courseId) return false;
-  const enrollment = await prisma.enrollment.findUnique({
-    where: { userId_courseId: { userId: user.id, courseId: sheet.courseId } },
-    select: { id: true }
-  });
-  return Boolean(enrollment);
+  return canAccessCourse(prisma, user, sheet.courseId);
 }
 
 function parseIdArray(value) {
@@ -440,11 +441,18 @@ export function summarySheetsRouter(prisma, deps = {}) {
 	});
 
 	// ─── LIST ─────────────────────────────────────────────────
-	router.get('/', async (req, res) => {
+	router.get('/', requireAuth(), async (req, res) => {
 		try {
 			const { courseId, volumeId, moduleId, topicId, level, status, year, search, source, page, limit } = req.query;
+			const isAdmin = req.user.role === 'ADMIN';
+			const allowedIds = isAdmin ? null : await getAccessibleCourseIds(prisma, req.user);
+			if (allowedIds && allowedIds.length === 0) return res.json({ sheets: [], total: 0, page: 1, limit: Number(limit) || 25 });
+			const scopedCourseId = courseId && allowedIds ? (allowedIds.includes(courseId) ? courseId : '__none__') : courseId;
 			const where = {};
-			if (courseId) where.courseId = courseId;
+			if (scopedCourseId) where.courseId = scopedCourseId;
+			where.status = isAdmin ? (status || undefined) : 'PUBLISHED';
+			if (!where.status) delete where.status;
+			if (allowedIds) where.courseId = scopedCourseId || { in: allowedIds };
 			if (volumeId) where.volumeId = volumeId;
 			if (moduleId) where.moduleId = moduleId;
 			if (topicId) where.topicId = topicId;
@@ -492,11 +500,14 @@ export function summarySheetsRouter(prisma, deps = {}) {
 		}
 		const sheet = await prisma.summarySheet.findUnique({
 			where: { id: req.params.id },
-			select: { id: true, status: true, pdfStorageKey: true, originalFilename: true }
+			select: { id: true, courseId: true, status: true, pdfStorageKey: true, originalFilename: true }
 		});
 		if (!sheet || !sheet.pdfStorageKey) return res.status(404).json({ error: 'PDF not found' });
 		if (sheet.status !== 'PUBLISHED' && !payload.adm) {
 			return res.status(403).json({ error: 'PDF is not published' });
+		}
+		if (!payload.adm && !(await hasActiveCourseAccess(prisma, payload.uid, sheet.courseId))) {
+			return res.status(403).json({ error: 'You do not have access to this PDF.' });
 		}
 		try {
 			const absolute = resolveSummaryKey(sheet.pdfStorageKey);
@@ -509,6 +520,30 @@ export function summarySheetsRouter(prisma, deps = {}) {
 			return res.sendFile(absolute);
 		} catch {
 			return res.status(400).json({ error: 'Invalid PDF storage path' });
+		}
+	});
+
+	router.get('/assets/:id/thumbnail', async (req, res) => {
+		const payload = verifySummaryPdfToken(String(req.query.token || ''));
+		if (!payload || payload.sid !== req.params.id) return res.status(401).json({ error: 'Invalid or expired thumbnail link' });
+		const sheet = await prisma.summarySheet.findUnique({
+			where: { id: req.params.id },
+			select: { id: true, courseId: true, status: true, pdfStorageKey: true, pdfVersion: true }
+		});
+		if (!sheet || !sheet.pdfStorageKey) return res.status(404).json({ error: 'PDF not found' });
+		if (sheet.status !== 'PUBLISHED' && !payload.adm) return res.status(403).json({ error: 'PDF is not published' });
+		if (!payload.adm && !(await hasActiveCourseAccess(prisma, payload.uid, sheet.courseId))) return res.status(403).json({ error: 'You do not have access to this PDF.' });
+		try {
+			const pdfPath = resolveSummaryKey(sheet.pdfStorageKey);
+			if (!fs.existsSync(pdfPath)) return res.status(404).json({ error: 'PDF file is missing' });
+			const thumbnailPath = resolveSummaryThumbnailKey(summarySheetThumbnailKey(sheet.id, sheet.pdfVersion || 'v1'));
+			await generatePdfThumbnail(pdfPath, thumbnailPath);
+			res.setHeader('Content-Type', 'image/png');
+			res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+			return res.sendFile(thumbnailPath);
+		} catch (err) {
+			console.error('[summary-sheets.thumbnail]', { id: req.params.id, message: err?.message });
+			return res.status(404).json({ error: 'PDF thumbnail is not available' });
 		}
 	});
 
@@ -537,6 +572,125 @@ export function summarySheetsRouter(prisma, deps = {}) {
 		} catch (err) {
 			console.error('[summarySheets.search]', err);
 			return res.status(500).json({ error: 'Search failed' });
+		}
+	});
+
+	// Unified student/admin Summary Sheet + PDF listing.
+	router.get('/unified', requireAuth(), async (req, res) => {
+		try {
+			const { courseId, volumeId, moduleId, topicId, conceptId, level, status, year, search, source, sort, page, limit } = req.query;
+			const isAdmin = req.user.role === 'ADMIN';
+			const allowedIds = isAdmin ? null : await getAccessibleCourseIds(prisma, req.user);
+			const term = String(search || '').trim();
+			const sourceFilter = String(source || '').toUpperCase();
+			const wantsSheets = !['UPLOAD', 'UPLOADED_PDF'].includes(sourceFilter);
+			const wantsPdfs = !['AI', 'AI_GENERATED', 'MANUAL'].includes(sourceFilter);
+			const scopedCourseId = courseId && allowedIds ? (allowedIds.includes(courseId) ? courseId : '__none__') : courseId;
+			const resources = [];
+
+			if (wantsSheets && (!allowedIds || allowedIds.length)) {
+				const sheetWhere = {
+					...(scopedCourseId ? { courseId: scopedCourseId } : {}),
+					...(volumeId ? { volumeId } : {}),
+					...(moduleId ? { moduleId } : {}),
+					...(topicId ? { topicLinks: { some: { topicId } } } : {}),
+					...(conceptId ? { conceptLinks: { some: { conceptId } } } : {}),
+					...(level ? { level } : {}),
+					...(year ? { year: Number(year) } : {}),
+					...(status ? { status } : isAdmin ? {} : { status: 'PUBLISHED' }),
+					...(sourceFilter === 'AI' || sourceFilter === 'AI_GENERATED' ? { sourceType: 'AI_GENERATED' } : {}),
+					...(sourceFilter === 'MANUAL' ? { sourceType: '__none__' } : {}),
+					...(!['AI', 'AI_GENERATED', 'MANUAL'].includes(sourceFilter) ? { sourceType: { not: 'UPLOADED_PDF' } } : {}),
+					...(allowedIds ? { courseId: scopedCourseId || { in: allowedIds } } : {})
+				};
+				if (!isAdmin) sheetWhere.status = 'PUBLISHED';
+				const rows = await prisma.summarySheet.findMany({
+					where: sheetWhere,
+					include: defaultInclude,
+					orderBy: [{ createdAt: 'desc' }, { order: 'asc' }],
+					take: 2000
+				});
+				const needle = term.toLowerCase();
+				for (const row of rows) {
+					if (needle && !JSON.stringify(row).toLowerCase().includes(needle)) continue;
+					const serialized = serializeSheet(row, req.user);
+					resources.push({
+						...serialized,
+						id: row.id,
+						resourceId: row.id,
+						resourceKey: `summary:${row.id}`,
+						type: 'SUMMARY',
+						source: 'AI',
+						title: row.title,
+						status: row.status,
+						pageCount: null,
+						matchPage: null
+					});
+				}
+			}
+
+			if (wantsPdfs && (!allowedIds || allowedIds.length)) {
+				const pdfBaseWhere = {
+					...(scopedCourseId ? { courseId: scopedCourseId } : {}),
+					...(volumeId ? { volumeId } : {}),
+					...(moduleId ? { moduleId } : {}),
+					...(topicId ? { topicLinks: { some: { topicId } } } : {}),
+					...(conceptId ? { conceptLinks: { some: { conceptId } } } : {}),
+					...(level ? { level } : {}),
+					...(year ? { year: Number(year) } : {}),
+					...(status ? { status } : isAdmin ? {} : { status: 'PUBLISHED' }),
+					...(allowedIds ? { courseId: scopedCourseId || { in: allowedIds } } : {}),
+					sourceType: 'UPLOADED_PDF'
+				};
+				const pdfs = new Map();
+				if (term.length >= 2) {
+					const found = await searchSummarySheets(prisma, {
+						q: term, user: req.user, courseId: scopedCourseId || null,
+						volumeId: volumeId || null, moduleId: moduleId || null,
+						topicId: topicId || null, conceptId: conceptId || null,
+						level: level || null, year: year ? Number(year) : null,
+						includeDrafts: isAdmin, limit: 2000
+					});
+					for (const result of found.results) {
+						const current = pdfs.get(result.summarySheetId);
+						if (!current || (current.matchType === 'SHEET' && result.matchType === 'PAGE')) {
+							pdfs.set(result.summarySheetId, { sheet: result.sheet, matchPage: result.pageNumber, matchType: result.matchType });
+						}
+					}
+				} else {
+					const rows = await prisma.summarySheet.findMany({ where: pdfBaseWhere, include: defaultInclude, orderBy: { createdAt: 'desc' }, take: 2000 });
+					for (const row of rows) pdfs.set(row.id, { sheet: serializeSheet(row, req.user), matchPage: 1, matchType: 'SHEET' });
+				}
+				for (const entry of pdfs.values()) {
+					const sheet = entry.sheet;
+					if (!sheet) continue;
+					if (status && sheet.status !== status) continue;
+					if (level && sheet.course?.level !== level) continue;
+					resources.push({
+						...sheet,
+						id: sheet.id,
+						resourceId: sheet.id,
+						resourceKey: `summary-pdf:${sheet.id}`,
+						type: 'PDF',
+						source: 'UPLOAD',
+						title: sheet.title,
+						status: sheet.status,
+						level: sheet.course?.level || sheet.level,
+						learningModuleId: sheet.moduleId || null,
+						module: sheet.module || null,
+						topic: sheet.topics?.[0] || sheet.topic || null,
+						matchPage: entry.matchPage || 1,
+						pageCount: sheet.pdfPageCount || 0
+					});
+				}
+			}
+
+			const sorted = sortResources(resources, sort);
+			const paged = paginateResources(sorted, { page, limit });
+			return res.json({ ...paged, counts: resourceCounts(sorted) });
+		} catch (err) {
+			console.error('[summary-sheets.unified]', err);
+			return res.status(500).json({ error: 'Failed to list summary resources' });
 		}
 	});
 
@@ -795,13 +949,14 @@ export function summarySheetsRouter(prisma, deps = {}) {
 		}
 	});
 
-	router.get('/:id', async (req, res) => {
+	router.get('/:id', requireAuth(), async (req, res) => {
 		try {
 			const sheet = await prisma.summarySheet.findUnique({
 				where: { id: req.params.id },
 				include: defaultInclude,
 			});
 			if (!sheet) return res.status(404).json({ error: 'Summary sheet not found' });
+			if (!(await canAccessSummarySheet(prisma, req.user, sheet))) return res.status(403).json({ error: 'You do not have access to this summary sheet.' });
 			return res.json({ sheet: stripStorage(sheet) });
 		} catch (err) {
 			console.error('[summarySheets.get]', err);

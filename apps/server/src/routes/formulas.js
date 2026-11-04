@@ -7,6 +7,7 @@ import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, validateFormulaItems, autoRep
 import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion, AI_PROVIDERS } from '../lib/aiProvider.js';
 import { searchFormulaBookPdfs, serializeBook as serializeFormulaBookPdf } from '../lib/formulaBooks/search.js';
 import { normalizeNoteSource, paginateResources, resourceCounts, sortResources } from '../lib/unifiedResources.js';
+import { getAccessibleCourseIds } from '../lib/entitlements.js';
 
 /**
  * Build a formula-focused curriculum excerpt that prioritises formula sections
@@ -175,14 +176,12 @@ export function formulasRouter(prisma, deps = {}) {
 		try {
 			const { courseId, volumeId, moduleId, topicId, conceptId, level, year, highYield, search, source, status, sort, page, limit } = req.query;
 			const isAdmin = req.user?.role === 'ADMIN';
-			const allowedIds = isAdmin || !req.user
-				? null
-				: (await prisma.enrollment.findMany({ where: { userId: req.user.id }, select: { courseId: true } })).map(row => row.courseId);
+			const allowedIds = isAdmin || !req.user ? null : await getAccessibleCourseIds(prisma, req.user);
 			const term = String(search || '').trim();
 			const sourceFilter = String(source || '').toUpperCase();
 			const scopedCourseId = courseId && allowedIds ? (allowedIds.includes(courseId) ? courseId : '__none__') : courseId;
 			const wantsFormulas = !['UPLOAD', 'UPLOADED_PDF'].includes(sourceFilter);
-			const wantsPdfs = !['AI', 'AI_GENERATED', 'MANUAL'].includes(sourceFilter);
+			const wantsPdfs = Boolean(req.user) && !['AI', 'AI_GENERATED', 'MANUAL'].includes(sourceFilter);
 			const resources = [];
 
 			if (wantsFormulas && (!status || status === 'PUBLISHED')) {

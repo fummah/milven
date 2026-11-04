@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { signedAssetUrl } from './storage.js';
+import { getAccessibleCourseIds } from '../entitlements.js';
 
 export function normalizeSearchTerm(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 180);
@@ -19,12 +20,7 @@ export function makeExcerpt(text, term, maxLength = 280) {
 }
 
 export async function allowedCourseIds(prisma, user) {
-  if (!user || user.role === 'ADMIN') return null;
-  const rows = await prisma.enrollment.findMany({
-    where: { userId: user.id },
-    select: { courseId: true }
-  });
-  return rows.map(r => r.courseId);
+  return getAccessibleCourseIds(prisma, user);
 }
 
 function presentationSelect() {
