@@ -12,6 +12,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, autoRepairLatex } from '../lib/openai.js';
 import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
+import { sanitizeDbData } from '../lib/dbText.js';
 import {
 	DIFFICULTY_LEVELS,
 	DIFFICULTY_RUBRICS,
@@ -331,6 +332,17 @@ Acceptable themes: pension accounting, multinational operations and translation,
 
 export function cmsRouter(prisma, deps = {}) {
 	const router = Router();
+
+	// Remove PostgreSQL-incompatible U+0000 characters from all question write payloads.
+	router.use((req, _res, next) => {
+		if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.path.startsWith('/questions')) {
+			req.body = sanitizeDbData(req.body, {
+				operation: `cms.${req.method.toLowerCase()} ${req.path}`,
+				batchId: req.headers['x-request-id'] || req.headers['x-batch-id'] || null
+			});
+		}
+		next();
+	});
 
 	// Injectable AI dependency (defaults preserve production behaviour; tests can override).
 	const ai = {
@@ -3259,6 +3271,12 @@ console.log('AI raw output:', raw);
 
 			const level = course.level || 'LEVEL1';
 			const created = [];
+			items = sanitizeDbData(items, {
+				operation: 'cms.questions.generate-ai.save',
+				batchId: req.headers['x-request-id'] || null,
+				path: 'questions'
+			});
+
 			// For creation, spread questions across selected topics (round-robin with random start)
 			let topicCursor = Math.floor(Math.random() * selectedTopics.length);
 			let diffCursor = Math.floor(Math.random() * diffList.length);
@@ -4726,8 +4744,12 @@ ${formatBlock}`;
 			created.push(...flatCreated);
 			return res.status(201).json({ created: created.length, questions: created, skippedDuplicates });
 		} catch (err) {
-			const msg = err?.message || err?.error?.message || 'Failed to save generated questions';
-			return res.status(500).json({ error: msg });
+			console.error('[questions.generate-ai.accept]', {
+				name: err?.name,
+				code: err?.code,
+				message: err?.message
+			});
+			return res.status(500).json({ error: 'Unable to save the generated questions. Please try again.' });
 		}
 	});
 
