@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { formatFormulaHtml, formatVariablesHtml, formatProseWithMath } from '../lib/formatFormula';
 import FormulaResourceCard from '../components/resources/FormulaResourceCard';
-import { PdfThumbnail, ResourceSourceTag, ResourceTypeTag } from '../components/resources/ResourceVisuals';
+import { PdfThumbnail, ResourceTypeTag } from '../components/resources/ResourceVisuals';
 
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 const LEVEL_COLORS = { LEVEL1: '#3b82f6', LEVEL2: '#8b5cf6', LEVEL3: '#f59e0b' };
@@ -105,15 +105,15 @@ export function FormulaBook() {
 		{ title: 'Resource', key: 'resource', width: 340, render: (_, resource) => (
 			<Space align="start">
 				{resource.type === 'PDF' ? <button type="button" onClick={() => openResource(resource)} aria-label={`View ${resource.title}`} style={{ width: 76, height: 44, overflow: 'hidden', borderRadius: 4, flexShrink: 0, padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}><PdfThumbnail url={resource.thumbnailUrl} title={resource.title} height={44} /></button> : <div style={{ width: 44, height: 44, borderRadius: 10, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><BookOutlined style={{ color: '#2563eb', fontSize: 20 }} /></div>}
-				<div style={{ minWidth: 0 }}><div style={{ fontWeight: 600, color: '#102540' }}>{resource.title}</div>{resource.type === 'PDF' && resource.originalFilename && <Typography.Text type="secondary" style={{ fontSize: 11 }} ellipsis>{resource.originalFilename}</Typography.Text>}</div>
+				<div style={{ minWidth: 0 }}><div style={{ fontWeight: 600, color: '#102540' }}>{resource.title}</div></div>
 			</Space>
 		) },
-		{ title: 'Type', key: 'type', width: 190, render: (_, resource) => <Space size={4} wrap><ResourceTypeTag type={resource.type === 'PDF' ? 'PDF' : 'FORMULA'} /><ResourceSourceTag type={resource.type === 'PDF' ? 'PDF' : 'FORMULA'} source={resource.source} /></Space> },
+		{ title: 'Type', key: 'type', width: 130, render: (_, resource) => <ResourceTypeTag type={resource.type === 'PDF' ? 'PDF' : 'FORMULA'} short /> },
 		{ title: 'Level', key: 'level', width: 95, render: (_, resource) => <Tag color={resource.level === 'LEVEL1' ? 'blue' : resource.level === 'LEVEL2' ? 'purple' : 'gold'}>{LEVEL_LABELS[resource.level] || resource.level}</Tag> },
 		{ title: 'Volume', key: 'volume', width: 150, render: (_, resource) => resource.volume?.name || <Typography.Text type="secondary">-</Typography.Text> },
 		{ title: 'Learning Module', key: 'module', width: 190, render: (_, resource) => resource.type === 'PDF' ? <Tag>Whole Volume</Tag> : resource.module?.name || <Typography.Text type="secondary">-</Typography.Text> },
 		{ title: 'Status', key: 'status', width: 100, render: (_, resource) => <Tag color={resource.status === 'PUBLISHED' ? 'green' : 'default'}>{resource.status === 'PUBLISHED' ? 'Published' : 'Draft'}</Tag> },
-		{ title: 'Actions', key: 'actions', width: 150, fixed: 'right', render: (_, resource) => <Space size={2}><Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openResource(resource)}>{resource.type === 'PDF' ? 'View PDF' : 'View Formula'}</Button>{resource.type === 'FORMULA' && resource.highYield && <StarFilled style={{ color: '#f59e0b' }} />}</Space> }
+		{ title: 'Actions', key: 'actions', width: 150, fixed: 'right', render: (_, resource) => <Space size={2}><Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openResource(resource)}>View</Button>{resource.type === 'FORMULA' && resource.highYield && <StarFilled style={{ color: '#f59e0b' }} />}</Space> }
 	];
 
 	return (

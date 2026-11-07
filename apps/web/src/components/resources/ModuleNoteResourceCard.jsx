@@ -49,7 +49,7 @@ export default function ModuleNoteResourceCard({
           </div>
           <Space size={[4, 4]} wrap style={{ marginTop: 9 }}>
             <ResourceTypeTag type="PDF" />
-            <ResourceSourceTag type="PDF" />
+            {isAdmin && <ResourceSourceTag type="PDF" />}
             <Tag color={LEVEL_COLORS[level]}>{LEVEL_LABELS[level] || level || 'Level'}</Tag>
             {resource.volume?.name && <Tag>{resource.volume.name}</Tag>}
             <Tag>Whole Volume</Tag>
@@ -57,7 +57,7 @@ export default function ModuleNoteResourceCard({
             {resource.year ? <Tag>{resource.year}</Tag> : null}
             {!ready && <Tag color={resource.processingStatus === 'FAILED' ? 'error' : 'processing'}>{resource.processingStatus === 'FAILED' ? 'Processing failed' : 'Processing'}</Tag>}
           </Space>
-          {resource.originalFilename && <div style={{ marginTop: 10, fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resource.originalFilename}</div>}
+          {isAdmin && resource.originalFilename && <div style={{ marginTop: 10, fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resource.originalFilename}</div>}
         </div>
         {isAdmin && (
           <div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 12px', display: 'flex', justifyContent: 'flex-end', gap: 2, background: '#fafafa' }} onClick={event => event.stopPropagation()}>

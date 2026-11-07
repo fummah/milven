@@ -20,13 +20,12 @@ export default function SummaryResourceCard({ resource, onOpen }) {
           <div style={{ fontWeight: 700, fontSize: 15, color: '#102540', lineHeight: 1.35 }}>{resource.title}</div>
           <Space size={[4, 4]} wrap style={{ marginTop: 9 }}>
             <ResourceTypeTag type="PDF" />
-            <ResourceSourceTag type="PDF" />
             <Tag color={LEVEL_COLORS[resource.level]}>{LEVEL_LABELS[resource.level] || resource.level}</Tag>
             {resource.volume?.name && <Tag>{resource.volume.name}</Tag>}
             {resource.module?.name ? <Tag>{resource.module.name}</Tag> : <Tag>Whole Volume</Tag>}
             {resource.pageCount ? <Tag>{resource.pageCount} pages</Tag> : null}
           </Space>
-          <Button type="link" icon={<EyeOutlined />} style={{ padding: 0, marginTop: 10 }}>View PDF</Button>
+          <Button type="link" icon={<EyeOutlined />} style={{ padding: 0, marginTop: 10 }}>View</Button>
         </div>
       </Card>
     );
@@ -53,7 +52,7 @@ export default function SummaryResourceCard({ resource, onOpen }) {
           {resource.year && <Tag>{resource.year}</Tag>}
         </Space>
         {resource.snapshot && <div style={{ color: '#475569', fontSize: 13, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{resource.snapshot}</div>}
-        <Button type="link" icon={<FileTextOutlined />} style={{ padding: 0, marginTop: 8 }}>View Summary</Button>
+        <Button type="link" icon={<FileTextOutlined />} style={{ padding: 0, marginTop: 8 }}>View</Button>
       </div>
     </Card>
   );

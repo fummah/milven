@@ -10,8 +10,8 @@ export function ResourceSourceTag({ type, source }) {
   return <Tag color={color} style={{ marginInlineEnd: 0 }}>{label}</Tag>;
 }
 
-export function ResourceTypeTag({ type }) {
-  const label = type === 'PDF' ? 'PDF' : type === 'NOTE' ? 'Note' : type === 'SUMMARY' ? 'Summary Sheet' : 'Formula Card';
+export function ResourceTypeTag({ type, short = false }) {
+  const label = type === 'PDF' ? 'PDF' : type === 'NOTE' ? 'Note' : type === 'SUMMARY' ? 'Summary Sheet' : (short ? 'Formula' : 'Formula Card');
   const color = type === 'PDF' ? 'volcano' : type === 'NOTE' ? 'blue' : type === 'SUMMARY' ? 'magenta' : 'cyan';
   return <Tag color={color} style={{ marginInlineEnd: 0 }}>{label}</Tag>;
 }

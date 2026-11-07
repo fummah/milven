@@ -40,14 +40,14 @@ export default function FormulaResourceCard({
           </div>
           <Space size={[4, 4]} wrap style={{ marginTop: 9 }}>
             <ResourceTypeTag type="PDF" />
-            <ResourceSourceTag type="PDF" />
+            {isAdmin && <ResourceSourceTag type="PDF" />}
             <Tag color={LEVEL_COLORS[resource.level]}>{LEVEL_LABELS[resource.level] || resource.level}</Tag>
             {resource.volume?.name && <Tag>{resource.volume.name}</Tag>}
             <Tag>Whole Volume</Tag>
             {resource.pageCount ? <Tag>{resource.pageCount} pages</Tag> : null}
             {resource.year ? <Tag>{resource.year}</Tag> : null}
           </Space>
-          {resource.originalFilename && <div style={{ marginTop: 10, fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resource.originalFilename}</div>}
+          {isAdmin && resource.originalFilename && <div style={{ marginTop: 10, fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resource.originalFilename}</div>}
         </div>
         {isAdmin && (
           <div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 12px', display: 'flex', justifyContent: 'flex-end', gap: 2, background: '#fafafa' }} onClick={event => event.stopPropagation()}>
@@ -76,7 +76,7 @@ export default function FormulaResourceCard({
           {resource.highYield && <StarFilled style={{ color: '#f59e0b', marginTop: 3 }} />}
         </div>
         <Space size={[4, 4]} wrap style={{ marginTop: 9 }}>
-          <ResourceTypeTag type="FORMULA" />
+          <ResourceTypeTag type="FORMULA" short={!isAdmin} />
           <ResourceSourceTag type="FORMULA" source={resource.source} />
           <Tag color={LEVEL_COLORS[resource.level]}>{LEVEL_LABELS[resource.level] || resource.level}</Tag>
           {resource.volume?.name && <Tag>{resource.volume.name}</Tag>}

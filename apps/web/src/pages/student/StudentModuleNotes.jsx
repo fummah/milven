@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { ModuleNotePreviewCard } from '../../components/ModuleNotePreviewCard';
 import ModuleNoteResourceCard from '../../components/resources/ModuleNoteResourceCard';
-import { PdfThumbnail, ResourceSourceTag, ResourceTypeTag } from '../../components/resources/ResourceVisuals';
+import { PdfThumbnail, ResourceTypeTag } from '../../components/resources/ResourceVisuals';
 
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
 
@@ -142,15 +142,15 @@ export function StudentModuleNotes() {
 		{ title: 'Resource', key: 'resource', width: 340, render: (_, resource) => (
 			<Space align="start">
 				{resource.type === 'PDF' ? <button type="button" onClick={() => openResource(resource)} aria-label={`View ${resource.title}`} style={{ width: 76, height: 44, overflow: 'hidden', borderRadius: 4, flexShrink: 0, padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}><PdfThumbnail url={resource.thumbnailUrl} title={resource.title} height={44} /></button> : <div style={{ width: 44, height: 44, borderRadius: 10, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><BookOutlined style={{ color: '#2563eb', fontSize: 20 }} /></div>}
-				<div style={{ minWidth: 0 }}><div style={{ fontWeight: 600, color: '#102540' }}>{resource.title}</div>{resource.type === 'PDF' && resource.originalFilename && <Typography.Text type="secondary" style={{ fontSize: 11 }} ellipsis>{resource.originalFilename}</Typography.Text>}</div>
+				<div style={{ minWidth: 0 }}><div style={{ fontWeight: 600, color: '#102540' }}>{resource.title}</div></div>
 			</Space>
 		) },
-		{ title: 'Type', key: 'type', width: 190, render: (_, resource) => <Space size={4} wrap><ResourceTypeTag type={resource.type} /><ResourceSourceTag type={resource.type} source={resource.source} /></Space> },
+		{ title: 'Type', key: 'type', width: 120, render: (_, resource) => <ResourceTypeTag type={resource.type} /> },
 		{ title: 'Level', key: 'level', width: 95, render: (_, resource) => <Tag color={resource.level === 'LEVEL1' ? 'blue' : resource.level === 'LEVEL2' ? 'purple' : 'gold'}>{LEVEL_LABELS[resource.level] || resource.level}</Tag> },
 		{ title: 'Volume', key: 'volume', width: 150, render: (_, resource) => resource.volume?.name || <Typography.Text type="secondary">-</Typography.Text> },
 		{ title: 'Learning Module', key: 'module', width: 190, render: (_, resource) => resource.type === 'PDF' ? <Tag>Whole Volume</Tag> : resource.module?.name || <Typography.Text type="secondary">-</Typography.Text> },
 		{ title: 'Status', key: 'status', width: 100, render: (_, resource) => <Tag color={resource.status === 'PUBLISHED' ? 'green' : 'default'}>{resource.status === 'PUBLISHED' ? 'Published' : 'Draft'}</Tag> },
-		{ title: 'Actions', key: 'actions', width: 100, fixed: 'right', render: (_, resource) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openResource(resource)}>{resource.type === 'PDF' ? 'View PDF' : 'View'}</Button> }
+		{ title: 'Actions', key: 'actions', width: 100, fixed: 'right', render: (_, resource) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openResource(resource)}>View</Button> }
 	];
 
 	const openPdfResource = resource => navigate(`/learning/module-notes-pdf/${resource.resourceId || resource.id}${resource.matchPage ? `?page=${resource.matchPage}` : ''}`);

@@ -236,7 +236,6 @@ export default function StudentSlides() {
           <PresentationThumb presentation={presentation} onOpen={() => openPresentation(presentation)} compact />
           <div style={{ minWidth: 0 }}>
             <Text strong style={{ color: '#102540', display: 'block' }} ellipsis={{ tooltip: presentation.title }}>{presentation.title}</Text>
-            <Text type="secondary" style={{ fontSize: 12 }}>{presentation.originalFilename || ''}</Text>
           </div>
         </Space>
       )
