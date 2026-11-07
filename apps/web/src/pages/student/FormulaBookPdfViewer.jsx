@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Drawer, Empty, Input, Space, Spin, Tag, Tooltip, Typography, Grid, message } from 'antd';
 import {
@@ -129,6 +129,7 @@ export default function FormulaBookPdfViewer() {
   const canvasRef = useRef(null);
   const mainRef = useRef(null);
   const renderTaskRef = useRef(null);
+  const lastRenderedPageRef = useRef(null);
   const touchStart = useRef(null);
   const [containerSize, setContainerSize] = useState({ width: 900, height: 700 });
 
@@ -174,6 +175,11 @@ export default function FormulaBookPdfViewer() {
     setPage(prev => (prev === clamp(requested, 1, numPages) ? prev : clamp(requested, 1, numPages)));
   }, [searchParams, numPages]);
 
+  // Reset only the central PDF scroll area when the selected page changes.
+  useLayoutEffect(() => {
+    if (mainRef.current) mainRef.current.scrollTop = 0;
+  }, [page]);
+
   useEffect(() => {
     const observer = new ResizeObserver(entries => {
       const rect = entries[0]?.contentRect;
@@ -186,6 +192,8 @@ export default function FormulaBookPdfViewer() {
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return undefined;
     let cancelled = false;
+    const renderPage = page;
+    const pageChanged = lastRenderedPageRef.current !== renderPage;
     setRendering(true);
     setPageError('');
     setPageErrorCode('');
@@ -214,6 +222,10 @@ export default function FormulaBookPdfViewer() {
         });
         renderTaskRef.current = task;
         await task.promise;
+        if (!cancelled) {
+          lastRenderedPageRef.current = renderPage;
+          if (pageChanged && mainRef.current) mainRef.current.scrollTop = 0;
+        }
       } catch (err) {
         if (err?.name !== 'RenderingCancelledException') {
           const info = getPdfErrorInfo(err, 'The PDF page could not be rendered. Please retry.');
