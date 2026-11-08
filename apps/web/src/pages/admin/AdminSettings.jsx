@@ -65,7 +65,7 @@ export function AdminSettings() {
       brandForm.setFieldsValue({
         name: data.settings?.['brand.name'] ?? 'MILVEN FINANCE SCHOOL',
         primaryColor: data.settings?.['brand.primaryColor'] ?? '#102540',
-        logoUrl: data.settings?.['brand.logoUrl'] ?? '/logo.png'
+        logoUrl: data.settings?.['brand.logoUrl'] ?? '/brand/logo.png'
       });
       paymentsForm.setFieldsValue({
         useStripe: data.settings?.['payments.useStripe'] ?? true,
@@ -178,7 +178,7 @@ export function AdminSettings() {
               <Input placeholder="#102540" />
             </Form.Item>
             <Form.Item name="logoUrl" label="Logo URL">
-              <Input placeholder="/logo.png" />
+              <Input placeholder="/brand/logo.png" />
             </Form.Item>
             <Upload {...uploadProps} showUploadList={false}>
               <Button icon={<UploadOutlined />} loading={logoUploading}>

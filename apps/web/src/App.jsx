@@ -340,8 +340,9 @@ export default function App() {
 	const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 	const { settings } = useSettings();
 	const brandName = settings['brand.name'] || 'MILVEN FINANCE SCHOOL';
-	const logoUrl = settings['brand.logoUrl'] || '/logo.png';
-	const logoDarkUrl = settings['brand.logoUrlDark'] || (logoUrl === '/logo.png' ? '/logo-dark.png' : logoUrl);
+	const configuredLogoUrl = settings['brand.logoUrl'];
+	const logoUrl = !configuredLogoUrl || configuredLogoUrl === '/logo.png' ? '/brand/logo.png' : configuredLogoUrl;
+	const logoDarkUrl = settings['brand.logoUrlDark'] || (configuredLogoUrl && configuredLogoUrl !== '/logo.png' ? configuredLogoUrl : '/brand/logo-dark.png');
 
 	// Load current user when token exists
 	useEffect(() => {
