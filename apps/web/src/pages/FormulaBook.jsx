@@ -150,7 +150,7 @@ export function FormulaBook() {
 				</div>
 			)}
 			{viewMode === 'cards' && total > pageSize && <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}><Pagination current={page} pageSize={pageSize} total={total} onChange={setPage} showTotal={count => `${count} resources`} /></div>}
-			<Modal open={Boolean(previewFormula)} onCancel={() => setPreviewFormula(null)} footer={null} width={900} centered title={null} styles={{ body: { padding: 0 } }}>{previewFormula && <FormulaCard formula={previewFormula} />}</Modal>
+			<Modal open={Boolean(previewFormula)} onCancel={() => setPreviewFormula(null)} footer={null} width={900} centered title={null} styles={{ body: { padding: 0 } }}>{previewFormula && <ListPreviewCard formula={previewFormula} />}</Modal>
 		</div>
 	);
 }
@@ -228,7 +228,7 @@ function FormulaListView({ formulas }) {
 }
 
 // ─── List View Preview Card ─────────────────────────────────
-function ListPreviewCard({ formula }) {
+export function ListPreviewCard({ formula }) {
 	return (
 		<div style={{ background: '#fff', borderRadius: 16, overflow: 'hidden' }}>
 			{/* Header */}

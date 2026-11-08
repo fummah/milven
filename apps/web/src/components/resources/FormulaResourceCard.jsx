@@ -36,17 +36,18 @@ export default function FormulaResourceCard({
         <div style={{ padding: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: '#102540', lineHeight: 1.35 }}>{resource.title}</div>
-            <Tag color={resource.status === 'PUBLISHED' ? 'green' : 'default'}>{resource.status === 'PUBLISHED' ? 'Published' : 'Draft'}</Tag>
+            {isAdmin && <Tag color={resource.status === 'PUBLISHED' ? 'green' : 'default'}>{resource.status === 'PUBLISHED' ? 'Published' : 'Draft'}</Tag>}
           </div>
           <Space size={[4, 4]} wrap style={{ marginTop: 9 }}>
             <ResourceTypeTag type="PDF" />
             {isAdmin && <ResourceSourceTag type="PDF" />}
             <Tag color={LEVEL_COLORS[resource.level]}>{LEVEL_LABELS[resource.level] || resource.level}</Tag>
             {resource.volume?.name && <Tag>{resource.volume.name}</Tag>}
-            <Tag>Whole Volume</Tag>
-            {resource.pageCount ? <Tag>{resource.pageCount} pages</Tag> : null}
-            {resource.year ? <Tag>{resource.year}</Tag> : null}
+            {isAdmin && <Tag>Whole Volume</Tag>}
+            {isAdmin && resource.pageCount ? <Tag>{resource.pageCount} pages</Tag> : null}
+            {isAdmin && resource.year ? <Tag>{resource.year}</Tag> : null}
           </Space>
+          {!isAdmin && <Button type="link" icon={<EyeOutlined />} style={{ padding: 0, marginTop: 10 }}>View</Button>}
           {isAdmin && resource.originalFilename && <div style={{ marginTop: 10, fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resource.originalFilename}</div>}
         </div>
         {isAdmin && (
@@ -77,17 +78,18 @@ export default function FormulaResourceCard({
         </div>
         <Space size={[4, 4]} wrap style={{ marginTop: 9 }}>
           <ResourceTypeTag type="FORMULA" short={!isAdmin} />
-          <ResourceSourceTag type="FORMULA" source={resource.source} />
+          {isAdmin && <ResourceSourceTag type="FORMULA" source={resource.source} />}
           <Tag color={LEVEL_COLORS[resource.level]}>{LEVEL_LABELS[resource.level] || resource.level}</Tag>
           {resource.volume?.name && <Tag>{resource.volume.name}</Tag>}
-          {resource.module?.name && <Tag>{resource.module.name}</Tag>}
-          {resource.topic?.name && <Tag>{resource.topic.name}</Tag>}
+          {isAdmin && resource.module?.name && <Tag>{resource.module.name}</Tag>}
+          {isAdmin && resource.topic?.name && <Tag>{resource.topic.name}</Tag>}
         </Space>
         <div style={{ marginTop: 12, background: '#f0f4f8', borderRadius: 10, padding: '12px 14px', border: '1px solid #e2e8f0', minHeight: 68, overflow: 'hidden' }}>
           <Typography.Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>Formula</Typography.Text>
           <MathText text={resource.formula} tag="div" style={{ fontFamily: "'Cambria Math', Georgia, serif", fontSize: 17, fontWeight: 600, color: '#102540', marginTop: 4, maxHeight: 96, overflow: 'hidden' }} />
         </div>
         {resource.interpretation && <div style={{ fontSize: 12.5, color: '#475569', marginTop: 10, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{resource.interpretation}</div>}
+        {!isAdmin && <Button type="link" icon={<EyeOutlined />} style={{ padding: 0, marginTop: 8 }}>View</Button>}
       </div>
       {isAdmin && (
         <div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 12px', display: 'flex', justifyContent: 'flex-end', gap: 2, background: '#fafafa' }} onClick={event => event.stopPropagation()}>

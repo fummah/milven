@@ -8,6 +8,7 @@ import { stripJsonFences, extractCurriculumExcerpt } from '../lib/aiContent.js';
 import { searchModuleNotePdfs, serializeBook as serializeModuleNotePdf } from '../lib/moduleNotePdfs/search.js';
 import { normalizeNoteSource, paginateResources, resourceCounts, sortResources } from '../lib/unifiedResources.js';
 import { getAccessibleCourseIds } from '../lib/entitlements.js';
+import { loadResourceNavigation } from '../lib/resourceNavigation.js';
 
 const MAX_TARGET_TOPICS = 20;
 
@@ -436,6 +437,20 @@ export function moduleNotesRouter(prisma, deps = {}) {
 		} catch (err) {
 			console.error('[moduleNotes.unified]', err);
 			return res.status(500).json({ error: 'Failed to list module note resources' });
+		}
+	});
+
+	router.get('/navigation', requireAuth(), async (req, res) => {
+		try {
+			const navigation = await loadResourceNavigation(prisma, req.user, {
+				kind: 'NOTES',
+				courseId: req.query.courseId
+			});
+			return res.json(navigation);
+		} catch (err) {
+			if (err?.status === 403) return res.status(403).json({ error: err.message });
+			console.error('[moduleNotes.navigation]', err);
+			return res.status(500).json({ error: 'Failed to load notes navigation' });
 		}
 	});
 

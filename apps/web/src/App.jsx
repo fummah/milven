@@ -71,6 +71,7 @@ import { Careers } from './pages/Careers.jsx';
 import { CourseDetail } from './pages/CourseDetail.jsx';
 import { AboutCfa } from './pages/AboutCfa.jsx';
 import { FormulaBook } from './pages/FormulaBook.jsx';
+import StudentFormulaBook from './pages/student/StudentFormulaBook.jsx';
 import { StudentSummarySheets } from './pages/student/StudentSummarySheets.jsx';
 import { StudentModuleNotes } from './pages/student/StudentModuleNotes.jsx';
 import StudentSlides from './pages/student/StudentSlides.jsx';
@@ -340,6 +341,7 @@ export default function App() {
 	const { settings } = useSettings();
 	const brandName = settings['brand.name'] || 'MILVEN FINANCE SCHOOL';
 	const logoUrl = settings['brand.logoUrl'] || '/logo.png';
+	const logoDarkUrl = settings['brand.logoUrlDark'] || (logoUrl === '/logo.png' ? '/logo-dark.png' : logoUrl);
 
 	// Load current user when token exists
 	useEffect(() => {
@@ -851,7 +853,7 @@ export default function App() {
 						<Route path="comparison" element={<StudentComparison />} />
 						<Route path="mock-exams" element={<StudentMockExams />} />
 						<Route path="milven-mocks" element={<StudentMilvenMocks />} />
-						<Route path="formula-book" element={<FormulaBook />} />
+						<Route path="formula-book" element={<StudentFormulaBook />} />
 						<Route path="summary-sheets" element={<StudentSummarySheets />} />
 						<Route path="module-notes" element={<StudentModuleNotes />} />
 						<Route path="slides" element={<StudentSlides />} />
@@ -924,7 +926,7 @@ export default function App() {
 						<div className="h-px bg-white/10 my-8" />
 						<div className="flex flex-col md:flex-row items-center justify-between gap-3 text-gray-300">
 							<div className="flex items-center gap-3">
-								<img src={logoUrl} alt={brandName} className="h-6 w-auto" />
+								<img src={logoDarkUrl} alt={brandName} className="h-6 w-auto" />
 							</div>
 							<div className="text-center md:text-right">
 								<Typography.Text style={{ color: 'rgba(255,255,255,0.7)' }}>

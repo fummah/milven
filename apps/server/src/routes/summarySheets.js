@@ -14,6 +14,7 @@ import { extractPdfPages, looksLikePdfBuffer } from '../lib/summarySheets/pdf.js
 import { enqueueSummarySheet } from '../lib/summarySheets/worker.js';
 import { searchSummarySheets, searchWithinSummarySheet, serializeSheet } from '../lib/summarySheets/search.js';
 import { getAccessibleCourseIds, canAccessCourse, hasActiveCourseAccess } from '../lib/entitlements.js';
+import { loadResourceNavigation } from '../lib/resourceNavigation.js';
 import { normalizeNoteSource, paginateResources, resourceCounts, sortResources } from '../lib/unifiedResources.js';
 import { generatePdfThumbnail } from '../lib/pdfThumbnails.js';
 import {
@@ -691,6 +692,20 @@ export function summarySheetsRouter(prisma, deps = {}) {
 		} catch (err) {
 			console.error('[summary-sheets.unified]', err);
 			return res.status(500).json({ error: 'Failed to list summary resources' });
+		}
+	});
+
+	router.get('/navigation', requireAuth(), async (req, res) => {
+		try {
+			const navigation = await loadResourceNavigation(prisma, req.user, {
+				kind: 'SUMMARIES',
+				courseId: req.query.courseId
+			});
+			return res.json(navigation);
+		} catch (err) {
+			if (err?.status === 403) return res.status(403).json({ error: err.message });
+			console.error('[summarySheets.navigation]', err);
+			return res.status(500).json({ error: 'Failed to load summaries navigation' });
 		}
 	});
 

@@ -8,6 +8,7 @@ import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCo
 import { searchFormulaBookPdfs, serializeBook as serializeFormulaBookPdf } from '../lib/formulaBooks/search.js';
 import { normalizeNoteSource, paginateResources, resourceCounts, sortResources } from '../lib/unifiedResources.js';
 import { getAccessibleCourseIds } from '../lib/entitlements.js';
+import { loadResourceNavigation } from '../lib/resourceNavigation.js';
 
 /**
  * Build a formula-focused curriculum excerpt that prioritises formula sections
@@ -306,6 +307,20 @@ export function formulasRouter(prisma, deps = {}) {
 		} catch (err) {
 			console.error('[formulas.unified]', err);
 			return res.status(500).json({ error: 'Failed to list formula resources' });
+		}
+	});
+
+	router.get('/navigation', requireAuth(), async (req, res) => {
+		try {
+			const navigation = await loadResourceNavigation(prisma, req.user, {
+				kind: 'FORMULAS',
+				courseId: req.query.courseId
+			});
+			return res.json(navigation);
+		} catch (err) {
+			if (err?.status === 403) return res.status(403).json({ error: err.message });
+			console.error('[formulas.navigation]', err);
+			return res.status(500).json({ error: 'Failed to load formula navigation' });
 		}
 	});
 

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="240" viewBox="0 0 1100 240">
+  <rect x="12" y="25" width="190" height="190" rx="46" fill="#FFFFFF"/>
+  <path d="M77 161V91l43 43 43-43v70" fill="none" stroke="#102540" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M73 156 170 59" fill="none" stroke="#C9A227" stroke-width="19" stroke-linecap="round"/>
+  <path d="M174 55 144 62 167 85Z" fill="#C9A227"/>
+  <path d="M65 180c36 16 74 16 110 0" fill="none" stroke="#98A2AE" stroke-width="9" stroke-linecap="round"/>
+  <path d="M80 198c27 10 54 10 80 0" fill="none" stroke="#59626E" stroke-width="8" stroke-linecap="round"/>
+  <text x="235" y="132" fill="#FFFFFF" font-family="Rockwell, Rockwell Bold, Georgia, serif" font-size="126" font-weight="700" letter-spacing="2">MILVEN</text>
+  <text x="238" y="199" fill="#C9A227" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="600" letter-spacing="10">FINANCE SCHOOL</text>
+</svg>

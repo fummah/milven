@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Row, Col, Card, Modal, Grid, Divider, Table, Pagination } from 'antd';
-import { FileTextOutlined, SearchOutlined, EyeOutlined, PrinterOutlined, MenuOutlined, CloseOutlined, RightOutlined, DownOutlined, BookOutlined, AppstoreOutlined, FolderOutlined, OrderedListOutlined, FilePdfOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { Typography, Select, Input, Tag, Space, Spin, Empty, Button, Row, Col, Card, Modal, Grid, Table, Pagination } from 'antd';
+import { FileTextOutlined, SearchOutlined, EyeOutlined, MenuOutlined, AppstoreOutlined, OrderedListOutlined } from '@ant-design/icons';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { highlightParts } from '../../lib/slideUrls';
-import MathText, { MathVariables } from '../../components/MathText';
+import MathText from '../../components/MathText';
 import SummaryResourceCard from '../../components/resources/SummaryResourceCard';
+import StudentResourceSidebar from '../../components/resources/StudentResourceSidebar';
 import { PdfThumbnail, ResourceTypeTag } from '../../components/resources/ResourceVisuals';
 
 // ─── Safe render: stringify objects that React can't render ──
@@ -22,8 +22,16 @@ const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III
 
 export function StudentSummarySheets() {
 	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
 	const screens = Grid.useBreakpoint();
 	const isMobile = !screens.md;
+	const initial = useRef({
+		courseId: searchParams.get('courseId') || '',
+		volumeId: searchParams.get('volumeId') || '',
+		moduleId: searchParams.get('moduleId') || ''
+	});
+	const initialNavigationApplied = useRef(false);
+	const requestSequence = useRef(0);
 	const [loading, setLoading] = useState(false);
 	const [sheets, setSheets] = useState([]);
 	const [total, setTotal] = useState(0);
@@ -32,12 +40,12 @@ export function StudentSummarySheets() {
 	const [coursesLoaded, setCoursesLoaded] = useState(false);
 	const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.student-summary.view') || 'table');
 	const [volumes, setVolumes] = useState([]);
-	const [modules, setModules] = useState([]);
-	const [topics, setTopics] = useState([]);
-	const [filterCourseId, setFilterCourseId] = useState(null);
+	const [navigationTotal, setNavigationTotal] = useState(0);
+	const [hierarchyLoading, setHierarchyLoading] = useState(false);
+	const [hierarchyError, setHierarchyError] = useState('');
+	const [filterCourseId, setFilterCourseId] = useState(initial.current.courseId || null);
 	const [filterVolumeId, setFilterVolumeId] = useState(null);
 	const [filterModuleId, setFilterModuleId] = useState(null);
-	const [filterTopicId, setFilterTopicId] = useState(null);
 	const [searchText, setSearchText] = useState('');
 	const [searchTerm, setSearchTerm] = useState('');
 	const [filterSource, setFilterSource] = useState(null);
@@ -46,42 +54,78 @@ export function StudentSummarySheets() {
 	const [previewSheet, setPreviewSheet] = useState(null);
 	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [expandedVolumes, setExpandedVolumes] = useState(new Set());
-	const [expandedModules, setExpandedModules] = useState(new Set());
 	const [treeSearch, setTreeSearch] = useState('');
 
 	useEffect(() => {
-		api.get('/api/learning/me/courses').then(r => {
-			const enrollments = r.data?.courses || [];
-			setCourses(enrollments.map(e => ({ id: e.courseId, name: e.name, level: e.level })).filter(e => e.id));
-		}).catch(() => {}).finally(() => setCoursesLoaded(true));
-		api.get('/api/learning/volumes/public').then(r => setVolumes(r.data?.volumes || [])).catch(() => {});
-		api.get('/api/learning/modules/public').then(r => setModules(r.data?.modules || [])).catch(() => {});
-		api.get('/api/learning/topics/public').then(r => setTopics(r.data?.topics || [])).catch(() => {});
+		let cancelled = false;
+		api.get('/api/slides/library/courses').then(r => {
+			if (cancelled) return;
+			const list = r.data?.courses || [];
+			setCourses(list);
+			const requested = list.find(course => course.id === initial.current.courseId)?.id;
+			const fallback = list.length === 1 ? list[0].id : null;
+			setFilterCourseId(previous => (previous && list.some(course => course.id === previous) ? previous : requested || fallback));
+		}).catch(() => {
+			if (!cancelled) setCourses([]);
+		}).finally(() => {
+			if (!cancelled) setCoursesLoaded(true);
+		});
+		return () => { cancelled = true; };
 	}, []);
 
-	// Build hierarchy tree: Volume → Module → Topic
-	const accessibleCourseIds = useMemo(() => new Set(courses.map(course => course.id)), [courses]);
+	useEffect(() => {
+		if (!coursesLoaded) return undefined;
+		if (!courses.length) {
+			setVolumes([]);
+			setNavigationTotal(0);
+			setHierarchyLoading(false);
+			return undefined;
+		}
+		let cancelled = false;
+		setHierarchyLoading(true);
+		setHierarchyError('');
+		api.get('/api/summary-sheets/navigation', { params: filterCourseId ? { courseId: filterCourseId } : {} })
+			.then(r => {
+				if (cancelled) return;
+				const list = r.data?.volumes || [];
+				setVolumes(list);
+				setNavigationTotal(r.data?.totalCount || 0);
+				if (!initialNavigationApplied.current) {
+					const volume = list.find(item => item.id === initial.current.volumeId)
+						|| (initial.current.moduleId ? list.find(item => item.modules.some(module => module.id === initial.current.moduleId)) : null);
+					if (volume) {
+						setFilterVolumeId(volume.id);
+						setExpandedVolumes(new Set([volume.id]));
+						if (initial.current.moduleId && volume.modules.some(module => module.id === initial.current.moduleId)) {
+							setFilterModuleId(initial.current.moduleId);
+						}
+					}
+					initialNavigationApplied.current = true;
+				}
+			})
+			.catch(() => {
+				if (cancelled) return;
+				setVolumes([]);
+				setNavigationTotal(0);
+				setHierarchyError('Could not load your curriculum.');
+			})
+			.finally(() => {
+				if (!cancelled) setHierarchyLoading(false);
+			});
+		return () => { cancelled = true; };
+	}, [coursesLoaded, courses.length, filterCourseId]);
 
 	const hierarchyTree = useMemo(() => {
-		const inAccessibleCourse = row => row?.courseId ? accessibleCourseIds.has(row.courseId) : row?.courseLinks?.some(link => accessibleCourseIds.has(link.courseId));
-		let volList = filterCourseId
-			? volumes.filter(v => v.courseLinks?.some(cl => cl.courseId === filterCourseId))
-			: volumes.filter(v => v.courseLinks?.some(cl => accessibleCourseIds.has(cl.courseId)));
 		const search = treeSearch.toLowerCase().trim();
-		return volList.map(vol => {
-			const volModules = modules.filter(m => m.volumeId === vol.id && (filterCourseId ? m.courseId === filterCourseId : inAccessibleCourse(m)));
-			const modulesWithTopics = volModules.map(mod => {
-				const modTopics = topics.filter(t => t.moduleId === mod.id);
-				return { ...mod, topics: modTopics };
-			});
-			return { ...vol, modules: modulesWithTopics };
-		}).filter(vol => {
-			if (!search) return vol.modules.length > 0;
-			const volMatch = vol.name?.toLowerCase().includes(search);
-			const hasChild = vol.modules.some(m => m.name?.toLowerCase().includes(search) || m.topics.some(t => t.name?.toLowerCase().includes(search)));
-			return volMatch || hasChild;
-		});
-	}, [volumes, modules, topics, filterCourseId, treeSearch, accessibleCourseIds]);
+		if (!search) return volumes;
+		return volumes.filter(volume => (
+			volume.name?.toLowerCase().includes(search)
+			|| volume.modules.some(module => module.name?.toLowerCase().includes(search))
+		));
+	}, [volumes, treeSearch]);
+
+	const selectedVolume = volumes.find(volume => volume.id === filterVolumeId);
+	const selectedModule = selectedVolume?.modules.find(module => module.id === filterModuleId);
 
 	useEffect(() => {
 		const timer = setTimeout(() => { setSearchTerm(searchText.trim()); setPage(1); }, 300);
@@ -89,41 +133,81 @@ export function StudentSummarySheets() {
 	}, [searchText]);
 
 	const fetchSheets = useCallback(async () => {
+		const sequence = ++requestSequence.current;
 		setLoading(true);
 		try {
 			const params = { page, limit: 24, status: 'PUBLISHED' };
 			if (filterCourseId) params.courseId = filterCourseId;
 			if (filterVolumeId) params.volumeId = filterVolumeId;
 			if (filterModuleId) params.moduleId = filterModuleId;
-			if (filterTopicId) params.topicId = filterTopicId;
 			if (searchTerm) params.search = searchTerm;
 			if (filterSource) params.source = filterSource;
 			const res = await api.get('/api/summary-sheets/unified', { params });
+			if (sequence !== requestSequence.current) return;
 			setSheets(res.data?.resources || []);
 			setTotal(res.data?.total || 0);
 			setCounts(res.data?.counts || { ai: 0, manual: 0, uploadedPdf: 0 });
-		} catch { } finally { setLoading(false); }
-	}, [page, filterCourseId, filterVolumeId, filterModuleId, filterTopicId, filterSource, searchTerm]);
+		} catch {
+			if (sequence === requestSequence.current) {
+				setSheets([]);
+				setTotal(0);
+				setCounts({ ai: 0, manual: 0, uploadedPdf: 0 });
+			}
+		} finally {
+			if (sequence === requestSequence.current) setLoading(false);
+		}
+	}, [page, filterCourseId, filterVolumeId, filterModuleId, filterSource, searchTerm]);
 
 	useEffect(() => { fetchSheets(); }, [fetchSheets]);
 
-	const selectTreeItem = (type, id) => {
-		if (type === 'volume') { setFilterVolumeId(id); setFilterModuleId(null); setFilterTopicId(null); }
-		else if (type === 'module') { setFilterModuleId(id); setFilterTopicId(null); }
-		else if (type === 'topic') { setFilterTopicId(id); }
+	const toggleVolume = volumeId => {
+		setExpandedVolumes(previous => {
+			const next = new Set(previous);
+			if (next.has(volumeId)) next.delete(volumeId);
+			else next.add(volumeId);
+			return next;
+		});
+	};
+
+	const selectAll = () => {
+		clearTreeFilter();
+		if (isMobile) setSidebarOpen(false);
+	};
+
+	const selectVolume = volume => {
+		setFilterVolumeId(volume.id);
+		setFilterModuleId(null);
 		setPage(1);
 		if (isMobile) setSidebarOpen(false);
 	};
 
-	const clearTreeFilter = () => { setFilterVolumeId(null); setFilterModuleId(null); setFilterTopicId(null); setPage(1); };
+	const selectModule = (module, volume) => {
+		setFilterVolumeId(volume.id);
+		setFilterModuleId(module.id);
+		setExpandedVolumes(previous => new Set([...previous, volume.id]));
+		setPage(1);
+		if (isMobile) setSidebarOpen(false);
+	};
 
-	const activeLabel = filterTopicId
-		? topics.find(t => t.id === filterTopicId)?.name
-		: filterModuleId
-			? modules.find(m => m.id === filterModuleId)?.name
-			: filterVolumeId
-				? volumes.find(v => v.id === filterVolumeId)?.name
-				: null;
+	const clearTreeFilter = () => { setFilterVolumeId(null); setFilterModuleId(null); setPage(1); };
+
+	const clearAllFilters = () => {
+		setSearchText('');
+		setFilterSource(null);
+		clearTreeFilter();
+	};
+
+	const changeCourse = value => {
+		setFilterCourseId(value || null);
+		setFilterVolumeId(null);
+		setFilterModuleId(null);
+		setExpandedVolumes(new Set());
+		setPage(1);
+		if (isMobile) setSidebarOpen(false);
+	};
+
+	const activeLabel = selectedModule?.name || selectedVolume?.name || null;
+	const hasActiveFilters = Boolean(searchText || filterSource || filterVolumeId || filterModuleId);
 
 
 	const changeView = mode => {
@@ -153,136 +237,50 @@ export function StudentSummarySheets() {
 		{ title: 'Type', key: 'type', width: 130, render: (_, resource) => <ResourceTypeTag type={resource.type === 'PDF' ? 'PDF' : 'SUMMARY'} /> },
 		{ title: 'Level', key: 'level', width: 95, render: (_, resource) => <Tag color={resource.level === 'LEVEL1' ? 'blue' : resource.level === 'LEVEL2' ? 'purple' : 'gold'}>{LEVEL_LABELS[resource.level] || resource.level}</Tag> },
 		{ title: 'Volume', key: 'volume', width: 150, render: (_, resource) => resource.volume?.name || <Typography.Text type="secondary">-</Typography.Text> },
-		{ title: 'Learning Module', key: 'module', width: 190, render: (_, resource) => resource.type === 'PDF' ? <Tag>Whole Volume</Tag> : resource.module?.name || <Typography.Text type="secondary">-</Typography.Text> },
+		{ title: 'Learning Module', key: 'module', width: 190, render: (_, resource) => resource.module?.name || (resource.type === 'PDF' ? <Tag>Whole Volume</Tag> : <Typography.Text type="secondary">-</Typography.Text>) },
 		{ title: 'Status', key: 'status', width: 100, render: (_, resource) => <Tag color={resource.status === 'PUBLISHED' ? 'green' : 'default'}>{resource.status === 'PUBLISHED' ? 'Published' : 'Draft'}</Tag> },
 		{ title: 'Actions', key: 'actions', width: 120, fixed: 'right', render: (_, resource) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openResource(resource)}>View</Button> }
 	];	return (
 		<div style={{ display: 'flex', height: 'calc(100vh - 120px)', overflow: 'hidden' }}>
-			{/* Mobile overlay */}
-			{isMobile && sidebarOpen && (
-				<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 40 }} onClick={() => setSidebarOpen(false)} />
-			)}
 
-			{/* ═══ Sidebar Tree ═══ */}
-			<div style={{
-				width: isMobile ? '85vw' : 290, minWidth: isMobile ? undefined : 260, maxWidth: isMobile ? 360 : 310,
-				borderRight: '1px solid #e2e8f0', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-				...(isMobile ? { position: 'fixed', left: sidebarOpen ? 0 : '-100%', top: 0, bottom: 0, zIndex: 50, transition: 'left 0.3s ease', boxShadow: sidebarOpen ? '4px 0 16px rgba(0,0,0,0.12)' : undefined } : {}),
-			}}>
-				{/* Sidebar header */}
-				<div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', display: 'flex', alignItems: 'center', gap: 10 }}>
-					<FileTextOutlined style={{ fontSize: 18, color: '#fff' }} />
-					<span style={{ fontWeight: 700, fontSize: 15, color: '#fff', flex: 1 }}>Curriculum</span>
-					{isMobile && <Button type="text" icon={<CloseOutlined style={{ color: '#fff' }} />} size="small" onClick={() => setSidebarOpen(false)} />}
-				</div>
-
-				{/* Course filter */}
-				<div style={{ padding: '10px 12px', borderBottom: '1px solid #f0f0f0', background: '#f8fafc' }}>
-					<Select
-						placeholder="Select Course" value={filterCourseId} size="small"
-						onChange={v => { setFilterCourseId(v); setFilterVolumeId(null); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }}
-						options={[{ value: null, label: 'All Courses' }, ...courses.map(c => ({ value: c.id, label: c.name }))]}
-						style={{ width: '100%' }} allowClear showSearch optionFilterProp="label"
-					/>
-				</div>
-
-				{/* Tree search */}
-				<div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0' }}>
-					<Input prefix={<SearchOutlined style={{ color: '#94a3b8' }} />} placeholder="Search curriculum…" value={treeSearch} onChange={e => setTreeSearch(e.target.value)} allowClear size="small" />
-				</div>
-
-				{/* Active filter badge */}
-				{(filterVolumeId || filterModuleId || filterTopicId) && (
-					<div style={{ padding: '6px 12px', background: '#eff6ff', borderBottom: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: 6 }}>
-						<Tag color="blue" style={{ margin: 0, fontSize: 11, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeLabel}</Tag>
-						<Button type="link" size="small" style={{ fontSize: 11, padding: 0 }} onClick={clearTreeFilter}>Clear</Button>
-					</div>
-				)}
-
-				{/* Tree */}
-				<div style={{ flex: 1, overflowY: 'auto' }}>
-					{hierarchyTree.length === 0 ? (
-						<div style={{ padding: 32, textAlign: 'center', color: '#94a3b8' }}>
-							<FolderOutlined style={{ fontSize: 28, opacity: 0.4 }} />
-							<div style={{ fontSize: 13, marginTop: 8 }}>No curriculum items</div>
-						</div>
-					) : hierarchyTree.map(vol => {
-						const isVolExp = expandedVolumes.has(vol.id);
-						const isVolActive = filterVolumeId === vol.id && !filterModuleId && !filterTopicId;
-						return (
-							<div key={vol.id}>
-								<div
-									onClick={() => { setExpandedVolumes(prev => { const s = new Set(prev); s.has(vol.id) ? s.delete(vol.id) : s.add(vol.id); return s; }); }}
-									style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', cursor: 'pointer', background: isVolActive ? '#eff6ff' : 'transparent', borderLeft: isVolActive ? '3px solid #2563eb' : '3px solid transparent' }}
-									onMouseEnter={e => { if (!isVolActive) e.currentTarget.style.background = '#f8fafc'; }}
-									onMouseLeave={e => { if (!isVolActive) e.currentTarget.style.background = isVolActive ? '#eff6ff' : 'transparent'; }}
-								>
-									{isVolExp ? <DownOutlined style={{ fontSize: 10, color: '#2563eb' }} /> : <RightOutlined style={{ fontSize: 10, color: '#94a3b8' }} />}
-									<BookOutlined style={{ fontSize: 13, color: '#2563eb' }} />
-									<span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{vol.name}</span>
-									<span style={{ fontSize: 10, color: '#94a3b8' }}>{vol.modules.length}</span>
-									<Button type="text" size="small" style={{ fontSize: 10, padding: '0 4px', height: 20, color: '#2563eb' }}
-										onClick={e => { e.stopPropagation(); selectTreeItem('volume', vol.id); }}>
-										Filter
-									</Button>
-								</div>
-
-								{isVolExp && vol.modules.map(mod => {
-									const isModExp = expandedModules.has(mod.id);
-									const isModActive = filterModuleId === mod.id && !filterTopicId;
-									return (
-										<div key={mod.id}>
-											<div
-												onClick={() => { setExpandedModules(prev => { const s = new Set(prev); s.has(mod.id) ? s.delete(mod.id) : s.add(mod.id); return s; }); }}
-												style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px 7px 32px', cursor: 'pointer', background: isModActive ? '#f0fdf4' : 'transparent', borderLeft: isModActive ? '3px solid #16a34a' : '3px solid transparent' }}
-												onMouseEnter={e => { if (!isModActive) e.currentTarget.style.background = '#fafafa'; }}
-												onMouseLeave={e => { if (!isModActive) e.currentTarget.style.background = isModActive ? '#f0fdf4' : 'transparent'; }}
-											>
-												{mod.topics.length > 0 ? (isModExp ? <DownOutlined style={{ fontSize: 9, color: '#16a34a' }} /> : <RightOutlined style={{ fontSize: 9, color: '#94a3b8' }} />) : <span style={{ width: 9 }} />}
-												<AppstoreOutlined style={{ fontSize: 12, color: '#16a34a' }} />
-												<span style={{ fontSize: 12, fontWeight: 500, color: '#334155', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mod.name}</span>
-												<Button type="text" size="small" style={{ fontSize: 10, padding: '0 4px', height: 18, color: '#16a34a' }}
-													onClick={e => { e.stopPropagation(); selectTreeItem('module', mod.id); }}>
-													Filter
-												</Button>
-											</div>
-
-											{isModExp && mod.topics.map(topic => {
-												const isTopicActive = filterTopicId === topic.id;
-												return (
-													<div
-														key={topic.id}
-														onClick={() => selectTreeItem('topic', topic.id)}
-														style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px 6px 54px', cursor: 'pointer', background: isTopicActive ? '#fefce8' : 'transparent', borderLeft: isTopicActive ? '3px solid #eab308' : '3px solid transparent' }}
-														onMouseEnter={e => { if (!isTopicActive) e.currentTarget.style.background = '#fafafa'; }}
-														onMouseLeave={e => { if (!isTopicActive) e.currentTarget.style.background = isTopicActive ? '#fefce8' : 'transparent'; }}
-													>
-														<span style={{ width: 6, height: 6, borderRadius: '50%', background: isTopicActive ? '#eab308' : '#cbd5e1', flexShrink: 0 }} />
-														<span style={{ fontSize: 12, color: isTopicActive ? '#92400e' : '#475569', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{topic.name}</span>
-													</div>
-												);
-											})}
-										</div>
-									);
-								})}
-							</div>
-						);
-					})}
-				</div>
-			</div>
-
+			<StudentResourceSidebar
+				title="Milven Summaries"
+				icon={<FileTextOutlined style={{ fontSize: 18, color: '#fff' }} />}
+				allLabel="All Summaries"
+				courses={courses}
+				courseId={filterCourseId}
+				onCourseChange={changeCourse}
+				volumes={hierarchyTree}
+				totalCount={navigationTotal}
+				selectedVolumeId={filterVolumeId}
+				selectedModuleId={filterModuleId}
+				expandedVolumes={expandedVolumes}
+				onToggleVolume={toggleVolume}
+				onSelectAll={selectAll}
+				onSelectVolume={selectVolume}
+				onSelectModule={selectModule}
+				activeLabel={activeLabel}
+				onClearFilter={clearTreeFilter}
+				treeSearch={treeSearch}
+				onTreeSearch={setTreeSearch}
+				isMobile={isMobile}
+				open={sidebarOpen}
+				onClose={() => setSidebarOpen(false)}
+				loading={hierarchyLoading}
+				error={hierarchyError}
+			/>
 			{/* ═══ Main Content ═══ */}
 			<div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '16px 12px' : '20px 24px' }}>
 				{/* Header */}
 				<div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
-					{isMobile && <Button icon={<MenuOutlined />} onClick={() => setSidebarOpen(true)} style={{ flexShrink: 0 }} />}
+					{isMobile && <Button icon={<MenuOutlined />} aria-label="Open Milven Summaries navigation" onClick={() => setSidebarOpen(true)} style={{ flexShrink: 0 }} />}
 					<div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
 						<div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
 							<FileTextOutlined style={{ fontSize: 20, color: '#fff' }} />
 						</div>
 						<div>
 							<Typography.Title level={4} style={{ margin: 0, color: '#102540' }}>Milven Summary Sheets</Typography.Title>
-							<Typography.Text type="secondary" style={{ fontSize: 12 }}>High-impact revision sheets. Simplified. Exam-focused.</Typography.Text>
+							<Typography.Text type="secondary" style={{ fontSize: 12 }}>{activeLabel ? `${activeLabel}${selectedModule ? ' • Learning Module' : ' • Volume'}` : 'High-impact revision sheets. Simplified. Exam-focused.'}</Typography.Text>
 						</div>
 					</div>
 				</div>
@@ -304,7 +302,8 @@ export function StudentSummarySheets() {
 						<Col xs={24} md={12}><Space wrap><Input prefix={<SearchOutlined />} placeholder="Search summary sheets and PDFs..." value={searchText} onChange={e => { setSearchText(e.target.value); setPage(1); }} allowClear style={{ width: 340 }} /><Select placeholder="Source" value={filterSource} onChange={v => { setFilterSource(v); setPage(1); }} options={[{ value: null, label: 'All Sources' }, { value: 'AI', label: 'AI Generated' }, { value: 'UPLOADED_PDF', label: 'Uploaded PDF' }]} style={{ width: 160 }} allowClear /></Space></Col>
 						<Col xs={24} md={12} style={{ textAlign: 'right' }}>
 							<Space wrap>
-								{filterModuleId && <Button size="small" onClick={() => { const mod = modules.find(m => m.id === filterModuleId); navigate(`/student/slides?courseId=${mod?.courseId || filterCourseId || ''}&volumeId=${filterVolumeId || mod?.volumeId || ''}&moduleId=${filterModuleId}`); }}>Open Slides</Button>}
+								{hasActiveFilters && <Button size="small" onClick={clearAllFilters}>Clear Filters</Button>}
+								{selectedModule && <Button size="small" onClick={() => navigate(`/student/slides?courseId=${selectedModule.courseId || filterCourseId || ''}&volumeId=${filterVolumeId || selectedModule.volumeId || ''}&moduleId=${selectedModule.id}`)}>Open Slides</Button>}
 								<Button.Group>
 									<Button type={viewMode === 'cards' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => changeView('cards')} aria-label="Card view" />
 									<Button type={viewMode === 'table' ? 'primary' : 'default'} icon={<OrderedListOutlined />} onClick={() => changeView('table')} aria-label="Table view" />
@@ -324,8 +323,8 @@ export function StudentSummarySheets() {
 					</Card>
 				) : sheets.length === 0 ? (
 					<Card style={{ borderRadius: 12, textAlign: 'center', padding: 30 }}>
-						<Empty description={searchText || filterSource || filterVolumeId || filterModuleId || filterTopicId ? 'No resources match your selected filters.' : 'No learning resources are available for your enrolled course yet.'}>
-							{(searchText || filterSource || filterVolumeId || filterModuleId || filterTopicId) && <Button onClick={() => { setSearchText(''); setFilterSource(null); setFilterVolumeId(null); setFilterModuleId(null); setFilterTopicId(null); setPage(1); }}>Clear Filters</Button>}
+						<Empty description={hasActiveFilters ? 'No resources match your selected filters.' : 'No learning resources are available for your enrolled course yet.'}>
+							{hasActiveFilters && <Button onClick={clearAllFilters}>Clear Filters</Button>}
 						</Empty>
 					</Card>
 				) : viewMode === 'table' ? (

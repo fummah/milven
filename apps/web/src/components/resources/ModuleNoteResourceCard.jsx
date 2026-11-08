@@ -45,18 +45,19 @@ export default function ModuleNoteResourceCard({
         <div style={{ padding: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: '#102540', lineHeight: 1.35 }}>{resource.title}</div>
-            <Tag color={status === 'PUBLISHED' ? 'green' : 'default'}>{status === 'PUBLISHED' ? 'Published' : 'Draft'}</Tag>
+            {isAdmin && <Tag color={status === 'PUBLISHED' ? 'green' : 'default'}>{status === 'PUBLISHED' ? 'Published' : 'Draft'}</Tag>}
           </div>
           <Space size={[4, 4]} wrap style={{ marginTop: 9 }}>
             <ResourceTypeTag type="PDF" />
             {isAdmin && <ResourceSourceTag type="PDF" />}
             <Tag color={LEVEL_COLORS[level]}>{LEVEL_LABELS[level] || level || 'Level'}</Tag>
             {resource.volume?.name && <Tag>{resource.volume.name}</Tag>}
-            <Tag>Whole Volume</Tag>
-            {resource.pageCount ? <Tag>{resource.pageCount} pages</Tag> : null}
-            {resource.year ? <Tag>{resource.year}</Tag> : null}
+            {isAdmin && (moduleName ? <Tag>{moduleName}</Tag> : <Tag>Whole Volume</Tag>)}
+            {isAdmin && resource.pageCount ? <Tag>{resource.pageCount} pages</Tag> : null}
+            {isAdmin && resource.year ? <Tag>{resource.year}</Tag> : null}
             {!ready && <Tag color={resource.processingStatus === 'FAILED' ? 'error' : 'processing'}>{resource.processingStatus === 'FAILED' ? 'Processing failed' : 'Processing'}</Tag>}
           </Space>
+          {!isAdmin && <Button type="link" icon={<EyeOutlined />} style={{ padding: 0, marginTop: 10 }}>View</Button>}
           {isAdmin && resource.originalFilename && <div style={{ marginTop: 10, fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resource.originalFilename}</div>}
         </div>
         {isAdmin && (
@@ -89,25 +90,27 @@ export default function ModuleNoteResourceCard({
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: '#102540', lineHeight: 1.3 }}>{resource.title}</div>
-            {moduleName && <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{moduleName}</div>}
+            {isAdmin && moduleName && <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{moduleName}</div>}
           </div>
-          <Tag color={status === 'PUBLISHED' ? 'green' : 'default'} style={{ flexShrink: 0, marginTop: 2 }}>{status}</Tag>
+          {isAdmin && <Tag color={status === 'PUBLISHED' ? 'green' : 'default'} style={{ flexShrink: 0, marginTop: 2 }}>{status}</Tag>}
         </div>
         <Space size={[4, 4]} wrap style={{ marginTop: 9 }}>
           <ResourceTypeTag type="NOTE" />
-          <ResourceSourceTag type="NOTE" source={resource.source} />
+          {isAdmin && <ResourceSourceTag type="NOTE" source={resource.source} />}
           <Tag color={LEVEL_COLORS[level]}>{LEVEL_LABELS[level] || level}</Tag>
-          {resource.difficulty && <Tag>{resource.difficulty}</Tag>}
-          {resource.studyTime && <Tag color="geekblue">{resource.studyTime}</Tag>}
+          {resource.volume?.name && <Tag>{resource.volume.name}</Tag>}
+          {isAdmin && resource.difficulty && <Tag>{resource.difficulty}</Tag>}
+          {isAdmin && resource.studyTime && <Tag color="geekblue">{resource.studyTime}</Tag>}
         </Space>
         {resource.overview && <div style={{ fontSize: 13, color: '#475569', marginTop: 9, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{resource.overview}</div>}
-        <Space size={[8, 6]} wrap style={{ marginTop: 10 }}>
+        {isAdmin && <Space size={[8, 6]} wrap style={{ marginTop: 10 }}>
           {losCount > 0 && <Tag color="blue">{losCount} LOS</Tag>}
           {conceptCount > 0 && <Tag color="purple">{conceptCount} concepts</Tag>}
           {formulaCount > 0 && <Tag color="cyan">{formulaCount} formulas</Tag>}
           {practiceCount > 0 && <Tag color="green">{practiceCount} practice Qs</Tag>}
-        </Space>
-        {resource.updatedAt && <Typography.Text type="secondary" style={{ display: 'block', fontSize: 11, marginTop: 10 }}>Updated {lastUpdatedLabel(resource.updatedAt)}</Typography.Text>}
+        </Space>}
+        {isAdmin && resource.updatedAt && <Typography.Text type="secondary" style={{ display: 'block', fontSize: 11, marginTop: 10 }}>Updated {lastUpdatedLabel(resource.updatedAt)}</Typography.Text>}
+        {!isAdmin && <Button type="link" icon={<EyeOutlined />} style={{ padding: 0, marginTop: 8 }}>View</Button>}
       </div>
       {isAdmin && (
         <div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 12px', display: 'flex', justifyContent: 'flex-end', gap: 2, background: '#fafafa' }} onClick={event => event.stopPropagation()}>
