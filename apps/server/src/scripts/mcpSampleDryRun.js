@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
+import fs from 'node:fs';
 import { loadSampleBank, dryRunSampleImport } from '../lib/questions/sampleBank.js';
 
 function arg(name, fallback = null) {
@@ -13,9 +14,11 @@ const volumeId = arg('volumeId');
 const moduleId = arg('moduleId');
 const topicId = arg('topicId');
 const limit = Number(arg('limit', '25'));
+const mappingFile = arg('mapping');
+const mapping = mappingFile ? JSON.parse(fs.readFileSync(mappingFile, 'utf8')) : {};
 
 if (!folder) {
-	console.error('Usage: node src/scripts/mcpSampleDryRun.js --folder <bank-folder> --courseId <id> --volumeId <id> --moduleId <id> --topicId <id> [--limit 25]');
+	console.error('Usage: node src/scripts/mcpSampleDryRun.js --folder <bank-folder> [--mapping <mapping.json>] [--courseId <id>] [--volumeId <id>] [--moduleId <id>] [--topicId <id>] [--difficulty HARD] [--limit 25]');
 	process.exit(1);
 }
 
@@ -24,7 +27,17 @@ try {
 	const bank = await loadSampleBank(folder);
 	const results = [];
 	for (const set of bank.parsed.slice(0, limit)) {
-		results.push(await dryRunSampleImport(prisma, set, { courseId, volumeId, moduleId, primaryTopicId: topicId }));
+		results.push(await dryRunSampleImport(prisma, set, {
+			courseId: courseId || mapping.courseId,
+			volumeId,
+			moduleId,
+			volumeMap: mapping.volumeMap || {},
+			moduleMap: mapping.moduleMap || {},
+			primaryTopicId: topicId || mapping.primaryTopicId,
+			topicMap: mapping.topicMap || {},
+			conceptMap: mapping.conceptMap || {},
+			difficulty: arg('difficulty', mapping.difficulty || 'HARD')
+		}));
 	}
 	console.log(JSON.stringify({
 		folder,

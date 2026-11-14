@@ -222,15 +222,18 @@ export async function loadSampleBank(folder) {
 	return { sets, parsed, missing };
 }
 
-async function resolveAcademic(prisma, sample, { courseId, volumeId, moduleId } = {}) {
+async function resolveAcademic(prisma, sample, { courseId, volumeId, moduleId, volumeMap = {}, moduleMap = {} } = {}) {
 	const errors = [];
 	const warnings = [];
 	let resolvedCourseId = courseId || null;
-	let resolvedVolumeId = volumeId || null;
-	let resolvedModuleId = moduleId || null;
-	if (!resolvedCourseId && sample.volume) {
+	let resolvedVolumeId = volumeId || volumeMap[sample.volume] || null;
+	let resolvedModuleId = moduleId || moduleMap[`${sample.volume}|${sample.learningModule}`] || null;
+	if (!resolvedVolumeId && sample.volume) {
 		const candidates = await prisma.volume.findMany({
-			where: { name: { equals: sample.volume, mode: 'insensitive' } },
+			where: {
+				name: { equals: sample.volume, mode: 'insensitive' },
+				...(resolvedCourseId ? { courseLinks: { some: { courseId: resolvedCourseId } } } : {})
+			},
 			select: { id: true, name: true, courseLinks: { select: { courseId: true } } }
 		});
 		if (candidates.length === 1 && candidates[0].courseLinks.length === 1) {
@@ -240,7 +243,16 @@ async function resolveAcademic(prisma, sample, { courseId, volumeId, moduleId } 
 			errors.push({ code: 'VOLUME_MAPPING_REQUIRED', message: `Volume "${sample.volume}" requires administrator mapping.`, candidates });
 		}
 	}
-	if (!resolvedModuleId && sample.learningModule && resolvedVolumeId) {
+	if (resolvedModuleId) {
+		const mapped = await prisma.module.findUnique({ where: { id: resolvedModuleId }, select: { id: true, name: true, volumeId: true, courseId: true } });
+		if (mapped) {
+			resolvedVolumeId = mapped.volumeId;
+			resolvedCourseId = mapped.courseId;
+			warnings.push({ code: 'MODULE_MAPPING_APPLIED', message: `Source module "${sample.volume}|${sample.learningModule}" maps to Milven module "${mapped.name}" (${mapped.id}).` });
+		} else {
+			errors.push({ code: 'MODULE_MAPPING_NOT_FOUND', message: `Mapped module ${resolvedModuleId} was not found.` });
+		}
+	} else if (!resolvedModuleId && sample.learningModule && resolvedVolumeId) {
 		const candidates = await prisma.module.findMany({
 			where: { volumeId: resolvedVolumeId, name: { equals: sample.learningModule, mode: 'insensitive' } },
 			select: { id: true, name: true }
@@ -258,13 +270,15 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 	courseId,
 	volumeId,
 	moduleId,
+	volumeMap = {},
+	moduleMap = {},
 	primaryTopicId,
 	topicMap = {},
 	conceptMap = {},
 	difficulty = 'HARD',
 	deriveEqualMarks = true
 } = {}) {
-	const academic = await resolveAcademic(prisma, sample, { courseId, volumeId, moduleId });
+	const academic = await resolveAcademic(prisma, sample, { courseId, volumeId, moduleId, volumeMap, moduleMap });
 	const warnings = [...academic.warnings];
 	if (!primaryTopicId && !Object.keys(topicMap).length) academic.errors.push({ code: 'TOPIC_MAPPING_REQUIRED', message: 'A primary Milven Topic ID or explicit topicMap is required for this sample set.' });
 	let availableTopics = [];
@@ -280,7 +294,7 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 	for (const question of sample.questions) {
 		const sourceName = String(question.topicName || '').trim();
 		if (!sourceName) continue;
-		const mappedId = topicMap[sourceName] || exactTopics.get(sourceName.toLowerCase()) || null;
+		const mappedId = topicMap[`${academic.moduleId}|${sourceName}`] || topicMap[sourceName] || exactTopics.get(sourceName.toLowerCase()) || null;
 		if (mappedId) sourceTopicMap.set(sourceName, mappedId);
 		else if (primaryTopicId) {
 			sourceTopicMap.set(sourceName, primaryTopicId);
@@ -299,7 +313,7 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 	if (!equalMarks) warnings.push({ code: 'PER_QUESTION_MARKS_REQUIRED', message: 'Source set does not provide per-question marks; administrator mapping is required.' });
 	const subQuestions = sample.questions.map((question, index) => {
 		const missing = [];
-		const mappedTopicId = topicMap[question.topicName] || exactTopics.get(String(question.topicName || '').toLowerCase()) || primaryTopicId || null;
+		const mappedTopicId = sourceTopicMap.get(question.topicName) || exactTopics.get(String(question.topicName || '').toLowerCase()) || primaryTopicId || null;
 		const mappedConceptIds = Array.isArray(question.conceptIds) ? question.conceptIds.filter(Boolean) : [];
 		if (!question.stem) missing.push('stem');
 		if (!question.options.length) missing.push('options');

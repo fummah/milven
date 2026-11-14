@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { loadSampleBank } from '../lib/questions/sampleBank.js';
+import fs from 'node:fs';
 
 function arg(name, fallback = null) {
 	const index = process.argv.indexOf(`--${name}`);
@@ -8,6 +9,8 @@ function arg(name, fallback = null) {
 }
 
 const folder = arg('folder');
+const mappingFile = arg('mapping');
+const mapping = mappingFile ? JSON.parse(fs.readFileSync(mappingFile, 'utf8')) : {};
 if (!folder) {
 	console.error('Usage: node src/scripts/mcpSampleMappingReport.js --folder <bank-folder>');
 	process.exit(1);
@@ -17,7 +20,7 @@ const prisma = new PrismaClient();
 try {
 	const bank = await loadSampleBank(folder);
 	const course = await prisma.course.findFirst({ where: { name: 'CFA III' } });
-	const courseId = arg('courseId', course?.id);
+	const courseId = arg('courseId', mapping.courseId || course?.id);
 	const volumes = await prisma.courseVolume.findMany({
 		where: { courseId },
 		include: { volume: { select: { id: true, name: true } } }
@@ -48,7 +51,8 @@ try {
 			missingVolumes.set(set.volume || '(blank)', (missingVolumes.get(set.volume || '(blank)') || 0) + 1);
 			continue;
 		}
-		const module = moduleByVolumeName.get(`${volume.id}|${String(set.learningModule || '').toLowerCase()}`);
+		const mappedModuleId = mapping.moduleMap?.[`${set.volume}|${set.learningModule}`];
+		const module = mappedModuleId ? await prisma.module.findUnique({ where: { id: mappedModuleId }, select: { id: true, name: true, volumeId: true } }) : moduleByVolumeName.get(`${volume.id}|${String(set.learningModule || '').toLowerCase()}`);
 		if (!module) {
 			const key = `${set.volume}|${set.learningModule}`;
 			missingModules.set(key, (missingModules.get(key) || 0) + 1);
@@ -56,6 +60,10 @@ try {
 		}
 		const available = topicsByModule.get(module.id) || [];
 		const exactTopicIds = new Map(available.map(topic => [topic.name.toLowerCase(), topic.id]));
+		for (const [key, value] of Object.entries(mapping.topicMap || {})) {
+			const [moduleId, topicName] = key.split('|');
+			if (moduleId === module.id) exactTopicIds.set(topicName.toLowerCase(), value);
+		}
 		let setExact = true;
 		for (const question of set.questions) {
 			if (exactTopicIds.has(String(question.topicName || '').toLowerCase())) exactQuestions += 1;

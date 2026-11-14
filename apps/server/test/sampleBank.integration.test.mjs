@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
-import { loadSampleBank, dryRunSampleImport } from '../src/lib/questions/sampleBank.js';
+import { loadSampleBank, dryRunSampleImport, transformSampleSetToQuestion } from '../src/lib/questions/sampleBank.js';
+import { normalizeQuestionPayload } from '../src/lib/questions/questionSchema.js';
+import { validateQuestionPayload } from '../src/lib/questions/questionValidation.js';
 
 const folder = process.env.SAMPLE_BANK_DIR;
 const enabled = Boolean(folder && fs.existsSync(path.join(folder, 'index.html')) && process.env.DATABASE_URL);
@@ -42,6 +44,35 @@ test('real CFA Level III 500-set bank parses completely and SET-001 dry-runs', {
 		assert.equal(dryRun.mappedPayload.subQuestions.length, 4);
 		assert.equal(dryRun.mappedPayload.subQuestions[0].options.filter(option => option.isCorrect).length, 1);
 		assert.ok(dryRun.warnings.some(warning => warning.code === 'DIFFICULTY_PROVISIONAL'));
+	} finally {
+		await prisma.$disconnect();
+	}
+});
+
+test('all 500 supplied sets map and validate with the reviewed mapping file', { skip: !enabled }, async () => {
+	const prisma = new PrismaClient();
+	try {
+		const mapping = JSON.parse(fs.readFileSync(new URL('../src/data/cfaLevel3SampleMapping.json', import.meta.url), 'utf8'));
+		const bank = await loadSampleBank(folder);
+		const failures = [];
+		let valid = 0;
+		for (const sample of bank.parsed) {
+			const { academic, payload } = await transformSampleSetToQuestion(prisma, sample, {
+				courseId: mapping.courseId,
+				moduleMap: mapping.moduleMap,
+				topicMap: mapping.topicMap,
+				difficulty: 'HARD'
+			});
+			if (academic.errors.length) {
+				failures.push({ setId: sample.setId, mappingErrors: academic.errors });
+				continue;
+			}
+			const validation = await validateQuestionPayload(prisma, normalizeQuestionPayload(payload));
+			if (!validation.ok) failures.push({ setId: sample.setId, validationErrors: validation.errors });
+			else valid += 1;
+		}
+		assert.deepEqual(failures, []);
+		assert.equal(valid, 500);
 	} finally {
 		await prisma.$disconnect();
 	}

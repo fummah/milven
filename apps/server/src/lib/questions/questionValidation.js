@@ -3,7 +3,7 @@ import { normalizeDifficultyValue } from '../questionDifficulty.js';
 import { validateAcademicMapping } from './questionCurriculum.js';
 import { expectedLabels, QUESTION_TYPES } from './questionSchema.js';
 
-const UNSAFE_HTML = /<\s*(script|iframe|object|embed|form|input|button|meta|link)\b|on[a-z]+\s*=|javascript\s*:/i;
+const UNSAFE_HTML = /<\s*(script|iframe|object|embed|form|input|button|meta|link)\b|<[^>]*\son[a-z]+\s*=|javascript\s*:/i;
 const MATH_PATTERN = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]|\$\$([\s\S]*?)\$\$|\$([^$\n]+?)\$/g;
 
 function issue(code, message, path, severity = 'error', details = undefined) {
@@ -89,6 +89,7 @@ function closeNumber(a, b) {
 }
 
 function numericConsistency(option, options, workedSolution, errors) {
+	if (/\d\s*[-\u2013]\s*\d/.test(String(option?.text || ''))) return;
 	const valueMatch = String(option?.text || '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
 	if (!valueMatch) return;
 	const correctValue = Number(valueMatch[0]);

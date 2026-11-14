@@ -179,10 +179,7 @@ The dry-run tool never imports records. Place the supplied bank folder outside t
 cd apps/server
 node src/scripts/mcpSampleDryRun.js \
   --folder "C:/path/to/cfa-level-3-bank" \
-  --courseId COURSE_ID \
-  --volumeId VOLUME_ID \
-  --moduleId MODULE_ID \
-  --topicId TOPIC_ID \
+  --mapping src/data/cfaLevel3SampleMapping.json \
   --limit 25
 ```
 
@@ -192,10 +189,12 @@ Use the mapping report to identify curriculum names needing approval:
 
 ```bash
 cd apps/server
-node src/scripts/mcpSampleMappingReport.js --folder "C:/path/to/cfa-level-3-bank"
+node src/scripts/mcpSampleMappingReport.js \
+  --folder "C:/path/to/cfa-level-3-bank" \
+  --mapping src/data/cfaLevel3SampleMapping.json
 ```
 
-Current supplied-bank audit: all 500 sets and 2,000 questions parse; 226 sets map exactly to Milven topics without overrides. The remaining sets contain missing module/topic names such as `Introduction`, `Factor-Based Asset Allocation`, ethics guidance modules and some pathway modules. Those must be mapped explicitly and reviewed; no academic records are created automatically.
+Current supplied-bank audit: all 500 sets and 2,000 questions parse. The checked-in mapping file resolves all 500 sets to Milven CFA III records with zero unresolved mappings. 226 sets map exactly without overrides; 96 source modules use reviewed module mappings, including ethics guidance modules and pathway modules. All 500 sets pass automatic validation. Warnings remain for provisional difficulty, derived equal marks and missing distractor rationales. No academic records are created automatically.
 
 ## Migration
 
