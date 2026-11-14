@@ -19,6 +19,7 @@ import { Faq } from './pages/Faq.jsx';
 import { Account } from './pages/Account.jsx';
 import { AdminTopics } from './pages/admin/AdminTopics.jsx';
 import { AdminQuestions } from './pages/admin/AdminQuestions.jsx';
+import { AdminMcpImports } from './pages/admin/AdminMcpImports.jsx';
 import { AdminQuestionEdit } from './pages/admin/AdminQuestionEdit.jsx';
 import { AdminRevision } from './pages/admin/AdminRevision.jsx';
 import { AdminVideos } from './pages/admin/AdminVideos.jsx';
@@ -824,6 +825,7 @@ export default function App() {
 						<Route path="documents" element={<AdminDocuments />} />
 						<Route path="pdf-mapping" element={<AdminPdfMapping />} />
 						<Route path="questions" element={<AdminQuestions />} />
+						<Route path="mcp-imports" element={<AdminMcpImports />} />
 						<Route path="questions/:id/edit" element={<AdminQuestionEdit />} />
 						<Route path="topics/:id/preview" element={<AdminTopicPreview />} />
 						<Route path="exams/:id/edit" element={<AdminExamEditor />} />

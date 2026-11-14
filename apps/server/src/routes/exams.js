@@ -513,7 +513,7 @@ export function examsRouter(prisma) {
     const links = await prisma.examQuestion.findMany({
       where: { examId },
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-      include: { question: { include: { options: true, parent: { select: { id: true, vignetteText: true, type: true } } } } }
+      include: { question: { include: { options: { orderBy: { position: 'asc' } }, parent: { select: { id: true, vignetteText: true, type: true } } } } }
     });
     const questions = links.map(l => ({ ...l.question, order: l.order }));
     return res.json({ questions });
@@ -868,7 +868,7 @@ export function examsRouter(prisma) {
 			include: {
 				exam: true,
 				user: { select: { id: true, email: true, firstName: true, lastName: true } },
-				answers: { include: { question: { include: { options: true, topic: true, parent: { select: { id: true, vignetteText: true, type: true } } } }, selectedOption: true } }
+				answers: { include: { question: { include: { options: { orderBy: { position: 'asc' } }, topic: true, parent: { select: { id: true, vignetteText: true, type: true } } } }, selectedOption: true } }
 			}
 		});
 		let courseName = null;
@@ -1088,7 +1088,7 @@ export function examsRouter(prisma) {
 				answers: {
 					include: {
 						question: {
-							include: { options: true, topic: true, parent: { select: { id: true, vignetteText: true, type: true } } }
+							include: { options: { orderBy: { position: 'asc' } }, topic: true, parent: { select: { id: true, vignetteText: true, type: true } } }
 						},
 						selectedOption: true
 					}
@@ -1268,7 +1268,7 @@ export function examsRouter(prisma) {
 			include: {
 				answers: {
 					include: {
-						question: { include: { options: true } },
+						question: { include: { options: { orderBy: { position: 'asc' } } } },
 						selectedOption: true
 					}
 				}
@@ -1345,7 +1345,7 @@ export function examsRouter(prisma) {
 		const question = await prisma.question.findUnique({
 			where: { id: questionId },
 			include: {
-				options: true,
+				options: { orderBy: { position: 'asc' } },
 				parent: {
 					select: {
 						id: true,
@@ -1424,7 +1424,7 @@ export function examsRouter(prisma) {
 			const questions = await prisma.question.findMany({
 				where: { id: { in: questionIds } },
 				include: {
-					options: true,
+					options: { orderBy: { position: 'asc' } },
 					topic: true,
 					parent: { select: { id: true, vignetteText: true, type: true } }
 				}
@@ -1621,7 +1621,7 @@ export function examsRouter(prisma) {
 			const questionIds = entries.map(e => e.questionId);
 			const questions = await prisma.question.findMany({
 				where: { id: { in: questionIds } },
-				include: { options: true, topic: true, parent: { select: { id: true, vignetteText: true, type: true } } }
+				include: { options: { orderBy: { position: 'asc' } }, topic: true, parent: { select: { id: true, vignetteText: true, type: true } } }
 			});
 			const questionMap = new Map(questions.map(q => [q.id, q]));
 

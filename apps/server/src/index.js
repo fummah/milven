@@ -33,6 +33,9 @@ import { initSummarySheetWorker } from './lib/summarySheets/worker.js';
 import { formulaBookPdfsRouter } from './routes/formulaBookPdfs.js';
 import { initFormulaBookPdfWorker } from './lib/formulaBooks/worker.js';
 import { moduleNotePdfsRouter } from './routes/moduleNotePdfs.js';
+import { mcpAdminRouter } from './routes/mcpAdmin.js';
+import { mcpAuthMiddleware } from './lib/mcp/tokenAuth.js';
+import { createMcpRequestHandler } from './mcp-dist/http.mjs';
 import { initModuleNotePdfWorker } from './lib/moduleNotePdfs/worker.js';
 
 /* ===========================
@@ -239,7 +242,24 @@ app.use('/api/module-note-pdfs', safe(moduleNotePdfsRouter));
 app.use('/api/module-notes', safe(moduleNotesRouter));
 app.use('/api/pdf-mapping', safe(pdfMappingRouter));
 app.use('/api/slides', safe(slidesRouter));
+app.use('/api/mcp', safe(mcpAdminRouter));
 app.use('/api', safe(testRouter));
+
+const mcpLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.MCP_RATE_LIMIT_MAX ?? 120),
+  standardHeaders: true,
+  legacyHeaders: false
+});
+const mcpHandler = createMcpRequestHandler(prisma, { endpoint: `${process.env.MCP_PUBLIC_URL || 'https://dev.milven.zbsburial.com'}/mcp` });
+app.post('/mcp', mcpLimiter, mcpAuthMiddleware(prisma), mcpHandler);
+app.get('/mcp', mcpLimiter, mcpAuthMiddleware(prisma), mcpHandler);
+app.delete('/mcp', mcpLimiter, mcpAuthMiddleware(prisma), mcpHandler);
+app.get('/.well-known/oauth-protected-resource', (_req, res) => {
+  const resource = `${process.env.MCP_PUBLIC_URL || 'https://dev.milven.zbsburial.com'}/mcp`;
+  const issuer = process.env.MCP_OAUTH_ISSUER;
+  return res.json({ resource, ...(issuer ? { authorization_servers: [issuer] } : {}), bearer_methods_supported: ['header'], scopes_supported: ['questions:read','curriculum:read','questions:validate','questions:draft','questions:commit'] });
+});
 
 /* ===========================
    STATIC UPLOADS

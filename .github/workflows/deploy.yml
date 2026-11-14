@@ -123,6 +123,10 @@ jobs:
             docker compose -f docker-compose.prod.yml run --rm api \
               npx prisma migrate status || true
 
+            echo "Backing up production database before migration..."
+            mkdir -p backups
+            docker compose -f docker-compose.prod.yml exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -F c' > "backups/milven-$(date +%Y%m%d%H%M%S).dump"
+
             echo "Applying pending Prisma migrations..."
             docker compose -f docker-compose.prod.yml run --rm api \
               npx prisma migrate deploy

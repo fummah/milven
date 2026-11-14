@@ -9,23 +9,30 @@
   },
   "scripts": {
     "dev": "nodemon src/index.js",
+    "mcp:build": "esbuild src/mcp/http.ts --bundle --platform=node --format=esm --target=node20 --outfile=src/mcp-dist/http.mjs --external:@modelcontextprotocol/sdk --external:@prisma/client --external:jose --external:zod --external:katex --external:cheerio --external:express",
+    "predev": "npm run mcp:build",
+    "prestart": "npm run mcp:build",
     "start": "node src/index.js",
     "prisma": "prisma",
     "seed": "prisma db seed",
     "test": "node --test \"test/**/*.test.mjs\"",
+    "pretest": "npm run mcp:build",
     "migrate": "node src/scripts/migrate.js",
     "migrate:dev": "prisma migrate dev --name init",
     "generate": "prisma generate"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@prisma/client": "^5.17.0",
     "@sendgrid/mail": "^8.1.6",
     "bcryptjs": "^2.4.3",
+    "cheerio": "^1.1.2",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.1.0",
+    "jose": "^6.2.17",
     "jsonwebtoken": "^9.0.2",
     "katex": "^0.17.0",
     "morgan": "^1.10.0",
@@ -40,7 +47,11 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/node": "^22.19.7",
+    "esbuild": "^0.21.5",
     "nodemon": "^3.1.7",
-    "prisma": "^5.17.0"
+    "prisma": "^5.17.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
   }
 }

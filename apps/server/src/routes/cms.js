@@ -2386,10 +2386,11 @@ export function cmsRouter(prisma, deps = {}) {
 					});
 					if (normalizedType !== 'CONSTRUCTED_RESPONSE' && options.length > 0) {
 						await tx.mcqOption.createMany({
-							data: options.map(opt => ({
+							data: options.map((opt, position) => ({
 								questionId: created.id,
 								text: opt,
-								isCorrect: opt === correctAnswer
+								isCorrect: opt === correctAnswer,
+								position
 							}))
 						});
 					}
@@ -2452,7 +2453,7 @@ export function cmsRouter(prisma, deps = {}) {
 				skip: (page - 1) * pageSize,
 				take: pageSize,
 				include: {
-					options: true,
+					options: { orderBy: { position: 'asc' } },
 					topics: { select: { id: true, name: true } },
 					concepts: { select: { id: true, name: true, topicId: true } },
 					_count: { select: { children: true } }
@@ -2486,7 +2487,18 @@ export function cmsRouter(prisma, deps = {}) {
 			subQuestions: z.array(z.object({
 				stem: z.string().min(1),
 				marks: z.number().int().positive().optional(),
-				options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional()
+				options: z.array(z.object({ text: z.string(), isCorrect: z.boolean(), rationale: z.string().optional().nullable() })).optional(),
+				qid: z.string().optional().nullable(),
+				difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
+				los: z.string().optional().nullable(),
+				traceSection: z.string().optional().nullable(),
+				tracePage: z.string().optional().nullable(),
+				keyFormulas: z.string().optional().nullable(),
+				workedSolution: z.string().optional().nullable(),
+				questionGuidelines: z.string().optional().nullable(),
+				output: z.string().optional().nullable(),
+				topicId: z.string().optional().nullable(),
+				conceptIds: z.array(z.string()).optional()
 			})).optional(),
 			qid: z.string().optional().nullable(),
 			los: z.string().optional().nullable(),
@@ -2551,7 +2563,7 @@ export function cmsRouter(prisma, deps = {}) {
 		// Create MCQ options for standalone MCQ or parent vignette question itself (if any)
 		if (q.type === 'MCQ' && parse.data.options && parse.data.options.length) {
 			await prisma.mcqOption.createMany({
-				data: parse.data.options.map(o => ({ questionId: question.id, text: o.text, isCorrect: o.isCorrect }))
+				data: parse.data.options.map((o, position) => ({ questionId: question.id, text: o.text, isCorrect: o.isCorrect, position }))
 			});
 		}
 
@@ -2559,30 +2571,36 @@ export function cmsRouter(prisma, deps = {}) {
 		if (Array.isArray(parse.data.subQuestions) && parse.data.subQuestions.length > 0 && !parentId) {
 			for (let i = 0; i < parse.data.subQuestions.length; i++) {
 				const sq = parse.data.subQuestions[i];
+				const childTopicId = sq.topicId || primaryTopicId;
+				const childPathIds = sq.topicId && sq.topicId !== primaryTopicId ? await deriveQuestionPathIdsFromTopic(sq.topicId) : pathIds;
+				const childConceptIds = Array.isArray(sq.conceptIds) ? sq.conceptIds : resolvedConceptIds;
 				const child = await prisma.question.create({
 					data: {
 						stem: sq.stem,
 						type: q.type === 'VIGNETTE_MCQ' ? 'MCQ' : 'CONSTRUCTED_RESPONSE',
 						level: q.level,
-						difficulty: q.difficulty,
-						topicId: primaryTopicId,
-						...pathIds,
-						topics: { connect: resolvedTopicIds.map(id => ({ id })) },
+						difficulty: sq.difficulty || q.difficulty,
+						topicId: childTopicId,
+						...childPathIds,
+						topics: { connect: [{ id: childTopicId }] },
+						...(childConceptIds.length ? { concepts: { connect: childConceptIds.map(cid => ({ id: cid })) } } : {}),
 						parentId: question.id,
 						orderIndex: i + 1,
 						marks: sq.marks || 1,
-						qid: qid || null,
-						los: los || null,
-						traceSection: traceSection || null,
-						tracePage: tracePage || null,
-						keyFormulas: keyFormulas || null,
-						workedSolution: workedSolution || null
+						qid: sq.qid || null,
+						los: sq.los || null,
+						traceSection: sq.traceSection || null,
+						tracePage: sq.tracePage || null,
+						keyFormulas: cleanQuestionHtml(sq.keyFormulas || null),
+						workedSolution: cleanQuestionHtml(sq.workedSolution || null),
+						questionGuidelines: sq.questionGuidelines || null,
+						output: sq.output || null
 					}
 				});
 				// Create MCQ options for vignette sub-questions
 				if (q.type === 'VIGNETTE_MCQ' && sq.options && sq.options.length) {
 					await prisma.mcqOption.createMany({
-						data: sq.options.map(o => ({ questionId: child.id, text: o.text, isCorrect: o.isCorrect }))
+						data: sq.options.map((o, position) => ({ questionId: child.id, text: o.text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
 					});
 				}
 			}
@@ -2591,10 +2609,10 @@ export function cmsRouter(prisma, deps = {}) {
 		const full = await prisma.question.findUnique({
 			where: { id: question.id },
 			include: {
-				options: true,
+				options: { orderBy: { position: 'asc' } },
 				children: {
 					orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-					include: { options: true }
+					include: { options: { orderBy: { position: 'asc' } } }
 				}
 			}
 		});
@@ -3363,13 +3381,13 @@ console.log('AI raw output:', raw);
 						});
 						if (Array.isArray(opts) && opts.length >= 2) {
 							await prisma.mcqOption.createMany({
-								data: opts.map(o => ({ questionId: child.id, text: String(o.text || '').trim() || 'Option', isCorrect: !!o.isCorrect }))
+								data: opts.map((o, position) => ({ questionId: child.id, text: String(o.text || '').trim() || 'Option', isCorrect: !!o.isCorrect, position }))
 							});
 						}
 					}
 					const full = await prisma.question.findUnique({
 						where: { id: parent.id },
-						include: { options: true, children: { orderBy: [{ orderIndex: 'asc' }], include: { options: true } } }
+						include: { options: { orderBy: { position: 'asc' } }, children: { orderBy: [{ orderIndex: 'asc' }], include: { options: { orderBy: { position: 'asc' } } } } }
 					});
 					created.push(full);
 				}
@@ -3405,10 +3423,10 @@ console.log('AI raw output:', raw);
 					});
 					if (questionType !== 'CONSTRUCTED_RESPONSE' && Array.isArray(opts) && opts.length >= 2) {
 						await prisma.mcqOption.createMany({
-							data: opts.map(o => ({ questionId: question.id, text: String(o.text || '').trim() || 'Option', isCorrect: !!o.isCorrect }))
+							data: opts.map((o, position) => ({ questionId: question.id, text: String(o.text || '').trim() || 'Option', isCorrect: !!o.isCorrect, position }))
 						});
 					}
-					const full = await prisma.question.findUnique({ where: { id: question.id }, include: { options: true } });
+					const full = await prisma.question.findUnique({ where: { id: question.id }, include: { options: { orderBy: { position: 'asc' } } } });
 					created.push(full);
 				}
 			}
@@ -4659,10 +4677,11 @@ ${formatBlock}`;
 								const opts = Array.isArray(sq?.options) ? sq.options : [];
 								if (opts.length >= 2) {
 									await tx.mcqOption.createMany({
-										data: opts.map(o => ({
+										data: opts.map((o, position) => ({
 											questionId: child.id,
 											text: cleanQuestionHtml(String(o.text || '').trim()) || 'Option',
-											isCorrect: !!o.isCorrect
+											isCorrect: !!o.isCorrect,
+											position
 										}))
 									});
 								}
@@ -4671,7 +4690,7 @@ ${formatBlock}`;
 
 						return tx.question.findUnique({
 							where: { id: parent.id },
-							include: { options: true, children: { orderBy: [{ orderIndex: 'asc' }], include: { options: true } } }
+							include: { options: { orderBy: { position: 'asc' } }, children: { orderBy: [{ orderIndex: 'asc' }], include: { options: { orderBy: { position: 'asc' } } } } }
 						});
 					});
 					created.push(full);
@@ -4736,7 +4755,7 @@ ${formatBlock}`;
 							});
 						}
 					}
-					const full = await tx.question.findUnique({ where: { id: q.id }, include: { options: true } });
+					const full = await tx.question.findUnique({ where: { id: q.id }, include: { options: { orderBy: { position: 'asc' } } } });
 					rows.push(full);
 				}
 				return rows;
@@ -4758,12 +4777,12 @@ ${formatBlock}`;
     const q = await prisma.question.findUnique({
       where: { id },
       include: {
-        options: true,
+        options: { orderBy: { position: 'asc' } },
         topics: { select: { id: true, name: true, moduleId: true, module: { select: { id: true, name: true, volumeId: true } } } },
         concepts: { select: { id: true, name: true, topicId: true } },
         children: {
           orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-          include: { options: true, topics: { select: { id: true, name: true } }, concepts: { select: { id: true, name: true, topicId: true } } }
+          include: { options: { orderBy: { position: 'asc' } }, topics: { select: { id: true, name: true } }, concepts: { select: { id: true, name: true, topicId: true } } }
         }
       }
     });
@@ -4789,7 +4808,18 @@ ${formatBlock}`;
         id: z.string().optional(),
         stem: z.string().min(1),
         marks: z.number().int().positive().optional(),
-        options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional()
+        options: z.array(z.object({ text: z.string(), isCorrect: z.boolean(), rationale: z.string().optional().nullable() })).optional(),
+        qid: z.string().optional().nullable(),
+        difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
+        los: z.string().optional().nullable(),
+        traceSection: z.string().optional().nullable(),
+        tracePage: z.string().optional().nullable(),
+        keyFormulas: z.string().optional().nullable(),
+        workedSolution: z.string().optional().nullable(),
+        questionGuidelines: z.string().optional().nullable(),
+        output: z.string().optional().nullable(),
+        topicId: z.string().optional().nullable(),
+        conceptIds: z.array(z.string()).optional()
       })).optional(),
       qid: z.string().optional().nullable(),
       los: z.string().optional().nullable(),
@@ -4867,7 +4897,7 @@ ${formatBlock}`;
       await prisma.mcqOption.deleteMany({ where: { questionId: id } });
       if (payload.options.length) {
         await prisma.mcqOption.createMany({
-          data: payload.options.map(o => ({ questionId: id, text: o.text, isCorrect: o.isCorrect }))
+          data: payload.options.map((o, position) => ({ questionId: id, text: o.text, isCorrect: o.isCorrect, position }))
         });
       }
     }
@@ -4898,12 +4928,29 @@ ${formatBlock}`;
         const childType = newType === 'VIGNETTE_MCQ' ? 'MCQ' : 'CONSTRUCTED_RESPONSE';
         if (sq.id && existingChildIds.has(sq.id)) {
           // Update existing child
+          const childTopicId = sq.topicId || topicId;
+          const childPathIds = sq.topicId && sq.topicId !== topicId ? await deriveQuestionPathIdsFromTopic(sq.topicId) : effPathIds;
+          if (sq.topicId && (!childPathIds.courseId || !childPathIds.volumeId || !childPathIds.moduleId)) {
+            return res.status(400).json({ error: 'Child topic path is incomplete.' });
+          }
           await prisma.question.update({
             where: { id: sq.id },
             data: {
-              stem: sq.stem,
+              stem: cleanQuestionHtml(sq.stem),
               orderIndex: i + 1,
-              marks: sq.marks || 1
+              marks: sq.marks || 1,
+              ...(typeof sq.difficulty !== 'undefined' ? { difficulty: sq.difficulty } : {}),
+              ...(childTopicId ? { topicId: childTopicId, topics: { set: [{ id: childTopicId }] } } : {}),
+              ...(childPathIds ? childPathIds : {}),
+              ...(typeof sq.qid !== 'undefined' ? { qid: sq.qid || null } : {}),
+              ...(typeof sq.los !== 'undefined' ? { los: sq.los || null } : {}),
+              ...(typeof sq.traceSection !== 'undefined' ? { traceSection: sq.traceSection || null } : {}),
+              ...(typeof sq.tracePage !== 'undefined' ? { tracePage: sq.tracePage || null } : {}),
+              ...(typeof sq.keyFormulas !== 'undefined' ? { keyFormulas: cleanQuestionHtml(sq.keyFormulas || null) } : {}),
+              ...(typeof sq.workedSolution !== 'undefined' ? { workedSolution: cleanQuestionHtml(sq.workedSolution || null) } : {}),
+              ...(typeof sq.questionGuidelines !== 'undefined' ? { questionGuidelines: sq.questionGuidelines || null } : {}),
+              ...(typeof sq.output !== 'undefined' ? { output: sq.output || null } : {}),
+              ...(Array.isArray(sq.conceptIds) ? { concepts: { set: sq.conceptIds.map(cid => ({ id: cid })) } } : {})
             }
           });
           // Replace options
@@ -4911,29 +4958,43 @@ ${formatBlock}`;
             await prisma.mcqOption.deleteMany({ where: { questionId: sq.id } });
             if (sq.options.length) {
               await prisma.mcqOption.createMany({
-                data: sq.options.map(o => ({ questionId: sq.id, text: o.text, isCorrect: o.isCorrect }))
+                data: sq.options.map((o, position) => ({ questionId: sq.id, text: o.text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
               });
             }
           }
         } else {
           // Create new child
+          const childTopicId = sq.topicId || topicId;
+          const childPathIds = sq.topicId && sq.topicId !== topicId ? await deriveQuestionPathIdsFromTopic(sq.topicId) : effPathIds;
+          if (sq.topicId && (!childPathIds.courseId || !childPathIds.volumeId || !childPathIds.moduleId)) {
+            return res.status(400).json({ error: 'Child topic path is incomplete.' });
+          }
           const child = await prisma.question.create({
             data: {
-              stem: sq.stem,
+              stem: cleanQuestionHtml(sq.stem),
               type: childType,
               level: payload.level || existing.level,
-              difficulty: payload.difficulty || existing.difficulty,
-              topicId,
-              ...effPathIds,
-              topics: topicId ? { connect: [{ id: topicId }] } : {},
+              difficulty: sq.difficulty || payload.difficulty || existing.difficulty,
+              topicId: childTopicId,
+              ...childPathIds,
+              topics: childTopicId ? { connect: [{ id: childTopicId }] } : {},
+              ...(Array.isArray(sq.conceptIds) && sq.conceptIds.length ? { concepts: { connect: sq.conceptIds.map(cid => ({ id: cid })) } } : {}),
               parentId: id,
               orderIndex: i + 1,
-              marks: sq.marks || 1
+              marks: sq.marks || 1,
+              qid: sq.qid || null,
+              los: sq.los || null,
+              traceSection: sq.traceSection || null,
+              tracePage: sq.tracePage || null,
+              keyFormulas: cleanQuestionHtml(sq.keyFormulas || null),
+              workedSolution: cleanQuestionHtml(sq.workedSolution || null),
+              questionGuidelines: sq.questionGuidelines || null,
+              output: sq.output || null
             }
           });
           if (newType === 'VIGNETTE_MCQ' && sq.options && sq.options.length) {
             await prisma.mcqOption.createMany({
-              data: sq.options.map(o => ({ questionId: child.id, text: o.text, isCorrect: o.isCorrect }))
+              data: sq.options.map((o, position) => ({ questionId: child.id, text: o.text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
             });
           }
         }
@@ -4943,10 +5004,10 @@ ${formatBlock}`;
     const full = await prisma.question.findUnique({
       where: { id },
       include: {
-        options: true,
+        options: { orderBy: { position: 'asc' } },
         children: {
           orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-          include: { options: true }
+          include: { options: { orderBy: { position: 'asc' } } }
         }
       }
     });
@@ -4980,7 +5041,7 @@ ${formatBlock}`;
     const questions = await prisma.question.findMany({
       where: { parentId },
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-      include: { options: true }
+      include: { options: { orderBy: { position: 'asc' } } }
     });
     return res.json({ questions: questions.map(cleanQuestionFields) });
   });

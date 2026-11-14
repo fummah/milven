@@ -29,3 +29,6 @@ yarn-error.log
 
 # Milven Slides generated storage
 apps/server/storage/
+
+# MCP build artifact
+apps/server/src/mcp-dist/

@@ -23,6 +23,7 @@ RUN npm install --include=dev
 COPY . .
 # ensure client is generated with schema path
 RUN npx prisma generate --schema=./prisma/schema.prisma
+RUN npm run mcp:build
 EXPOSE 4000
 CMD ["node", "src/index.js"]
 

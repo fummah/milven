@@ -45,6 +45,11 @@ services:
 
       CORS_ORIGIN: ${CORS_ORIGIN}
       WEB_BASE_URL: ${WEB_BASE_URL}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:-https://dev.milven.zbsburial.com}
+      MCP_RATE_LIMIT_MAX: ${MCP_RATE_LIMIT_MAX:-120}
+      MCP_OAUTH_ISSUER: ${MCP_OAUTH_ISSUER:-}
+      MCP_OAUTH_AUDIENCE: ${MCP_OAUTH_AUDIENCE:-}
+      MCP_OAUTH_JWKS_URL: ${MCP_OAUTH_JWKS_URL:-}
 
       SLIDES_STORAGE_DIR: /app/storage/milven-slides
       DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL}
