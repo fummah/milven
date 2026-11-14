@@ -7,83 +7,76 @@ import { validateQuestionPayload } from './questionValidation.js';
 import { validateAcademicMapping } from './questionCurriculum.js';
 
 function clean(value) {
-	return String(value || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
+	return String(value || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function localField($, node, label) {
-	const pattern = new RegExp(`${label}\\s*[:\\-]\\s*`, 'i');
-	let value = null;
-	$(node).find('*').filter((_, element) => $(element).children().length === 0).each((_, element) => {
-		if (value) return;
-		const text = clean($(element).text());
-		if (pattern.test(text)) value = text.replace(pattern, '').trim();
-	});
-	return value;
+function cleanHtml(value) {
+	return String(value || '')
+		.replace(/\u0000/g, '')
+		.replace(/<p[^>]*>\s*<\/p>/gi, '')
+		.replace(/\s{2,}/g, ' ')
+		.trim();
 }
 
-function fieldFromText($, label) {
-	const pattern = new RegExp(`${label}\\s*[:\\-]\\s*`, 'i');
-	const nodes = $('body *').filter((_, element) => $(element).children().length === 0);
-	let value = '';
-	nodes.each((_, element) => {
-		if (value) return;
-		const text = clean($(element).text());
-		if (pattern.test(text)) value = text.replace(pattern, '').trim();
-	});
-	return value || null;
+function splitMetadata(text) {
+	return String(text || '').split(/\s*[·•�]\s*/).map(clean).filter(Boolean);
 }
 
-function sectionAfterHeading($, headingPattern) {
-	let value = '';
-	$('body *').each((_, element) => {
-		if (value) return;
-		const node = $(element);
-		if (!/^H[1-6]$/.test(element.tagName || '')) return;
-		if (!headingPattern.test(clean(node.text()))) return;
-		const chunks = [];
-		let next = node.next();
-		while (next.length && !/^H[1-6]$/.test(next[0].tagName || '')) {
-			const text = clean(next.text());
-			if (text) chunks.push(text);
-			next = next.next();
-		}
-		value = chunks.join('\n').trim();
-	});
-	return value || null;
+function extractTex($, node) {
+	const annotations = $(node).find('annotation[encoding="application/x-tex"]').map((_, element) => clean($(element).text())).get().filter(Boolean);
+	if (annotations.length) return annotations.map(annotation => `\\[ ${annotation} \\]`).join('\n');
+	return clean($(node).text());
 }
 
-function answerLetter(value) {
-	const match = String(value || '').match(/\b([A-F])\b/i);
-	return match ? match[1].toUpperCase() : null;
+function extractPage(section) {
+	const text = clean(section);
+	const match = text.match(/\((?:p\.?|page)\s*([^)]+)\)/i);
+	return match ? `p. ${match[1].trim()}` : null;
 }
 
-function parseOptionsFromNode($, node) {
-	const options = [];
-	const direct = $(node).find('.option, .answer-option, [data-option]');
-	if (direct.length) {
-		direct.each((_, optionNode) => {
-			const option = $(optionNode);
-			const label = String(option.attr('data-label') || option.find('.label, .option-label').text() || option.text()).match(/\b([A-F])\b/)?.[1]?.toUpperCase();
-			const text = clean(option.find('.text, .option-text').text() || option.text()).replace(/^[A-F][).:\-]\s*/i, '');
-			const isCorrect = option.hasClass('correct') || option.attr('data-correct') === 'true' || /correct/i.test(option.attr('class') || '');
-			if (text) options.push({ label: label || String.fromCharCode(65 + options.length), text, isCorrect });
-		});
-		return options;
+function sectionContent($, sol, heading) {
+	const headingNode = $(sol).find('h4').filter((_, element) => clean($(element).text()).toLowerCase() === heading.toLowerCase()).first();
+	if (!headingNode.length) return null;
+	const chunks = [];
+	let next = headingNode.next();
+	while (next.length && !/^H[1-6]$/i.test(next[0].tagName || '') && next[0].tagName !== 'dl') {
+		chunks.push($.html(next));
+		next = next.next();
 	}
-	$(node).find('li').each((_, li) => {
-		const text = clean($(li).text());
-		const match = text.match(/^([A-F])[).:\-]\s*(.+)$/i);
-		if (!match) return;
-		options.push({ label: match[1].toUpperCase(), text: match[2].trim(), isCorrect: false });
-	});
-	return options;
+	return chunks.join('\n').trim() || null;
 }
 
-function questionNodes($) {
-	const explicit = $('[data-question], .question, .mcq-question, .item');
-	if (explicit.length) return explicit.toArray();
-	const headings = $('h2, h3, h4').filter((_, element) => /^question\s+\d+/i.test(clean($(element).text()))).toArray();
-	return headings.map(heading => $(heading).parent().get(0)).filter(Boolean);
+function optionText($, option) {
+	const clone = $(option).clone();
+	clone.find('.ltr').remove();
+	return clean(clone.text());
+}
+
+function parseHeader($) {
+	const headerText = clean($('header p').first().text());
+	const parts = splitMetadata(headerText);
+	const setIndex = parts.findIndex(part => /^SET-\d{3}$/i.test(part));
+	const setId = setIndex >= 0 ? parts[setIndex].toUpperCase() : (headerText.match(/SET-\d{3}/i)?.[0]?.toUpperCase() || null);
+	const volume = parts.find((part, index) => index > setIndex && !/^Learning Module/i.test(part) && !/points?$/i.test(part) && !/^review:/i.test(part)) || null;
+	const modulePart = parts.find(part => /^Learning Module\s+\d+/i.test(part)) || null;
+	const learningModule = modulePart ? modulePart.replace(/^Learning Module\s+\d+\s*:\s*/i, '').trim() : null;
+	const pointsPart = parts.find(part => /points?$/i.test(part)) || headerText.match(/(\d+)\s*points?/i)?.[0] || null;
+	const totalMarks = Number(String(pointsPart || '').match(/\d+/)?.[0] || 0);
+	const caseStudyTitle = clean($('header h1').first().text()) || null;
+	return { setId, volume, learningModule, learningModuleFull: modulePart, totalMarks, caseStudyTitle };
+}
+
+function parseVignette($, volume) {
+	const node = $('.vig').first();
+	if (!node.length) return null;
+	const clone = node.clone();
+	clone.find('p').each((_, element) => {
+		const text = clean($(element).text());
+		if (!text) $(element).remove();
+		else if (volume && text === volume) $(element).remove();
+		else if (/TOTAL POINT VALUE OF THIS QUESTION SET/i.test(text)) $(element).remove();
+	});
+	return cleanHtml(clone.html());
 }
 
 export function parseSampleBankIndex(html, { sourceFile = 'index.html' } = {}) {
@@ -93,10 +86,16 @@ export function parseSampleBankIndex(html, { sourceFile = 'index.html' } = {}) {
 		const href = $(element).attr('href');
 		const match = String(href || '').match(/SET-(\d{3})\.html/i);
 		if (!match) return;
+		const row = $(element).closest('tr');
+		const cells = row.find('td').map((__, cell) => clean($(cell).text())).get();
 		sets.push({
 			setId: `SET-${match[1]}`,
 			filename: path.basename(href),
-			title: clean($(element).text()) || `SET-${match[1]}`,
+			title: cells[3] || clean($(element).text()) || `SET-${match[1]}`,
+			volume: cells[1] || null,
+			learningModuleFull: cells[2] || null,
+			learningModule: cells[2] ? cells[2].replace(/^Learning Module\s+\d+\s*:\s*/i, '').trim() : null,
+			reviewStatus: cells[4] || null,
 			sourceFile
 		});
 	});
@@ -105,49 +104,89 @@ export function parseSampleBankIndex(html, { sourceFile = 'index.html' } = {}) {
 
 export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {}) {
 	const $ = cheerio.load(html);
-	const derivedSetId = setId || clean($('[data-set-id]').first().attr('data-set-id')) || clean($('title').text()).match(/SET-\d{3}/i)?.[0] || null;
-	const volume = fieldFromText($, 'Volume');
-	const learningModule = fieldFromText($, 'Learning Module');
-	const caseStudyTitle = fieldFromText($, 'Case Study') || clean($('h1').first().text()) || null;
-	const vignette = $('.vignette, #vignette, [data-vignette]').first().text()
-		|| sectionAfterHeading($, /case study|vignette/i)
-		|| null;
+	const header = parseHeader($);
+	const derivedSetId = setId || header.setId || clean($('title').text()).match(/SET-\d{3}/i)?.[0]?.toUpperCase() || null;
+	const vignette = parseVignette($, header.volume);
 	const questions = [];
-	for (const node of questionNodes($)) {
-		const wrapper = $(node);
-		const rawQuestion = clean(wrapper.find('.stem, .question-stem, .question-text').first().text() || wrapper.clone().children('h2,h3,h4,p').first().text() || wrapper.text());
-		const number = rawQuestion.match(/^question\s+(\d+)/i)?.[1] || String(questions.length + 1);
-		const options = parseOptionsFromNode($, node);
-		const correctAnswer = answerLetter(localField($, node, 'Correct Answer') || localField($, node, 'Answer') || fieldFromText($, 'Correct Answer') || fieldFromText($, 'Answer') || wrapper.find('.correct-answer, [data-correct-answer]').first().text());
-		if (correctAnswer && options.length) {
-			for (const option of options) option.isCorrect = option.label === correctAnswer;
-		}
+	$('section.q').each((index, sectionNode) => {
+		const section = $(sectionNode);
+		const qhead = section.find('.qhead').first();
+		const qn = clean(qhead.find('.qn').first().text());
+		const metaText = clean(qhead.find('.meta').first().text());
+		const qid = metaText.match(/(Q-[A-Z0-9-]+)\s*$/i)?.[1] || null;
+		const topicName = clean(metaText.replace(/\s*[·•�]\s*Q-[A-Z0-9-]+\s*$/i, '')) || null;
+		const stemParts = [];
+		section.children().each((_, child) => {
+			const node = $(child);
+			const className = String(child.attribs?.class || '');
+			if (className.includes('qhead')) return;
+			if (className.includes('opts') || child.tagName === 'ol') return false;
+			if (className.includes('sol') || className.includes('reveal') || child.tagName === 'button') return;
+			stemParts.push($.html(node));
+		});
+		const options = [];
+		section.find('ol.opts li.opt').each((_, optionNode) => {
+			const option = $(optionNode);
+			options.push({
+				label: clean(option.find('.ltr').first().text()) || String.fromCharCode(65 + options.length),
+				text: optionText($, optionNode),
+				isCorrect: option.hasClass('ok')
+			});
+		});
+		const sol = section.find('.sol').first();
+		const answerText = clean(sol.find('.key').first().text());
+		const correctAnswer = answerText.match(/Answer\s*:\s*([A-F])/i)?.[1]?.toUpperCase() || options.find(option => option.isCorrect)?.label || null;
+		if (correctAnswer) for (const option of options) option.isCorrect = option.label === correctAnswer;
+		const workedSolution = sectionContent($, sol, 'Worked solution');
+		const explanation = sectionContent($, sol, 'Explanation');
+		const keyFormulasNode = sol.find('h4').filter((_, element) => /^Key formulas?$/i.test(clean($(element).text()))).first();
+		const keyFormulas = keyFormulasNode.length
+			? (() => {
+				const formulaNode = keyFormulasNode.nextAll('p, div').first();
+				const value = formulaNode.length ? extractTex($, formulaNode) : null;
+				return value && !/^none\b/i.test(value) ? value : null;
+			})()
+			: null;
+		const trace = {};
+		sol.find('dl.trace dt').each((_, dt) => {
+			const key = clean($(dt).text());
+			const value = clean($(dt).next('dd').text());
+			if (key && value) trace[key.toLowerCase()] = value;
+		});
+		const sectionText = trace.section || null;
+		const commonMistake = clean(sol.find('p').filter((_, element) => /^Common mistake\s*:/i.test(clean($(element).text()))).first().text())
+			.replace(/^Common mistake\s*:\s*/i, '') || null;
+		const conceptsTested = clean(sol.find('p').filter((_, element) => /^Concepts tested\s*:/i.test(clean($(element).text()))).first().text())
+			.replace(/^Concepts tested\s*:\s*/i, '') || trace.concept || null;
 		questions.push({
-			number: Number(number),
-			stem: rawQuestion.replace(/^question\s+\d+\s*[:.\-]?\s*/i, '').trim(),
+			number: Number(qn.match(/\d+/)?.[0] || index + 1),
+			externalQuestionId: qid,
+			topicName,
+			stem: cleanHtml(stemParts.join('\n')),
 			options,
 			correctAnswer,
-			workedSolution: clean(wrapper.find('.worked-solution, .solution').first().text()) || sectionAfterHeading($, /worked solution/i) || null,
-			explanation: clean(wrapper.find('.explanation').first().text()) || null,
-			commonMistakes: clean(wrapper.find('.common-mistakes').first().text()) || sectionAfterHeading($, /common mistakes?/i),
-			los: localField($, node, 'LOS') || fieldFromText($, 'LOS') || wrapper.find('[data-los]').first().attr('data-los') || null,
-			traceSection: localField($, node, 'Trace Section') || localField($, node, 'Section') || fieldFromText($, 'Section') || fieldFromText($, 'Trace Section'),
-			tracePage: localField($, node, 'Trace Page') || localField($, node, 'Page') || fieldFromText($, 'Page') || fieldFromText($, 'Trace Page'),
-			conceptsTested: localField($, node, 'Concepts Tested') || localField($, node, 'Concept') || fieldFromText($, 'Concepts Tested') || fieldFromText($, 'Concept'),
-			keyFormulas: localField($, node, 'Key Formulas?') || localField($, node, 'Formulas?') || fieldFromText($, 'Key Formulas?') || fieldFromText($, 'Formulas?'),
-			marks: Number(localField($, node, 'Marks') || fieldFromText($, 'Marks') || 3)
+			workedSolution,
+			explanation,
+			commonMistake,
+			conceptsTested,
+			los: trace.los || null,
+			traceSection: sectionText ? sectionText.replace(/\s*\([^)]*\)\s*$/, '').trim() : null,
+			tracePage: extractPage(sectionText || ''),
+			keyFormulas,
+			marks: null
 		});
-	}
-	const totalMarks = questions.reduce((sum, question) => sum + (Number(question.marks) || 0), 0);
+	});
+	const totalMarks = header.totalMarks || 0;
 	return {
 		setId: derivedSetId,
 		sourceFile,
-		volume,
-		learningModule,
-		caseStudyTitle,
-		vignette: clean(vignette),
+		volume: header.volume,
+		learningModule: header.learningModule,
+		learningModuleFull: header.learningModuleFull,
+		caseStudyTitle: header.caseStudyTitle,
+		vignette,
 		questions,
-		totalMarks: Number(fieldFromText($, 'Total Marks') || totalMarks),
+		totalMarks,
 		rawFieldAvailability: {
 			vignette: Boolean(vignette),
 			options: questions.some(question => question.options.length > 0),
@@ -156,7 +195,9 @@ export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {
 			los: questions.some(question => question.los),
 			trace: questions.some(question => question.traceSection || question.tracePage),
 			concepts: questions.some(question => question.conceptsTested),
-			formulas: questions.some(question => question.keyFormulas)
+			formulas: questions.some(question => question.keyFormulas && !/none/i.test(question.keyFormulas)),
+			marks: questions.some(question => question.marks),
+			difficulty: questions.some(question => question.difficulty)
 		}
 	};
 }
@@ -183,63 +224,120 @@ export async function loadSampleBank(folder) {
 
 async function resolveAcademic(prisma, sample, { courseId, volumeId, moduleId } = {}) {
 	const errors = [];
+	const warnings = [];
 	let resolvedCourseId = courseId || null;
 	let resolvedVolumeId = volumeId || null;
 	let resolvedModuleId = moduleId || null;
 	if (!resolvedCourseId && sample.volume) {
-		const links = await prisma.volume.findMany({
+		const candidates = await prisma.volume.findMany({
 			where: { name: { equals: sample.volume, mode: 'insensitive' } },
 			select: { id: true, name: true, courseLinks: { select: { courseId: true } } }
 		});
-		if (links.length === 1 && links[0].courseLinks.length === 1) {
-			resolvedVolumeId = links[0].id;
-			resolvedCourseId = links[0].courseLinks[0].courseId;
+		if (candidates.length === 1 && candidates[0].courseLinks.length === 1) {
+			resolvedVolumeId = candidates[0].id;
+			resolvedCourseId = candidates[0].courseLinks[0].courseId;
 		} else {
-			errors.push({ code: 'VOLUME_MAPPING_REQUIRED', message: `Volume "${sample.volume}" requires administrator mapping.`, candidates: links });
+			errors.push({ code: 'VOLUME_MAPPING_REQUIRED', message: `Volume "${sample.volume}" requires administrator mapping.`, candidates });
 		}
 	}
 	if (!resolvedModuleId && sample.learningModule && resolvedVolumeId) {
-		const modules = await prisma.module.findMany({
+		const candidates = await prisma.module.findMany({
 			where: { volumeId: resolvedVolumeId, name: { equals: sample.learningModule, mode: 'insensitive' } },
 			select: { id: true, name: true }
 		});
-		if (modules.length === 1) resolvedModuleId = modules[0].id;
-		else errors.push({ code: 'MODULE_MAPPING_REQUIRED', message: `Learning Module "${sample.learningModule}" requires administrator mapping.`, candidates: modules });
+		if (candidates.length === 1) resolvedModuleId = candidates[0].id;
+		else errors.push({ code: 'MODULE_MAPPING_REQUIRED', message: `Learning Module "${sample.learningModule}" requires administrator mapping.`, candidates });
 	}
-	return { courseId: resolvedCourseId, volumeId: resolvedVolumeId, moduleId: resolvedModuleId, errors };
+	if (sample.totalMarks && sample.questions.length && sample.totalMarks % sample.questions.length !== 0) {
+		warnings.push({ code: 'MARKS_NOT_EQUALLY_DIVISIBLE', message: `Set total ${sample.totalMarks} does not divide evenly across ${sample.questions.length} questions.` });
+	}
+	return { courseId: resolvedCourseId, volumeId: resolvedVolumeId, moduleId: resolvedModuleId, errors, warnings };
 }
 
-export async function transformSampleSetToQuestion(prisma, sample, { courseId, volumeId, moduleId, primaryTopicId } = {}) {
+export async function transformSampleSetToQuestion(prisma, sample, {
+	courseId,
+	volumeId,
+	moduleId,
+	primaryTopicId,
+	topicMap = {},
+	conceptMap = {},
+	difficulty = 'HARD',
+	deriveEqualMarks = true
+} = {}) {
 	const academic = await resolveAcademic(prisma, sample, { courseId, volumeId, moduleId });
-	if (!primaryTopicId) {
-		academic.errors.push({ code: 'TOPIC_MAPPING_REQUIRED', message: 'A primary Milven Topic ID is required for this sample set.' });
+	const warnings = [...academic.warnings];
+	if (!primaryTopicId && !Object.keys(topicMap).length) academic.errors.push({ code: 'TOPIC_MAPPING_REQUIRED', message: 'A primary Milven Topic ID or explicit topicMap is required for this sample set.' });
+	let availableTopics = [];
+	if (academic.moduleId) {
+		availableTopics = await prisma.topic.findMany({
+			where: { moduleId: academic.moduleId },
+			select: { id: true, name: true },
+			orderBy: [{ order: 'asc' }, { name: 'asc' }]
+		});
 	}
-	const questions = sample.questions.map((question, index) => ({
-		externalQuestionId: `${sample.setId}-Q${String(question.number || index + 1).padStart(3, '0')}`,
-		stem: question.stem,
-		difficulty: 'HARD',
-		marks: question.marks,
-		primaryTopicId,
-		additionalTopicIds: [],
-		conceptIds: [],
-		los: question.los,
-		traceSection: question.traceSection,
-		tracePage: question.tracePage,
-		keyFormulas: question.keyFormulas,
-		workedSolution: question.workedSolution,
-		explanation: question.explanation,
-		options: question.options.map((option, optionIndex) => ({
-			label: option.label || String.fromCharCode(65 + optionIndex),
-			text: option.text,
-			isCorrect: option.isCorrect,
-			rationale: null
-		})),
-		reviewMetadata: {
-			sampleBank: sample.sourceFile,
-			commonMistakes: question.commonMistakes,
-			conceptsTested: question.conceptsTested
+	const exactTopics = new Map(availableTopics.map(topic => [topic.name.toLowerCase(), topic.id]));
+	const sourceTopicMap = new Map();
+	for (const question of sample.questions) {
+		const sourceName = String(question.topicName || '').trim();
+		if (!sourceName) continue;
+		const mappedId = topicMap[sourceName] || exactTopics.get(sourceName.toLowerCase()) || null;
+		if (mappedId) sourceTopicMap.set(sourceName, mappedId);
+		else if (primaryTopicId) {
+			sourceTopicMap.set(sourceName, primaryTopicId);
+			warnings.push({ code: 'TOPIC_FALLBACK_PRIMARY', message: `Source topic "${sourceName}" is using the explicitly supplied primary topic fallback. Review this mapping.`, sourceTopic: sourceName });
+		} else {
+			const candidates = availableTopics.filter(topic => topic.name.toLowerCase().includes(sourceName.toLowerCase()) || sourceName.toLowerCase().includes(topic.name.toLowerCase())).slice(0, 5);
+			academic.errors.push({ code: 'TOPIC_MAPPING_REQUIRED', message: `Source topic "${sourceName}" requires explicit mapping to a Milven topic.`, sourceTopic: sourceName, candidates });
 		}
-	}));
+	}
+	if (!sample.questions.some(question => question.difficulty)) {
+		warnings.push({ code: 'DIFFICULTY_PROVISIONAL', message: `Source set has no difficulty field; dry-run uses ${difficulty} provisionally.` });
+	}
+	const equalMarks = deriveEqualMarks && sample.totalMarks && sample.questions.length && sample.totalMarks % sample.questions.length === 0
+		? sample.totalMarks / sample.questions.length
+		: null;
+	if (!equalMarks) warnings.push({ code: 'PER_QUESTION_MARKS_REQUIRED', message: 'Source set does not provide per-question marks; administrator mapping is required.' });
+	const subQuestions = sample.questions.map((question, index) => {
+		const missing = [];
+		const mappedTopicId = topicMap[question.topicName] || exactTopics.get(String(question.topicName || '').toLowerCase()) || primaryTopicId || null;
+		const mappedConceptIds = Array.isArray(question.conceptIds) ? question.conceptIds.filter(Boolean) : [];
+		if (!question.stem) missing.push('stem');
+		if (!question.options.length) missing.push('options');
+		if (!question.correctAnswer) missing.push('correctAnswer');
+		if (question.options.filter(option => option.isCorrect).length !== 1) missing.push('singleCorrectOption');
+		if (!question.workedSolution) missing.push('workedSolution');
+		if (!question.los) missing.push('los');
+		if (!question.keyFormulas) missing.push('keyFormulas');
+		return {
+			externalQuestionId: question.externalQuestionId || `${sample.setId}-Q${String(question.number || index + 1).padStart(3, '0')}`,
+			stem: question.stem,
+			difficulty,
+			marks: question.marks || equalMarks || null,
+			primaryTopicId: mappedTopicId,
+			additionalTopicIds: [],
+			conceptIds: mappedConceptIds.length ? mappedConceptIds : (Array.isArray(conceptMap[question.conceptsTested]) ? conceptMap[question.conceptsTested] : []),
+			los: question.los,
+			traceSection: question.traceSection,
+			tracePage: question.tracePage,
+			keyFormulas: question.keyFormulas,
+			workedSolution: [question.workedSolution, question.explanation ? `Explanation: ${question.explanation}` : null].filter(Boolean).join('\n\n') || null,
+			explanation: question.explanation,
+			options: question.options.map((option, optionIndex) => ({
+				label: option.label || String.fromCharCode(65 + optionIndex),
+				text: option.text,
+				isCorrect: option.isCorrect,
+				rationale: null
+			})),
+			reviewMetadata: {
+				sourceSetId: sample.setId,
+				sourceQuestionId: question.externalQuestionId,
+				sourceTopicName: question.topicName,
+				commonMistake: question.commonMistake,
+				conceptsTested: question.conceptsTested,
+				missingSourceFields: missing
+			}
+		};
+	});
 	const payload = {
 		schemaVersion: 'sample-bank-dry-run',
 		externalQuestionId: sample.setId,
@@ -247,25 +345,35 @@ export async function transformSampleSetToQuestion(prisma, sample, { courseId, v
 		courseId: academic.courseId,
 		volumeId: academic.volumeId,
 		moduleId: academic.moduleId,
-		primaryTopicId,
-		difficulty: 'HARD',
-		marks: questions.reduce((sum, question) => sum + question.marks, 0),
+		primaryTopicId: primaryTopicId || sourceTopicMap.values().next().value || null,
+		difficulty,
+		marks: sample.totalMarks || subQuestions.reduce((sum, question) => sum + (question.marks || 0), 0),
 		stem: sample.caseStudyTitle || sample.setId,
 		vignetteText: sample.vignette,
-		subQuestions: questions,
+		subQuestions,
 		generation: {
-			source: 'SAMPLE_BANK_IMPORT',
+			source: 'SAMPLE_BANK_DRY_RUN',
 			client: 'milven-sample-bank',
 			generatedAt: null
+		},
+		reviewMetadata: {
+			sourceSetId: sample.setId,
+			sourceFile: sample.sourceFile,
+			sourceVolume: sample.volume,
+			sourceLearningModule: sample.learningModuleFull || sample.learningModule,
+			sourceTotalMarks: sample.totalMarks,
+			derivedEqualMarks: equalMarks,
+			provisionalDifficulty: difficulty,
+			warnings
 		}
 	};
-	return { academic, payload };
+	return { academic: { ...academic, warnings }, payload };
 }
 
 export async function dryRunSampleImport(prisma, sample, mapping = {}) {
 	const { academic, payload } = await transformSampleSetToQuestion(prisma, sample, mapping);
 	if (academic.errors.length) {
-		return { ok: false, setId: sample.setId, mappingErrors: academic.errors, parsed: sample, mappedPayload: payload };
+		return { ok: false, setId: sample.setId, mappingErrors: academic.errors, warnings: academic.warnings, parsed: sample, mappedPayload: payload };
 	}
 	let normalized;
 	try {
@@ -282,6 +390,7 @@ export async function dryRunSampleImport(prisma, sample, mapping = {}) {
 		mappedPayload: normalized,
 		validation,
 		duplicates,
+		warnings: academic.warnings,
 		automaticValidationOnly: true,
 		humanReviewRequired: true
 	};

@@ -201,28 +201,21 @@ test('sample bank parser preserves set structure and field boundaries', async ()
 	const index = '<a href="SET-001.html">SET 1</a><a href="SET-002.html">SET 2</a>';
 	assert.equal(parseSampleBankIndex(index).length, 2);
 	const html = `
-	<html><head><title>SET-001</title></head><body>
-	<h1>Capital Market Expectations Case</h1>
-	<p>Volume: Asset Allocation</p>
-	<p>Learning Module: Capital Market Expectations</p>
-	<div class="vignette">A committee reviews inflation, policy rates and long-run return assumptions. It documents evidence before changing the strategic allocation.</div>
-	<div class="question" data-question>
-		<h3>Question 1</h3><p class="stem">Which action is most appropriate?</p>
-		<div class="option" data-label="A" data-correct="false"><span class="text">Act immediately.</span></div>
-		<div class="option" data-label="B" data-correct="true"><span class="text">Document the evidence.</span></div>
-		<div class="option" data-label="C" data-correct="false"><span class="text">Ignore the signals.</span></div>
-		<p>LOS: LOS 1.a</p><p>Section: Asset Allocation</p><p>Page: p. 10</p><p>Marks: 3</p>
-		<div class="worked-solution">Step 1: review evidence. Step 2: document conclusion.</div>
-	</div>
-	<div class="question" data-question>
-		<h3>Question 2</h3><p class="stem">Which condition would justify a revision?</p>
-		<div class="option" data-label="A" data-correct="true"><span class="text">Verified structural change.</span></div>
-		<div class="option" data-label="B" data-correct="false"><span class="text">Unverified opinion.</span></div>
-		<div class="option" data-label="C" data-correct="false"><span class="text">No new evidence.</span></div>
-		<p>LOS: LOS 1.b</p><p>Section: Asset Allocation</p><p>Page: p. 11</p><p>Marks: 3</p>
-		<div class="worked-solution">Step 1: distinguish structural change. Step 2: revise only with evidence.</div>
-	</div>
-	</body></html>`;
+	<html><head><title>SET-001</title></head><body><main>
+	<header><h1>Capital Market Expectations Case</h1><p>SET-001 \u00b7 Asset Allocation \u00b7 Learning Module 1: Capital Market Expectations \u00b7 6 points \u00b7 review: unchecked</p></header>
+	<div class="vig"><p><strong>Asset Allocation</strong></p><p><strong>TOTAL POINT VALUE OF THIS QUESTION SET IS 6 POINTS</strong></p><p>A committee reviews inflation, policy rates and long-run return assumptions. It documents evidence before changing the strategic allocation.</p></div>
+	<h2>Questions</h2>
+	<section class="q"><div class="qhead"><span class="qn">Question 1</span><span class="meta">Topic One \u00b7 Q-TEST-001</span></div>
+	<p>Which action is most appropriate?</p>
+	<ol class="opts"><li class="opt"><span class="ltr">A</span><span>Act immediately.</span></li><li class="opt ok"><span class="ltr">B</span><span>Document the evidence.</span></li><li class="opt"><span class="ltr">C</span><span>Ignore the signals.</span></li></ol>
+	<button class="reveal">Show answer and solution</button>
+	<div class="sol" hidden><p class="key">Answer: B</p><h4>Worked solution</h4><p>Step 1: review evidence. Step 2: document conclusion.</p><h4>Explanation</h4><p><strong>Correct answer:</strong> Evidence must be documented.</p><p><strong>Common mistake:</strong> Acting without evidence.</p><p><strong>Concepts tested:</strong> Framework for developing capital market expectations.</p><h4>Key formulas</h4><p>None (conceptual question)</p><dl class="trace"><dt>LOS</dt><dd>discuss the framework for capital market expectations</dd><dt>Section</dt><dd>Framework (p. 10)</dd><dt>Concept</dt><dd>Framework for developing capital market expectations</dd></dl></div></section>
+	<section class="q"><div class="qhead"><span class="qn">Question 2</span><span class="meta">Topic One \u00b7 Q-TEST-002</span></div>
+	<p>Which condition would justify a revision?</p>
+	<ol class="opts"><li class="opt ok"><span class="ltr">A</span><span>Verified structural change.</span></li><li class="opt"><span class="ltr">B</span><span>Unverified opinion.</span></li><li class="opt"><span class="ltr">C</span><span>No new evidence.</span></li></ol>
+	<button class="reveal">Show answer and solution</button>
+	<div class="sol" hidden><p class="key">Answer: A</p><h4>Worked solution</h4><p>Step 1: distinguish structural change. Step 2: revise only with evidence.</p><h4>Explanation</h4><p><strong>Correct answer:</strong> A verified structural change can justify revision.</p><h4>Key formulas</h4><p>\\[ E(R) = R_f + \\beta(E(R_m)-R_f) \\]</p><dl class="trace"><dt>LOS</dt><dd>explain structural change</dd><dt>Section</dt><dd>Challenges (p. 11)</dd><dt>Concept</dt><dd>Data limitations</dd></dl></div></section>
+	</main></body></html>`;
 	const parsed = parseSampleSetHtml(html, { setId: 'SET-001', sourceFile: 'SET-001.html' });
 	assert.equal(parsed.setId, 'SET-001');
 	assert.equal(parsed.volume, 'Asset Allocation');
@@ -233,8 +226,9 @@ test('sample bank parser preserves set structure and field boundaries', async ()
 	assert.equal(parsed.questions[1].options.find(option => option.isCorrect).label, 'A');
 	assert.match(parsed.questions[0].workedSolution, /Step 1: review evidence/);
 	assert.match(parsed.questions[1].workedSolution, /structural change/);
-	assert.equal(parsed.questions[0].los, 'LOS 1.a');
+	assert.equal(parsed.questions[0].los, 'discuss the framework for capital market expectations');
 	assert.equal(parsed.questions[1].tracePage, 'p. 11');
+	assert.equal(parsed.questions[1].keyFormulas, '\\[ E(R) = R_f + \\beta(E(R_m)-R_f) \\]');
 	assert.equal(parsed.totalMarks, 6);
 	const dryRun = await dryRunSampleImport(fakePrisma(), parsed, { ...ACADEMIC });
 	assert.ok(Array.isArray(dryRun.validation?.errors));

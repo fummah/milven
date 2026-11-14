@@ -188,6 +188,15 @@ node src/scripts/mcpSampleDryRun.js \
 
 The parser preserves set ID, volume, learning module, case-study title, vignette, questions, A/B/C options, correct answer, worked solutions, explanations, common mistakes, LOS, trace references, concepts and formulas when they are present. Missing fields are not fabricated. Academic names that do not match exactly require explicit mapping.
 
+Use the mapping report to identify curriculum names needing approval:
+
+```bash
+cd apps/server
+node src/scripts/mcpSampleMappingReport.js --folder "C:/path/to/cfa-level-3-bank"
+```
+
+Current supplied-bank audit: all 500 sets and 2,000 questions parse; 226 sets map exactly to Milven topics without overrides. The remaining sets contain missing module/topic names such as `Introduction`, `Factor-Based Asset Allocation`, ethics guidance modules and some pathway modules. Those must be mapped explicitly and reviewed; no academic records are created automatically.
+
 ## Migration
 
 The additive migration is:
