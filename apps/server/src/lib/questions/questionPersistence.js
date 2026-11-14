@@ -169,7 +169,7 @@ export function serializeQuestionOptions(question) {
 	};
 }
 
-export async function persistLegacyGeneratedItem(prisma, { item, questionType, mapping, userId, client = 'milven-admin-ai', validation = null }) {
+export async function persistLegacyGeneratedItem(prisma, { item, questionType, mapping, userId, client = 'milven-admin-ai', validation = null, tx = null }) {
 	const isBundle = Array.isArray(item?.questions) && item.questions.length > 0;
 	const children = isBundle ? item.questions : [];
 	const payload = {
@@ -217,6 +217,7 @@ export async function persistLegacyGeneratedItem(prisma, { item, questionType, m
 		generation: { source: 'INTERNAL_AI', client, generatedAt: new Date().toISOString() }
 	};
 	return persistQuestionPayload(prisma, payload, {
+		tx,
 		mapping,
 		userId,
 		sourceClient: client,

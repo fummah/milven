@@ -13,6 +13,7 @@ import { requireRole } from '../middleware/requireRole.js';
 import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, autoRepairLatex } from '../lib/openai.js';
 import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
 import { sanitizeDbData } from '../lib/dbText.js';
+import { persistLegacyGeneratedItem } from '../lib/questions/questionPersistence.js';
 import {
 	DIFFICULTY_LEVELS,
 	DIFFICULTY_RUBRICS,
@@ -4617,83 +4618,21 @@ ${formatBlock}`;
 					if (!parentPathIds.courseId || !parentPathIds.volumeId || !parentPathIds.moduleId) continue;
 
 					// Use a transaction so any child failure is immediately visible as an error (no orphaned parents)
-					const full = await prisma.$transaction(async (tx) => {
-						const parent = await tx.question.create({
-							data: {
-								stem: isConstructed ? '(Case study parent)' : '(Vignette parent)',
-								type: questionType,
-								level: parentPathIds.level || 'LEVEL1',
-								difficulty: questions[0]?.difficulty || 'MEDIUM',
-								topicId: firstTopicId,
-								courseId: parentPathIds.courseId,
-								volumeId: parentPathIds.volumeId,
-								moduleId: parentPathIds.moduleId,
-								topics: { connect: [{ id: firstTopicId }] },
-								vignetteText,
-								marks: 1,
-								isAiGenerated: true
-							}
-						});
-
-						for (let si = 0; si < questions.length; si++) {
-							const sq = questions[si];
-							const stem = cleanQuestionHtml(String(sq?.stem || sq?.question || sq?.text || '').trim());
-							if (!stem || stem.length < 3) continue;
-							// Use child's own topicId for curriculum mapping; fall back to firstTopicId.
-							// Always use parentPathIds for path fields (guaranteed complete).
-							const childTopicId = String(sq?.topicId || '').trim() || firstTopicId;
-							const childType = isConstructed ? 'CONSTRUCTED_RESPONSE' : 'MCQ';
-							const sqConceptIds = Array.isArray(sq?.conceptIds) ? sq.conceptIds.filter(Boolean) : [];
-
-							const child = await tx.question.create({
-								data: {
-									stem,
-									type: childType,
-									level: parentPathIds.level || 'LEVEL1',
-									difficulty: sq?.difficulty || 'MEDIUM',
-									marks: (questionType === 'VIGNETTE_MCQ') ? 3 : (sq?.marks ? Number(sq.marks) : 1),
-									topicId: childTopicId,
-									courseId: parentPathIds.courseId,
-									volumeId: parentPathIds.volumeId,
-									moduleId: parentPathIds.moduleId,
-									topics: { connect: [{ id: childTopicId }] },
-									...(sqConceptIds.length > 0 ? { concepts: { connect: sqConceptIds.map(cid => ({ id: cid })) } } : {}),
-									parentId: parent.id,
-									orderIndex: si + 1,
-									qid: sq?.qid || null,
-									los: sq?.los || null,
-									traceSection: sq?.traceSection || null,
-									tracePage: sq?.tracePage || null,
-									keyFormulas: cleanQuestionHtml(sq?.keyFormulas || null),
-									workedSolution: cleanQuestionHtml(mergeWorkedSolution(sq)),
-									questionGuidelines: sq?.questionGuidelines || null,
-									output: sq?.output || null,
-									isAiGenerated: true
-								}
-							});
-
-							// Create MCQ options for vignette sub-questions
-							if (!isConstructed) {
-								const opts = Array.isArray(sq?.options) ? sq.options : [];
-								if (opts.length >= 2) {
-									await tx.mcqOption.createMany({
-										data: opts.map((o, position) => ({
-											questionId: child.id,
-											text: cleanQuestionHtml(String(o.text || '').trim()) || 'Option',
-											isCorrect: !!o.isCorrect,
-											position
-										}))
-									});
-								}
-							}
-						}
-
-						return tx.question.findUnique({
-							where: { id: parent.id },
-							include: { options: { orderBy: { position: 'asc' } }, children: { orderBy: [{ orderIndex: 'asc' }], include: { options: { orderBy: { position: 'asc' } } } } }
-						});
+					const mapping = {
+						ok: true,
+						level: parentPathIds.level,
+						course: { id: parentPathIds.courseId },
+						volume: { id: parentPathIds.volumeId },
+						module: { id: parentPathIds.moduleId },
+						topicIds: [firstTopicId]
+					};
+					const persisted = await persistLegacyGeneratedItem(prisma, {
+						item: { ...bundle, topicId: firstTopicId },
+						questionType,
+						mapping,
+						client: 'milven-admin-ai'
 					});
-					created.push(full);
+					created.push(persisted.question);
 				}
 				return res.status(201).json({ created: created.length, questions: created, skippedDuplicates });
 			}
@@ -4711,7 +4650,6 @@ ${formatBlock}`;
 				for (const item of items) {
 					const stem = cleanQuestionHtml(String(item?.stem || '').trim());
 					if (!stem || stem.length < 5) continue;
-					// Duplicate check
 					if (await isDuplicateStem(stem)) {
 						skippedDuplicates.push(stem.substring(0, 60));
 						continue;
@@ -4720,43 +4658,22 @@ ${formatBlock}`;
 					if (!topicId) continue;
 					const pathIds = await deriveQuestionPathIdsFromTopic(topicId);
 					if (!pathIds.courseId || !pathIds.volumeId || !pathIds.moduleId) continue;
-					const itemConceptIds = Array.isArray(item?.conceptIds) ? item.conceptIds.filter(Boolean) : [];
-					const q = await tx.question.create({
-						data: {
-							stem,
-							type: questionType,
-							level: pathIds.level || 'LEVEL1',
-							difficulty: item?.difficulty || 'MEDIUM',
-							marks: item?.marks ? Number(item.marks) : 1,
-							topicId,
-							...pathIds,
-							topics: { connect: [{ id: topicId }] },
-							...(itemConceptIds.length > 0 ? { concepts: { connect: itemConceptIds.map(cid => ({ id: cid })) } } : {}),
-							qid: item?.qid || null,
-							los: item?.los || null,
-							traceSection: item?.traceSection || null,
-							tracePage: item?.tracePage || null,
-							keyFormulas: cleanQuestionHtml(item?.keyFormulas || null),
-							workedSolution: cleanQuestionHtml(mergeWorkedSolution(item)),
-							questionGuidelines: item?.questionGuidelines || null,
-							output: item?.output || null,
-							isAiGenerated: true
-						}
+					const mapping = {
+						ok: true,
+						level: pathIds.level,
+						course: { id: pathIds.courseId },
+						volume: { id: pathIds.volumeId },
+						module: { id: pathIds.moduleId },
+						topicIds: [topicId]
+					};
+					const persisted = await persistLegacyGeneratedItem(prisma, {
+						item: { ...item, stem, topicId },
+						questionType,
+						mapping,
+						client: 'milven-admin-ai',
+						tx
 					});
-					if (questionType !== 'CONSTRUCTED_RESPONSE') {
-						const opts = Array.isArray(item?.options) ? item.options : [];
-						if (opts.length >= 2) {
-							await tx.mcqOption.createMany({
-								data: opts.map(o => ({
-									questionId: q.id,
-									text: String(o.text || '').trim() || 'Option',
-									isCorrect: !!o.isCorrect
-								}))
-							});
-						}
-					}
-					const full = await tx.question.findUnique({ where: { id: q.id }, include: { options: { orderBy: { position: 'asc' } } } });
-					rows.push(full);
+					rows.push(persisted.question);
 				}
 				return rows;
 			});
