@@ -34,6 +34,7 @@ import { formulaBookPdfsRouter } from './routes/formulaBookPdfs.js';
 import { initFormulaBookPdfWorker } from './lib/formulaBooks/worker.js';
 import { moduleNotePdfsRouter } from './routes/moduleNotePdfs.js';
 import { mcpAdminRouter } from './routes/mcpAdmin.js';
+import { oauthRouter, oauthAuthorizationServerMetadata, oauthProtectedResourceMetadata } from './routes/oauth.js';
 import { mcpAuthMiddleware } from './lib/mcp/tokenAuth.js';
 import { createMcpRequestHandler } from './mcp-dist/http.mjs';
 import { initModuleNotePdfWorker } from './lib/moduleNotePdfs/worker.js';
@@ -161,6 +162,7 @@ app.use(
   })
 );
 
+app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(morgan('dev'));
 
 /* ===========================
@@ -243,6 +245,13 @@ app.use('/api/module-notes', safe(moduleNotesRouter));
 app.use('/api/pdf-mapping', safe(pdfMappingRouter));
 app.use('/api/slides', safe(slidesRouter));
 app.use('/api/mcp', safe(mcpAdminRouter));
+const oauthLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.MCP_OAUTH_RATE_LIMIT_MAX ?? 60),
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use('/oauth', oauthLimiter, safe(oauthRouter));
 app.use('/api', safe(testRouter));
 
 const mcpLimiter = rateLimit({
@@ -255,11 +264,13 @@ const mcpHandler = createMcpRequestHandler(prisma, { endpoint: `${process.env.MC
 app.post('/mcp', mcpLimiter, mcpAuthMiddleware(prisma), mcpHandler);
 app.get('/mcp', mcpLimiter, mcpAuthMiddleware(prisma), mcpHandler);
 app.delete('/mcp', mcpLimiter, mcpAuthMiddleware(prisma), mcpHandler);
-app.get('/.well-known/oauth-protected-resource', (_req, res) => {
-  const resource = `${process.env.MCP_PUBLIC_URL || 'https://dev.milven.zbsburial.com'}/mcp`;
-  const issuer = process.env.MCP_OAUTH_ISSUER;
-  return res.json({ resource, ...(issuer ? { authorization_servers: [issuer] } : {}), bearer_methods_supported: ['header'], scopes_supported: ['questions:read','curriculum:read','questions:validate','questions:draft','questions:commit'] });
-});
+app.get('/.well-known/oauth-protected-resource', (req, res) => res.json(oauthProtectedResourceMetadata(req)));
+const oauthMetadataHandler = (req, res) => res.json(oauthAuthorizationServerMetadata(req));
+app.get('/.well-known/oauth-authorization-server', oauthMetadataHandler);
+app.get('/.well-known/oauth-authorization-server/oauth', oauthMetadataHandler);
+app.get('/.well-known/openid-configuration', oauthMetadataHandler);
+app.get('/oauth/.well-known/oauth-authorization-server', oauthMetadataHandler);
+app.get('/oauth/.well-known/openid-configuration', oauthMetadataHandler);
 
 /* ===========================
    STATIC UPLOADS

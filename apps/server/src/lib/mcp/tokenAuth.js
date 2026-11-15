@@ -61,9 +61,32 @@ async function verifyOAuthToken(prisma, token) {
 	}
 }
 
+function expectedAudience(req) {
+	return String(process.env.MCP_OAUTH_AUDIENCE || `${process.env.MCP_PUBLIC_URL || `${req.protocol}://${req.get('host')}`}/mcp`).replace(/\/$/, '');
+}
+
 export async function authenticateMcpRequest(prisma, req) {
 	const token = bearerToken(req);
 	if (!token) return null;
+	if (token.startsWith('milven_oat_')) {
+		const record = await prisma.mcpOAuthToken.findUnique({
+			where: { tokenHash: hashMcpToken(token) },
+			select: { id: true, tokenType: true, clientId: true, userId: true, scopes: true, audience: true, expiresAt: true, revokedAt: true }
+		});
+		if (!record || record.tokenType !== 'ACCESS' || record.revokedAt || record.expiresAt.getTime() <= Date.now()) return null;
+		if (record.audience !== expectedAudience(req)) return null;
+		const user = await prisma.user.findUnique({ where: { id: record.userId }, select: { id: true, email: true, role: true } });
+		if (!user || user.role !== 'ADMIN') return null;
+		return {
+			tokenId: record.id,
+			userId: user.id,
+			email: user.email,
+			role: user.role,
+			scopes: normalizeScopes(record.scopes),
+			authType: 'oauth',
+			clientId: record.clientId
+		};
+	}
 	if (token.startsWith('eyJ')) {
 		const oauth = await verifyOAuthToken(prisma, token);
 		if (oauth) return oauth;

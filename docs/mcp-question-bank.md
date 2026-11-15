@@ -28,24 +28,52 @@ Scopes:
 
 Commit requires `questions:commit` **and** an administrator-approved batch. An MCP client cannot approve its own batch.
 
-### OAuth / OIDC
+### OAuth 2.0 authorization server
 
-For remote connectors that use OAuth, configure these API environment variables:
+Milven includes a built-in OAuth 2.0 authorization server for MCP clients such as ChatGPT and Claude. It implements Authorization Code flow with PKCE (S256), dynamic client registration, short-lived opaque access tokens, refresh-token rotation and revocation.
+
+Endpoints:
+
+```text
+Protected resource:
+https://dev.milven.zbsburial.com/.well-known/oauth-protected-resource
+
+Authorization server metadata:
+https://dev.milven.zbsburial.com/.well-known/oauth-authorization-server
+https://dev.milven.zbsburial.com/.well-known/oauth-authorization-server/oauth
+
+Authorization:
+https://dev.milven.zbsburial.com/oauth/authorize
+
+Token:
+https://dev.milven.zbsburial.com/oauth/token
+
+Dynamic client registration:
+https://dev.milven.zbsburial.com/oauth/register
+
+Revocation:
+https://dev.milven.zbsburial.com/oauth/revoke
+```
+
+The authorization flow requires a Milven administrator login and explicit consent. The login page uses the existing administrator credentials. Tokens are issued only to an active `ADMIN` user with the requested scopes.
+
+Token lifetimes:
+
+- Access token: 1 hour.
+- Authorization code: 10 minutes, single use.
+- Refresh token: 30 days, rotated on every refresh.
+
+Access and refresh tokens are opaque random values stored as SHA-256 hashes; they are never written to application logs or frontend code. Static `mcp_...` bearer tokens remain supported for clients that use custom Authorization headers.
+
+Relevant optional production variables:
 
 ```text
 MCP_PUBLIC_URL=https://dev.milven.zbsburial.com
-MCP_OAUTH_ISSUER=https://your-identity-provider.example
 MCP_OAUTH_AUDIENCE=https://dev.milven.zbsburial.com/mcp
-MCP_OAUTH_JWKS_URL=https://your-identity-provider.example/.well-known/jwks.json
+MCP_OAUTH_RATE_LIMIT_MAX=60
 ```
 
-The server verifies JWT signature, issuer, audience and expiry using the configured JWKS. The token must contain an email/preferred username matching an active Milven `ADMIN` user. Scopes are read from `scope` or `scopes`; if omitted, the authenticated administrator receives the standard Milven MCP scopes.
-
-Protected-resource metadata is available at:
-
-```text
-https://dev.milven.zbsburial.com/.well-known/oauth-protected-resource
-```
+`MCP_OAUTH_ISSUER` is optional and defaults to `${MCP_PUBLIC_URL}/oauth`. `MCP_OAUTH_AUDIENCE` defaults to `${MCP_PUBLIC_URL}/mcp`.
 
 Do not put tokens, client secrets, JWKS private keys or database credentials in prompts, repositories or chat messages.
 
@@ -158,10 +186,15 @@ For vignette item sets, use `questionType: "VIGNETTE_MCQ"`, a shared `vignetteTe
 
 ## ChatGPT custom connector
 
-1. In a workspace that supports custom MCP connectors, create a connector using `https://dev.milven.zbsburial.com/mcp`.
-2. Select OAuth if the workspace supports it and configure the Milven OAuth environment above. Otherwise use a scoped token if the workspace permits a secure custom authorization header.
-3. Verify tools/resources/prompts are discovered.
-4. Keep generation, validation and staging in the chat; approval and commit remain separate administrator actions.
+1. Use ChatGPT web on a Business, Enterprise or Edu workspace with permission to create MCP plugins.
+2. Open **Plugins ? Add custom MCP server**.
+3. Name: `Milven Question Bank`.
+4. URL: `https://dev.milven.zbsburial.com/mcp`.
+5. Choose OAuth authentication.
+6. ChatGPT discovers the metadata, registers its client, and opens the Milven administrator login/consent page.
+7. Sign in with a Milven administrator account and approve the requested scopes.
+8. Confirm tool discovery lists the 18 `milven_*` tools.
+9. Keep generation, validation and staging in the chat; approval and commit remain separate administrator actions.
 
 ## Local MCP inspector
 

@@ -273,6 +273,61 @@ model McpApiToken {
   @@index([revokedAt, expiresAt])
 }
 
+model McpOAuthClient {
+  id                      String          @id @default(cuid())
+  clientId                String          @unique
+  clientName              String?
+  redirectUris            String[]
+  grantTypes              String[]        @default(["authorization_code", "refresh_token"])
+  responseTypes           String[]        @default(["code"])
+  scopes                  String[]        @default([])
+  tokenEndpointAuthMethod String          @default("none")
+  clientSecretHash        String?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  codes                   McpOAuthCode[]
+  tokens                  McpOAuthToken[]
+
+  @@index([createdAt])
+}
+
+model McpOAuthCode {
+  id                  String         @id @default(cuid())
+  codeHash            String         @unique
+  clientId            String
+  client              McpOAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  userId              String
+  redirectUri         String
+  scopes              String[]
+  audience            String
+  codeChallenge       String
+  codeChallengeMethod String         @default("S256")
+  expiresAt           DateTime
+  consumedAt          DateTime?
+  createdAt           DateTime       @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([expiresAt])
+}
+
+model McpOAuthToken {
+  id                String         @id @default(cuid())
+  tokenHash         String         @unique
+  tokenType         String
+  clientId          String
+  client            McpOAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  userId            String
+  scopes            String[]
+  audience          String
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  replacedByTokenId String?
+  createdAt         DateTime       @default(now())
+
+  @@index([clientId, userId])
+  @@index([tokenType, expiresAt, revokedAt])
+}
+
 model McpImportBatch {
   id                String          @id @default(cuid())
   externalRequestId String?
