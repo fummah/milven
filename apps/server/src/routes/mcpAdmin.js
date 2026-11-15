@@ -82,6 +82,22 @@ export function mcpAdminRouter(prisma) {
 		return res.json({ token });
 	});
 
+	router.get('/oauth-clients', async (_req, res) => {
+		const clients = await prisma.mcpOAuthClient.findMany({
+			orderBy: { createdAt: 'desc' },
+			select: { clientId: true, clientName: true, redirectUris: true, scopes: true, createdAt: true }
+		});
+		return res.json({ clients });
+	});
+
+	router.delete('/oauth-clients/:clientId', async (req, res) => {
+		const client = await prisma.mcpOAuthClient.findUnique({ where: { clientId: req.params.clientId }, select: { clientId: true, clientName: true } });
+		if (!client) return res.status(404).json({ error: 'OAuth client not found.' });
+		await prisma.mcpOAuthClient.delete({ where: { clientId: client.clientId } });
+		await auditMcpAction(prisma, { action: 'OAUTH_CLIENT_DELETED', actorId: req.user.id, detail: { clientId: client.clientId, clientName: client.clientName } });
+		return res.json({ ok: true, clientId: client.clientId });
+	});
+
 	router.get('/imports', async (req, res) => {
 		const data = await listReviewBatches(prisma, {
 			status: req.query.status ? String(req.query.status) : undefined,
