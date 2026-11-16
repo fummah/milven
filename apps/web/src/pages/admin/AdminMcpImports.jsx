@@ -8,6 +8,7 @@ import {
 	ReloadOutlined, RobotOutlined, SafetyCertificateOutlined, SaveOutlined
 } from '@ant-design/icons';
 import { api } from '../../lib/api';
+import { formatFormulaHtml, formatProseWithMath } from '../../lib/formatFormula';
 
 const STATUS_COLORS = {
 	DRAFT: 'default',
@@ -29,15 +30,21 @@ function JsonBlock({ value }) {
 	);
 }
 
+function RichContent({ value, formula = false }) {
+	if (!value) return '-';
+	return <div dangerouslySetInnerHTML={{ __html: formula ? formatFormulaHtml(value) : formatProseWithMath(value) }} />;
+}
+
 function QuestionPreview({ item, onEdit }) {
 	const payload = item.payload || {};
 	const children = payload.subQuestions || [];
 	const options = payload.options || [];
+	const reviewStatus = item.validation?.summary?.reviewStatus;
 	return (
 		<Card
 			size="small"
 			style={{ marginBottom: 14, borderRadius: 12, border: '1px solid #e2e8f0' }}
-			title={<Space wrap><Tag color={item.status === 'VALIDATED' ? 'blue' : STATUS_COLORS[item.status] || 'default'}>{item.status}</Tag><Typography.Text strong>{payload.externalQuestionId || item.externalQuestionId}</Typography.Text><Tag>{payload.questionType || item.questionType}</Tag><Tag color="purple">{payload.difficulty}</Tag><Tag color="gold">{payload.marks} marks</Tag></Space>}
+			title={<Space wrap><Tag color={item.status === 'VALIDATED' ? 'blue' : STATUS_COLORS[item.status] || 'default'}>{item.status}</Tag>{reviewStatus && <Tag color={reviewStatus === 'READY_FOR_APPROVAL' ? 'green' : reviewStatus === 'NEEDS_REVIEW' ? 'orange' : 'red'}>{reviewStatus}</Tag>}<Typography.Text strong>{payload.externalQuestionId || item.externalQuestionId}</Typography.Text><Tag>{payload.questionType || item.questionType}</Tag><Tag color="purple">{payload.difficulty}</Tag><Tag color="gold">{payload.marks} marks</Tag></Space>}
 			extra={<Button size="small" icon={<SaveOutlined />} onClick={() => onEdit(item)}>Edit staged item</Button>}
 		>
 			<Descriptions size="small" column={1} bordered>
@@ -45,12 +52,18 @@ function QuestionPreview({ item, onEdit }) {
 					Course {payload.courseId || '-'} / Volume {payload.volumeId || '-'} / Module {payload.moduleId || '-'} / Topic {payload.primaryTopicId || '-'}
 				</Descriptions.Item>
 				<Descriptions.Item label="Stem">{payload.stem || '-'}</Descriptions.Item>
+				{payload.caseStudyTitle && <Descriptions.Item label="Case-study title">{payload.caseStudyTitle}</Descriptions.Item>}
+				{payload.sourceSetId && <Descriptions.Item label="Source set">{payload.sourceSetId}</Descriptions.Item>}
 				{payload.vignetteText && <Descriptions.Item label="Vignette"><div dangerouslySetInnerHTML={{ __html: payload.vignetteText }} /></Descriptions.Item>}
 				<Descriptions.Item label="LOS">{payload.los || '-'}</Descriptions.Item>
 				<Descriptions.Item label="Trace">{payload.traceSection || '-'} {payload.tracePage ? `| ${payload.tracePage}` : ''}</Descriptions.Item>
-				<Descriptions.Item label="Key formulas">{payload.keyFormulas || '-'}</Descriptions.Item>
-				<Descriptions.Item label="Worked solution">{payload.workedSolution || payload.expectedOutput || '-'}</Descriptions.Item>
-				<Descriptions.Item label="Marking guidelines">{payload.markingGuidelines || '-'}</Descriptions.Item>
+				<Descriptions.Item label="Key formulas"><RichContent value={payload.keyFormulas} formula /></Descriptions.Item>
+				<Descriptions.Item label="Worked solution"><RichContent value={payload.workedSolution || payload.expectedOutput} /></Descriptions.Item>
+				{payload.correctAnswerExplanation && <Descriptions.Item label="Correct answer explanation"><RichContent value={payload.correctAnswerExplanation} /></Descriptions.Item>}
+				{payload.incorrectOptionsExplanation && <Descriptions.Item label="Incorrect options explanation"><RichContent value={payload.incorrectOptionsExplanation} /></Descriptions.Item>}
+				{payload.commonMistake && <Descriptions.Item label="Common mistake"><RichContent value={payload.commonMistake} /></Descriptions.Item>}
+				{payload.conceptsTested && <Descriptions.Item label="Concepts tested"><RichContent value={payload.conceptsTested} /></Descriptions.Item>}
+				<Descriptions.Item label="Marking guidelines"><RichContent value={payload.markingGuidelines} /></Descriptions.Item>
 			</Descriptions>
 
 			{options.length > 0 && (
@@ -75,15 +88,26 @@ function QuestionPreview({ item, onEdit }) {
 							<Space wrap size={4} style={{ marginTop: 6 }}>
 								<Tag color="purple">{child.difficulty}</Tag>
 								<Tag color="gold">{child.marks} marks</Tag>
+								{child.sourceSetId && <Tag>{child.sourceSetId}</Tag>}
 								{child.los && <Tag color="blue">LOS</Tag>}
 								{child.keyFormulas && <Tag color="cyan">Formula</Tag>}
 								{child.workedSolution && <Tag color="green">Solution</Tag>}
+								{child.correctAnswerExplanation && <Tag color="green">Correct answer explanation</Tag>}
+								{child.incorrectOptionsExplanation && <Tag color="orange">Distractor explanation</Tag>}
+								{child.commonMistake && <Tag color="volcano">Common mistake</Tag>}
+								{child.conceptsTested && <Tag color="geekblue">Concepts tested</Tag>}
 							</Space>
 							{(child.options || []).map((option, optionIndex) => (
 								<div key={optionIndex} style={{ fontSize: 12, marginTop: 4, color: option.isCorrect ? '#166534' : '#475569' }}>
 									{option.label || String.fromCharCode(65 + optionIndex)}. {option.text} {option.isCorrect ? '(correct)' : ''}
+									{option.rationale && <div style={{ color: '#64748b' }}>{option.rationale}</div>}
 								</div>
 							))}
+							{child.correctAnswerExplanation && <div style={{ marginTop: 8, fontSize: 12 }}><Typography.Text strong>Correct answer explanation: </Typography.Text><RichContent value={child.correctAnswerExplanation} /></div>}
+							{child.incorrectOptionsExplanation && <div style={{ marginTop: 6, fontSize: 12 }}><Typography.Text strong>Incorrect options explanation: </Typography.Text><RichContent value={child.incorrectOptionsExplanation} /></div>}
+							{child.commonMistake && <div style={{ marginTop: 6, fontSize: 12 }}><Typography.Text strong>Common mistake: </Typography.Text><RichContent value={child.commonMistake} /></div>}
+							{child.conceptsTested && <div style={{ marginTop: 6, fontSize: 12 }}><Typography.Text strong>Concepts tested: </Typography.Text><RichContent value={child.conceptsTested} /></div>}
+							{child.workedSolution && <div style={{ marginTop: 6, fontSize: 12 }}><Typography.Text strong>Worked solution: </Typography.Text><RichContent value={child.workedSolution} /></div>}
 						</Card>
 					))}
 				</div>
@@ -121,6 +145,7 @@ export function AdminMcpImports() {
 	const [editingItem, setEditingItem] = useState(null);
 	const [editJson, setEditJson] = useState('');
 	const [editSaving, setEditSaving] = useState(false);
+	const [repairing, setRepairing] = useState(false);
 	const [form] = Form.useForm();
 
 	const loadImports = async () => {
@@ -230,6 +255,68 @@ export function AdminMcpImports() {
 		}
 	};
 
+	const deleteImport = batch => {
+		Modal.confirm({
+			title: 'Delete this import record?',
+			content: batch.committedCount > 0
+				? `This deletes the staging record and its history. ${batch.committedCount} committed live question(s) will be retained.`
+				: 'This permanently deletes the staging batch and its staged items. It does not affect live questions.',
+			okText: 'Delete import',
+			okButtonProps: { danger: true },
+			onOk: async () => {
+				try {
+					await api.delete(`/api/mcp/imports/${batch.id}`);
+					message.success('Import record deleted');
+					if (selectedBatch?.id === batch.id) {
+						setSelectedBatch(null);
+						setDrawerOpen(false);
+					}
+					loadImports();
+				} catch (error) {
+					message.error(error?.response?.data?.error || 'Could not delete import');
+				}
+			}
+		});
+	};
+
+	const repairFields = async batch => {
+		setRepairing(true);
+		try {
+			const { data } = await api.post(`/api/mcp/imports/${batch.id}/repair`, { apply: false });
+			if (!data.changedCount) {
+				message.info('No recoverable vignette fields were found.');
+				return;
+			}
+			const preview = data.items
+				.filter(item => item.changed)
+				.map(item => ({
+					externalQuestionId: item.externalQuestionId,
+					changes: item.changes,
+					beforeComplete: item.before?.complete,
+					afterComplete: item.after?.complete
+				}));
+			Modal.confirm({
+				title: `Repair ${data.changedCount} staged item(s)?`,
+				width: 760,
+				content: <JsonBlock value={preview} />,
+				okText: 'Apply non-destructive repair',
+				onOk: async () => {
+					try {
+						const { data: applied } = await api.post(`/api/mcp/imports/${batch.id}/repair`, { apply: true });
+						message.success(`Repaired ${applied.changedCount} item(s); approval is still required.`);
+						await reloadSelected(batch.id);
+					} catch (error) {
+						message.error(error?.response?.data?.error || 'Repair failed');
+					}
+				}
+			});
+		} catch (error) {
+			message.error(error?.response?.data?.error || 'Could not preview field repair');
+		} finally {
+			setRepairing(false);
+		}
+	};
+
 	const createToken = async values => {
 		try {
 			const { data } = await api.post('/api/mcp/tokens', values);
@@ -287,7 +374,7 @@ export function AdminMcpImports() {
 		{ title: 'Validation', key: 'validation', width: 150, render: (_, row) => <Space size={4}><Tag color={row.validationSummary?.errors ? 'red' : 'green'}>{row.validationSummary?.errors || 0} errors</Tag><Tag color={row.validationSummary?.warnings ? 'orange' : 'default'}>{row.validationSummary?.warnings || 0} warnings</Tag></Space> },
 		{ title: 'Duplicates', key: 'duplicates', width: 100, render: (_, row) => row.duplicateSummary?.requiresReview ? <Tag color="orange">Review</Tag> : <Tag>None</Tag> },
 		{ title: 'Created', dataIndex: 'createdAt', width: 170, render: value => new Date(value).toLocaleString() },
-		{ title: 'Actions', key: 'actions', fixed: 'right', width: 100, render: (_, row) => <Button size="small" icon={<EyeOutlined />} onClick={() => openBatch(row.id)}>Review</Button> }
+		{ title: 'Actions', key: 'actions', fixed: 'right', width: 180, render: (_, row) => <Space size={4}><Button size="small" icon={<EyeOutlined />} onClick={() => openBatch(row.id)}>Review</Button><Button size="small" danger icon={<DeleteOutlined />} onClick={() => deleteImport(row)}>Delete</Button></Space> }
 	];
 
 	const tokenColumns = [
@@ -364,10 +451,12 @@ export function AdminMcpImports() {
 				title={selectedBatch ? <Space wrap>Import {selectedBatch.id}<Tag color={STATUS_COLORS[selectedBatch.status] || 'default'}>{selectedBatch.status}</Tag><Tag>{selectedBatch.commitStatus}</Tag></Space> : 'Import batch'}
 				extra={selectedBatch && (
 					<Space wrap>
+						{selectedBatch.commitStatus !== 'COMMITTED' && selectedBatch.status !== 'COMMITTED' && <Button icon={<ReloadOutlined />} loading={repairing} onClick={() => repairFields(selectedBatch)}>Preview field repair</Button>}
 						{selectedBatch.status === 'VALIDATED' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => approve(selectedBatch)}>Approve</Button>}
 						{selectedBatch.status === 'APPROVED' && <Button type="primary" danger icon={<CheckCircleOutlined />} onClick={() => commit(selectedBatch)}>Commit to Question Bank</Button>}
 						{!['COMMITTED', 'REJECTED', 'CANCELLED'].includes(selectedBatch.status) && <Button danger icon={<CloseCircleOutlined />} onClick={() => reject(selectedBatch)}>Reject</Button>}
 						{!['COMMITTED', 'REJECTED', 'CANCELLED'].includes(selectedBatch.status) && <Button onClick={() => cancel(selectedBatch)}>Cancel</Button>}
+						<Button danger icon={<DeleteOutlined />} onClick={() => deleteImport(selectedBatch)}>Delete import</Button>
 					</Space>
 				)}
 			>

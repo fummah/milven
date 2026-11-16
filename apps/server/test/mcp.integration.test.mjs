@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PrismaClient } from '@prisma/client';
-import { createReviewBatch, approveReviewBatch, commitApprovedBatch, getReviewBatch } from '../src/lib/questions/questionReview.js';
+import { createReviewBatch, approveReviewBatch, commitApprovedBatch, deleteReviewBatch, getReviewBatch } from '../src/lib/questions/questionReview.js';
 
 const runIntegration = process.env.RUN_MCP_INTEGRATION === '1';
 
@@ -89,6 +89,12 @@ test('MCP approval workflow persists and reuses option order', { skip: !runInteg
 		const batch = await getReviewBatch(prisma, created.batch.id);
 		assert.equal(batch.status, 'COMMITTED');
 		assert.equal(batch.commitStatus, 'COMMITTED');
+
+		const deleted = await deleteReviewBatch(prisma, created.batch.id, { actorId: null });
+		assert.equal(deleted.ok, true);
+		assert.equal(deleted.liveQuestionsRetained, true);
+		assert.equal(await getReviewBatch(prisma, created.batch.id), null);
+		assert.ok(await prisma.question.findUnique({ where: { id: questionId } }));
 	} finally {
 		if (createdQuestionIds.length) {
 			const children = await prisma.question.findMany({ where: { parentId: { in: createdQuestionIds } }, select: { id: true } });

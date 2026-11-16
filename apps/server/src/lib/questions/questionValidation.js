@@ -38,6 +38,10 @@ function validateMathFields(payload, errors, warnings) {
 	const fields = [
 		['keyFormulas', payload.keyFormulas],
 		['workedSolution', payload.workedSolution],
+		['correctAnswerExplanation', payload.correctAnswerExplanation],
+		['incorrectOptionsExplanation', payload.incorrectOptionsExplanation],
+		['commonMistake', payload.commonMistake],
+		['conceptsTested', payload.conceptsTested],
 		['formulas', payload.formulas],
 		['expectedOutput', payload.expectedOutput]
 	];
@@ -45,6 +49,10 @@ function validateMathFields(payload, errors, warnings) {
 		fields.push(
 			[`subQuestions.${child.externalQuestionId}.keyFormulas`, child.keyFormulas],
 			[`subQuestions.${child.externalQuestionId}.workedSolution`, child.workedSolution],
+			[`subQuestions.${child.externalQuestionId}.correctAnswerExplanation`, child.correctAnswerExplanation],
+			[`subQuestions.${child.externalQuestionId}.incorrectOptionsExplanation`, child.incorrectOptionsExplanation],
+			[`subQuestions.${child.externalQuestionId}.commonMistake`, child.commonMistake],
+			[`subQuestions.${child.externalQuestionId}.conceptsTested`, child.conceptsTested],
 			[`subQuestions.${child.externalQuestionId}.expectedOutput`, child.expectedOutput]
 		);
 	}
@@ -138,7 +146,6 @@ function validateOptions(options, path, errors, warnings, { required = true } = 
 			if (texts.has(normalized)) errors.push(issue('DUPLICATE_OPTION', 'Options must be distinct.', `${optionPath}.text`));
 			texts.add(normalized);
 		}
-		if (!option.rationale) warnings.push(issue('DISTRACTOR_RATIONALE_MISSING', 'Distractor rationale is optional but recommended.', `${optionPath}.rationale`, 'warning'));
 	});
 	if (correct !== 1) {
 		errors.push(issue('CORRECT_OPTION_COUNT', `Exactly one option must be correct; received ${correct}.`, path));
@@ -180,9 +187,42 @@ function validateSubject(subject, path, errors, warnings, { mcq = false, constru
 	if (mcq) validateOptions(subject.options, `${path}.options`, errors, warnings);
 	if (mcq) {
 		const correct = (subject.options || []).find(option => option?.isCorrect);
+		const distractors = (subject.options || []).filter(option => option && !option.isCorrect);
 		if (correct) numericConsistency(correct, subject.options, subject.workedSolution, errors);
 		if (!subject.workedSolution && !subject.explanation) {
 			errors.push(issue('WORKED_SOLUTION_REQUIRED', 'MCQ worked solution or explanation is required.', `${path}.workedSolution`));
+		}
+		if (!subject.correctAnswerExplanation && !correct?.rationale) {
+			warnings.push(issue(
+				'CORRECT_ANSWER_EXPLANATION_MISSING',
+				'Add a correct-answer explanation or a rationale on the correct option.',
+				`${path}.correctAnswerExplanation`,
+				'warning'
+			));
+		}
+		if (!subject.incorrectOptionsExplanation && distractors.some(option => !option.rationale)) {
+			warnings.push(issue(
+				'DISTRACTOR_EXPLANATION_MISSING',
+				'Add one combined incorrect-options explanation or a rationale for every distractor.',
+				`${path}.incorrectOptionsExplanation`,
+				'warning'
+			));
+		}
+		if (!subject.commonMistake) {
+			warnings.push(issue(
+				'COMMON_MISTAKE_MISSING',
+				'Add the common candidate mistake tested by this item.',
+				`${path}.commonMistake`,
+				'warning'
+			));
+		}
+		if (!subject.conceptsTested && !(subject.conceptIds || []).length) {
+			warnings.push(issue(
+				'CONCEPTS_TESTED_MISSING',
+				'Add the concepts tested or at least one mapped conceptId.',
+				`${path}.conceptsTested`,
+				'warning'
+			));
 		}
 	}
 	if (constructed) {
@@ -190,6 +230,65 @@ function validateSubject(subject, path, errors, warnings, { mcq = false, constru
 			errors.push(issue('MARKING_GUIDELINES_REQUIRED', 'Constructed-response marking guidance is required.', `${path}.markingGuidelines`));
 		}
 	}
+}
+
+function subjectCompleteness(subject) {
+	const options = Array.isArray(subject.options) ? subject.options : [];
+	const correct = options.find(option => option?.isCorrect);
+	const distractors = options.filter(option => option && !option.isCorrect);
+	return {
+		correctAnswerExplanation: Boolean(subject.correctAnswerExplanation || correct?.rationale),
+		incorrectOptionsExplanation: Boolean(subject.incorrectOptionsExplanation || (distractors.length > 0 && distractors.every(option => option.rationale))),
+		commonMistake: Boolean(subject.commonMistake),
+		conceptsTested: Boolean(subject.conceptsTested || (subject.conceptIds || []).length),
+		workedSolution: Boolean(subject.workedSolution),
+		los: Boolean(subject.los),
+		traceSection: Boolean(subject.traceSection),
+		tracePage: Boolean(subject.tracePage),
+		keyFormulas: Boolean(subject.keyFormulas)
+	};
+}
+
+export function assessCompleteness(payload) {
+	const subjects = payload.questionType === 'MCQ'
+		? [{ subject: payload, path: 'question' }]
+		: payload.questionType === 'VIGNETTE_MCQ'
+			? (payload.subQuestions || []).map((child, index) => ({ subject: child, path: `subQuestions[${index}]` }))
+			: [];
+	const expectedFields = [
+		'correctAnswerExplanation', 'incorrectOptionsExplanation', 'commonMistake',
+		'conceptsTested', 'workedSolution', 'los', 'traceSection', 'tracePage', 'keyFormulas'
+	];
+	const coreFields = [
+		'correctAnswerExplanation', 'incorrectOptionsExplanation', 'commonMistake',
+		'conceptsTested', 'workedSolution', 'los', 'traceSection', 'tracePage'
+	];
+	const items = subjects.map(({ subject, path }) => {
+		const fields = subjectCompleteness(subject);
+		return {
+			path,
+			externalQuestionId: subject.externalQuestionId || null,
+			fields,
+			missingCoreFields: coreFields.filter(field => !fields[field]),
+			missingOptionalFields: expectedFields.filter(field => !fields[field])
+		};
+	});
+	const sourceFieldMappingLoss = [];
+	const childMappings = payload.reviewMetadata?.fieldMapping?.children;
+	if (Array.isArray(childMappings)) {
+		childMappings.forEach((mapping, index) => {
+			for (const field of mapping?.unmappedFields || []) {
+				sourceFieldMappingLoss.push({ path: `subQuestions[${index}]`, field });
+			}
+		});
+	}
+	return {
+		subjects: items,
+		missingCoreFields: items.flatMap(item => item.missingCoreFields.map(field => `${item.path}.${field}`)),
+		missingOptionalFields: items.flatMap(item => item.missingOptionalFields.map(field => `${item.path}.${field}`)),
+		sourceFieldMappingLoss,
+		complete: items.every(item => item.missingCoreFields.length === 0) && sourceFieldMappingLoss.length === 0
+	};
 }
 
 export async function validateQuestionPayload(prisma, payload, { batchExternalIds = [] } = {}) {
@@ -296,11 +395,20 @@ export async function validateQuestionPayload(prisma, payload, { batchExternalId
 		}
 	}
 
+	const completeness = assessCompleteness(payload);
+	const structuralStatus = errors.length === 0 ? 'STRUCTURALLY_VALID' : 'INVALID';
+	const reviewStatus = errors.length > 0
+		? 'INVALID'
+		: completeness.complete ? 'READY_FOR_APPROVAL' : 'NEEDS_REVIEW';
 	const summary = {
 		errors: errors.length,
 		warnings: warnings.length,
 		info: info.length,
 		ok: errors.length === 0,
+		status: reviewStatus,
+		structuralStatus,
+		reviewStatus,
+		completeness,
 		automaticValidationOnly: true,
 		humanReviewRequired: true,
 		checkedAt: new Date().toISOString()

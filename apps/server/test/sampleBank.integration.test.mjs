@@ -23,6 +23,20 @@ test('real CFA Level III 500-set bank parses completely and SET-001 dry-runs', {
 		assert.ok(questions.every(question => question.externalQuestionId && question.options.length === 3));
 		assert.ok(questions.every(question => question.options.filter(option => option.isCorrect).length === 1));
 		assert.ok(questions.every(question => question.workedSolution && question.los && question.tracePage));
+		const fixtureSets = ['SET-447', 'SET-448', 'SET-449', 'SET-450', 'SET-451', 'SET-452', 'SET-453', 'SET-454']
+			.map(setId => bank.parsed.find(set => set.setId === setId));
+		assert.equal(fixtureSets.filter(Boolean).length, 8);
+		for (const fixture of fixtureSets) {
+			assert.equal(fixture.questions.length, 4);
+			assert.ok(fixture.caseStudyTitle);
+			assert.ok(fixture.questions.every(question => question.correctAnswerExplanation));
+			assert.ok(fixture.questions.every(question => question.incorrectOptionsExplanation));
+			assert.ok(fixture.questions.every(question => question.commonMistake));
+			assert.ok(fixture.questions.every(question => question.conceptsTested));
+			assert.ok(fixture.questions.every(question => question.correctAnswerExplanation !== question.incorrectOptionsExplanation));
+			assert.equal(fixture.rawFieldAvailability.correctAnswerExplanations, true);
+			assert.equal(fixture.rawFieldAvailability.incorrectOptionsExplanations, true);
+		}
 		const first = bank.parsed.find(set => set.setId === 'SET-001');
 		assert.ok(first);
 		assert.equal(first.volume, 'Asset Allocation');
@@ -73,6 +87,31 @@ test('all 500 supplied sets map and validate with the reviewed mapping file', { 
 		}
 		assert.deepEqual(failures, []);
 		assert.equal(valid, 500);
+		const fixtureIds = ['SET-447', 'SET-448', 'SET-449', 'SET-450', 'SET-451', 'SET-452', 'SET-453', 'SET-454'];
+		for (const setId of fixtureIds) {
+			const sample = bank.parsed.find(row => row.setId === setId);
+			assert.ok(sample, `${setId} fixture is missing`);
+			const { academic, payload } = await transformSampleSetToQuestion(prisma, sample, {
+				courseId: mapping.courseId,
+				moduleMap: mapping.moduleMap,
+				topicMap: mapping.topicMap,
+				difficulty: 'HARD'
+			});
+			assert.equal(academic.errors.length, 0, JSON.stringify(academic.errors));
+			const normalized = normalizeQuestionPayload(payload);
+			assert.equal(normalized.caseStudyTitle, sample.caseStudyTitle);
+			assert.equal(normalized.sourceSetId, setId);
+			assert.ok(normalized.subQuestions.every(question => question.correctAnswerExplanation));
+			assert.ok(normalized.subQuestions.every(question => question.incorrectOptionsExplanation));
+			assert.ok(normalized.subQuestions.every(question => question.commonMistake));
+			assert.ok(normalized.subQuestions.every(question => question.conceptsTested));
+			assert.ok(normalized.subQuestions.every(question => question.sourceSetId === setId));
+			assert.ok(normalized.subQuestions.every(question => question.answerVerificationStatus === 'SOURCE_PROVIDED'));
+			assert.ok(normalized.subQuestions.every(question => !/Explanation:/i.test(question.workedSolution || '')));
+			assert.ok(payload.reviewMetadata.fieldMapping.children.every(child => child.unmappedFields.length === 0));
+			const validation = await validateQuestionPayload(prisma, normalized);
+			assert.equal(validation.summary.reviewStatus, 'READY_FOR_APPROVAL', JSON.stringify(validation.summary.completeness));
+		}
 	} finally {
 		await prisma.$disconnect();
 	}

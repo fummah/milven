@@ -52,6 +52,39 @@ function optionText($, option) {
 	return clean(clone.text());
 }
 
+export function splitExplanation(explanation) {
+	const parts = {
+		correctAnswerExplanation: null,
+		incorrectOptionsExplanation: null,
+		commonMistake: null,
+		conceptsTested: null,
+		other: []
+	};
+	if (!explanation) return parts;
+	const $ = cheerio.load(`<div id="explanation-root">${explanation}</div>`);
+	const root = $('#explanation-root');
+	root.find('p').each((_, element) => {
+		const clone = $(element).clone();
+		const labelNode = clone.find('strong').first();
+		const label = clean(labelNode.text()).toLowerCase().replace(/:\s*$/, '');
+		let key = null;
+		if (label === 'correct answer') key = 'correctAnswerExplanation';
+		else if (/^why (the )?other options are wrong$/.test(label)) key = 'incorrectOptionsExplanation';
+		else if (label === 'common mistake') key = 'commonMistake';
+		else if (label === 'concepts tested') key = 'conceptsTested';
+		if (!key) {
+			const html = cleanHtml($.html(element));
+			if (html) parts.other.push(html);
+			return;
+		}
+		labelNode.remove();
+		const html = cleanHtml(clone.html()) || clean(clone.text());
+		if (!html) return;
+		parts[key] = [parts[key], html].filter(Boolean).join('\n');
+	});
+	return parts;
+}
+
 function parseHeader($) {
 	const headerText = clean($('header p').first().text());
 	const parts = splitMetadata(headerText);
@@ -139,6 +172,7 @@ export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {
 		if (correctAnswer) for (const option of options) option.isCorrect = option.label === correctAnswer;
 		const workedSolution = sectionContent($, sol, 'Worked solution');
 		const explanation = sectionContent($, sol, 'Explanation');
+		const explanationParts = splitExplanation(explanation);
 		const keyFormulasNode = sol.find('h4').filter((_, element) => /^Key formulas?$/i.test(clean($(element).text()))).first();
 		const keyFormulas = keyFormulasNode.length
 			? (() => {
@@ -154,10 +188,8 @@ export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {
 			if (key && value) trace[key.toLowerCase()] = value;
 		});
 		const sectionText = trace.section || null;
-		const commonMistake = clean(sol.find('p').filter((_, element) => /^Common mistake\s*:/i.test(clean($(element).text()))).first().text())
-			.replace(/^Common mistake\s*:\s*/i, '') || null;
-		const conceptsTested = clean(sol.find('p').filter((_, element) => /^Concepts tested\s*:/i.test(clean($(element).text()))).first().text())
-			.replace(/^Concepts tested\s*:\s*/i, '') || trace.concept || null;
+		const commonMistake = explanationParts.commonMistake || null;
+		const conceptsTested = explanationParts.conceptsTested || trace.concept || null;
 		questions.push({
 			number: Number(qn.match(/\d+/)?.[0] || index + 1),
 			externalQuestionId: qid,
@@ -167,6 +199,9 @@ export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {
 			correctAnswer,
 			workedSolution,
 			explanation,
+			sourceExplanation: explanation,
+			correctAnswerExplanation: explanationParts.correctAnswerExplanation,
+			incorrectOptionsExplanation: explanationParts.incorrectOptionsExplanation,
 			commonMistake,
 			conceptsTested,
 			los: trace.los || null,
@@ -188,10 +223,17 @@ export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {
 		questions,
 		totalMarks,
 		rawFieldAvailability: {
+			caseStudyTitle: Boolean(header.caseStudyTitle),
+			sourceSetId: Boolean(derivedSetId),
 			vignette: Boolean(vignette),
 			options: questions.some(question => question.options.length > 0),
 			correctAnswers: questions.some(question => question.correctAnswer),
 			workedSolutions: questions.some(question => question.workedSolution),
+			explanations: questions.some(question => question.explanation),
+			correctAnswerExplanations: questions.every(question => question.correctAnswerExplanation),
+			incorrectOptionsExplanations: questions.every(question => question.incorrectOptionsExplanation),
+			commonMistakes: questions.every(question => question.commonMistake),
+			conceptsTested: questions.every(question => question.conceptsTested),
 			los: questions.some(question => question.los),
 			trace: questions.some(question => question.traceSection || question.tracePage),
 			concepts: questions.some(question => question.conceptsTested),
@@ -312,17 +354,40 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 		: null;
 	if (!equalMarks) warnings.push({ code: 'PER_QUESTION_MARKS_REQUIRED', message: 'Source set does not provide per-question marks; administrator mapping is required.' });
 	const subQuestions = sample.questions.map((question, index) => {
-		const missing = [];
+		const missingRequired = [];
+		const missingOptional = [];
 		const mappedTopicId = sourceTopicMap.get(question.topicName) || exactTopics.get(String(question.topicName || '').toLowerCase()) || primaryTopicId || null;
 		const mappedConceptIds = Array.isArray(question.conceptIds) ? question.conceptIds.filter(Boolean) : [];
-		if (!question.stem) missing.push('stem');
-		if (!question.options.length) missing.push('options');
-		if (!question.correctAnswer) missing.push('correctAnswer');
-		if (question.options.filter(option => option.isCorrect).length !== 1) missing.push('singleCorrectOption');
-		if (!question.workedSolution) missing.push('workedSolution');
-		if (!question.los) missing.push('los');
-		if (!question.keyFormulas) missing.push('keyFormulas');
-		return {
+		if (!question.stem) missingRequired.push('stem');
+		if (!question.options.length) missingRequired.push('options');
+		if (!question.correctAnswer) missingRequired.push('correctAnswer');
+		if (question.options.filter(option => option.isCorrect).length !== 1) missingRequired.push('singleCorrectOption');
+		if (!question.workedSolution) missingRequired.push('workedSolution');
+		if (!question.correctAnswerExplanation) missingRequired.push('correctAnswerExplanation');
+		if (!question.incorrectOptionsExplanation) missingRequired.push('incorrectOptionsExplanation');
+		if (!question.los) missingOptional.push('los');
+		if (!question.traceSection) missingOptional.push('traceSection');
+		if (!question.tracePage) missingOptional.push('tracePage');
+		if (!question.keyFormulas) missingOptional.push('keyFormulas');
+		if (!question.commonMistake) missingOptional.push('commonMistake');
+		if (!question.conceptsTested) missingOptional.push('conceptsTested');
+		const sourceFieldPresence = {
+			stem: Boolean(question.stem),
+			options: question.options.length > 0,
+			correctAnswer: Boolean(question.correctAnswer),
+			workedSolution: Boolean(question.workedSolution),
+			correctAnswerExplanation: Boolean(question.correctAnswerExplanation),
+			incorrectOptionsExplanation: Boolean(question.incorrectOptionsExplanation),
+			commonMistake: Boolean(question.commonMistake),
+			conceptsTested: Boolean(question.conceptsTested),
+			los: Boolean(question.los),
+			traceSection: Boolean(question.traceSection),
+			tracePage: Boolean(question.tracePage),
+			keyFormulas: Boolean(question.keyFormulas)
+		};
+		const sourceFields = Object.entries(sourceFieldPresence).filter(([, present]) => present).map(([field]) => field);
+		const mappedFields = [...sourceFields];
+		const child = {
 			externalQuestionId: question.externalQuestionId || `${sample.setId}-Q${String(question.number || index + 1).padStart(3, '0')}`,
 			stem: question.stem,
 			difficulty,
@@ -330,12 +395,18 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 			primaryTopicId: mappedTopicId,
 			additionalTopicIds: [],
 			conceptIds: mappedConceptIds.length ? mappedConceptIds : (Array.isArray(conceptMap[question.conceptsTested]) ? conceptMap[question.conceptsTested] : []),
+			sourceSetId: sample.setId,
 			los: question.los,
 			traceSection: question.traceSection,
 			tracePage: question.tracePage,
 			keyFormulas: question.keyFormulas,
-			workedSolution: [question.workedSolution, question.explanation ? `Explanation: ${question.explanation}` : null].filter(Boolean).join('\n\n') || null,
-			explanation: question.explanation,
+			workedSolution: question.workedSolution || null,
+			explanation: question.explanation || null,
+			correctAnswerExplanation: question.correctAnswerExplanation || null,
+			incorrectOptionsExplanation: question.incorrectOptionsExplanation || null,
+			commonMistake: question.commonMistake || null,
+			conceptsTested: question.conceptsTested || null,
+			answerVerificationStatus: 'SOURCE_PROVIDED',
 			options: question.options.map((option, optionIndex) => ({
 				label: option.label || String.fromCharCode(65 + optionIndex),
 				text: option.text,
@@ -346,12 +417,21 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 				sourceSetId: sample.setId,
 				sourceQuestionId: question.externalQuestionId,
 				sourceTopicName: question.topicName,
-				commonMistake: question.commonMistake,
-				conceptsTested: question.conceptsTested,
-				missingSourceFields: missing
+				missingSourceFields: [...missingRequired, ...missingOptional],
+				missingRequiredSourceFields: missingRequired,
+				missingOptionalSourceFields: missingOptional,
+				fieldMapping: {
+					sourceFields,
+					mappedFields,
+					unmappedFields: sourceFields.filter(field => !mappedFields.includes(field)),
+					missingRequiredSourceFields: missingRequired,
+					missingOptionalSourceFields: missingOptional
+				}
 			}
 		};
+		return child;
 	});
+	const childFieldMappings = subQuestions.map(question => question.reviewMetadata.fieldMapping);
 	const payload = {
 		schemaVersion: 'sample-bank-dry-run',
 		externalQuestionId: sample.setId,
@@ -363,6 +443,8 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 		difficulty,
 		marks: sample.totalMarks || subQuestions.reduce((sum, question) => sum + (question.marks || 0), 0),
 		stem: sample.caseStudyTitle || sample.setId,
+		caseStudyTitle: sample.caseStudyTitle || null,
+		sourceSetId: sample.setId,
 		vignetteText: sample.vignette,
 		subQuestions,
 		generation: {
@@ -378,6 +460,12 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 			sourceTotalMarks: sample.totalMarks,
 			derivedEqualMarks: equalMarks,
 			provisionalDifficulty: difficulty,
+			fieldMapping: {
+				caseStudyTitle: Boolean(sample.caseStudyTitle),
+				sourceSetId: Boolean(sample.setId),
+				vignette: Boolean(sample.vignette),
+				children: childFieldMappings
+			},
 			warnings
 		}
 	};
@@ -404,6 +492,7 @@ export async function dryRunSampleImport(prisma, sample, mapping = {}) {
 		mappedPayload: normalized,
 		validation,
 		duplicates,
+		fieldMapping: normalized.reviewMetadata?.fieldMapping || null,
 		warnings: academic.warnings,
 		automaticValidationOnly: true,
 		humanReviewRequired: true

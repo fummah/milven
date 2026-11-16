@@ -140,7 +140,7 @@ Prompt templates:
 
 ```json
 {
-  "schemaVersion": "2026-11-08",
+  "schemaVersion": "2026-11-16",
   "externalQuestionId": "CLIENT-Q-001",
   "questionType": "MCQ",
   "courseId": "COURSE_ID",
@@ -157,6 +157,11 @@ Prompt templates:
   "tracePage": "p. 10",
   "keyFormulas": "\\[ E(R) = R_f + \\beta(E(R_m)-R_f) \\]",
   "workedSolution": "Step 1... Step 2... Step 3...",
+  "correctAnswerExplanation": "Why the selected answer is correct.",
+  "incorrectOptionsExplanation": "Why each distractor is wrong, stored once rather than copied into every option.",
+  "commonMistake": "The common candidate mistake this item tests.",
+  "conceptsTested": "The concepts tested.",
+  "answerVerificationStatus": "SOURCE_PROVIDED",
   "options": [
     { "label": "A", "text": "First option", "isCorrect": false, "rationale": "Why this is a realistic error." },
     { "label": "B", "text": "Second option", "isCorrect": true, "rationale": "Why this is correct." },
@@ -173,7 +178,7 @@ Prompt templates:
 }
 ```
 
-For vignette item sets, use `questionType: "VIGNETTE_MCQ"`, a shared `vignetteText`, and ordered `subQuestions`. Every child must include its own stem, marks, difficulty, LOS, trace references, formulas, worked solution and concept mapping. Parent marks must equal the child total.
+For vignette item sets, use `questionType: "VIGNETTE_MCQ"`, a shared `vignetteText`, optional `caseStudyTitle` and `sourceSetId`, and ordered `subQuestions`. Every child must include its own stem, marks, difficulty, LOS, trace references, formulas, worked solution, correct-answer explanation, incorrect-options explanation, common mistake, concepts tested and concept mapping. Parent marks must equal the child total. Do not copy a combined explanation into every option rationale; keep it in `incorrectOptionsExplanation`.
 
 ## Claude remote connector
 

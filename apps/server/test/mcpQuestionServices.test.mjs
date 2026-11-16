@@ -5,6 +5,7 @@ import { validateQuestionPayload } from '../src/lib/questions/questionValidation
 import { checkQuestionDuplicates } from '../src/lib/questions/questionDuplicates.js';
 import { parseSampleBankIndex, parseSampleSetHtml, dryRunSampleImport } from '../src/lib/questions/sampleBank.js';
 import { hashMcpToken, createMcpTokenValue, normalizeScopes } from '../src/lib/mcp/tokenAuth.js';
+import { repairQuestionPayload } from '../src/lib/questions/questionRepair.js';
 
 const ACADEMIC = {
 	courseId: 'course-1',
@@ -171,6 +172,42 @@ test('validates a four-child vignette and preserves child fields', async () => {
 	assert.equal(normalized.subQuestions[3].workedSolution, 'Step 1 for child 4. Step 2 for child 4.');
 });
 
+test('staged vignette repair recovers legacy explained fields without overwriting content', () => {
+	const legacy = {
+		questionType: 'VIGNETTE_MCQ',
+		stem: 'Legacy Case Study',
+		reviewMetadata: { sourceSetId: 'SET-447' },
+		subQuestions: [{
+			externalQuestionId: 'Q-LEGACY-1',
+			stem: 'Which action is best?',
+			difficulty: 'HARD',
+			marks: 3,
+			los: 'Evaluate the evidence.',
+			traceSection: 'Framework',
+			tracePage: 'p. 4',
+			workedSolution: 'Step 1: review evidence.\n\nExplanation: <p><strong>Correct answer:</strong> Document the evidence.</p><p><strong>Why the other options are wrong:</strong> The distractors skip evidence.</p><p><strong>Common mistake:</strong> Acting immediately.</p><p><strong>Concepts tested:</strong> Disciplined process.</p>',
+			options: [
+				{ label: 'A', text: 'Act now.', isCorrect: false },
+				{ label: 'B', text: 'Document the evidence.', isCorrect: true },
+				{ label: 'C', text: 'Ignore the evidence.', isCorrect: false }
+			],
+			reviewMetadata: { sourceSetId: 'SET-447', commonMistake: 'Acting immediately.', conceptsTested: 'Disciplined process.' }
+		}]
+	};
+	const repair = repairQuestionPayload(legacy);
+	assert.equal(repair.changed, true);
+	const child = repair.payload.subQuestions[0];
+	assert.equal(child.workedSolution, 'Step 1: review evidence.');
+	assert.match(child.correctAnswerExplanation, /Document the evidence/);
+	assert.match(child.incorrectOptionsExplanation, /distractors skip evidence/);
+	assert.equal(child.commonMistake, 'Acting immediately.');
+	assert.equal(child.conceptsTested, 'Disciplined process.');
+	assert.equal(child.sourceSetId, 'SET-447');
+	assert.equal(repair.payload.caseStudyTitle, 'Legacy Case Study');
+	assert.equal(repair.payload.sourceSetId, 'SET-447');
+	assert.equal(legacy.subQuestions[0].workedSolution.includes('Explanation:'), true);
+});
+
 test('duplicate service detects exact external QID and normalized stem', async () => {
 	const existing = {
 		id: 'q-existing',
@@ -209,7 +246,7 @@ test('sample bank parser preserves set structure and field boundaries', async ()
 	<p>Which action is most appropriate?</p>
 	<ol class="opts"><li class="opt"><span class="ltr">A</span><span>Act immediately.</span></li><li class="opt ok"><span class="ltr">B</span><span>Document the evidence.</span></li><li class="opt"><span class="ltr">C</span><span>Ignore the signals.</span></li></ol>
 	<button class="reveal">Show answer and solution</button>
-	<div class="sol" hidden><p class="key">Answer: B</p><h4>Worked solution</h4><p>Step 1: review evidence. Step 2: document conclusion.</p><h4>Explanation</h4><p><strong>Correct answer:</strong> Evidence must be documented.</p><p><strong>Common mistake:</strong> Acting without evidence.</p><p><strong>Concepts tested:</strong> Framework for developing capital market expectations.</p><h4>Key formulas</h4><p>None (conceptual question)</p><dl class="trace"><dt>LOS</dt><dd>discuss the framework for capital market expectations</dd><dt>Section</dt><dd>Framework (p. 10)</dd><dt>Concept</dt><dd>Framework for developing capital market expectations</dd></dl></div></section>
+	<div class="sol" hidden><p class="key">Answer: B</p><h4>Worked solution</h4><p>Step 1: review evidence. Step 2: document conclusion.</p><h4>Explanation</h4><p><strong>Correct answer:</strong> Evidence must be documented.</p><p><strong>Why the other options are wrong:</strong> Acting immediately ignores evidence, and ignoring signals abandons the process.</p><p><strong>Common mistake:</strong> Acting without evidence.</p><p><strong>Concepts tested:</strong> Framework for developing capital market expectations.</p><h4>Key formulas</h4><p>None (conceptual question)</p><dl class="trace"><dt>LOS</dt><dd>discuss the framework for capital market expectations</dd><dt>Section</dt><dd>Framework (p. 10)</dd><dt>Concept</dt><dd>Framework for developing capital market expectations</dd></dl></div></section>
 	<section class="q"><div class="qhead"><span class="qn">Question 2</span><span class="meta">Topic One \u00b7 Q-TEST-002</span></div>
 	<p>Which condition would justify a revision?</p>
 	<ol class="opts"><li class="opt ok"><span class="ltr">A</span><span>Verified structural change.</span></li><li class="opt"><span class="ltr">B</span><span>Unverified opinion.</span></li><li class="opt"><span class="ltr">C</span><span>No new evidence.</span></li></ol>
@@ -229,8 +266,57 @@ test('sample bank parser preserves set structure and field boundaries', async ()
 	assert.equal(parsed.questions[0].los, 'discuss the framework for capital market expectations');
 	assert.equal(parsed.questions[1].tracePage, 'p. 11');
 	assert.equal(parsed.questions[1].keyFormulas, '\\[ E(R) = R_f + \\beta(E(R_m)-R_f) \\]');
+	assert.match(parsed.questions[0].correctAnswerExplanation, /Evidence must be documented/);
+	assert.match(parsed.questions[0].incorrectOptionsExplanation, /Acting immediately ignores evidence/);
+	assert.equal(parsed.questions[0].commonMistake, 'Acting without evidence.');
+	assert.equal(parsed.questions[0].conceptsTested, 'Framework for developing capital market expectations.');
+	assert.equal(parsed.questions[0].keyFormulas, null);
+	assert.equal(parsed.rawFieldAvailability.correctAnswerExplanations, true);
+	assert.equal(parsed.rawFieldAvailability.incorrectOptionsExplanations, false);
 	assert.equal(parsed.totalMarks, 6);
 	const dryRun = await dryRunSampleImport(fakePrisma(), parsed, { ...ACADEMIC });
 	assert.ok(Array.isArray(dryRun.validation?.errors));
+	assert.match(dryRun.mappedPayload.subQuestions[0].correctAnswerExplanation, /Evidence must be documented/);
+	assert.match(dryRun.mappedPayload.subQuestions[0].incorrectOptionsExplanation, /Acting immediately/);
+	assert.equal(dryRun.mappedPayload.subQuestions[0].commonMistake, 'Acting without evidence.');
+	assert.equal(dryRun.mappedPayload.caseStudyTitle, 'Capital Market Expectations Case');
+	assert.equal(dryRun.mappedPayload.sourceSetId, 'SET-001');
+	assert.deepEqual(dryRun.fieldMapping.children[0].unmappedFields, []);
 	assert.equal(dryRun.automaticValidationOnly, true);
+});
+
+test('combined explanations are stored once and satisfy MCQ completeness', async () => {
+	const normalized = mcq({
+		correctAnswerExplanation: 'The documented process preserves evidence.',
+		incorrectOptionsExplanation: 'The distractors skip evidence or ignore conflicting signals.',
+		commonMistake: 'Acting before documenting the evidence.',
+		conceptsTested: 'Disciplined capital market expectations.',
+		options: [
+			{ label: 'A', text: 'Act without reviewing the evidence.', isCorrect: false },
+			{ label: 'B', text: 'Document the evidence and assumptions before deciding.', isCorrect: true },
+			{ label: 'C', text: 'Ignore all conflicting signals.', isCorrect: false }
+		]
+	});
+	const result = await validateQuestionPayload(fakePrisma(), normalized);
+	assert.equal(result.ok, true, JSON.stringify(result.errors));
+	assert.equal(result.summary.structuralStatus, 'STRUCTURALLY_VALID');
+	assert.equal(result.summary.reviewStatus, 'READY_FOR_APPROVAL');
+	assert.equal(result.summary.completeness.missingCoreFields.length, 0);
+	assert.equal(result.warnings.some(warning => warning.code === 'DISTRACTOR_EXPLANATION_MISSING'), false);
+});
+
+test('missing distractor explanations produce one question-level warning', async () => {
+	const normalized = mcq({
+		options: [
+			{ label: 'A', text: 'Act without reviewing the evidence.', isCorrect: false },
+			{ label: 'B', text: 'Document the evidence and assumptions before deciding.', isCorrect: true },
+			{ label: 'C', text: 'Ignore all conflicting signals.', isCorrect: false }
+		]
+	});
+	const result = await validateQuestionPayload(fakePrisma(), normalized);
+	const warnings = result.warnings.filter(warning => warning.code === 'DISTRACTOR_EXPLANATION_MISSING');
+	assert.equal(warnings.length, 1);
+	assert.equal(warnings[0].path, 'question.incorrectOptionsExplanation');
+	assert.equal(result.summary.reviewStatus, 'NEEDS_REVIEW');
+	assert.equal(result.summary.structuralStatus, 'STRUCTURALLY_VALID');
 });

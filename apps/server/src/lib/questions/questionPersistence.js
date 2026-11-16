@@ -1,8 +1,9 @@
 import { sanitizeDbData } from '../dbText.js';
 
-function mergeWorkedSolution(workedSolution, explanation) {
+function mergeWorkedSolution(workedSolution, explanation, subject = {}) {
 	const ws = String(workedSolution || '').trim();
 	const explanationText = String(explanation || '').trim();
+	if (subject.correctAnswerExplanation || subject.incorrectOptionsExplanation) return ws || null;
 	if (ws && explanationText) return `${explanationText}\n\n--- Worked Solution ---\n${ws}`;
 	return explanationText || ws || null;
 }
@@ -75,12 +76,19 @@ export async function persistQuestionPayload(prisma, payload, {
 				marks: totalMarks,
 				orderIndex: 0,
 				vignetteText: payload.vignetteText || null,
+				caseStudyTitle: payload.caseStudyTitle || null,
+				sourceSetId: payload.sourceSetId || payload.reviewMetadata?.sourceSetId || null,
+				correctAnswerExplanation: payload.correctAnswerExplanation || null,
+				incorrectOptionsExplanation: payload.incorrectOptionsExplanation || null,
+				commonMistake: payload.commonMistake || null,
+				conceptsTested: payload.conceptsTested || null,
+				answerVerificationStatus: payload.answerVerificationStatus || null,
 				imageUrl: payload.imageUrl || null,
 				los: payload.los || null,
 				traceSection: payload.traceSection || null,
 				tracePage: payload.tracePage || null,
 				keyFormulas: payload.keyFormulas || payload.formulas || null,
-				workedSolution: mergeWorkedSolution(payload.workedSolution, payload.explanation),
+				workedSolution: mergeWorkedSolution(payload.workedSolution, payload.explanation, payload),
 				questionGuidelines: payload.markingGuidelines || null,
 				output: payload.expectedOutput || null,
 				calculationSteps: payload.calculationSteps?.length ? payload.calculationSteps : undefined,
@@ -117,12 +125,18 @@ export async function persistQuestionPayload(prisma, payload, {
 						parentId: parent.id,
 						orderIndex: index + 1,
 						marks: child.marks || 1,
+						sourceSetId: child.sourceSetId || payload.sourceSetId || payload.reviewMetadata?.sourceSetId || null,
+						correctAnswerExplanation: child.correctAnswerExplanation || null,
+						incorrectOptionsExplanation: child.incorrectOptionsExplanation || null,
+						commonMistake: child.commonMistake || null,
+						conceptsTested: child.conceptsTested || null,
+						answerVerificationStatus: child.answerVerificationStatus || null,
 						imageUrl: child.imageUrl || null,
 						los: child.los || null,
 						traceSection: child.traceSection || null,
 						tracePage: child.tracePage || null,
 						keyFormulas: child.keyFormulas || child.formulas || null,
-						workedSolution: mergeWorkedSolution(child.workedSolution, child.explanation),
+						workedSolution: mergeWorkedSolution(child.workedSolution, child.explanation, child),
 						questionGuidelines: child.markingGuidelines || null,
 						output: child.expectedOutput || null,
 						calculationSteps: child.calculationSteps?.length ? child.calculationSteps : undefined,

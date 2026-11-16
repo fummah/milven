@@ -390,6 +390,34 @@ export async function cancelReviewBatch(prisma, batchId, { actorId, tokenId = nu
 	return { ok: true, batch: updated };
 }
 
+export async function deleteReviewBatch(prisma, batchId, { actorId = null, tokenId = null } = {}) {
+	const batch = await prisma.mcpImportBatch.findUnique({
+		where: { id: batchId },
+		select: { id: true, status: true, commitStatus: true, itemCount: true, committedCount: true }
+	});
+	if (!batch) return { ok: false, statusCode: 404, error: 'Batch not found.' };
+	await prisma.mcpImportBatch.delete({ where: { id: batchId } });
+	await auditMcpAction(prisma, {
+		action: 'BATCH_DELETED',
+		actorId,
+		tokenId,
+		batchId,
+		detail: {
+			status: batch.status,
+			commitStatus: batch.commitStatus,
+			itemCount: batch.itemCount,
+			committedCount: batch.committedCount,
+			liveQuestionsRetained: batch.committedCount > 0
+		}
+	});
+	return {
+		ok: true,
+		batchId,
+		deleted: batch,
+		liveQuestionsRetained: batch.committedCount > 0
+	};
+}
+
 export async function commitApprovedBatch(prisma, batchId, { actorId, tokenId = null } = {}) {
 	const batch = await getReviewBatch(prisma, batchId);
 	if (!batch) return { ok: false, statusCode: 404, error: 'Batch not found.' };

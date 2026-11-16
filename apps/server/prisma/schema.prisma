@@ -213,6 +213,13 @@ model Question {
   children           Question[]     @relation("QuestionParentChild")
   // Vignette/case-study text stored directly on the parent question
   vignetteText       String?
+  caseStudyTitle     String?
+  sourceSetId        String?
+  correctAnswerExplanation    String?
+  incorrectOptionsExplanation String?
+  commonMistake      String?
+  conceptsTested     String?
+  answerVerificationStatus    String?
   // Legacy field kept for backward compatibility during migration
   vignetteId         String?
   vignette           Vignette?      @relation(fields: [vignetteId], references: [id])
@@ -239,6 +246,7 @@ model Question {
   @@index([courseId, difficulty])
   @@index([moduleId, difficulty])
   @@index([parentId, orderIndex])
+  @@index([sourceSetId])
 }
 
 model McqOption {

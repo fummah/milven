@@ -4,10 +4,12 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { createMcpTokenValue, MCP_SCOPES, normalizeScopes } from '../lib/mcp/tokenAuth.js';
 import { auditMcpAction } from '../lib/questions/questionReview.js';
+import { reviewBatchFieldRepair } from '../lib/questions/questionRepair.js';
 import {
 	approveReviewBatch,
 	cancelReviewBatch,
 	commitApprovedBatch,
+	deleteReviewBatch,
 	getReviewBatch,
 	listReviewBatches,
 	rejectReviewBatch,
@@ -111,6 +113,21 @@ export function mcpAdminRouter(prisma) {
 		const batch = await getReviewBatch(prisma, req.params.id);
 		if (!batch) return res.status(404).json({ error: 'Import batch not found.' });
 		return res.json({ batch });
+	});
+
+	router.delete('/imports/:id', async (req, res) => {
+		const result = await deleteReviewBatch(prisma, req.params.id, { actorId: req.user.id });
+		if (!result.ok) return res.status(result.statusCode || 404).json(result);
+		return res.json(result);
+	});
+
+	router.post('/imports/:id/repair', async (req, res) => {
+		const result = await reviewBatchFieldRepair(prisma, req.params.id, {
+			apply: req.body?.apply === true,
+			actorId: req.user.id
+		});
+		if (!result.ok) return res.status(result.statusCode || 409).json(result);
+		return res.json(result);
 	});
 
 	router.put('/imports/:batchId/items/:itemId', async (req, res) => {

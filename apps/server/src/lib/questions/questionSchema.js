@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const QUESTION_SCHEMA_VERSION = '2026-11-08';
+export const QUESTION_SCHEMA_VERSION = '2026-11-16';
 export const QUESTION_TYPES = ['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE'];
 export const DIFFICULTIES = ['EASY', 'MEDIUM', 'HARD'];
 export const CFA_LEVELS = ['NONE', 'LEVEL1', 'LEVEL2', 'LEVEL3'];
@@ -26,6 +26,12 @@ const subjectMetadata = {
 	keyFormulas: z.string().optional().nullable(),
 	workedSolution: z.string().optional().nullable(),
 	explanation: z.string().optional().nullable(),
+	correctAnswerExplanation: z.string().optional().nullable(),
+	incorrectOptionsExplanation: z.string().optional().nullable(),
+	commonMistake: z.string().optional().nullable(),
+	conceptsTested: z.string().optional().nullable(),
+	sourceSetId: z.string().max(120).optional().nullable(),
+	answerVerificationStatus: z.enum(['UNVERIFIED', 'SOURCE_PROVIDED', 'AUTOMATIC_CHECKED', 'HUMAN_VERIFIED']).optional().nullable(),
 	imageUrl: z.string().url().optional().nullable()
 };
 
@@ -49,6 +55,7 @@ export const questionPayloadSchema = z.object({
 	primaryTopicId: z.string().min(1),
 	options: z.array(optionSchema).max(10).optional(),
 	vignetteText: z.string().optional().nullable(),
+	caseStudyTitle: z.string().optional().nullable(),
 	subQuestions: z.array(subQuestionSchema).max(20).optional(),
 	markingGuidelines: z.string().optional().nullable(),
 	expectedOutput: z.string().optional().nullable(),
@@ -110,12 +117,19 @@ export function normalizeQuestionPayload(input) {
 		schemaVersion: QUESTION_SCHEMA_VERSION,
 		stem: cleanText(cleaned.stem),
 		vignetteText: cleanText(cleaned.vignetteText || '') || null,
+		caseStudyTitle: cleanText(cleaned.caseStudyTitle || '') || null,
 		los: cleanText(cleaned.los || '') || null,
 		traceSection: cleanText(cleaned.traceSection || '') || null,
 		tracePage: cleanText(cleaned.tracePage || '') || null,
 		keyFormulas: cleanText(cleaned.keyFormulas || '') || null,
 		workedSolution: cleanText(cleaned.workedSolution || '') || null,
 		explanation: cleanText(cleaned.explanation || '') || null,
+		correctAnswerExplanation: cleanText(cleaned.correctAnswerExplanation || '') || null,
+		incorrectOptionsExplanation: cleanText(cleaned.incorrectOptionsExplanation || '') || null,
+		commonMistake: cleanText(cleaned.commonMistake || '') || null,
+		conceptsTested: cleanText(cleaned.conceptsTested || '') || null,
+		sourceSetId: cleanText(cleaned.sourceSetId || '') || null,
+		answerVerificationStatus: cleaned.answerVerificationStatus || null,
 		markingGuidelines: cleanText(cleaned.markingGuidelines || '') || null,
 		expectedOutput: cleanText(cleaned.expectedOutput || '') || null,
 		formulas: cleanText(cleaned.formulas || '') || null,
@@ -130,6 +144,12 @@ export function normalizeQuestionPayload(input) {
 				keyFormulas: cleanText(sub.keyFormulas || '') || null,
 				workedSolution: cleanText(sub.workedSolution || '') || null,
 				explanation: cleanText(sub.explanation || '') || null,
+				correctAnswerExplanation: cleanText(sub.correctAnswerExplanation || '') || null,
+				incorrectOptionsExplanation: cleanText(sub.incorrectOptionsExplanation || '') || null,
+				commonMistake: cleanText(sub.commonMistake || '') || null,
+				conceptsTested: cleanText(sub.conceptsTested || '') || null,
+				sourceSetId: cleanText(sub.sourceSetId || '') || null,
+				answerVerificationStatus: sub.answerVerificationStatus || null,
 				markingGuidelines: cleanText(sub.markingGuidelines || '') || null,
 				expectedOutput: cleanText(sub.expectedOutput || '') || null,
 				formulas: cleanText(sub.formulas || '') || null,
