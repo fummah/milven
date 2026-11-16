@@ -1,5 +1,5 @@
 import { DIFFICULTY_RUBRICS, HARD_CRITERIA, normalizeDifficultyValue } from '../questionDifficulty.js';
-import { QUESTION_SCHEMA_VERSION, questionPayloadSchema } from './questionSchema.js';
+import { FIELD_ALIASES, QUESTION_SCHEMA_VERSION, questionPayloadSchema } from './questionSchema.js';
 
 export const REQUIRED_QUESTION_RULES = [
 	'Use only the supplied Milven course, volume, module, topic and concept IDs.',
@@ -39,6 +39,7 @@ export const QUESTION_BLUEPRINT = {
 		incorrectOptionsExplanation: 'One combined explanation of why each distractor is wrong; do not duplicate it per option',
 		commonMistake: 'The common candidate mistake tested by the item',
 		conceptsTested: 'The concepts tested, preserving source wording where supplied',
+		sourceConcept: 'Original curriculum Concept text; keep separate from verified conceptIds',
 		sourceSetId: 'Optional source item-set ID for provenance',
 		answerVerificationStatus: 'UNVERIFIED | SOURCE_PROVIDED | AUTOMATIC_CHECKED | HUMAN_VERIFIED',
 		options: 'MCQ only: exactly 3 options with label, text, isCorrect and optional individual rationale',
@@ -53,6 +54,7 @@ export const QUESTION_BLUEPRINT = {
 		reviewMetadata: 'Review-only metadata that is not treated as a database field'
 	},
 	rules: REQUIRED_QUESTION_RULES,
+	acceptedAliases: FIELD_ALIASES,
 	difficultyRubrics: DIFFICULTY_RUBRICS,
 	hardCriteria: HARD_CRITERIA,
 	workflow: ['VALIDATE', 'CREATE_DRAFT_OR_BATCH', 'ADMIN_REVIEW', 'APPROVE', 'COMMIT'],

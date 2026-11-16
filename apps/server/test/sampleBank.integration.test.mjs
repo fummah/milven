@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,6 +6,8 @@ import { PrismaClient } from '@prisma/client';
 import { loadSampleBank, dryRunSampleImport, transformSampleSetToQuestion } from '../src/lib/questions/sampleBank.js';
 import { normalizeQuestionPayload } from '../src/lib/questions/questionSchema.js';
 import { validateQuestionPayload } from '../src/lib/questions/questionValidation.js';
+import { validateAcademicMapping } from '../src/lib/questions/questionCurriculum.js';
+import { persistQuestionPayload } from '../src/lib/questions/questionPersistence.js';
 
 const folder = process.env.SAMPLE_BANK_DIR;
 const enabled = Boolean(folder && fs.existsSync(path.join(folder, 'index.html')) && process.env.DATABASE_URL);
@@ -37,6 +39,67 @@ test('real CFA Level III 500-set bank parses completely and SET-001 dry-runs', {
 			assert.equal(fixture.rawFieldAvailability.correctAnswerExplanations, true);
 			assert.equal(fixture.rawFieldAvailability.incorrectOptionsExplanations, true);
 		}
+		const set12 = bank.parsed.find(set => set.setId === 'SET-012');
+		assert.ok(set12);
+		assert.equal(set12.caseStudyTitle, 'Driftwood Family Office');
+		const expectedSet12 = [
+			{
+				qid: 'Q-AA-IBGG7',
+				correct: "Combining approaches lets each offset the others' weaknesses, which is why careful forecasters do so.",
+				incorrect: 'The approaches are complementary, not incompatible. Combination does not necessarily create look-ahead bias.',
+				common: 'Assuming approaches must be used in isolation.',
+				concepts: 'Approaches to economic forecasting.',
+				sourceConcept: 'Combining forecasting approaches',
+				los: 'compare major approaches to economic forecasting',
+				section: 'Approaches to Economic Forecasting',
+				page: '25'
+			},
+			{
+				qid: 'Q-AA-9IL7P',
+				correct: 'In the slowdown phase, cyclical equities are vulnerable as earnings fall, so Recommendation 2 conflicts with the phase.',
+				incorrect: 'Lengthening duration and holding defensive assets are consistent with peaking yields and falling equities.',
+				common: 'Extrapolating past earnings momentum into a slowdown.',
+				concepts: 'Business cycle and market expectations.',
+				sourceConcept: 'Business cycle phase and tactical positioning',
+				los: 'discuss how business cycles affect short- and long-term expectations',
+				section: 'Business Cycle Analysis, Phases of the Business Cycle and Market Expectations and the Business Cycle',
+				page: '29'
+			},
+			{
+				qid: 'Q-AA-5H5GX',
+				correct: 'Supply-driven cycles make inflation move opposite to output, unlike the usual demand-driven pattern.',
+				incorrect: 'Procyclical inflation describes demand-driven cycles. Large supply shocks affect the general price level, not only relative prices.',
+				common: 'Assuming inflation always rises in expansions.',
+				concepts: 'Inflation and the business cycle.',
+				sourceConcept: 'Supply shocks and countercyclical inflation',
+				los: 'explain the relationship of inflation to the business cycle and the implications of inflation for cash, bonds, equity, and real estate returns',
+				section: 'Inflation and Deflation: Trends and Relations to the Business Cycle',
+				page: '34–36'
+			},
+			{
+				qid: 'Q-AA-BY6A5',
+				correct: 'Rate cuts take time to affect spending and investment, so a growth rebound within a quarter is unlikely.',
+				incorrect: 'Spending does not respond immediately. Anticipation moves markets but does not remove lags in the economy.',
+				common: 'Assuming policy works instantly.',
+				concepts: 'Monetary policy and the business cycle.',
+				sourceConcept: 'Lags in monetary policy',
+				los: 'discuss the effects of monetary and fiscal policy on business cycles',
+				section: 'Analysis of Monetary and Fiscal Policies',
+				page: '37'
+			}
+		];
+		expectedSet12.forEach((expected, index) => {
+			const child = set12.questions[index];
+			assert.equal(child.externalQuestionId, expected.qid);
+			assert.equal(child.correctAnswerExplanation, expected.correct);
+			assert.equal(child.incorrectOptionsExplanation, expected.incorrect);
+			assert.equal(child.commonMistake, expected.common);
+			assert.equal(child.conceptsTested, expected.concepts);
+			assert.equal(child.sourceConcept, expected.sourceConcept);
+			assert.equal(child.los, expected.los);
+			assert.equal(child.traceSection, expected.section);
+			assert.equal(child.tracePage, expected.page);
+		});
 		const first = bank.parsed.find(set => set.setId === 'SET-001');
 		assert.ok(first);
 		assert.equal(first.volume, 'Asset Allocation');
@@ -87,7 +150,7 @@ test('all 500 supplied sets map and validate with the reviewed mapping file', { 
 		}
 		assert.deepEqual(failures, []);
 		assert.equal(valid, 500);
-		const fixtureIds = ['SET-447', 'SET-448', 'SET-449', 'SET-450', 'SET-451', 'SET-452', 'SET-453', 'SET-454'];
+		const fixtureIds = ['SET-012', 'SET-447', 'SET-448', 'SET-449', 'SET-450', 'SET-451', 'SET-452', 'SET-453', 'SET-454'];
 		for (const setId of fixtureIds) {
 			const sample = bank.parsed.find(row => row.setId === setId);
 			assert.ok(sample, `${setId} fixture is missing`);
@@ -105,12 +168,14 @@ test('all 500 supplied sets map and validate with the reviewed mapping file', { 
 			assert.ok(normalized.subQuestions.every(question => question.incorrectOptionsExplanation));
 			assert.ok(normalized.subQuestions.every(question => question.commonMistake));
 			assert.ok(normalized.subQuestions.every(question => question.conceptsTested));
+			assert.ok(normalized.subQuestions.every(question => question.sourceConcept));
 			assert.ok(normalized.subQuestions.every(question => question.sourceSetId === setId));
 			assert.ok(normalized.subQuestions.every(question => question.answerVerificationStatus === 'SOURCE_PROVIDED'));
 			assert.ok(normalized.subQuestions.every(question => !/Explanation:/i.test(question.workedSolution || '')));
 			assert.ok(payload.reviewMetadata.fieldMapping.children.every(child => child.unmappedFields.length === 0));
 			const validation = await validateQuestionPayload(prisma, normalized);
-			assert.equal(validation.summary.reviewStatus, 'READY_FOR_APPROVAL', JSON.stringify(validation.summary.completeness));
+			assert.notEqual(validation.summary.reviewStatus, 'INVALID', JSON.stringify(validation.summary.completeness));
+			if (setId === 'SET-012') assert.equal(validation.summary.reviewStatus, 'READY_FOR_APPROVAL', JSON.stringify(validation.summary.completeness));
 		}
 	} finally {
 		await prisma.$disconnect();

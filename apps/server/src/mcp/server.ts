@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+﻿import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
 	listCourses,
@@ -10,7 +10,7 @@ import {
 	findAcademicCandidates
 } from '../lib/questions/questionCurriculum.js';
 import { buildQuestionBlueprint, QUESTION_BLUEPRINT } from '../lib/questions/questionBlueprint.js';
-import { QUESTION_SCHEMA_VERSION, questionPayloadSchema } from '../lib/questions/questionSchema.js';
+import { QUESTION_SCHEMA_VERSION, questionPayloadInputSchema } from '../lib/questions/questionSchema.js';
 import { validateQuestionSet, getQuestionDuplicateReport, createReviewBatch, getReviewBatch, updateReviewItem, commitApprovedBatch } from '../lib/questions/questionReview.js';
 import { serializeQuestionOptions } from '../lib/questions/questionPersistence.js';
 import { hasScope, MCP_SCOPES } from '../lib/mcp/tokenAuth.js';
@@ -321,7 +321,7 @@ export function createMilvenMcpServer({ prisma, auth, endpoint }: McpContext) {
 		title: 'Validate question payloads',
 		description: 'Read-only. Strictly validates one or more complete question payloads for schema, academic mapping, options, marks, HTML, Unicode, LaTeX, difficulty and internal consistency. Automatic validation is not human academic approval.',
 		inputSchema: {
-			questions: z.array(questionPayloadSchema).min(1).max(50)
+			questions: z.array(questionPayloadInputSchema).min(1).max(50)
 		}
 	}, async ({ questions }) => {
 		const denied = requireScope(auth, VALIDATE_SCOPE);
@@ -334,7 +334,7 @@ export function createMilvenMcpServer({ prisma, auth, endpoint }: McpContext) {
 		title: 'Check duplicate questions',
 		description: 'Read-only. Checks external QIDs, normalized stems, vignettes, options and item-set child stems against the live question bank. Semantic-style similarity is a review signal, not proof.',
 		inputSchema: {
-			questions: z.array(questionPayloadSchema).min(1).max(50)
+			questions: z.array(questionPayloadInputSchema).min(1).max(50)
 		}
 	}, async ({ questions }) => {
 		const denied = requireScope(auth, VALIDATE_SCOPE);
@@ -346,7 +346,7 @@ export function createMilvenMcpServer({ prisma, auth, endpoint }: McpContext) {
 		title: 'Create a staged question draft',
 		description: 'WRITE (staged review store only). Validates one question and creates an administrator-review batch. It does not write to the live Question bank.',
 		inputSchema: {
-			question: questionPayloadSchema,
+			question: questionPayloadInputSchema,
 			idempotencyKey: z.string().min(8).optional(),
 			sourceClient: z.string().optional().default('mcp-client'),
 			sourceProvider: z.string().optional(),
@@ -385,7 +385,7 @@ export function createMilvenMcpServer({ prisma, auth, endpoint }: McpContext) {
 				moduleId: z.string().optional(),
 				topicIds: z.array(z.string()).optional()
 			}).optional(),
-			questions: z.array(questionPayloadSchema).min(1).max(50)
+			questions: z.array(questionPayloadInputSchema).min(1).max(50)
 		}
 	}, async (args) => {
 		const denied = requireScope(auth, DRAFT_SCOPE);
@@ -440,7 +440,7 @@ export function createMilvenMcpServer({ prisma, auth, endpoint }: McpContext) {
 		inputSchema: {
 			batchId: z.string(),
 			itemId: z.string(),
-			question: questionPayloadSchema
+			question: questionPayloadInputSchema
 		}
 	}, async (args) => {
 		const denied = requireScope(auth, DRAFT_SCOPE);

@@ -161,6 +161,7 @@ Prompt templates:
   "incorrectOptionsExplanation": "Why each distractor is wrong, stored once rather than copied into every option.",
   "commonMistake": "The common candidate mistake this item tests.",
   "conceptsTested": "The concepts tested.",
+  "sourceConcept": "Original curriculum Concept text, separate from verified conceptIds.",
   "answerVerificationStatus": "SOURCE_PROVIDED",
   "options": [
     { "label": "A", "text": "First option", "isCorrect": false, "rationale": "Why this is a realistic error." },
@@ -179,6 +180,10 @@ Prompt templates:
 ```
 
 For vignette item sets, use `questionType: "VIGNETTE_MCQ"`, a shared `vignetteText`, optional `caseStudyTitle` and `sourceSetId`, and ordered `subQuestions`. Every child must include its own stem, marks, difficulty, LOS, trace references, formulas, worked solution, correct-answer explanation, incorrect-options explanation, common mistake, concepts tested and concept mapping. Parent marks must equal the child total. Do not copy a combined explanation into every option rationale; keep it in `incorrectOptionsExplanation`.
+
+Accepted aliases are normalized before validation: `correctExplanation`/`whyCorrect` → `correctAnswerExplanation`, `wrongOptionsExplanation`/`distractorExplanation` → `incorrectOptionsExplanation`, `commonError` → `commonMistake`, `concepts` (descriptive text only) → `conceptsTested`, `learningOutcomeStatement` → `los`, `sectionReference` → `traceSection`, and `pageReference` → `tracePage`. Conflicting aliases are rejected. Concept ID arrays must use `conceptIds`, not `concepts`. A plain-text `explanation` containing the labeled sections is parsed into the canonical fields without overwriting supplied values.
+
+If an existing staged draft is missing fields, use **Preview field repair** to recover values retained in the staged payload, or **Reattach source HTML** to securely upload the original HTML and recover values by QID or verified order. Repair never overwrites non-empty administrator values and always revalidates before approval.
 
 ## Claude remote connector
 

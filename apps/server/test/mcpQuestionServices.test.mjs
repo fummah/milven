@@ -1,6 +1,6 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeQuestionPayload } from '../src/lib/questions/questionSchema.js';
+import { FIELD_ALIASES, normalizeQuestionPayload, questionPayloadInputSchema } from '../src/lib/questions/questionSchema.js';
 import { validateQuestionPayload } from '../src/lib/questions/questionValidation.js';
 import { checkQuestionDuplicates } from '../src/lib/questions/questionDuplicates.js';
 import { parseSampleBankIndex, parseSampleSetHtml, dryRunSampleImport } from '../src/lib/questions/sampleBank.js';
@@ -208,6 +208,213 @@ test('staged vignette repair recovers legacy explained fields without overwritin
 	assert.equal(legacy.subQuestions[0].workedSolution.includes('Explanation:'), true);
 });
 
+test('structured plain-text explanations and aliases normalize into canonical fields', () => {
+	const raw = {
+		schemaVersion: '2026-11-16',
+		externalQuestionId: 'ALIAS-Q1',
+		questionType: 'MCQ',
+		...ACADEMIC,
+		difficulty: 'HARD',
+		marks: 3,
+		stem: 'Which forecasting conclusion is most defensible?',
+		learningOutcomeStatement: 'compare major approaches to economic forecasting',
+		sectionReference: 'Approaches to Economic Forecasting',
+		pageReference: 'p. 25',
+		keyFormulas: 'None (conceptual question)',
+		workedSolution: 'Step 1: compare the approaches. Step 2: reach a conclusion.',
+		explanation: 'Correct answer: Combining approaches lets each offset the others.\nWhy the other options are wrong: The approaches are complementary.\nCommon mistake: Assuming isolation.\nConcepts tested: Approaches to economic forecasting.',
+		commonError: 'Assuming isolation.',
+		options: [
+			{ label: 'A', text: 'Combine the approaches.', isCorrect: true },
+			{ label: 'B', text: 'Use only one approach.', isCorrect: false },
+			{ label: 'C', text: 'Assume look-ahead bias.', isCorrect: false }
+		]
+	};
+	assert.equal(questionPayloadInputSchema.safeParse(raw).success, true);
+	const normalized = normalizeQuestionPayload(raw);
+	assert.equal(normalized.los, 'compare major approaches to economic forecasting');
+	assert.equal(normalized.traceSection, 'Approaches to Economic Forecasting');
+	assert.equal(normalized.tracePage, '25');
+	assert.match(normalized.correctAnswerExplanation, /Combining approaches/);
+	assert.match(normalized.incorrectOptionsExplanation, /complementary/);
+	assert.equal(normalized.commonMistake, 'Assuming isolation.');
+	assert.equal(normalized.conceptsTested, 'Approaches to economic forecasting.');
+	assert.deepEqual(normalized.reviewMetadata.fieldMappingAudit.unmappedFields, []);
+	assert.equal(FIELD_ALIASES.learningOutcomeStatement, 'los');
+});
+
+test('structured four-child vignette preserves plain explanations without missing-field warnings', async () => {
+	const values = [
+		{
+			qid: 'Q-AA-IBGG7',
+			los: 'compare major approaches to economic forecasting',
+			section: 'Approaches to Economic Forecasting',
+			page: 'p. 25',
+			sourceConcept: 'Combining forecasting approaches',
+			correct: "Combining approaches lets each offset the others' weaknesses, which is why careful forecasters do so.",
+			incorrect: 'The approaches are complementary, not incompatible. Combination does not necessarily create look-ahead bias.',
+			common: 'Assuming approaches must be used in isolation.',
+			concepts: 'Approaches to economic forecasting.'
+		},
+		{
+			qid: 'Q-AA-9IL7P',
+			los: 'discuss how business cycles affect short- and long-term expectations',
+			section: 'Business Cycle Analysis',
+			page: 'p. 29',
+			sourceConcept: 'Business cycle phase and tactical positioning',
+			correct: 'In the slowdown phase, cyclical equities are vulnerable as earnings fall.',
+			incorrect: 'Lengthening duration and holding defensive assets are consistent with peaking yields.',
+			common: 'Extrapolating past earnings momentum into a slowdown.',
+			concepts: 'Business cycle and market expectations.'
+		},
+		{
+			qid: 'Q-AA-5H5GX',
+			los: 'explain the relationship of inflation to the business cycle',
+			section: 'Inflation and Deflation',
+			page: 'p. 34',
+			sourceConcept: 'Supply shocks and countercyclical inflation',
+			correct: 'Supply-driven cycles make inflation move opposite to output.',
+			incorrect: 'Procyclical inflation describes demand-driven cycles.',
+			common: 'Assuming inflation always rises in expansions.',
+			concepts: 'Inflation and the business cycle.'
+		},
+		{
+			qid: 'Q-AA-BY6A5',
+			los: 'discuss the effects of monetary and fiscal policy on business cycles',
+			section: 'Analysis of Monetary and Fiscal Policies',
+			page: 'p. 37',
+			sourceConcept: 'Lags in monetary policy',
+			correct: 'Rate cuts take time to affect spending and investment.',
+			incorrect: 'Spending does not respond immediately.',
+			common: 'Assuming policy works instantly.',
+			concepts: 'Monetary policy and the business cycle.'
+		}
+	];
+	const payload = normalizeQuestionPayload({
+		schemaVersion: '2026-11-16',
+		externalQuestionId: 'SET-012',
+		questionType: 'VIGNETTE_MCQ',
+		...ACADEMIC,
+		difficulty: 'HARD',
+		marks: 12,
+		stem: 'Driftwood Family Office',
+		caseStudyTitle: 'Driftwood Family Office',
+		sourceSetId: 'SET-012',
+		vignetteText: 'The Driftwood Family Office investment committee is reviewing economic forecasting approaches, business-cycle positioning, inflation assumptions, and the lags of monetary and fiscal policy. The committee requires every conclusion to be supported by the shared case facts and a documented forecast process.',
+		subQuestions: values.map(value => ({
+			externalQuestionId: value.qid,
+			stem: `Which conclusion is most appropriate for ${value.qid}?`,
+			difficulty: 'HARD',
+			marks: 3,
+			primaryTopicId: 'topic-1',
+			conceptIds: [],
+			los: value.los,
+			traceSection: value.section,
+			tracePage: value.page,
+			sourceConcept: value.sourceConcept,
+			workedSolution: `Step 1: analyse the case facts. Step 2: apply the framework for ${value.qid}.`,
+			explanation: `Correct answer: ${value.correct}\nWhy the other options are wrong: ${value.incorrect}\nCommon mistake: ${value.common}\nConcepts tested: ${value.concepts}`,
+			correctAnswerExplanation: '',
+			incorrectOptionsExplanation: '',
+			commonMistake: '',
+			conceptsTested: '',
+			options: [
+				{ label: 'A', text: `${value.qid} option A.`, isCorrect: true },
+				{ label: 'B', text: `${value.qid} option B.`, isCorrect: false },
+				{ label: 'C', text: `${value.qid} option C.`, isCorrect: false }
+			]
+		}))
+	});
+	payload.subQuestions.forEach((child, index) => {
+		assert.equal(child.correctAnswerExplanation, values[index].correct);
+		assert.equal(child.incorrectOptionsExplanation, values[index].incorrect);
+		assert.equal(child.commonMistake, values[index].common);
+		assert.equal(child.conceptsTested, values[index].concepts);
+		assert.equal(child.sourceConcept, values[index].sourceConcept);
+	});
+	const result = await validateQuestionPayload(fakePrisma(), payload);
+	assert.equal(result.ok, true, JSON.stringify(result.errors));
+	assert.equal(result.summary.reviewStatus, 'READY_FOR_APPROVAL');
+	assert.equal(result.warnings.some(warning => ['CORRECT_ANSWER_EXPLANATION_MISSING', 'DISTRACTOR_EXPLANATION_MISSING', 'COMMON_MISTAKE_MISSING'].includes(warning.code)), false);
+});
+
+test('conflicting aliases are rejected instead of silently overwriting one value', () => {
+	assert.throws(() => normalizeQuestionPayload({
+		...mcq(),
+		correctAnswerExplanation: 'The canonical explanation.',
+		correctExplanation: 'A different explanation.'
+	}), error => {
+		assert.equal(error.name, 'QuestionFieldMappingError');
+		assert.equal(error.issues[0].milvenCode, 'CONFLICTING_FIELD_ALIAS');
+		assert.match(error.issues[0].message, /different values/);
+		return true;
+	});
+});
+
+test('concept ID arrays cannot masquerade as free-text conceptsTested', () => {
+	assert.throws(() => normalizeQuestionPayload({ ...mcq(), concepts: ['concept-1'] }), error => {
+		assert.equal(error.issues[0].milvenCode, 'CONCEPTS_ALIAS_REQUIRES_TEXT');
+		return true;
+	});
+});
+
+test('field mapping audit reports unknown fields without dropping canonical content', async () => {
+	const normalized = normalizeQuestionPayload({ ...mcq(), unknownSupplierField: 'retained for audit' });
+	const result = await validateQuestionPayload(fakePrisma(), normalized);
+	assert.ok(result.warnings.some(warning => warning.code === 'UNKNOWN_FIELD'));
+	assert.equal(result.summary.completeness.sourceFieldMappingLoss.length, 0);
+});
+
+test('staged repair recovers plain-text explanation fields from existing drafts', () => {
+	const repair = repairQuestionPayload({
+		questionType: 'VIGNETTE_MCQ',
+		stem: 'Existing Draft',
+		subQuestions: [{
+			externalQuestionId: 'Q-EXISTING-1',
+			stem: 'Which action is best?',
+			difficulty: 'HARD',
+			marks: 3,
+			los: 'Evaluate the evidence.',
+			traceSection: 'Framework',
+			tracePage: 'p. 4',
+			workedSolution: 'Step 1: review evidence.',
+			explanation: 'Correct answer: Document the evidence.\nWhy the other options are wrong: The distractors skip evidence.\nCommon mistake: Acting immediately.\nConcepts tested: Disciplined process.',
+			correctAnswerExplanation: '',
+			incorrectOptionsExplanation: '',
+			commonMistake: '',
+			conceptsTested: '',
+			options: [
+				{ label: 'A', text: 'Act now.', isCorrect: false },
+				{ label: 'B', text: 'Document the evidence.', isCorrect: true },
+				{ label: 'C', text: 'Ignore the evidence.', isCorrect: false }
+			]
+		}]
+	});
+	const child = repair.payload.subQuestions[0];
+	assert.equal(repair.changed, true);
+	assert.equal(child.correctAnswerExplanation, 'Document the evidence.');
+	assert.match(child.incorrectOptionsExplanation, /distractors skip evidence/);
+	assert.equal(child.commonMistake, 'Acting immediately.');
+	assert.equal(child.conceptsTested, 'Disciplined process.');
+	assert.equal(repair.after.complete, true);
+});
+
+test('validator blocks review readiness when source fields are lost', async () => {
+	const normalized = mcq();
+	normalized.reviewMetadata = {
+		...(normalized.reviewMetadata || {}),
+		fieldMappingAudit: {
+			unmappedFields: [{ path: 'question', field: 'los' }],
+			unknownFields: [],
+			derivedFields: []
+		}
+	};
+	const result = await validateQuestionPayload(fakePrisma(), normalized);
+	assert.equal(result.ok, false);
+	assert.ok(result.errors.some(error => error.code === 'FIELD_MAPPING_LOSS'));
+	assert.equal(result.summary.reviewStatus, 'INVALID');
+});
+
 test('duplicate service detects exact external QID and normalized stem', async () => {
 	const existing = {
 		id: 'q-existing',
@@ -264,12 +471,13 @@ test('sample bank parser preserves set structure and field boundaries', async ()
 	assert.match(parsed.questions[0].workedSolution, /Step 1: review evidence/);
 	assert.match(parsed.questions[1].workedSolution, /structural change/);
 	assert.equal(parsed.questions[0].los, 'discuss the framework for capital market expectations');
-	assert.equal(parsed.questions[1].tracePage, 'p. 11');
+	assert.equal(parsed.questions[1].tracePage, '11');
 	assert.equal(parsed.questions[1].keyFormulas, '\\[ E(R) = R_f + \\beta(E(R_m)-R_f) \\]');
 	assert.match(parsed.questions[0].correctAnswerExplanation, /Evidence must be documented/);
 	assert.match(parsed.questions[0].incorrectOptionsExplanation, /Acting immediately ignores evidence/);
 	assert.equal(parsed.questions[0].commonMistake, 'Acting without evidence.');
 	assert.equal(parsed.questions[0].conceptsTested, 'Framework for developing capital market expectations.');
+	assert.equal(parsed.questions[0].sourceConcept, 'Framework for developing capital market expectations');
 	assert.equal(parsed.questions[0].keyFormulas, null);
 	assert.equal(parsed.rawFieldAvailability.correctAnswerExplanations, true);
 	assert.equal(parsed.rawFieldAvailability.incorrectOptionsExplanations, false);
@@ -279,6 +487,7 @@ test('sample bank parser preserves set structure and field boundaries', async ()
 	assert.match(dryRun.mappedPayload.subQuestions[0].correctAnswerExplanation, /Evidence must be documented/);
 	assert.match(dryRun.mappedPayload.subQuestions[0].incorrectOptionsExplanation, /Acting immediately/);
 	assert.equal(dryRun.mappedPayload.subQuestions[0].commonMistake, 'Acting without evidence.');
+	assert.equal(dryRun.mappedPayload.subQuestions[0].sourceConcept, 'Framework for developing capital market expectations');
 	assert.equal(dryRun.mappedPayload.caseStudyTitle, 'Capital Market Expectations Case');
 	assert.equal(dryRun.mappedPayload.sourceSetId, 'SET-001');
 	assert.deepEqual(dryRun.fieldMapping.children[0].unmappedFields, []);

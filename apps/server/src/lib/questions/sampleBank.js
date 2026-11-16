@@ -5,6 +5,7 @@ import { checkQuestionDuplicates } from './questionDuplicates.js';
 import { normalizeQuestionPayload } from './questionSchema.js';
 import { validateQuestionPayload } from './questionValidation.js';
 import { validateAcademicMapping } from './questionCurriculum.js';
+import { splitExplanation } from './explanationText.js';
 
 function clean(value) {
 	return String(value || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
@@ -13,6 +14,10 @@ function clean(value) {
 function cleanHtml(value) {
 	return String(value || '')
 		.replace(/\u0000/g, '')
+		.replace(/<script[\s\S]*?<\/script>/gi, '')
+		.replace(/<style[\s\S]*?<\/style>/gi, '')
+		.replace(/<link\b[^>]*>/gi, '')
+		.replace(/\sstyle="[^"]*base64[^"]*"/gi, '')
 		.replace(/<p[^>]*>\s*<\/p>/gi, '')
 		.replace(/\s{2,}/g, ' ')
 		.trim();
@@ -31,7 +36,7 @@ function extractTex($, node) {
 function extractPage(section) {
 	const text = clean(section);
 	const match = text.match(/\((?:p\.?|page)\s*([^)]+)\)/i);
-	return match ? `p. ${match[1].trim()}` : null;
+	return match ? match[1].trim() : null;
 }
 
 function sectionContent($, sol, heading) {
@@ -52,39 +57,6 @@ function optionText($, option) {
 	return clean(clone.text());
 }
 
-export function splitExplanation(explanation) {
-	const parts = {
-		correctAnswerExplanation: null,
-		incorrectOptionsExplanation: null,
-		commonMistake: null,
-		conceptsTested: null,
-		other: []
-	};
-	if (!explanation) return parts;
-	const $ = cheerio.load(`<div id="explanation-root">${explanation}</div>`);
-	const root = $('#explanation-root');
-	root.find('p').each((_, element) => {
-		const clone = $(element).clone();
-		const labelNode = clone.find('strong').first();
-		const label = clean(labelNode.text()).toLowerCase().replace(/:\s*$/, '');
-		let key = null;
-		if (label === 'correct answer') key = 'correctAnswerExplanation';
-		else if (/^why (the )?other options are wrong$/.test(label)) key = 'incorrectOptionsExplanation';
-		else if (label === 'common mistake') key = 'commonMistake';
-		else if (label === 'concepts tested') key = 'conceptsTested';
-		if (!key) {
-			const html = cleanHtml($.html(element));
-			if (html) parts.other.push(html);
-			return;
-		}
-		labelNode.remove();
-		const html = cleanHtml(clone.html()) || clean(clone.text());
-		if (!html) return;
-		parts[key] = [parts[key], html].filter(Boolean).join('\n');
-	});
-	return parts;
-}
-
 function parseHeader($) {
 	const headerText = clean($('header p').first().text());
 	const parts = splitMetadata(headerText);
@@ -103,6 +75,8 @@ function parseVignette($, volume) {
 	const node = $('.vig').first();
 	if (!node.length) return null;
 	const clone = node.clone();
+	clone.find('script, style, link, meta').remove();
+	clone.find('[style*="base64"]').removeAttr('style');
 	clone.find('p').each((_, element) => {
 		const text = clean($(element).text());
 		if (!text) $(element).remove();
@@ -190,6 +164,7 @@ export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {
 		const sectionText = trace.section || null;
 		const commonMistake = explanationParts.commonMistake || null;
 		const conceptsTested = explanationParts.conceptsTested || trace.concept || null;
+		const sourceConcept = trace.concept || null;
 		questions.push({
 			number: Number(qn.match(/\d+/)?.[0] || index + 1),
 			externalQuestionId: qid,
@@ -204,6 +179,7 @@ export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {
 			incorrectOptionsExplanation: explanationParts.incorrectOptionsExplanation,
 			commonMistake,
 			conceptsTested,
+			sourceConcept,
 			los: trace.los || null,
 			traceSection: sectionText ? sectionText.replace(/\s*\([^)]*\)\s*$/, '').trim() : null,
 			tracePage: extractPage(sectionText || ''),
@@ -237,6 +213,7 @@ export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {
 			los: questions.some(question => question.los),
 			trace: questions.some(question => question.traceSection || question.tracePage),
 			concepts: questions.some(question => question.conceptsTested),
+			sourceConcepts: questions.some(question => question.sourceConcept),
 			formulas: questions.some(question => question.keyFormulas && !/none/i.test(question.keyFormulas)),
 			marks: questions.some(question => question.marks),
 			difficulty: questions.some(question => question.difficulty)
@@ -346,6 +323,13 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 			academic.errors.push({ code: 'TOPIC_MAPPING_REQUIRED', message: `Source topic "${sourceName}" requires explicit mapping to a Milven topic.`, sourceTopic: sourceName, candidates });
 		}
 	}
+	const mappedTopicIds = [...new Set([...sourceTopicMap.values(), primaryTopicId].filter(Boolean))];
+	const availableConcepts = mappedTopicIds.length
+		? await prisma.concept.findMany({
+			where: { topicId: { in: mappedTopicIds } },
+			select: { id: true, name: true, topicId: true }
+		})
+		: [];
 	if (!sample.questions.some(question => question.difficulty)) {
 		warnings.push({ code: 'DIFFICULTY_PROVISIONAL', message: `Source set has no difficulty field; dry-run uses ${difficulty} provisionally.` });
 	}
@@ -358,6 +342,12 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 		const missingOptional = [];
 		const mappedTopicId = sourceTopicMap.get(question.topicName) || exactTopics.get(String(question.topicName || '').toLowerCase()) || primaryTopicId || null;
 		const mappedConceptIds = Array.isArray(question.conceptIds) ? question.conceptIds.filter(Boolean) : [];
+		const sourceConceptNames = [question.sourceConcept, question.conceptsTested]
+			.map(text => String(text || '').trim().toLowerCase())
+			.filter(Boolean);
+		const exactConceptIds = availableConcepts
+			.filter(concept => concept.topicId === mappedTopicId && sourceConceptNames.includes(concept.name.trim().toLowerCase()))
+			.map(concept => concept.id);
 		if (!question.stem) missingRequired.push('stem');
 		if (!question.options.length) missingRequired.push('options');
 		if (!question.correctAnswer) missingRequired.push('correctAnswer');
@@ -380,6 +370,7 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 			incorrectOptionsExplanation: Boolean(question.incorrectOptionsExplanation),
 			commonMistake: Boolean(question.commonMistake),
 			conceptsTested: Boolean(question.conceptsTested),
+			sourceConcept: Boolean(question.sourceConcept),
 			los: Boolean(question.los),
 			traceSection: Boolean(question.traceSection),
 			tracePage: Boolean(question.tracePage),
@@ -394,7 +385,11 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 			marks: question.marks || equalMarks || null,
 			primaryTopicId: mappedTopicId,
 			additionalTopicIds: [],
-			conceptIds: mappedConceptIds.length ? mappedConceptIds : (Array.isArray(conceptMap[question.conceptsTested]) ? conceptMap[question.conceptsTested] : []),
+			conceptIds: [...new Set([
+				...mappedConceptIds,
+				...(Array.isArray(conceptMap[question.conceptsTested]) ? conceptMap[question.conceptsTested] : []),
+				...exactConceptIds
+			])],
 			sourceSetId: sample.setId,
 			los: question.los,
 			traceSection: question.traceSection,
@@ -406,6 +401,7 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 			incorrectOptionsExplanation: question.incorrectOptionsExplanation || null,
 			commonMistake: question.commonMistake || null,
 			conceptsTested: question.conceptsTested || null,
+			sourceConcept: question.sourceConcept || null,
 			answerVerificationStatus: 'SOURCE_PROVIDED',
 			options: question.options.map((option, optionIndex) => ({
 				label: option.label || String.fromCharCode(65 + optionIndex),
@@ -417,6 +413,7 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 				sourceSetId: sample.setId,
 				sourceQuestionId: question.externalQuestionId,
 				sourceTopicName: question.topicName,
+				sourceConcept: question.sourceConcept,
 				missingSourceFields: [...missingRequired, ...missingOptional],
 				missingRequiredSourceFields: missingRequired,
 				missingOptionalSourceFields: missingOptional,

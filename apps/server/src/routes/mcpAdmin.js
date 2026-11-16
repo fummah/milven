@@ -4,7 +4,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { createMcpTokenValue, MCP_SCOPES, normalizeScopes } from '../lib/mcp/tokenAuth.js';
 import { auditMcpAction } from '../lib/questions/questionReview.js';
-import { reviewBatchFieldRepair } from '../lib/questions/questionRepair.js';
+import { reviewBatchFieldRepair, reviewBatchSourceRepair } from '../lib/questions/questionRepair.js';
 import {
 	approveReviewBatch,
 	cancelReviewBatch,
@@ -125,6 +125,16 @@ export function mcpAdminRouter(prisma) {
 		const result = await reviewBatchFieldRepair(prisma, req.params.id, {
 			apply: req.body?.apply === true,
 			actorId: req.user.id
+		});
+		if (!result.ok) return res.status(result.statusCode || 409).json(result);
+		return res.json(result);
+	});
+
+	router.post('/imports/:id/repair-source', async (req, res) => {
+		const result = await reviewBatchSourceRepair(prisma, req.params.id, req.body?.html, {
+			apply: req.body?.apply === true,
+			actorId: req.user.id,
+			setId: req.body?.setId || null
 		});
 		if (!result.ok) return res.status(result.statusCode || 409).json(result);
 		return res.json(result);

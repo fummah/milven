@@ -219,6 +219,7 @@ model Question {
   incorrectOptionsExplanation String?
   commonMistake      String?
   conceptsTested     String?
+  sourceConcept      String?
   answerVerificationStatus    String?
   // Legacy field kept for backward compatibility during migration
   vignetteId         String?

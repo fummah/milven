@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-	Alert, Button, Card, Checkbox, Descriptions, Drawer, Empty, Form, Input, InputNumber,
+	Alert, Button, Card, Checkbox, Collapse, Descriptions, Drawer, Empty, Form, Input, InputNumber,
 	message, Modal, Popconfirm, Space, Spin, Table, Tabs, Tag, Typography
 } from 'antd';
 import {
 	CheckCircleOutlined, CloseCircleOutlined, CopyOutlined, DeleteOutlined, EyeOutlined,
-	ReloadOutlined, RobotOutlined, SafetyCertificateOutlined, SaveOutlined
+	ReloadOutlined, RobotOutlined, SafetyCertificateOutlined, SaveOutlined, UploadOutlined
 } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { formatFormulaHtml, formatProseWithMath } from '../../lib/formatFormula';
@@ -31,8 +31,58 @@ function JsonBlock({ value }) {
 }
 
 function RichContent({ value, formula = false }) {
-	if (!value) return '-';
+	if (!value) return <Typography.Text type="secondary">Not provided</Typography.Text>;
 	return <div dangerouslySetInnerHTML={{ __html: formula ? formatFormulaHtml(value) : formatProseWithMath(value) }} />;
+}
+
+function PreviewField({ label, value, formula = false, status }) {
+	return (
+		<div style={{ marginBottom: 12 }}>
+			<Space size={4} style={{ marginBottom: 4 }}>
+				<Typography.Text strong>{label}</Typography.Text>
+				{status && <Tag color={status === 'SOURCE_PROVIDED' ? 'blue' : 'default'}>{status === 'SOURCE_PROVIDED' ? 'Source' : 'Staged / AI'}</Tag>}
+			</Space>
+			<RichContent value={value} formula={formula} />
+		</div>
+	);
+}
+
+function CompletenessReport({ completeness }) {
+	if (!completeness?.subjects?.length) return null;
+	const labels = {
+		workedSolution: 'Worked Solution',
+		correctAnswerExplanation: 'Correct Explanation',
+		incorrectOptionsExplanation: 'Incorrect Options Explanation',
+		commonMistake: 'Common Mistake',
+		conceptsTested: 'Concepts Tested',
+		sourceConcept: 'Source Concept',
+		los: 'LOS',
+		traceSection: 'Section',
+		tracePage: 'Page',
+		keyFormulas: 'Formula'
+	};
+	return (
+		<div style={{ marginTop: 18 }}>
+			<Typography.Title level={5}>Field completeness</Typography.Title>
+			{completeness.subjects.map((subject, index) => (
+				<Card key={subject.path || index} size="small" style={{ marginTop: 8, borderRadius: 10 }}>
+					<Typography.Text strong>{index + 1}. {subject.externalQuestionId || subject.path}</Typography.Text>
+					<Space wrap size={4} style={{ marginTop: 8 }}>
+						{Object.entries(labels).map(([field, label]) => {
+							const status = field === 'keyFormulas' ? subject.formulaStatus : (subject.fields?.[field] ? 'PRESENT' : 'MISSING');
+							const color = status === 'PRESENT' ? 'green' : status === 'NOT_REQUIRED' ? 'blue' : 'default';
+							return <Tag key={field} color={color}>{label}: {(status || 'MISSING').replaceAll('_', ' ')}</Tag>;
+						})}
+					</Space>
+					{subject.missingCoreFields?.length > 0 && (
+						<div style={{ marginTop: 8 }}>
+							<Typography.Text type="danger">Review required: {subject.missingCoreFields.join(', ')}</Typography.Text>
+						</div>
+					)}
+				</Card>
+			))}
+		</div>
+	);
 }
 
 function QuestionPreview({ item, onEdit }) {
@@ -63,6 +113,7 @@ function QuestionPreview({ item, onEdit }) {
 				{payload.incorrectOptionsExplanation && <Descriptions.Item label="Incorrect options explanation"><RichContent value={payload.incorrectOptionsExplanation} /></Descriptions.Item>}
 				{payload.commonMistake && <Descriptions.Item label="Common mistake"><RichContent value={payload.commonMistake} /></Descriptions.Item>}
 				{payload.conceptsTested && <Descriptions.Item label="Concepts tested"><RichContent value={payload.conceptsTested} /></Descriptions.Item>}
+				{payload.sourceConcept && <Descriptions.Item label="Source concept"><RichContent value={payload.sourceConcept} /></Descriptions.Item>}
 				<Descriptions.Item label="Marking guidelines"><RichContent value={payload.markingGuidelines} /></Descriptions.Item>
 			</Descriptions>
 
@@ -81,37 +132,58 @@ function QuestionPreview({ item, onEdit }) {
 			{children.length > 0 && (
 				<div style={{ marginTop: 14 }}>
 					<Typography.Text strong>Item-set children</Typography.Text>
-					{children.map((child, index) => (
-						<Card key={index} size="small" style={{ marginTop: 8, borderRadius: 10 }}>
-							<Typography.Text strong>{index + 1}. {child.externalQuestionId}</Typography.Text>
-							<div style={{ marginTop: 6 }}>{child.stem}</div>
-							<Space wrap size={4} style={{ marginTop: 6 }}>
-								<Tag color="purple">{child.difficulty}</Tag>
-								<Tag color="gold">{child.marks} marks</Tag>
-								{child.sourceSetId && <Tag>{child.sourceSetId}</Tag>}
-								{child.los && <Tag color="blue">LOS</Tag>}
-								{child.keyFormulas && <Tag color="cyan">Formula</Tag>}
-								{child.workedSolution && <Tag color="green">Solution</Tag>}
-								{child.correctAnswerExplanation && <Tag color="green">Correct answer explanation</Tag>}
-								{child.incorrectOptionsExplanation && <Tag color="orange">Distractor explanation</Tag>}
-								{child.commonMistake && <Tag color="volcano">Common mistake</Tag>}
-								{child.conceptsTested && <Tag color="geekblue">Concepts tested</Tag>}
-							</Space>
-							{(child.options || []).map((option, optionIndex) => (
-								<div key={optionIndex} style={{ fontSize: 12, marginTop: 4, color: option.isCorrect ? '#166534' : '#475569' }}>
-									{option.label || String.fromCharCode(65 + optionIndex)}. {option.text} {option.isCorrect ? '(correct)' : ''}
-									{option.rationale && <div style={{ color: '#64748b' }}>{option.rationale}</div>}
-								</div>
-							))}
-							{child.correctAnswerExplanation && <div style={{ marginTop: 8, fontSize: 12 }}><Typography.Text strong>Correct answer explanation: </Typography.Text><RichContent value={child.correctAnswerExplanation} /></div>}
-							{child.incorrectOptionsExplanation && <div style={{ marginTop: 6, fontSize: 12 }}><Typography.Text strong>Incorrect options explanation: </Typography.Text><RichContent value={child.incorrectOptionsExplanation} /></div>}
-							{child.commonMistake && <div style={{ marginTop: 6, fontSize: 12 }}><Typography.Text strong>Common mistake: </Typography.Text><RichContent value={child.commonMistake} /></div>}
-							{child.conceptsTested && <div style={{ marginTop: 6, fontSize: 12 }}><Typography.Text strong>Concepts tested: </Typography.Text><RichContent value={child.conceptsTested} /></div>}
-							{child.workedSolution && <div style={{ marginTop: 6, fontSize: 12 }}><Typography.Text strong>Worked solution: </Typography.Text><RichContent value={child.workedSolution} /></div>}
-						</Card>
-					))}
+					{children.map((child, index) => {
+						const status = child.answerVerificationStatus || payload.answerVerificationStatus;
+						const linkedConcepts = (child.conceptIds || []).join(', ');
+						return (
+							<Card key={index} size="small" style={{ marginTop: 8, borderRadius: 10 }}>
+								<Typography.Text strong>{index + 1}. {child.externalQuestionId}</Typography.Text>
+								<div style={{ marginTop: 6 }}>{child.stem}</div>
+								<Space wrap size={4} style={{ marginTop: 6 }}>
+									<Tag color="purple">{child.difficulty}</Tag>
+									<Tag color="gold">{child.marks} marks</Tag>
+									{child.sourceSetId && <Tag>{child.sourceSetId}</Tag>}
+									{child.answerVerificationStatus && <Tag color={child.answerVerificationStatus === 'SOURCE_PROVIDED' ? 'blue' : 'default'}>{child.answerVerificationStatus}</Tag>}
+								</Space>
+								{(child.options || []).map((option, optionIndex) => (
+									<div key={optionIndex} style={{ fontSize: 12, marginTop: 4, color: option.isCorrect ? '#166534' : '#475569' }}>
+										{option.label || String.fromCharCode(65 + optionIndex)}. {option.text} {option.isCorrect ? '(correct)' : ''}
+										{option.rationale && <div style={{ color: '#64748b' }}>{option.rationale}</div>}
+									</div>
+								))}
+								<Collapse
+									ghost
+									style={{ marginTop: 8 }}
+									items={[
+										{ key: 'worked', label: 'Worked Solution', children: <PreviewField label="Worked Solution" value={child.workedSolution} status={status} /> },
+										{ key: 'correct', label: 'Why the Correct Answer Is Correct', children: <PreviewField label="Why the Correct Answer Is Correct" value={child.correctAnswerExplanation} status={status} /> },
+										{ key: 'incorrect', label: 'Why the Other Options Are Incorrect', children: <PreviewField label="Why the Other Options Are Incorrect" value={child.incorrectOptionsExplanation} status={status} /> },
+										{ key: 'mistake', label: 'Common Mistake', children: <PreviewField label="Common Mistake" value={child.commonMistake} status={status} /> },
+										{ key: 'concepts', label: 'Concepts Tested', children: <PreviewField label="Concepts Tested (source text)" value={child.conceptsTested} status={status} /> },
+										{ key: 'sourceConcept', label: 'Source Concept', children: <PreviewField label="Source Concept" value={child.sourceConcept} status={status} /> },
+										{ key: 'formulas', label: 'Key Formulas', children: <PreviewField label="Key Formulas" value={child.keyFormulas} formula status={status} /> },
+										{ key: 'los', label: 'LOS', children: <PreviewField label="LOS" value={child.los} status={status} /> },
+										{ key: 'curriculum', label: 'Curriculum Section and Page', children: <><PreviewField label="Section" value={child.traceSection} status={status} /><PreviewField label="Page" value={child.tracePage} status={status} /></> },
+										{
+											key: 'linked',
+											label: 'Linked Topics / Concepts',
+											children: (
+												<>
+													<PreviewField label="Primary topic ID" value={child.primaryTopicId} />
+													<PreviewField label="Additional topic IDs" value={(child.additionalTopicIds || []).join(', ')} />
+													<PreviewField label="Verified concept IDs" value={linkedConcepts} />
+												</>
+											)
+										}
+									]}
+								/>
+							</Card>
+						);
+					})}
 				</div>
 			)}
+
+			<CompletenessReport completeness={item.validation?.summary?.completeness} />
 
 			{(item.validation?.errors?.length > 0 || item.validation?.warnings?.length > 0) && (
 				<div style={{ marginTop: 14 }}>
@@ -146,6 +218,7 @@ export function AdminMcpImports() {
 	const [editJson, setEditJson] = useState('');
 	const [editSaving, setEditSaving] = useState(false);
 	const [repairing, setRepairing] = useState(false);
+	const sourceFileRef = useRef(null);
 	const [form] = Form.useForm();
 
 	const loadImports = async () => {
@@ -293,12 +366,27 @@ export function AdminMcpImports() {
 					externalQuestionId: item.externalQuestionId,
 					changes: item.changes,
 					beforeComplete: item.before?.complete,
-					afterComplete: item.after?.complete
+					afterComplete: item.after?.complete,
+					cannotRecover: item.unrecoverableFields
 				}));
+			const cannotRecover = preview.flatMap(item => item.cannotRecover || []);
 			Modal.confirm({
 				title: `Repair ${data.changedCount} staged item(s)?`,
 				width: 760,
-				content: <JsonBlock value={preview} />,
+				content: (
+					<div>
+						<JsonBlock value={preview} />
+						{cannotRecover.length > 0 && (
+							<Alert
+								type="warning"
+								showIcon
+								style={{ marginTop: 12 }}
+								message="Cannot recover: source value unavailable."
+								description={cannotRecover.join(', ')}
+							/>
+						)}
+					</div>
+				),
 				okText: 'Apply non-destructive repair',
 				onOk: async () => {
 					try {
@@ -314,6 +402,63 @@ export function AdminMcpImports() {
 			message.error(error?.response?.data?.error || 'Could not preview field repair');
 		} finally {
 			setRepairing(false);
+		}
+	};
+
+	const repairFromSource = async file => {
+		if (!file || !selectedBatch) return;
+		setRepairing(true);
+		let html;
+		try {
+			html = await file.text();
+			const { data } = await api.post(`/api/mcp/imports/${selectedBatch.id}/repair-source`, { html, apply: false });
+			if (!data.changedCount) {
+				message.info('The reattached HTML did not contain recoverable missing fields.');
+				return;
+			}
+			const preview = data.items
+				.filter(item => item.changed)
+				.map(item => ({
+					externalQuestionId: item.externalQuestionId,
+					changes: item.changes,
+					beforeComplete: item.before?.complete,
+					afterComplete: item.after?.complete,
+					cannotRecover: item.unrecoverableFields
+				}));
+			const cannotRecover = preview.flatMap(item => item.cannotRecover || []);
+			Modal.confirm({
+				title: `Recover fields from ${file.name} for ${data.changedCount} item(s)?`,
+				width: 760,
+				content: (
+					<div>
+						<JsonBlock value={preview} />
+						{cannotRecover.length > 0 && (
+							<Alert
+								type="warning"
+								showIcon
+								style={{ marginTop: 12 }}
+								message="Cannot recover: source value unavailable."
+								description={cannotRecover.join(', ')}
+							/>
+						)}
+					</div>
+				),
+				okText: 'Apply source-backed repair',
+				onOk: async () => {
+					try {
+						const { data: applied } = await api.post(`/api/mcp/imports/${selectedBatch.id}/repair-source`, { html, apply: true });
+						message.success(`Recovered fields for ${applied.changedCount} item(s); approval is still required.`);
+						await reloadSelected(selectedBatch.id);
+					} catch (error) {
+						message.error(error?.response?.data?.error || 'Source repair failed');
+					}
+				}
+			});
+		} catch (error) {
+			message.error(error?.response?.data?.error || 'Could not read or apply source HTML');
+		} finally {
+			setRepairing(false);
+			if (sourceFileRef.current) sourceFileRef.current.value = '';
 		}
 	};
 
@@ -452,6 +597,8 @@ export function AdminMcpImports() {
 				extra={selectedBatch && (
 					<Space wrap>
 						{selectedBatch.commitStatus !== 'COMMITTED' && selectedBatch.status !== 'COMMITTED' && <Button icon={<ReloadOutlined />} loading={repairing} onClick={() => repairFields(selectedBatch)}>Preview field repair</Button>}
+						{selectedBatch.commitStatus !== 'COMMITTED' && selectedBatch.status !== 'COMMITTED' && <Button icon={<UploadOutlined />} loading={repairing} onClick={() => sourceFileRef.current?.click()}>Reattach source HTML</Button>}
+						<input ref={sourceFileRef} type="file" accept=".html,.htm,text/html" hidden onChange={event => repairFromSource(event.target.files?.[0])} />
 						{selectedBatch.status === 'VALIDATED' && <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => approve(selectedBatch)}>Approve</Button>}
 						{selectedBatch.status === 'APPROVED' && <Button type="primary" danger icon={<CheckCircleOutlined />} onClick={() => commit(selectedBatch)}>Commit to Question Bank</Button>}
 						{!['COMMITTED', 'REJECTED', 'CANCELLED'].includes(selectedBatch.status) && <Button danger icon={<CloseCircleOutlined />} onClick={() => reject(selectedBatch)}>Reject</Button>}

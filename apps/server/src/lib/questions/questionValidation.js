@@ -1,4 +1,4 @@
-import katex from 'katex';
+﻿import katex from 'katex';
 import { normalizeDifficultyValue } from '../questionDifficulty.js';
 import { validateAcademicMapping } from './questionCurriculum.js';
 import { expectedLabels, QUESTION_TYPES } from './questionSchema.js';
@@ -16,6 +16,22 @@ function stripHtml(value) {
 
 function wordCount(value) {
 	return stripHtml(value).split(/\s+/).filter(Boolean).length;
+}
+
+function contentFingerprint(value) {
+	return stripHtml(value).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function meaningfulText(value, minimumWords = 3) {
+	const text = stripHtml(value);
+	if (!text || wordCount(text) < minimumWords) return false;
+	if (/^see (the )?worked solution\.?$/i.test(text)) return false;
+	if (/^(n\/?a|none|not provided|correct|incorrect)\.?$/i.test(text)) return false;
+	return true;
+}
+
+function requiresFormula(subject) {
+	return /\\\(|\\\[|\$\$|\$[^$]+\$|=\s*[-+\d(]|\b(calculate|compute|value|return|duration|ratio|price|yield|volatility)\b/i.test(`${subject.stem || ''} ${subject.workedSolution || ''}`);
 }
 
 function walkStrings(value, path = '', visitor) {
@@ -192,23 +208,27 @@ function validateSubject(subject, path, errors, warnings, { mcq = false, constru
 		if (!subject.workedSolution && !subject.explanation) {
 			errors.push(issue('WORKED_SOLUTION_REQUIRED', 'MCQ worked solution or explanation is required.', `${path}.workedSolution`));
 		}
-		if (!subject.correctAnswerExplanation && !correct?.rationale) {
+		const correctExplanation = meaningfulText(subject.correctAnswerExplanation) ? subject.correctAnswerExplanation : (meaningfulText(correct?.rationale) ? correct.rationale : null);
+		const distractorExplanation = meaningfulText(subject.incorrectOptionsExplanation)
+			? subject.incorrectOptionsExplanation
+			: (distractors.length > 0 && distractors.every(option => meaningfulText(option.rationale)) ? distractors.map(option => option.rationale).join(' ') : null);
+		if (!correctExplanation) {
 			warnings.push(issue(
 				'CORRECT_ANSWER_EXPLANATION_MISSING',
-				'Add a correct-answer explanation or a rationale on the correct option.',
+				'Add a meaningful correct-answer explanation. A short "Correct." rationale or "See worked solution." is not sufficient.',
 				`${path}.correctAnswerExplanation`,
 				'warning'
 			));
 		}
-		if (!subject.incorrectOptionsExplanation && distractors.some(option => !option.rationale)) {
+		if (!distractorExplanation) {
 			warnings.push(issue(
 				'DISTRACTOR_EXPLANATION_MISSING',
-				'Add one combined incorrect-options explanation or a rationale for every distractor.',
+				'Add a meaningful combined incorrect-options explanation or a substantive rationale for every distractor.',
 				`${path}.incorrectOptionsExplanation`,
 				'warning'
 			));
 		}
-		if (!subject.commonMistake) {
+		if (!meaningfulText(subject.commonMistake, 2)) {
 			warnings.push(issue(
 				'COMMON_MISTAKE_MISSING',
 				'Add the common candidate mistake tested by this item.',
@@ -216,13 +236,42 @@ function validateSubject(subject, path, errors, warnings, { mcq = false, constru
 				'warning'
 			));
 		}
-		if (!subject.conceptsTested && !(subject.conceptIds || []).length) {
+		if (!meaningfulText(subject.conceptsTested, 2) && !(subject.conceptIds || []).length) {
 			warnings.push(issue(
 				'CONCEPTS_TESTED_MISSING',
 				'Add the concepts tested or at least one mapped conceptId.',
 				`${path}.conceptsTested`,
 				'warning'
 			));
+		}
+		if (!meaningfulText(subject.los, 3)) {
+			warnings.push(issue('LOS_MISSING', 'Add the supplied or verified learning outcome statement.', `${path}.los`, 'warning'));
+		}
+		if (!meaningfulText(subject.traceSection, 1)) {
+			warnings.push(issue('CURRICULUM_SECTION_MISSING', 'Add the curriculum section reference.', `${path}.traceSection`, 'warning'));
+		}
+		if (!meaningfulText(subject.tracePage, 1)) {
+			warnings.push(issue('CURRICULUM_PAGE_MISSING', 'Add the curriculum page reference.', `${path}.tracePage`, 'warning'));
+		}
+		const correctFingerprint = contentFingerprint(correctExplanation);
+		const workedFingerprint = contentFingerprint(subject.workedSolution);
+		const incorrectFingerprint = contentFingerprint(distractorExplanation);
+		if (correctFingerprint && (correctFingerprint === workedFingerprint || correctFingerprint === incorrectFingerprint)) {
+			errors.push(issue(
+				'EXPLANATION_CONTENT_DUPLICATED',
+				'The correct-answer explanation must be distinct from the worked solution and the incorrect-options explanation.',
+				`${path}.correctAnswerExplanation`
+			));
+		}
+		if (workedFingerprint && workedFingerprint === incorrectFingerprint) {
+			errors.push(issue(
+				'EXPLANATION_CONTENT_DUPLICATED',
+				'The incorrect-options explanation must be distinct from the worked solution.',
+				`${path}.incorrectOptionsExplanation`
+			));
+		}
+		if (!subject.keyFormulas && requiresFormula(subject)) {
+			warnings.push(issue('KEY_FORMULAS_MISSING_FOR_CALCULATION', 'Add the key formula(s) or explicitly state that no formula is required.', `${path}.keyFormulas`, 'warning'));
 		}
 	}
 	if (constructed) {
@@ -237,15 +286,16 @@ function subjectCompleteness(subject) {
 	const correct = options.find(option => option?.isCorrect);
 	const distractors = options.filter(option => option && !option.isCorrect);
 	return {
-		correctAnswerExplanation: Boolean(subject.correctAnswerExplanation || correct?.rationale),
-		incorrectOptionsExplanation: Boolean(subject.incorrectOptionsExplanation || (distractors.length > 0 && distractors.every(option => option.rationale))),
-		commonMistake: Boolean(subject.commonMistake),
-		conceptsTested: Boolean(subject.conceptsTested || (subject.conceptIds || []).length),
-		workedSolution: Boolean(subject.workedSolution),
-		los: Boolean(subject.los),
-		traceSection: Boolean(subject.traceSection),
-		tracePage: Boolean(subject.tracePage),
-		keyFormulas: Boolean(subject.keyFormulas)
+		correctAnswerExplanation: meaningfulText(subject.correctAnswerExplanation) || meaningfulText(correct?.rationale),
+		incorrectOptionsExplanation: meaningfulText(subject.incorrectOptionsExplanation) || (distractors.length > 0 && distractors.every(option => meaningfulText(option.rationale))),
+		commonMistake: meaningfulText(subject.commonMistake, 2),
+		conceptsTested: meaningfulText(subject.conceptsTested, 2) || (subject.conceptIds || []).length > 0,
+		workedSolution: meaningfulText(subject.workedSolution, 3),
+		los: meaningfulText(subject.los, 3),
+		traceSection: meaningfulText(subject.traceSection, 1),
+		tracePage: meaningfulText(subject.tracePage, 1),
+		keyFormulas: Boolean(subject.keyFormulas),
+		sourceConcept: meaningfulText(subject.sourceConcept, 2)
 	};
 }
 
@@ -257,7 +307,7 @@ export function assessCompleteness(payload) {
 			: [];
 	const expectedFields = [
 		'correctAnswerExplanation', 'incorrectOptionsExplanation', 'commonMistake',
-		'conceptsTested', 'workedSolution', 'los', 'traceSection', 'tracePage', 'keyFormulas'
+		'conceptsTested', 'sourceConcept', 'workedSolution', 'los', 'traceSection', 'tracePage', 'keyFormulas'
 	];
 	const coreFields = [
 		'correctAnswerExplanation', 'incorrectOptionsExplanation', 'commonMistake',
@@ -265,11 +315,15 @@ export function assessCompleteness(payload) {
 	];
 	const items = subjects.map(({ subject, path }) => {
 		const fields = subjectCompleteness(subject);
+		const formulaRequired = requiresFormula(subject);
+		const missingCoreFields = coreFields.filter(field => !fields[field]);
+		if (formulaRequired && !fields.keyFormulas) missingCoreFields.push('keyFormulas');
 		return {
 			path,
 			externalQuestionId: subject.externalQuestionId || null,
 			fields,
-			missingCoreFields: coreFields.filter(field => !fields[field]),
+			formulaStatus: fields.keyFormulas ? 'PRESENT' : formulaRequired ? 'MISSING' : 'NOT_REQUIRED',
+			missingCoreFields,
 			missingOptionalFields: expectedFields.filter(field => !fields[field])
 		};
 	});
@@ -282,11 +336,17 @@ export function assessCompleteness(payload) {
 			}
 		});
 	}
+	const fieldAudit = payload.reviewMetadata?.fieldMappingAudit;
+	for (const entry of fieldAudit?.unmappedFields || []) {
+		sourceFieldMappingLoss.push({ path: entry.path || 'question', field: entry.field });
+	}
 	return {
 		subjects: items,
 		missingCoreFields: items.flatMap(item => item.missingCoreFields.map(field => `${item.path}.${field}`)),
 		missingOptionalFields: items.flatMap(item => item.missingOptionalFields.map(field => `${item.path}.${field}`)),
 		sourceFieldMappingLoss,
+		unknownFields: fieldAudit?.unknownFields || [],
+		derivedFields: fieldAudit?.derivedFields || [],
 		complete: items.every(item => item.missingCoreFields.length === 0) && sourceFieldMappingLoss.length === 0
 	};
 }
@@ -396,6 +456,24 @@ export async function validateQuestionPayload(prisma, payload, { batchExternalId
 	}
 
 	const completeness = assessCompleteness(payload);
+	if (completeness.sourceFieldMappingLoss.length) {
+		errors.push(issue(
+			'FIELD_MAPPING_LOSS',
+			'One or more source fields were present in the payload but are missing from the normalized draft.',
+			'reviewMetadata.fieldMappingAudit',
+			'error',
+			{ fields: completeness.sourceFieldMappingLoss }
+		));
+	}
+	if (completeness.unknownFields.length) {
+		warnings.push(issue(
+			'UNKNOWN_FIELD',
+			'One or more fields are not part of the canonical MCP schema and were ignored.',
+			'reviewMetadata.fieldMappingAudit',
+			'warning',
+			{ fields: completeness.unknownFields }
+		));
+	}
 	const structuralStatus = errors.length === 0 ? 'STRUCTURALLY_VALID' : 'INVALID';
 	const reviewStatus = errors.length > 0
 		? 'INVALID'
@@ -427,6 +505,6 @@ export async function validateQuestionPayload(prisma, payload, { batchExternalId
 			topics: parentMapping.topics,
 			concepts: parentMapping.concepts,
 			level: parentMapping.level
-		} : null
+	} : null
 	};
 }

@@ -7,7 +7,7 @@ import { sanitizeDbData } from '../dbText.js';
 
 function zodErrors(error) {
 	return (error?.issues || error?.errors || []).map(issue => ({
-		code: 'SCHEMA_VALIDATION',
+		code: issue.milvenCode || 'SCHEMA_VALIDATION',
 		path: Array.isArray(issue.path) ? issue.path.join('.') : String(issue.path || ''),
 		message: issue.message,
 		severity: 'error'
