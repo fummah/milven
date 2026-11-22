@@ -474,6 +474,15 @@ export async function validateQuestionPayload(prisma, payload, { batchExternalId
 			{ fields: completeness.unknownFields }
 		));
 	}
+	for (const audit of payload.reviewMetadata?.optionTextAudit || []) {
+		warnings.push(issue(
+			'OPTION_TEXT_FORMATTING_ARTIFACT',
+			'Option text contained transport escape artifacts. The normalized option text is used for persistence.',
+			audit.path,
+			'warning',
+			{ artifacts: audit.artifacts, original: audit.original, cleaned: audit.cleaned }
+		));
+	}
 	const structuralStatus = errors.length === 0 ? 'STRUCTURALLY_VALID' : 'INVALID';
 	const reviewStatus = errors.length > 0
 		? 'INVALID'

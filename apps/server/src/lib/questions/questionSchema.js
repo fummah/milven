@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { deriveExplanationFields, splitExplanation, splitMergedExplanation } from './explanationText.js';
+import { inspectOptionText, normalizeOptionText } from './optionText.js';
 
 export const QUESTION_SCHEMA_VERSION = '2026-11-16';
 export const QUESTION_TYPES = ['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE'];
@@ -142,7 +143,7 @@ function cleanOptions(options) {
 	return options.map((option, index) => ({
 		...option,
 		label: option.label || String.fromCharCode(65 + index),
-		text: cleanText(option.text),
+		text: normalizeOptionText(option.text).text,
 		rationale: cleanText(option.rationale || '') || null
 	}));
 }
@@ -234,6 +235,22 @@ function auditSubject(raw, normalized, path, derived = []) {
 	};
 }
 
+function collectOptionTextAudit(rawOptions, path, audits) {
+	if (!Array.isArray(rawOptions)) return;
+	rawOptions.forEach((option, index) => {
+		const inspection = inspectOptionText(option?.text);
+		if (!inspection.artifacts.length) return;
+		audits.push({
+			code: 'OPTION_TEXT_FORMATTING_ARTIFACT',
+			path: `${path}.options[${index}].text`,
+			artifacts: inspection.artifacts,
+			original: inspection.original,
+			cleaned: normalizeOptionText(inspection.original).text,
+			codepoints: inspection.codepoints
+		});
+	});
+}
+
 function normalizeSubject(source) {
 	return {
 		...source,
@@ -313,6 +330,12 @@ export function normalizeQuestionPayload(input) {
 		rootDerived.push(...(derived.derived || []));
 	}
 	attachFieldAudit(normalized, raw, childAudits);
+	const optionTextAudit = [];
+	collectOptionTextAudit(raw.options, 'question', optionTextAudit);
+	if (Array.isArray(raw.subQuestions)) {
+		raw.subQuestions.forEach((child, index) => collectOptionTextAudit(child?.options, `subQuestions[${index}]`, optionTextAudit));
+	}
+	normalized.reviewMetadata.optionTextAudit = optionTextAudit;
 	if (rootDerived.length) {
 		normalized.reviewMetadata.fieldMappingAudit.derivedFields.push(...rootDerived.map(entry => ({ path: '', field: entry.field, source: entry.source })));
 	}

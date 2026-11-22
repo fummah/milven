@@ -15,6 +15,8 @@ import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCo
 import { sanitizeDbData } from '../lib/dbText.js';
 import { persistLegacyGeneratedItem } from '../lib/questions/questionPersistence.js';
 import { auditQuestionFormulas } from '../lib/questions/formulaAudit.js';
+import { normalizeOptionText } from '../lib/questions/optionText.js';
+import { applyOptionTextRepairs, scanOptionTextRepairs } from '../lib/questions/optionRepair.js';
 import {
 	DIFFICULTY_LEVELS,
 	DIFFICULTY_RUBRICS,
@@ -2522,7 +2524,7 @@ export function cmsRouter(prisma, deps = {}) {
 		if (Array.isArray(subQuestions)) parse.data.subQuestions = subQuestions.map(sq => ({
 			...sq,
 			stem: cleanQuestionHtml(sq.stem),
-			options: Array.isArray(sq.options) ? sq.options.map(o => ({ ...o, text: cleanQuestionHtml(o.text) })) : sq.options
+			options: Array.isArray(sq.options) ? sq.options.map(o => ({ ...o, text: normalizeOptionText(cleanQuestionHtml(o.text)).text })) : sq.options
 		}));
 		// Resolve topic IDs: prefer topicIds array, fall back to single topicId
 		const resolvedTopicIds = (Array.isArray(rawTopicIds) && rawTopicIds.length > 0) ? rawTopicIds : (q.topicId ? [q.topicId] : []);
@@ -2565,7 +2567,7 @@ export function cmsRouter(prisma, deps = {}) {
 		// Create MCQ options for standalone MCQ or parent vignette question itself (if any)
 		if (q.type === 'MCQ' && parse.data.options && parse.data.options.length) {
 			await prisma.mcqOption.createMany({
-				data: parse.data.options.map((o, position) => ({ questionId: question.id, text: o.text, isCorrect: o.isCorrect, position }))
+				data: parse.data.options.map((o, position) => ({ questionId: question.id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position }))
 			});
 		}
 
@@ -2602,7 +2604,7 @@ export function cmsRouter(prisma, deps = {}) {
 				// Create MCQ options for vignette sub-questions
 				if (q.type === 'VIGNETTE_MCQ' && sq.options && sq.options.length) {
 					await prisma.mcqOption.createMany({
-						data: sq.options.map((o, position) => ({ questionId: child.id, text: o.text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
+						data: sq.options.map((o, position) => ({ questionId: child.id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
 					});
 				}
 			}
@@ -3383,7 +3385,7 @@ console.log('AI raw output:', raw);
 						});
 						if (Array.isArray(opts) && opts.length >= 2) {
 							await prisma.mcqOption.createMany({
-								data: opts.map((o, position) => ({ questionId: child.id, text: String(o.text || '').trim() || 'Option', isCorrect: !!o.isCorrect, position }))
+								data: opts.map((o, position) => ({ questionId: child.id, text: normalizeOptionText(o.text).text || 'Option', isCorrect: !!o.isCorrect, position }))
 							});
 						}
 					}
@@ -3425,7 +3427,7 @@ console.log('AI raw output:', raw);
 					});
 					if (questionType !== 'CONSTRUCTED_RESPONSE' && Array.isArray(opts) && opts.length >= 2) {
 						await prisma.mcqOption.createMany({
-							data: opts.map((o, position) => ({ questionId: question.id, text: String(o.text || '').trim() || 'Option', isCorrect: !!o.isCorrect, position }))
+							data: opts.map((o, position) => ({ questionId: question.id, text: normalizeOptionText(o.text).text || 'Option', isCorrect: !!o.isCorrect, position }))
 						});
 					}
 					const full = await prisma.question.findUnique({ where: { id: question.id }, include: { options: { orderBy: { position: 'asc' } } } });
@@ -4690,6 +4692,21 @@ ${formatBlock}`;
 		}
 	});
 
+  router.get('/questions/option-text-audit', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const report = await scanOptionTextRepairs(prisma, { limit: req.query.limit });
+    return res.json(report);
+  });
+
+  router.post('/questions/option-text-repair', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    if (req.body?.apply !== true) return res.status(400).json({ error: 'Administrator approval is required. Send { "apply": true, "options": [...] }.' });
+    const repairs = (Array.isArray(req.body?.options) ? req.body.options : [])
+      .filter(option => option && typeof option.id === 'string')
+      .map(option => ({ id: option.id, expectedText: typeof option.expectedText === 'string' ? option.expectedText : undefined }));
+    const result = await applyOptionTextRepairs(prisma, repairs, { actorId: req.user.id });
+    if (!result.ok && result.statusCode) return res.status(result.statusCode).json(result);
+    return res.status(result.ok ? 200 : 207).json(result);
+  });
+
   router.get('/questions/formula-audit', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const report = await auditQuestionFormulas(prisma, { limit: req.query.limit });
     return res.json(report);
@@ -4856,7 +4873,7 @@ ${formatBlock}`;
       await prisma.mcqOption.deleteMany({ where: { questionId: id } });
       if (payload.options.length) {
         await prisma.mcqOption.createMany({
-          data: payload.options.map((o, position) => ({ questionId: id, text: o.text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
+          data: payload.options.map((o, position) => ({ questionId: id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
         });
       }
     }
@@ -4924,7 +4941,7 @@ ${formatBlock}`;
             await prisma.mcqOption.deleteMany({ where: { questionId: sq.id } });
             if (sq.options.length) {
               await prisma.mcqOption.createMany({
-                data: sq.options.map((o, position) => ({ questionId: sq.id, text: o.text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
+                data: sq.options.map((o, position) => ({ questionId: sq.id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
               });
             }
           }
@@ -4967,7 +4984,7 @@ ${formatBlock}`;
           });
           if (newType === 'VIGNETTE_MCQ' && sq.options && sq.options.length) {
             await prisma.mcqOption.createMany({
-              data: sq.options.map((o, position) => ({ questionId: child.id, text: o.text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
+              data: sq.options.map((o, position) => ({ questionId: child.id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
             });
           }
         }

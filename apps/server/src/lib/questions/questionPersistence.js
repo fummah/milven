@@ -1,4 +1,5 @@
 import { sanitizeDbData } from '../dbText.js';
+import { normalizeOptionText } from './optionText.js';
 
 export function resolveWorkedSolution(workedSolution, explanation, subject = {}) {
 	const ws = String(workedSolution || '').trim();
@@ -27,10 +28,10 @@ async function createOptions(tx, questionId, options) {
 	await tx.mcqOption.createMany({
 		data: options.map((option, index) => ({
 			questionId,
-			text: option.text,
+			text: normalizeOptionText(option.text).text,
 			isCorrect: option.isCorrect,
 			position: index,
-			rationale: option.rationale || null
+			rationale: option.rationale ? normalizeOptionText(option.rationale).text : null
 		}))
 	});
 }

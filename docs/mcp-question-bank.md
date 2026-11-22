@@ -189,6 +189,8 @@ Math fields accept canonical TeX with `$...$`, `\\(...\\)`, `$$...$$`, or `\\[..
 
 Administrators can inspect legacy formula candidates with `GET /api/cms/questions/formula-audit`. The audit is read-only and never rewrites stored formulas automatically.
 
+MCQ option text is normalized at every write boundary. Confirmed trailing transport artifacts such as repeated literal `` `r`n`t `` or `\\r\\n\\t` sequences are removed, while valid LaTeX, Unicode, currency, punctuation and meaningful line breaks are preserved. Normalization never changes option order or the correct-answer flag. Admin endpoints are available at `GET /api/cms/questions/option-text-audit` and `POST /api/cms/questions/option-text-repair`; the repair action requires `{ "apply": true, "options": [{ "id": "...", "expectedText": "..." }] }` and records old/new values in the MCP audit log.
+
 ## Claude remote connector
 
 1. In Claude, add a custom remote MCP connector.

@@ -429,6 +429,21 @@ test('formula backslashes survive normalization and JSON serialization', () => {
 	assert.match(roundTrip.keyFormulas, /\\text\{EV\}/);
 });
 
+test('validation reports normalized option formatting artifacts at the affected option path', async () => {
+	const normalized = mcq({
+		options: [
+			{ label: 'A', text: '153.03`r`n`t`t', isCorrect: false, rationale: 'Wrong value.' },
+			{ label: 'B', text: '147.03\\r\\n\\t\\t', isCorrect: true, rationale: 'Correct value.' },
+			{ label: 'C', text: '144.12', isCorrect: false, rationale: 'Wrong value.' }
+		]
+	});
+	assert.deepEqual(normalized.options.map(option => option.text), ['153.03', '147.03', '144.12']);
+	const result = await validateQuestionPayload(fakePrisma(), normalized);
+	assert.equal(result.ok, true, JSON.stringify(result.errors));
+	assert.ok(result.warnings.some(warning => warning.code === 'OPTION_TEXT_FORMATTING_ARTIFACT' && warning.path === 'question.options[1].text'));
+	assert.deepEqual(normalized.options.map(option => option.isCorrect), [false, true, false]);
+});
+
 test('duplicate service detects exact external QID and normalized stem', async () => {
 	const existing = {
 		id: 'q-existing',

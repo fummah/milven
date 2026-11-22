@@ -1,4 +1,5 @@
 import { splitExplanation, splitMergedExplanation } from './explanationText.js';
+import { normalizeOptionText } from './optionText.js';
 import { assessCompleteness } from './questionValidation.js';
 import { auditMcpAction, getReviewBatch, updateReviewItem } from './questionReview.js';
 import { parseSampleSetHtml } from './sampleBank.js';
@@ -49,6 +50,15 @@ function repairSubject(subject, path, changes) {
 	if (!subject.answerVerificationStatus && subject.sourceSetId) {
 		subject.answerVerificationStatus = 'SOURCE_PROVIDED';
 		changes.push({ path, field: 'answerVerificationStatus', source: 'sourceSetId' });
+	}
+	if (Array.isArray(subject.options)) {
+		subject.options.forEach((option, index) => {
+			const normalized = normalizeOptionText(option.text);
+			if (normalized.changed) {
+				option.text = normalized.text;
+				changes.push({ path, field: `options[${index}].text`, source: 'option text normalization' });
+			}
+		});
 	}
 }
 
