@@ -538,6 +538,30 @@ export default function StudentMistakes() {
 												dangerouslySetInnerHTML={{ __html: formatProseWithMath(practiceQuestion.workedSolution || '') }}
 											/>
 										)}
+										{practiceQuestion.correctAnswerExplanation && (
+											<div className="mt-3">
+												<Typography.Text strong className="text-emerald-700 text-sm">Why the correct answer is correct</Typography.Text>
+												<div className="text-slate-600 text-sm prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(practiceQuestion.correctAnswerExplanation) }} />
+											</div>
+										)}
+										{practiceQuestion.incorrectOptionsExplanation && (
+											<div className="mt-3">
+												<Typography.Text strong className="text-rose-700 text-sm">Why the other options are incorrect</Typography.Text>
+												<div className="text-slate-600 text-sm prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(practiceQuestion.incorrectOptionsExplanation) }} />
+											</div>
+										)}
+										{practiceQuestion.commonMistake && (
+											<div className="mt-3">
+												<Typography.Text strong className="text-orange-700 text-sm">Common mistake</Typography.Text>
+												<div className="text-slate-600 text-sm prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(practiceQuestion.commonMistake) }} />
+											</div>
+										)}
+										{practiceQuestion.conceptsTested && (
+											<div className="mt-3">
+												<Typography.Text strong className="text-sky-700 text-sm">Concepts tested</Typography.Text>
+												<div className="text-slate-600 text-sm prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(practiceQuestion.conceptsTested) }} />
+											</div>
+										)}
 										{!practiceQuestion.options.find(o => o.id === practiceAnswer)?.isCorrect && (
 											<AIHelpPanel
 												questionId={practiceQuestion?.id}

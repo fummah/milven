@@ -39,6 +39,28 @@ function fixNestedNumbering(text) {
 	return result;
 }
 
+function ReviewDetails({ question }) {
+	if (!question) return null;
+	const fields = [
+		['Why the correct answer is correct', question.correctAnswerExplanation],
+		['Why the other options are incorrect', question.incorrectOptionsExplanation],
+		['Common mistake', question.commonMistake],
+		['Concepts tested', question.conceptsTested],
+		['Source concept', question.sourceConcept]
+	].filter(([, value]) => value);
+	if (!fields.length) return null;
+	return (
+		<div className="space-y-3">
+			{fields.map(([label, value]) => (
+				<div key={label} className="p-4 rounded-lg bg-slate-50 border border-slate-200">
+					<Typography.Text strong className="text-slate-800 text-sm">{label}</Typography.Text>
+					<div className="prose prose-sm question-preview-content text-slate-700 max-w-none mt-1" dangerouslySetInnerHTML={{ __html: formatProseWithMath(value) }} />
+				</div>
+			))}
+		</div>
+	);
+}
+
 export function ExamResult() {
 	const { attemptId } = useParams();
 	const navigate = useNavigate();
@@ -605,6 +627,7 @@ export function ExamResult() {
 																<div className="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: formatProseWithMath(ws) }} />
 															</div>
 														)}
+														<ReviewDetails question={a?.question} />
 													</div>
 													<div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
 														<Typography.Text strong className="text-slate-700 block mb-3">Score this answer:</Typography.Text>
@@ -705,7 +728,7 @@ export function ExamResult() {
 											const workedSolution = a?.question?.workedSolution;
 											const traceSection = a?.question?.traceSection;
 											const tracePage = a?.question?.tracePage;
-											const hasExplanation = keyFormulas || workedSolution || traceSection || tracePage;
+											const hasExplanation = keyFormulas || workedSolution || traceSection || tracePage || a?.question?.correctAnswerExplanation || a?.question?.incorrectOptionsExplanation || a?.question?.commonMistake || a?.question?.conceptsTested;
 											const marksAwarded = a?.marksAwarded;
 
 											return (
@@ -789,11 +812,12 @@ export function ExamResult() {
 																		{(traceSection || tracePage) && (<div><Typography.Text strong className="text-purple-700 text-sm">Reference</Typography.Text><div className="text-slate-700 mt-1">{traceSection && <span>{traceSection}</span>}{traceSection && tracePage && <span>, </span>}{tracePage && <span>Page {tracePage}</span>}</div></div>)}
 																		{keyFormulas && (<div><div className="flex items-center gap-2 mb-2"><CalculatorOutlined className="text-blue-600" /><Typography.Text strong className="text-blue-800">Key Formula(s)</Typography.Text></div><div className="prose prose-sm question-preview-content p-4 rounded-lg bg-blue-50/80 border border-blue-200 text-slate-800 max-w-none" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }} /></div>)}
 																		{workedSolution && (<div><div className="flex items-center gap-2 mb-2"><BulbOutlined className="text-green-600" /><Typography.Text strong className="text-green-800">Worked Solution</Typography.Text></div><div className="prose prose-sm question-preview-content p-4 rounded-lg bg-green-50/80 border border-green-200 text-slate-800 max-w-none" dangerouslySetInnerHTML={{ __html: formatProseWithMath(workedSolution) }} /></div>)}
+																									<ReviewDetails question={a?.question} />
 																		{aiHints[a.id]?.hint && (<div><div className="flex items-center gap-2 mb-2"><RobotOutlined className="text-violet-600" /><Typography.Text strong className="text-violet-800">AI hint</Typography.Text></div><div className="p-4 rounded-lg bg-violet-50/80 border border-violet-200 text-slate-800 text-sm">{aiHints[a.id].hint}</div></div>)}
 																	</div>
 																</div>
 															) : (
-																<Collapse size="small" className="bg-slate-50 rounded-lg border border-slate-200" items={[{ key: 'explanation', label: (<span className="flex items-center gap-2"><BulbOutlined className="text-slate-500" /><Typography.Text>View explanation</Typography.Text></span>), children: (<Space direction="vertical" size={12} style={{ width: '100%' }}>{(traceSection || tracePage) && (<div><Typography.Text strong className="text-purple-700 text-sm">Reference</Typography.Text><div className="text-slate-600 mt-1">{traceSection && <span>{traceSection}</span>}{traceSection && tracePage && <span>, </span>}{tracePage && <span>Page {tracePage}</span>}</div></div>)}{keyFormulas && (<div><Typography.Text strong className="text-blue-700 text-sm">Key Formula(s)</Typography.Text><div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-blue-50/50 border border-blue-100" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }} /></div>)}{workedSolution && (<div><Typography.Text strong className="text-green-700 text-sm">Worked Solution</Typography.Text><div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-green-50/50 border border-green-100" dangerouslySetInnerHTML={{ __html: formatProseWithMath(workedSolution) }} /></div>)}</Space>) }]} />
+																<Collapse size="small" className="bg-slate-50 rounded-lg border border-slate-200" items={[{ key: 'explanation', label: (<span className="flex items-center gap-2"><BulbOutlined className="text-slate-500" /><Typography.Text>View explanation</Typography.Text></span>), children: (<Space direction="vertical" size={12} style={{ width: '100%' }}>{(traceSection || tracePage) && (<div><Typography.Text strong className="text-purple-700 text-sm">Reference</Typography.Text><div className="text-slate-600 mt-1">{traceSection && <span>{traceSection}</span>}{traceSection && tracePage && <span>, </span>}{tracePage && <span>Page {tracePage}</span>}</div></div>)}{keyFormulas && (<div><Typography.Text strong className="text-blue-700 text-sm">Key Formula(s)</Typography.Text><div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-blue-50/50 border border-blue-100" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(keyFormulas) }} /></div>)}{workedSolution && (<div><Typography.Text strong className="text-green-700 text-sm">Worked Solution</Typography.Text><div className="prose prose-sm question-preview-content mt-1 p-3 rounded bg-green-50/50 border border-green-100" dangerouslySetInnerHTML={{ __html: formatProseWithMath(workedSolution) }} /></div>)}<ReviewDetails question={a?.question} /></Space>) }]} />
 															)}
 														</div>
 													)}

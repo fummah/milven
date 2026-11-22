@@ -346,12 +346,36 @@ export default function StudentRevision() {
 																	<div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
 																		<div className="flex items-center gap-2 mb-2">
 																			<BulbOutlined className="text-amber-500" />
-																			<Typography.Text className="text-amber-700 font-semibold text-sm">Explanation</Typography.Text>
+																			<Typography.Text className="text-amber-700 font-semibold text-sm">Worked Solution</Typography.Text>
 																		</div>
 																		<div
 																			className="text-slate-700 prose max-w-none question-preview-content"
 																			dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution || '') }}
 																		/>
+																	</div>
+																)}
+																{q?.correctAnswerExplanation && (
+																	<div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+																		<Typography.Text className="text-emerald-700 font-semibold text-sm block mb-2">Why the Correct Answer Is Correct</Typography.Text>
+																		<div className="text-slate-700 prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.correctAnswerExplanation) }} />
+																	</div>
+																)}
+																{q?.incorrectOptionsExplanation && (
+																	<div className="p-4 bg-rose-50 rounded-xl border border-rose-200">
+																		<Typography.Text className="text-rose-700 font-semibold text-sm block mb-2">Why the Other Options Are Incorrect</Typography.Text>
+																		<div className="text-slate-700 prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.incorrectOptionsExplanation) }} />
+																	</div>
+																)}
+																{q?.commonMistake && (
+																	<div className="p-4 bg-orange-50 rounded-xl border border-orange-200">
+																		<Typography.Text className="text-orange-700 font-semibold text-sm block mb-2">Common Mistake</Typography.Text>
+																		<div className="text-slate-700 prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.commonMistake) }} />
+																	</div>
+																)}
+																{q?.conceptsTested && (
+																	<div className="p-4 bg-sky-50 rounded-xl border border-sky-200">
+																		<Typography.Text className="text-sky-700 font-semibold text-sm block mb-2">Concepts Tested</Typography.Text>
+																		<div className="text-slate-700 prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.conceptsTested) }} />
 																	</div>
 																)}
 

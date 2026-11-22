@@ -185,6 +185,10 @@ Accepted aliases are normalized before validation: `correctExplanation`/`whyCorr
 
 If an existing staged draft is missing fields, use **Preview field repair** to recover values retained in the staged payload, or **Reattach source HTML** to securely upload the original HTML and recover values by QID or verified order. Repair never overwrites non-empty administrator values and always revalidates before approval.
 
+Math fields accept canonical TeX with `$...$`, `\\(...\\)`, `$$...$$`, or `\\[...\\]` delimiters. Currency amounts are not treated as math unless they form a valid math expression. Formulas remain canonical editable source in the database; rendering is handled by the shared KaTeX pipeline in admin previews, editors, and student review. Commit performs a PostgreSQL readback comparison of parent and child fields, options, academic relationships, explanations, and formula strings before marking an import committed. Readback mismatches fail the item instead of reporting a false success.
+
+Administrators can inspect legacy formula candidates with `GET /api/cms/questions/formula-audit`. The audit is read-only and never rewrites stored formulas automatically.
+
 ## Claude remote connector
 
 1. In Claude, add a custom remote MCP connector.

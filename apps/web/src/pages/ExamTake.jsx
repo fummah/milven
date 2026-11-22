@@ -146,6 +146,35 @@ function SmartReviewPanel({ answer, question, visible, onAddToRevision, onAddToW
 						/>
 					)}
 
+					{(question?.correctAnswerExplanation || question?.incorrectOptionsExplanation || question?.commonMistake || question?.conceptsTested) && (
+						<div className="space-y-3">
+							{question?.correctAnswerExplanation && (
+								<div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+									<Typography.Text className="text-emerald-700 font-semibold text-sm block mb-2">Why the Correct Answer Is Correct</Typography.Text>
+									<div className="text-slate-700 prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(question.correctAnswerExplanation) }} />
+								</div>
+							)}
+							{question?.incorrectOptionsExplanation && (
+								<div className="p-4 bg-rose-50 rounded-xl border border-rose-200">
+									<Typography.Text className="text-rose-700 font-semibold text-sm block mb-2">Why the Other Options Are Incorrect</Typography.Text>
+									<div className="text-slate-700 prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(question.incorrectOptionsExplanation) }} />
+								</div>
+							)}
+							{question?.commonMistake && (
+								<div className="p-4 bg-orange-50 rounded-xl border border-orange-200">
+									<Typography.Text className="text-orange-700 font-semibold text-sm block mb-2">Common Mistake</Typography.Text>
+									<div className="text-slate-700 prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(question.commonMistake) }} />
+								</div>
+							)}
+							{question?.conceptsTested && (
+								<div className="p-4 bg-sky-50 rounded-xl border border-sky-200">
+									<Typography.Text className="text-sky-700 font-semibold text-sm block mb-2">Concepts Tested</Typography.Text>
+									<div className="text-slate-700 prose max-w-none question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(question.conceptsTested) }} />
+								</div>
+							)}
+						</div>
+					)}
+
 					{/* LOS Reference & Concept */}
 					{(question?.los || question?.traceSection) && (
 						<div className="grid grid-cols-1 md:grid-cols-2 gap-3">

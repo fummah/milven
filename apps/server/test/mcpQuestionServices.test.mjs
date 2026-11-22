@@ -415,6 +415,20 @@ test('validator blocks review readiness when source fields are lost', async () =
 	assert.equal(result.summary.reviewStatus, 'INVALID');
 });
 
+test('formula backslashes survive normalization and JSON serialization', () => {
+	const formula = String.raw`$\text{EV} = \text{EV/EBITDA} \times \text{EBITDA}$`;
+	const normalized = normalizeQuestionPayload({
+		...mcq(),
+		keyFormulas: formula,
+		workedSolution: String.raw`Step 1: $PV(X)=\frac{X}{1+rT}$. Step 2: conclude.`
+	});
+	const roundTrip = JSON.parse(JSON.stringify(normalized));
+	assert.equal(roundTrip.keyFormulas, formula);
+	assert.equal(roundTrip.workedSolution, String.raw`Step 1: $PV(X)=\frac{X}{1+rT}$. Step 2: conclude.`);
+	assert.equal(/[\t\f]/.test(roundTrip.keyFormulas), false);
+	assert.match(roundTrip.keyFormulas, /\\text\{EV\}/);
+});
+
 test('duplicate service detects exact external QID and normalized stem', async () => {
 	const existing = {
 		id: 'q-existing',

@@ -1,6 +1,6 @@
 import { sanitizeDbData } from '../dbText.js';
 
-function mergeWorkedSolution(workedSolution, explanation, subject = {}) {
+export function resolveWorkedSolution(workedSolution, explanation, subject = {}) {
 	const ws = String(workedSolution || '').trim();
 	const explanationText = String(explanation || '').trim();
 	if (subject.correctAnswerExplanation || subject.incorrectOptionsExplanation) return ws || null;
@@ -89,7 +89,7 @@ export async function persistQuestionPayload(prisma, payload, {
 				traceSection: payload.traceSection || null,
 				tracePage: payload.tracePage || null,
 				keyFormulas: payload.keyFormulas || payload.formulas || null,
-				workedSolution: mergeWorkedSolution(payload.workedSolution, payload.explanation, payload),
+				workedSolution: resolveWorkedSolution(payload.workedSolution, payload.explanation, payload),
 				questionGuidelines: payload.markingGuidelines || null,
 				output: payload.expectedOutput || null,
 				calculationSteps: payload.calculationSteps?.length ? payload.calculationSteps : undefined,
@@ -138,7 +138,7 @@ export async function persistQuestionPayload(prisma, payload, {
 						traceSection: child.traceSection || null,
 						tracePage: child.tracePage || null,
 						keyFormulas: child.keyFormulas || child.formulas || null,
-						workedSolution: mergeWorkedSolution(child.workedSolution, child.explanation, child),
+						workedSolution: resolveWorkedSolution(child.workedSolution, child.explanation, child),
 						questionGuidelines: child.markingGuidelines || null,
 						output: child.expectedOutput || null,
 						calculationSteps: child.calculationSteps?.length ? child.calculationSteps : undefined,
@@ -157,9 +157,15 @@ export async function persistQuestionPayload(prisma, payload, {
 			where: { id: parent.id },
 			include: {
 				options: { orderBy: { position: 'asc' } },
+				topics: { select: { id: true } },
+				concepts: { select: { id: true } },
 				children: {
 					orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-					include: { options: { orderBy: { position: 'asc' } } }
+					include: {
+						options: { orderBy: { position: 'asc' } },
+						topics: { select: { id: true } },
+						concepts: { select: { id: true } }
+					}
 				}
 			}
 		});

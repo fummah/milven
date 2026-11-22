@@ -251,6 +251,18 @@ export function GradeAttemptDrawer({ attemptId, open, onClose, onSaved }) {
                       {!a?.question?.keyFormulas && !a?.question?.workedSolution && (
                         <Typography.Text type="secondary">No key formulas or worked solution set.</Typography.Text>
                       )}
+                      {a?.question?.correctAnswerExplanation && (
+                        <div><Typography.Text strong className="text-xs">Why the correct answer is correct:</Typography.Text><div className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(a.question.correctAnswerExplanation) }} /></div>
+                      )}
+                      {a?.question?.incorrectOptionsExplanation && (
+                        <div><Typography.Text strong className="text-xs">Why the other options are incorrect:</Typography.Text><div className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(a.question.incorrectOptionsExplanation) }} /></div>
+                      )}
+                      {a?.question?.commonMistake && (
+                        <div><Typography.Text strong className="text-xs">Common mistake:</Typography.Text><div className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(a.question.commonMistake) }} /></div>
+                      )}
+                      {a?.question?.conceptsTested && (
+                        <div><Typography.Text strong className="text-xs">Concepts tested:</Typography.Text><div className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(a.question.conceptsTested) }} /></div>
+                      )}
                     </div>
                   </div>
                   

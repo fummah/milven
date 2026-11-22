@@ -14,6 +14,7 @@ import { LATEX_SYSTEM_RULES, LATEX_PROMPT_SECTION, autoRepairLatex } from '../li
 import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCompletion } from '../lib/aiProvider.js';
 import { sanitizeDbData } from '../lib/dbText.js';
 import { persistLegacyGeneratedItem } from '../lib/questions/questionPersistence.js';
+import { auditQuestionFormulas } from '../lib/questions/formulaAudit.js';
 import {
 	DIFFICULTY_LEVELS,
 	DIFFICULTY_RUBRICS,
@@ -61,7 +62,7 @@ function cleanQuestionHtml(html) {
 // Clean every HTML-bearing field of a question object (and its options) in place.
 function cleanQuestionFields(q) {
 	if (!q || typeof q !== 'object') return q;
-	const fieldNames = ['stem', 'vignetteText', 'keyFormulas', 'workedSolution', 'explanation', 'conclusion', 'questionGuidelines', 'output'];
+	const fieldNames = ['stem', 'vignetteText', 'keyFormulas', 'workedSolution', 'explanation', 'conclusion', 'questionGuidelines', 'output', 'correctAnswerExplanation', 'incorrectOptionsExplanation', 'commonMistake', 'conceptsTested', 'sourceConcept', 'caseStudyTitle'];
 	for (const f of fieldNames) {
 		if (typeof q[f] === 'string' && q[f]) q[f] = cleanQuestionHtml(q[f]);
 	}
@@ -4689,6 +4690,11 @@ ${formatBlock}`;
 		}
 	});
 
+  router.get('/questions/formula-audit', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const report = await auditQuestionFormulas(prisma, { limit: req.query.limit });
+    return res.json(report);
+  });
+
   router.get('/questions/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const id = req.params.id;
     const q = await prisma.question.findUnique({
@@ -4719,7 +4725,7 @@ ${formatBlock}`;
       orderIndex: z.number().int().nonnegative().optional(),
       vignetteText: z.string().optional().nullable(),
       imageUrl: z.string().url().optional().nullable(),
-      options: z.array(z.object({ text: z.string(), isCorrect: z.boolean() })).optional(),
+      options: z.array(z.object({ text: z.string(), isCorrect: z.boolean(), rationale: z.string().optional().nullable() })).optional(),
       // Sub-questions array for bulk update of children
       subQuestions: z.array(z.object({
         id: z.string().optional(),
@@ -4733,17 +4739,32 @@ ${formatBlock}`;
         tracePage: z.string().optional().nullable(),
         keyFormulas: z.string().optional().nullable(),
         workedSolution: z.string().optional().nullable(),
+        correctAnswerExplanation: z.string().optional().nullable(),
+        incorrectOptionsExplanation: z.string().optional().nullable(),
+        commonMistake: z.string().optional().nullable(),
+        conceptsTested: z.string().optional().nullable(),
+        sourceConcept: z.string().optional().nullable(),
+        sourceSetId: z.string().optional().nullable(),
+        answerVerificationStatus: z.enum(['UNVERIFIED', 'SOURCE_PROVIDED', 'AUTOMATIC_CHECKED', 'HUMAN_VERIFIED']).optional().nullable(),
         questionGuidelines: z.string().optional().nullable(),
         output: z.string().optional().nullable(),
         topicId: z.string().optional().nullable(),
         conceptIds: z.array(z.string()).optional()
       })).optional(),
       qid: z.string().optional().nullable(),
+      caseStudyTitle: z.string().optional().nullable(),
+      sourceSetId: z.string().optional().nullable(),
       los: z.string().optional().nullable(),
       traceSection: z.string().optional().nullable(),
       tracePage: z.string().optional().nullable(),
       keyFormulas: z.string().optional().nullable(),
       workedSolution: z.string().optional().nullable(),
+      correctAnswerExplanation: z.string().optional().nullable(),
+      incorrectOptionsExplanation: z.string().optional().nullable(),
+      commonMistake: z.string().optional().nullable(),
+      conceptsTested: z.string().optional().nullable(),
+      sourceConcept: z.string().optional().nullable(),
+      answerVerificationStatus: z.enum(['UNVERIFIED', 'SOURCE_PROVIDED', 'AUTOMATIC_CHECKED', 'HUMAN_VERIFIED']).optional().nullable(),
       conceptIds: z.array(z.string()).optional()
     });
     const parse = schema.safeParse(req.body);
@@ -4757,14 +4778,27 @@ ${formatBlock}`;
     payload.stem = compactHtml(payload.stem);
     payload.keyFormulas = compactHtml(payload.keyFormulas);
     payload.workedSolution = compactHtml(payload.workedSolution);
+    payload.correctAnswerExplanation = compactHtml(payload.correctAnswerExplanation);
+    payload.incorrectOptionsExplanation = compactHtml(payload.incorrectOptionsExplanation);
+    payload.commonMistake = compactHtml(payload.commonMistake);
+    payload.conceptsTested = compactHtml(payload.conceptsTested);
+    payload.sourceConcept = compactHtml(payload.sourceConcept);
+    payload.caseStudyTitle = compactHtml(payload.caseStudyTitle);
     if (Array.isArray(payload.options)) {
-      payload.options = payload.options.map(o => ({ ...o, text: compactHtml(o.text) }));
+      payload.options = payload.options.map(o => ({ ...o, text: compactHtml(o.text), rationale: compactHtml(o.rationale) }));
     }
     if (Array.isArray(payload.subQuestions)) {
       payload.subQuestions = payload.subQuestions.map(sq => ({
         ...sq,
         stem: compactHtml(sq.stem),
-        options: Array.isArray(sq.options) ? sq.options.map(o => ({ ...o, text: compactHtml(o.text) })) : sq.options
+        keyFormulas: compactHtml(sq.keyFormulas),
+        workedSolution: compactHtml(sq.workedSolution),
+        correctAnswerExplanation: compactHtml(sq.correctAnswerExplanation),
+        incorrectOptionsExplanation: compactHtml(sq.incorrectOptionsExplanation),
+        commonMistake: compactHtml(sq.commonMistake),
+        conceptsTested: compactHtml(sq.conceptsTested),
+        sourceConcept: compactHtml(sq.sourceConcept),
+        options: Array.isArray(sq.options) ? sq.options.map(o => ({ ...o, text: compactHtml(o.text), rationale: compactHtml(o.rationale) })) : sq.options
       }));
     }
     const existing = await prisma.question.findUnique({ where: { id } });
@@ -4800,11 +4834,19 @@ ${formatBlock}`;
         ...(typeof payload.vignetteText !== 'undefined' ? { vignetteText: payload.vignetteText || null } : {}),
         ...(typeof payload.imageUrl !== 'undefined' ? { imageUrl: payload.imageUrl || null } : {}),
         ...(typeof payload.qid !== 'undefined' ? { qid: payload.qid || null } : {}),
+        ...(typeof payload.caseStudyTitle !== 'undefined' ? { caseStudyTitle: payload.caseStudyTitle || null } : {}),
+        ...(typeof payload.sourceSetId !== 'undefined' ? { sourceSetId: payload.sourceSetId || null } : {}),
         ...(typeof payload.los !== 'undefined' ? { los: payload.los || null } : {}),
         ...(typeof payload.traceSection !== 'undefined' ? { traceSection: payload.traceSection || null } : {}),
         ...(typeof payload.tracePage !== 'undefined' ? { tracePage: payload.tracePage || null } : {}),
         ...(typeof payload.keyFormulas !== 'undefined' ? { keyFormulas: payload.keyFormulas || null } : {}),
         ...(typeof payload.workedSolution !== 'undefined' ? { workedSolution: payload.workedSolution || null } : {}),
+        ...(typeof payload.correctAnswerExplanation !== 'undefined' ? { correctAnswerExplanation: payload.correctAnswerExplanation || null } : {}),
+        ...(typeof payload.incorrectOptionsExplanation !== 'undefined' ? { incorrectOptionsExplanation: payload.incorrectOptionsExplanation || null } : {}),
+        ...(typeof payload.commonMistake !== 'undefined' ? { commonMistake: payload.commonMistake || null } : {}),
+        ...(typeof payload.conceptsTested !== 'undefined' ? { conceptsTested: payload.conceptsTested || null } : {}),
+        ...(typeof payload.sourceConcept !== 'undefined' ? { sourceConcept: payload.sourceConcept || null } : {}),
+        ...(typeof payload.answerVerificationStatus !== 'undefined' ? { answerVerificationStatus: payload.answerVerificationStatus || null } : {}),
         ...(pathIds ? pathIds : {})
       }
     });
@@ -4814,7 +4856,7 @@ ${formatBlock}`;
       await prisma.mcqOption.deleteMany({ where: { questionId: id } });
       if (payload.options.length) {
         await prisma.mcqOption.createMany({
-          data: payload.options.map((o, position) => ({ questionId: id, text: o.text, isCorrect: o.isCorrect, position }))
+          data: payload.options.map((o, position) => ({ questionId: id, text: o.text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
         });
       }
     }
@@ -4865,6 +4907,13 @@ ${formatBlock}`;
               ...(typeof sq.tracePage !== 'undefined' ? { tracePage: sq.tracePage || null } : {}),
               ...(typeof sq.keyFormulas !== 'undefined' ? { keyFormulas: cleanQuestionHtml(sq.keyFormulas || null) } : {}),
               ...(typeof sq.workedSolution !== 'undefined' ? { workedSolution: cleanQuestionHtml(sq.workedSolution || null) } : {}),
+              ...(typeof sq.correctAnswerExplanation !== 'undefined' ? { correctAnswerExplanation: cleanQuestionHtml(sq.correctAnswerExplanation || null) } : {}),
+              ...(typeof sq.incorrectOptionsExplanation !== 'undefined' ? { incorrectOptionsExplanation: cleanQuestionHtml(sq.incorrectOptionsExplanation || null) } : {}),
+              ...(typeof sq.commonMistake !== 'undefined' ? { commonMistake: cleanQuestionHtml(sq.commonMistake || null) } : {}),
+              ...(typeof sq.conceptsTested !== 'undefined' ? { conceptsTested: cleanQuestionHtml(sq.conceptsTested || null) } : {}),
+              ...(typeof sq.sourceConcept !== 'undefined' ? { sourceConcept: cleanQuestionHtml(sq.sourceConcept || null) } : {}),
+              ...(typeof sq.sourceSetId !== 'undefined' ? { sourceSetId: sq.sourceSetId || null } : {}),
+              ...(typeof sq.answerVerificationStatus !== 'undefined' ? { answerVerificationStatus: sq.answerVerificationStatus || null } : {}),
               ...(typeof sq.questionGuidelines !== 'undefined' ? { questionGuidelines: sq.questionGuidelines || null } : {}),
               ...(typeof sq.output !== 'undefined' ? { output: sq.output || null } : {}),
               ...(Array.isArray(sq.conceptIds) ? { concepts: { set: sq.conceptIds.map(cid => ({ id: cid })) } } : {})
@@ -4905,6 +4954,13 @@ ${formatBlock}`;
               tracePage: sq.tracePage || null,
               keyFormulas: cleanQuestionHtml(sq.keyFormulas || null),
               workedSolution: cleanQuestionHtml(sq.workedSolution || null),
+              correctAnswerExplanation: cleanQuestionHtml(sq.correctAnswerExplanation || null),
+              incorrectOptionsExplanation: cleanQuestionHtml(sq.incorrectOptionsExplanation || null),
+              commonMistake: cleanQuestionHtml(sq.commonMistake || null),
+              conceptsTested: cleanQuestionHtml(sq.conceptsTested || null),
+              sourceConcept: cleanQuestionHtml(sq.sourceConcept || null),
+              sourceSetId: sq.sourceSetId || null,
+              answerVerificationStatus: sq.answerVerificationStatus || null,
               questionGuidelines: sq.questionGuidelines || null,
               output: sq.output || null
             }

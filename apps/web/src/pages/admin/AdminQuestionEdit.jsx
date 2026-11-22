@@ -47,7 +47,20 @@ export function AdminQuestionEdit() {
 							id: item.id,
 							stem: item.stem,
 							orderIndex: item.orderIndex ?? 0,
-							options: (item.options || []).map(o => ({ text: o.text, isCorrect: o.isCorrect }))
+							marks: item.marks || 1,
+							difficulty: item.difficulty,
+							qid: item.qid || '',
+							los: item.los || '',
+							traceSection: item.traceSection || '',
+							tracePage: item.tracePage || '',
+							keyFormulas: item.keyFormulas || '',
+							workedSolution: item.workedSolution || '',
+							correctAnswerExplanation: item.correctAnswerExplanation || '',
+							incorrectOptionsExplanation: item.incorrectOptionsExplanation || '',
+							commonMistake: item.commonMistake || '',
+							conceptsTested: item.conceptsTested || '',
+							sourceConcept: item.sourceConcept || '',
+							options: (item.options || []).map(o => ({ text: o.text, isCorrect: o.isCorrect, rationale: o.rationale || '' }))
 						}));
 						setInitialVignetteQuestionIds(vignetteQuestions.map(v => v.id));
 						const qTopics = Array.isArray(q.topics) ? q.topics : [];
@@ -69,6 +82,13 @@ export function AdminQuestionEdit() {
 							tracePage: q.tracePage || '',
 							keyFormulas: q.keyFormulas || '',
 							workedSolution: q.workedSolution || '',
+							correctAnswerExplanation: q.correctAnswerExplanation || '',
+							incorrectOptionsExplanation: q.incorrectOptionsExplanation || '',
+							commonMistake: q.commonMistake || '',
+							conceptsTested: q.conceptsTested || '',
+							sourceConcept: q.sourceConcept || '',
+							caseStudyTitle: q.caseStudyTitle || '',
+							sourceSetId: q.sourceSetId || '',
 							vignetteQuestions
 						});
 						if (vignetteQuestions.length > 0) {
@@ -100,6 +120,11 @@ export function AdminQuestionEdit() {
 							tracePage: q.tracePage || '',
 							keyFormulas: q.keyFormulas || '',
 							workedSolution: q.workedSolution || '',
+							correctAnswerExplanation: q.correctAnswerExplanation || '',
+							incorrectOptionsExplanation: q.incorrectOptionsExplanation || '',
+							commonMistake: q.commonMistake || '',
+							conceptsTested: q.conceptsTested || '',
+							sourceConcept: q.sourceConcept || '',
 							constructedSubQuestions
 						});
 						if (constructedSubQuestions.length > 0) {
@@ -126,7 +151,14 @@ export function AdminQuestionEdit() {
 							tracePage: q.tracePage || '',
 							keyFormulas: q.keyFormulas || '',
 							workedSolution: q.workedSolution || '',
-							options: (q.options || []).map(o => ({ text: o.text, isCorrect: o.isCorrect }))
+							correctAnswerExplanation: q.correctAnswerExplanation || '',
+							incorrectOptionsExplanation: q.incorrectOptionsExplanation || '',
+							commonMistake: q.commonMistake || '',
+							conceptsTested: q.conceptsTested || '',
+							sourceConcept: q.sourceConcept || '',
+							caseStudyTitle: q.caseStudyTitle || '',
+							sourceSetId: q.sourceSetId || '',
+							options: (q.options || []).map(o => ({ text: o.text, isCorrect: o.isCorrect, rationale: o.rationale || '' }))
 						});
 					}
 				}
@@ -230,7 +262,14 @@ export function AdminQuestionEdit() {
 					traceSection: values.traceSection || null,
 					tracePage: values.tracePage || null,
 					keyFormulas: values.keyFormulas || null,
-					workedSolution: values.workedSolution || null
+					workedSolution: values.workedSolution || null,
+					correctAnswerExplanation: values.correctAnswerExplanation || null,
+					incorrectOptionsExplanation: values.incorrectOptionsExplanation || null,
+					commonMistake: values.commonMistake || null,
+					conceptsTested: values.conceptsTested || null,
+					sourceConcept: values.sourceConcept || null,
+					caseStudyTitle: values.caseStudyTitle || null,
+					sourceSetId: values.sourceSetId || null
 				});
 			} else if (values.type === 'VIGNETTE_MCQ' && Array.isArray(values.vignetteQuestions) && values.vignetteQuestions.length > 0) {
 				// Vignette MCQ bundle: single PUT with subQuestions
@@ -239,8 +278,20 @@ export function AdminQuestionEdit() {
 					.map(sq => ({
 						id: sq.id || undefined,
 						stem: sq.stem,
-						marks: values.marks ? Number(values.marks) : 1,
-						options: (sq.options || []).map(o => ({ text: o.text, isCorrect: !!o.isCorrect }))
+						marks: sq.marks ? Number(sq.marks) : 1,
+						difficulty: sq.difficulty || values.difficulty,
+						qid: sq.qid || null,
+						los: sq.los || null,
+						traceSection: sq.traceSection || null,
+						tracePage: sq.tracePage || null,
+						keyFormulas: sq.keyFormulas || null,
+						workedSolution: sq.workedSolution || null,
+						correctAnswerExplanation: sq.correctAnswerExplanation || null,
+						incorrectOptionsExplanation: sq.incorrectOptionsExplanation || null,
+						commonMistake: sq.commonMistake || null,
+						conceptsTested: sq.conceptsTested || null,
+						sourceConcept: sq.sourceConcept || null,
+						options: (sq.options || []).map(o => ({ text: o.text, isCorrect: !!o.isCorrect, rationale: o.rationale || null }))
 					}));
 				await api.put(`/api/cms/questions/${id}`, {
 					type: values.type,
@@ -255,7 +306,14 @@ export function AdminQuestionEdit() {
 					traceSection: values.traceSection || null,
 					tracePage: values.tracePage || null,
 					keyFormulas: values.keyFormulas || null,
-					workedSolution: values.workedSolution || null
+					workedSolution: values.workedSolution || null,
+					correctAnswerExplanation: values.correctAnswerExplanation || null,
+					incorrectOptionsExplanation: values.incorrectOptionsExplanation || null,
+					commonMistake: values.commonMistake || null,
+					conceptsTested: values.conceptsTested || null,
+					sourceConcept: values.sourceConcept || null,
+					caseStudyTitle: values.caseStudyTitle || null,
+					sourceSetId: values.sourceSetId || null
 				});
 			} else {
 				// Standard single-question update
@@ -267,14 +325,21 @@ export function AdminQuestionEdit() {
 					topicIds: Array.isArray(values.topicIds) ? values.topicIds : (values.topicIds ? [values.topicIds] : []),
 					conceptIds: Array.isArray(values.conceptIds) ? values.conceptIds : [],
 					options: values.type !== 'CONSTRUCTED_RESPONSE'
-						? (values.options || []).map(o => ({ text: o.text, isCorrect: !!o.isCorrect }))
+						? (values.options || []).map(o => ({ text: o.text, isCorrect: !!o.isCorrect, rationale: o.rationale || null }))
 						: [],
 					qid: values.qid || null,
 					los: values.los || null,
 					traceSection: values.traceSection || null,
 					tracePage: values.tracePage || null,
 					keyFormulas: values.keyFormulas || null,
-					workedSolution: values.workedSolution || null
+					workedSolution: values.workedSolution || null,
+					correctAnswerExplanation: values.correctAnswerExplanation || null,
+					incorrectOptionsExplanation: values.incorrectOptionsExplanation || null,
+					commonMistake: values.commonMistake || null,
+					conceptsTested: values.conceptsTested || null,
+					sourceConcept: values.sourceConcept || null,
+					caseStudyTitle: values.caseStudyTitle || null,
+					sourceSetId: values.sourceSetId || null
 				});
 			}
 			message.success('Question updated');
@@ -455,6 +520,29 @@ export function AdminQuestionEdit() {
 								<Form.Item name="workedSolution" label="Worked Solution (concise)">
 									<RichTextEditor placeholder="Brief step-by-step solution..." minHeight={100} />
 								</Form.Item>
+								<Form.Item name="correctAnswerExplanation" label="Why the Correct Answer Is Correct">
+									<RichTextEditor placeholder="Explain why the correct answer is correct..." minHeight={80} />
+								</Form.Item>
+								<Form.Item name="incorrectOptionsExplanation" label="Why the Other Options Are Incorrect">
+									<RichTextEditor placeholder="Explain why the other options are incorrect..." minHeight={80} />
+								</Form.Item>
+								<Form.Item name="commonMistake" label="Common Mistake">
+									<RichTextEditor placeholder="Typical candidate misconception..." minHeight={60} />
+								</Form.Item>
+								<Form.Item name="conceptsTested" label="Concepts Tested">
+									<RichTextEditor placeholder="Source description of concepts tested..." minHeight={60} />
+								</Form.Item>
+								<Form.Item name="sourceConcept" label="Source Concept">
+									<Input placeholder="Original curriculum Concept text" />
+								</Form.Item>
+								<Space size="large" wrap style={{ width: '100%' }}>
+									<Form.Item name="caseStudyTitle" label="Case-study Title">
+										<Input placeholder="Vignette case-study title" style={{ width: 260 }} />
+									</Form.Item>
+									<Form.Item name="sourceSetId" label="Source Set ID">
+										<Input placeholder="e.g. SET-012" style={{ width: 160 }} />
+									</Form.Item>
+								</Space>
 							</>
 						)}
 					</div>
@@ -518,6 +606,53 @@ export function AdminQuestionEdit() {
 																	>
 																		<RichTextEditor placeholder="Enter question text..." />
 																	</Form.Item>
+																	<Space size="large" wrap>
+																		<Form.Item name={[qField.name, 'marks']} label="Marks" rules={[{ required: true }]}>
+																			<InputNumber min={1} style={{ width: 120 }} />
+																		</Form.Item>
+																		<Form.Item name={[qField.name, 'difficulty']} label="Difficulty">
+																			<Select style={{ width: 140 }} options={[
+																				{ value: 'EASY', label: 'Easy' },
+																				{ value: 'MEDIUM', label: 'Medium' },
+																				{ value: 'HARD', label: 'Hard' }
+																			]} />
+																		</Form.Item>
+																		<Form.Item name={[qField.name, 'qid']} label="QID">
+																			<Input style={{ width: 160 }} />
+																		</Form.Item>
+																	</Space>
+																	<Form.Item name={[qField.name, 'los']} label="LOS">
+																		<Input />
+																	</Form.Item>
+																	<Space size="large" wrap style={{ width: '100%' }}>
+																		<Form.Item name={[qField.name, 'traceSection']} label="Curriculum Section">
+																			<Input style={{ width: 300 }} />
+																		</Form.Item>
+																		<Form.Item name={[qField.name, 'tracePage']} label="Page">
+																			<Input style={{ width: 120 }} />
+																		</Form.Item>
+																	</Space>
+																	<Form.Item name={[qField.name, 'keyFormulas']} label="Key Formula(s)">
+																		<RichTextEditor placeholder="Canonical LaTeX source..." minHeight={70} />
+																	</Form.Item>
+																	<Form.Item name={[qField.name, 'workedSolution']} label="Worked Solution">
+																		<RichTextEditor placeholder="Step-by-step worked solution..." minHeight={100} />
+																	</Form.Item>
+																	<Form.Item name={[qField.name, 'correctAnswerExplanation']} label="Why the Correct Answer Is Correct">
+																		<RichTextEditor placeholder="Explain the correct answer..." minHeight={70} />
+																	</Form.Item>
+																	<Form.Item name={[qField.name, 'incorrectOptionsExplanation']} label="Why the Other Options Are Incorrect">
+																		<RichTextEditor placeholder="Explain the other options..." minHeight={70} />
+																	</Form.Item>
+																	<Form.Item name={[qField.name, 'commonMistake']} label="Common Mistake">
+																		<RichTextEditor placeholder="Typical misconception..." minHeight={60} />
+																	</Form.Item>
+																	<Form.Item name={[qField.name, 'conceptsTested']} label="Concepts Tested">
+																		<RichTextEditor placeholder="Source concepts tested..." minHeight={60} />
+																	</Form.Item>
+																	<Form.Item name={[qField.name, 'sourceConcept']} label="Source Concept">
+																		<Input placeholder="Original curriculum Concept text" />
+																	</Form.Item>
 																	<Form.List name={[qField.name, 'options']}>
 																		{(optFields, { add: addOpt, remove: removeOpt }) => (
 																			<>
@@ -531,6 +666,13 @@ export function AdminQuestionEdit() {
 																							style={{ flex: 1 }}
 																						>
 																							<Input placeholder="Option text" />
+																						</Form.Item>
+																						<Form.Item
+																							{...optField}
+																							name={[optField.name, 'rationale']}
+																							style={{ flex: 1 }}
+																						>
+																							<Input placeholder="Optional option rationale" />
 																						</Form.Item>
 																						<Form.Item
 																							{...optField}
@@ -657,6 +799,9 @@ export function AdminQuestionEdit() {
 																<Space key={field.key} align="baseline" style={{ display: 'flex', width: '100%' }}>
 																	<Form.Item {...field} name={[field.name, 'text']} rules={[{ required: true }]} style={{ flex: 1 }}>
 																		<Input placeholder="Option text" />
+																	</Form.Item>
+																	<Form.Item {...field} name={[field.name, 'rationale']} style={{ flex: 1 }}>
+																		<Input placeholder="Optional option rationale" />
 																	</Form.Item>
 																	<Form.Item {...field} name={[field.name, 'isCorrect']}>
 																		<Select

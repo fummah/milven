@@ -4,6 +4,7 @@ import { checkQuestionDuplicates, findDuplicateExternalIds } from './questionDup
 import { validateAcademicMapping } from './questionCurriculum.js';
 import { persistQuestionPayload } from './questionPersistence.js';
 import { sanitizeDbData } from '../dbText.js';
+import { verifyPersistedQuestion } from './questionReadback.js';
 
 function zodErrors(error) {
 	return (error?.issues || error?.errors || []).map(issue => ({
@@ -480,6 +481,13 @@ export async function commitApprovedBatch(prisma, batchId, { actorId, tokenId = 
 					generationSource: 'MCP',
 					validation: item.validation
 				});
+				const verification = verifyPersistedQuestion(payload, result.question, mapping);
+				if (!verification.ok) {
+					const error = new Error('Committed question readback did not match the approved payload.');
+					error.code = 'COMMIT_READBACK_FAILED';
+					error.details = verification;
+					throw error;
+				}
 				await tx.mcpImportItem.update({
 					where: { id: item.id },
 					data: {
@@ -487,14 +495,20 @@ export async function commitApprovedBatch(prisma, batchId, { actorId, tokenId = 
 						committedQuestionId: result.parentId,
 						committedAt: new Date(),
 						errors: null,
-						duplicates
+						duplicates,
+						validation: { ...(item.validation || {}), readbackVerification: verification }
 					}
 				});
-				return result;
+				return { ...result, verification };
 			});
 			results.push({ itemId: item.id, externalQuestionId: item.externalQuestionId, ok: true, ...persisted });
 		} catch (error) {
-			const errors = [{ code: error.code || 'COMMIT_FAILED', message: error.message, severity: 'error' }];
+			const errors = [{
+				code: error.code || 'COMMIT_FAILED',
+				message: error.message,
+				severity: 'error',
+				...(error.details ? { details: error.details } : {})
+			}];
 			await prisma.mcpImportItem.update({ where: { id: item.id }, data: { status: 'FAILED', errors } });
 			results.push({ itemId: item.id, externalQuestionId: item.externalQuestionId, ok: false, errors });
 		}
@@ -530,6 +544,7 @@ export async function commitApprovedBatch(prisma, batchId, { actorId, tokenId = 
 			failedCount,
 			total: batch.items.length,
 			committedQuestionIds: results.filter(result => result.ok).map(result => result.parentId || result.committedQuestionId).filter(Boolean),
+			readbackVerifiedCount: results.filter(result => result.ok && result.verification?.ok).length,
 			failures: results.filter(result => !result.ok)
 		}
 	};

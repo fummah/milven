@@ -8,6 +8,32 @@ import { RichTextEditor } from '../../components/RichTextEditor.jsx';
 import { ModuleNotesDrawer } from '../../components/ModuleNotesDrawer.jsx';
 import AIQuestionEditModal from '../../components/AIQuestionEditModal.jsx';
 
+function QuestionDetails({ question }) {
+	if (!question) return null;
+	const fields = [
+		['Case-study title', question.caseStudyTitle],
+		['Source set', question.sourceSetId],
+		['Verification', question.answerVerificationStatus],
+		['Correct answer explanation', question.correctAnswerExplanation],
+		['Incorrect options explanation', question.incorrectOptionsExplanation],
+		['Common mistake', question.commonMistake],
+		['Concepts tested', question.conceptsTested],
+		['Source concept', question.sourceConcept],
+		['Verified concepts', (question.concepts || []).map(concept => concept.name || concept.id).join(', ')]
+	].filter(([, value]) => value);
+	if (!fields.length) return null;
+	return (
+		<div style={{ marginTop: 8, borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
+			{fields.map(([label, value]) => (
+				<div key={label} style={{ fontSize: 13, marginTop: 4 }}>
+					<Typography.Text strong>{label}: </Typography.Text>
+					<span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(value) }} />
+				</div>
+			))}
+		</div>
+	);
+}
+
 export function AdminQuestions() {
 	const [form] = Form.useForm();
 	const [bulkForm] = Form.useForm();
@@ -596,6 +622,7 @@ export function AdminQuestions() {
 			if (hasChildren && q.type === 'VIGNETTE_MCQ') {
 				setPreviewQuestion({
 					mode: 'VIGNETTE_BUNDLE',
+					parent: q,
 					vignetteText: q.vignetteText || '',
 					questions: q.children
 				});
@@ -2513,7 +2540,10 @@ export function AdminQuestions() {
 									<Space direction="vertical" size={8} style={{ width: '100%' }}>
 										<Space>
 											<Tag color="purple">VIGNETTE_MCQ</Tag>
+											{previewQuestion.parent?.caseStudyTitle && <Typography.Text strong>{previewQuestion.parent.caseStudyTitle}</Typography.Text>}
+											{previewQuestion.parent?.sourceSetId && <Tag>{previewQuestion.parent.sourceSetId}</Tag>}
 										</Space>
+										<QuestionDetails question={previewQuestion.parent} />
 										{previewQuestion.vignetteText && (
 											<>
 												<Divider style={{ margin: '8px 0' }} />
@@ -2548,7 +2578,7 @@ export function AdminQuestions() {
 															<Radio key={option.id || oIdx} value={option.id || oIdx}>
 																<Space align="start">
 																	<span className="prose question-preview-content" style={{ display: 'inline-block' }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.text) }} />
-																	{option.isCorrect && <Tag color="green">Correct</Tag>}
+																	{option.isCorrect && <Tag color="green">Correct</Tag>}`r`n`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t{option.rationale && <span className="question-preview-content" style={{ color: "#64748b", fontSize: 12 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.rationale) }} />}
 																</Space>
 															</Radio>
 														))}
@@ -2562,6 +2592,7 @@ export function AdminQuestions() {
 													{(q.traceSection || q.tracePage) && <div style={{ fontSize: 13 }}><Typography.Text strong>Trace: </Typography.Text><Typography.Text>{q.traceSection}{q.traceSection && q.tracePage ? ' – ' : ''}{q.tracePage ? `Page ${q.tracePage}` : ''}</Typography.Text></div>}
 													{q.keyFormulas && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f0f5ff', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Key Formula(s): </Typography.Text><span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.keyFormulas) }} /></div>}
 													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} /></div>}
+													<QuestionDetails question={q} />
 												</div>
 											)}
 										</Space>
@@ -2610,6 +2641,7 @@ export function AdminQuestions() {
 													{(q.traceSection || q.tracePage) && <div style={{ fontSize: 13 }}><Typography.Text strong>Trace: </Typography.Text><Typography.Text>{q.traceSection}{q.traceSection && q.tracePage ? ' – ' : ''}{q.tracePage ? `Page ${q.tracePage}` : ''}</Typography.Text></div>}
 													{q.keyFormulas && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f0f5ff', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Key Formula(s): </Typography.Text><span className="formula-content" dangerouslySetInnerHTML={{ __html: formatFormulaHtml(q.keyFormulas) }} /></div>}
 													{q.workedSolution && <div style={{ marginTop: 4, padding: '4px 8px', background: '#f6ffed', borderRadius: 4, fontSize: 13 }}><Typography.Text strong>Worked Solution: </Typography.Text><span className="question-preview-content" dangerouslySetInnerHTML={{ __html: formatProseWithMath(q.workedSolution) }} /></div>}
+													<QuestionDetails question={q} />
 												</div>
 											)}
 										</Space>
@@ -2657,7 +2689,7 @@ export function AdminQuestions() {
 													<Radio key={option.id || idx} value={option.id || idx}>
 														<Space align="start">
 															<span className="prose question-preview-content" style={{ display: 'inline-block' }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.text) }} />
-															{option.isCorrect && <Tag color="green">Correct</Tag>}
+															{option.isCorrect && <Tag color="green">Correct</Tag>}`r`n`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t{option.rationale && <span className="question-preview-content" style={{ color: "#64748b", fontSize: 12 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.rationale) }} />}
 														</Space>
 													</Radio>
 												))}
@@ -2709,6 +2741,7 @@ export function AdminQuestions() {
 													/>
 												</div>
 											)}
+										<QuestionDetails question={previewQuestion.question} />
 										</Space>
 									</Card>
 								)}

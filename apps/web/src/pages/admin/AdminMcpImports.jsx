@@ -291,10 +291,23 @@ export function AdminMcpImports() {
 			onOk: async () => {
 				try {
 					const { data } = await api.post(`/api/mcp/imports/${batch.id}/commit`);
-					message.success(data.partial ? 'Batch partially committed' : 'Batch committed');
+					if (data.partial) {
+						Modal.error({
+							title: 'Batch partially committed',
+							width: 760,
+							content: <JsonBlock value={data.summary?.failures || data.error || 'Some items failed readback verification.'} />
+						});
+					} else {
+						message.success('Batch committed and database readback verified');
+					}
 					await reloadSelected(batch.id);
 				} catch (error) {
-					message.error(error?.response?.data?.error || 'Commit failed');
+					const payload = error?.response?.data;
+					Modal.error({
+						title: 'Commit failed',
+						width: 760,
+						content: <JsonBlock value={payload?.errors || payload?.error || error.message} />
+					});
 				}
 			}
 		});

@@ -38,6 +38,12 @@ test('MCP approval workflow persists and reuses option order', { skip: !runInteg
 			tracePage: 'p. 10',
 			keyFormulas: '\\( E(R) = R_f + \\beta (E(R_m)-R_f) \\)',
 			workedSolution: 'Step 1: review the evidence. Step 2: document the assumptions. Step 3: select the defensible action.',
+			correctAnswerExplanation: 'The documented process preserves evidence and supports a defensible decision.',
+			incorrectOptionsExplanation: 'The distractors skip documentation or ignore conflicting evidence.',
+			commonMistake: 'Acting before documenting the evidence.',
+			conceptsTested: 'Disciplined evidence-based decision making.',
+			sourceConcept: 'Evidence-based decision process',
+			sourceSetId: 'SET-READBACK',
 			options: [
 				{ label: 'A', text: 'Act immediately without documentation.', isCorrect: false, rationale: 'Ignores evidence.' },
 				{ label: 'B', text: 'Document the evidence and assumptions before deciding.', isCorrect: true, rationale: 'Matches a disciplined process.' },

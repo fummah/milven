@@ -13,6 +13,7 @@
 
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { findMathSpans, hasMathDelimiters } from './mathDelimiters';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    §1  FORMULA SANITIZER — repair corrupted/malformed LaTeX
@@ -236,7 +237,7 @@ export function safeHtml(html) {
  */
 export function containsLatex(text) {
 	if (!text) return false;
-	return /\\\([\s\S]*?\\\)/.test(text) || /\\\[[\s\S]*?\\\]/.test(text);
+	return /\\\([\s\S]*?\\\)/.test(text) || /\\\[[\s\S]*?\\\]/.test(text) || hasMathDelimiters(text);
 }
 
 /**
@@ -406,18 +407,16 @@ function katexToHtml(latex, displayMode = false) {
  */
 export function renderLatex(text) {
 	if (!text) return '';
-
-	// Process block math first  \[ … \]
-	let result = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, expr) =>
-		katexToHtml(expr.trim(), true)
-	);
-
-	// Then inline math  \( … \)
-	result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_, expr) =>
-		katexToHtml(expr.trim(), false)
-	);
-
-	return result;
+	const spans = findMathSpans(text);
+	if (!spans.length) return text;
+	let result = '';
+	let lastIndex = 0;
+	for (const span of spans) {
+		result += text.slice(lastIndex, span.start);
+		result += katexToHtml(span.inner.trim(), span.display);
+		lastIndex = span.end;
+	}
+	return result + text.slice(lastIndex);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -700,30 +699,18 @@ export function formatProseWithMath(text) {
 	let s = formulaSanitizer(String(text));
 	s = safeHtml(s);
 
-	// Convert bare LaTeX commands in prose to Unicode (before KaTeX rendering)
-	// We do this ONLY on the parts that are NOT inside \( … \) or \[ … \]
+	// Render delimited math first and keep all surrounding prose as text.
+	const spans = findMathSpans(s);
 	const parts = [];
 	let lastIndex = 0;
-	const mathPattern = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
-	let match;
-
-	while ((match = mathPattern.exec(s)) !== null) {
-		// Prose before this math block — render inline LaTeX expressions + convert bare commands
-		const prose = s.slice(lastIndex, match.index);
+	for (const span of spans) {
+		const prose = s.slice(lastIndex, span.start);
 		if (prose) parts.push(renderProseSegment(prose));
-
-		// Math block — render via KaTeX
-		const block = match[1];
-		const isDisplay = block.startsWith('\\[');
-		const inner = isDisplay ? block.slice(2, -2).trim() : block.slice(2, -2).trim();
-		parts.push(katexToHtml(inner, isDisplay));
-		lastIndex = match.index + match[0].length;
+		parts.push(katexToHtml(span.inner.trim(), span.display));
+		lastIndex = span.end;
 	}
-
-	// Remaining prose after the last math block
 	const tail = s.slice(lastIndex);
 	if (tail) parts.push(renderProseSegment(tail));
-
 	return parts.join('');
 }
 
