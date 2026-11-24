@@ -15,8 +15,9 @@ import { getAIApiKey, getActiveProvider, getActiveModel, getDefaultModel, chatCo
 import { sanitizeDbData } from '../lib/dbText.js';
 import { persistLegacyGeneratedItem } from '../lib/questions/questionPersistence.js';
 import { auditQuestionFormulas } from '../lib/questions/formulaAudit.js';
-import { normalizeOptionText } from '../lib/questions/optionText.js';
+import { normalizeOptionRationale, normalizeOptionText } from '../lib/questions/optionText.js';
 import { applyOptionTextRepairs, scanOptionTextRepairs } from '../lib/questions/optionRepair.js';
+import { applyDifficultyRepairs, scanDifficultyRepairs } from '../lib/questions/difficultyRepair.js';
 import {
 	DIFFICULTY_LEVELS,
 	DIFFICULTY_RUBRICS,
@@ -2604,7 +2605,7 @@ export function cmsRouter(prisma, deps = {}) {
 				// Create MCQ options for vignette sub-questions
 				if (q.type === 'VIGNETTE_MCQ' && sq.options && sq.options.length) {
 					await prisma.mcqOption.createMany({
-						data: sq.options.map((o, position) => ({ questionId: child.id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
+						data: sq.options.map((o, position) => ({ questionId: child.id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: normalizeOptionRationale(o.rationale) }))
 					});
 				}
 			}
@@ -4692,6 +4693,23 @@ ${formatBlock}`;
 		}
 	});
 
+  router.get('/questions/difficulty-audit', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const report = await scanDifficultyRepairs(prisma, { limit: req.query.limit });
+    return res.json(report);
+  });
+
+  router.post('/questions/difficulty-repair', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    if (req.body?.apply !== true) return res.status(400).json({ error: 'Administrator approval is required. Send { "apply": true, "repairs": [...] }.' });
+    const repairs = (Array.isArray(req.body?.repairs) ? req.body.repairs : []).map(repair => ({
+      questionId: repair.questionId,
+      expectedDifficulty: repair.expectedDifficulty,
+      proposedDifficulty: repair.proposedDifficulty
+    }));
+    const result = await applyDifficultyRepairs(prisma, repairs, { actorId: req.user.id });
+    if (!result.ok && result.statusCode) return res.status(result.statusCode).json(result);
+    return res.status(result.ok ? 200 : 207).json(result);
+  });
+
   router.get('/questions/option-text-audit', requireAuth(), requireRole('ADMIN'), async (req, res) => {
     const report = await scanOptionTextRepairs(prisma, { limit: req.query.limit });
     return res.json(report);
@@ -4701,7 +4719,7 @@ ${formatBlock}`;
     if (req.body?.apply !== true) return res.status(400).json({ error: 'Administrator approval is required. Send { "apply": true, "options": [...] }.' });
     const repairs = (Array.isArray(req.body?.options) ? req.body.options : [])
       .filter(option => option && typeof option.id === 'string')
-      .map(option => ({ id: option.id, expectedText: typeof option.expectedText === 'string' ? option.expectedText : undefined }));
+      .map(option => ({ id: option.id, field: option.field === 'rationale' ? 'rationale' : 'text', expectedText: typeof option.expectedText === 'string' ? option.expectedText : undefined }));
     const result = await applyOptionTextRepairs(prisma, repairs, { actorId: req.user.id });
     if (!result.ok && result.statusCode) return res.status(result.statusCode).json(result);
     return res.status(result.ok ? 200 : 207).json(result);
@@ -4873,7 +4891,7 @@ ${formatBlock}`;
       await prisma.mcqOption.deleteMany({ where: { questionId: id } });
       if (payload.options.length) {
         await prisma.mcqOption.createMany({
-          data: payload.options.map((o, position) => ({ questionId: id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
+          data: payload.options.map((o, position) => ({ questionId: id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: normalizeOptionRationale(o.rationale) }))
         });
       }
     }
@@ -4941,7 +4959,7 @@ ${formatBlock}`;
             await prisma.mcqOption.deleteMany({ where: { questionId: sq.id } });
             if (sq.options.length) {
               await prisma.mcqOption.createMany({
-                data: sq.options.map((o, position) => ({ questionId: sq.id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
+                data: sq.options.map((o, position) => ({ questionId: sq.id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: normalizeOptionRationale(o.rationale) }))
               });
             }
           }
@@ -4984,7 +5002,7 @@ ${formatBlock}`;
           });
           if (newType === 'VIGNETTE_MCQ' && sq.options && sq.options.length) {
             await prisma.mcqOption.createMany({
-              data: sq.options.map((o, position) => ({ questionId: child.id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: o.rationale || null }))
+              data: sq.options.map((o, position) => ({ questionId: child.id, text: normalizeOptionText(o.text).text, isCorrect: o.isCorrect, position, rationale: normalizeOptionRationale(o.rationale) }))
             });
           }
         }

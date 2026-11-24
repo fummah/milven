@@ -1,5 +1,6 @@
 import { sanitizeDbData } from '../dbText.js';
-import { normalizeOptionText } from './optionText.js';
+import { normalizeOptionRationale, normalizeOptionText } from './optionText.js';
+import { normalizeDifficultyValue } from '../questionDifficulty.js';
 
 export function resolveWorkedSolution(workedSolution, explanation, subject = {}) {
 	const ws = String(workedSolution || '').trim();
@@ -7,6 +8,16 @@ export function resolveWorkedSolution(workedSolution, explanation, subject = {})
 	if (subject.correctAnswerExplanation || subject.incorrectOptionsExplanation) return ws || null;
 	if (ws && explanationText) return `${explanationText}\n\n--- Worked Solution ---\n${ws}`;
 	return explanationText || ws || null;
+}
+
+function requiredDifficulty(value) {
+	const normalized = normalizeDifficultyValue(value);
+	if (!normalized) {
+		const error = new Error('Question difficulty must be EASY, MEDIUM or HARD.');
+		error.code = 'QUESTION_DIFFICULTY_INVALID';
+		throw error;
+	}
+	return normalized;
 }
 
 function generationMetadata(payload, { sourceClient, sourceProvider, validation } = {}) {
@@ -31,7 +42,7 @@ async function createOptions(tx, questionId, options) {
 			text: normalizeOptionText(option.text).text,
 			isCorrect: option.isCorrect,
 			position: index,
-			rationale: option.rationale ? normalizeOptionText(option.rationale).text : null
+			rationale: normalizeOptionRationale(option.rationale)
 		}))
 	});
 }
@@ -67,7 +78,7 @@ export async function persistQuestionPayload(prisma, payload, {
 				stem: payload.stem,
 				type: payload.questionType,
 				level: parentMapping.level,
-				difficulty: payload.difficulty,
+				difficulty: requiredDifficulty(payload.difficulty),
 				topicId: payload.primaryTopicId,
 				courseId: parentMapping.course?.id || payload.courseId,
 				volumeId: parentMapping.volume?.id || payload.volumeId,
@@ -117,7 +128,7 @@ export async function persistQuestionPayload(prisma, payload, {
 						stem: child.stem,
 						type: childType,
 						level: parentMapping.level,
-						difficulty: child.difficulty || payload.difficulty,
+						difficulty: requiredDifficulty(child.difficulty || payload.difficulty),
 						topicId: childTopicId,
 						courseId: parentMapping.course?.id || payload.courseId,
 						volumeId: parentMapping.volume?.id || payload.volumeId,

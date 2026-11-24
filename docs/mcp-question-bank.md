@@ -189,7 +189,7 @@ Math fields accept canonical TeX with `$...$`, `\\(...\\)`, `$$...$$`, or `\\[..
 
 Administrators can inspect legacy formula candidates with `GET /api/cms/questions/formula-audit`. The audit is read-only and never rewrites stored formulas automatically.
 
-MCQ option text is normalized at every write boundary. Confirmed trailing transport artifacts such as repeated literal `` `r`n`t `` or `\\r\\n\\t` sequences are removed, while valid LaTeX, Unicode, currency, punctuation and meaningful line breaks are preserved. Normalization never changes option order or the correct-answer flag. Admin endpoints are available at `GET /api/cms/questions/option-text-audit` and `POST /api/cms/questions/option-text-repair`; the repair action requires `{ "apply": true, "options": [{ "id": "...", "expectedText": "..." }] }` and records old/new values in the MCP audit log.
+MCQ option text and option rationales are normalized at every write boundary. Artifact-only rationales become null; meaningful rationale text is preserved. Confirmed trailing transport artifacts such as repeated literal `` `r`n`t `` or `\\r\\n\\t` sequences are removed, while valid LaTeX, Unicode, currency, punctuation and meaningful line breaks are preserved. Normalization never changes option order or the correct-answer flag. Admin endpoints are available at `GET /api/cms/questions/option-text-audit` and `POST /api/cms/questions/option-text-repair`; the repair action requires `{ "apply": true, "options": [{ "id": "...", "expectedText": "..." }] }` and records old/new values in the MCP audit log.
 
 ## Claude remote connector
 
@@ -279,3 +279,6 @@ npm run questions:repair-option-text -- --apply
 ```
 
 The apply command creates a PostgreSQL custom-format backup, writes a JSON rollback record, updates only safe candidates, and verifies option order, one correct answer per MCQ and clean readback. Internal tabs or other ambiguous formula-like artifacts are reported for manual review rather than automatically rewritten.
+### Difficulty preservation
+
+Every imported standalone question and every vignette child must explicitly supply `difficulty` as `EASY`, `MEDIUM` or `HARD`. Values are trimmed and normalized case-insensitively. Missing or invalid difficulty is rejected with `QUESTION_DIFFICULTY_MISSING` or `QUESTION_DIFFICULTY_INVALID`; MEDIUM is never assumed. Commit readback compares parent and child difficulty against the approved payload. Administrators can audit recoverable discrepancies with `GET /api/cms/questions/difficulty-audit` and apply confirmed corrections with `POST /api/cms/questions/difficulty-repair` using `{ "apply": true, "repairs": [...] }`.

@@ -36,7 +36,7 @@ try {
 			primaryTopicId: topicId || mapping.primaryTopicId,
 			topicMap: mapping.topicMap || {},
 			conceptMap: mapping.conceptMap || {},
-			difficulty: arg('difficulty', mapping.difficulty || 'HARD')
+			difficulty: arg('difficulty', mapping.difficulty)
 		}));
 	}
 	console.log(JSON.stringify({

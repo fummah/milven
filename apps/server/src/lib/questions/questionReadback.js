@@ -50,6 +50,10 @@ function verifyOptions(mismatches, path, expected, actual) {
 		if (inspection.artifacts.length) {
 			mismatches.push({ code: 'OPTION_TEXT_FORMATTING_ARTIFACT', path: `${path}[${index}].text`, expected: option.text || '', actual: saved.text || '', artifacts: inspection.artifacts });
 		}
+		const rationaleInspection = inspectOptionText(saved.rationale);
+		if (rationaleInspection.artifacts.length) {
+			mismatches.push({ code: 'OPTION_TEXT_FORMATTING_ARTIFACT', path: `${path}[${index}].rationale`, expected: option.rationale || null, actual: saved.rationale || null, artifacts: rationaleInspection.artifacts });
+		}
 		const expectedRationale = option.rationale || null;
 		const actualRationale = saved.rationale || null;
 		if (!sameValue(expectedRationale, actualRationale)) {

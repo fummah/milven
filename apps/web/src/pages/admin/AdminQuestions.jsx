@@ -2578,7 +2578,7 @@ export function AdminQuestions() {
 															<Radio key={option.id || oIdx} value={option.id || oIdx}>
 																<Space align="start">
 																	<span className="prose question-preview-content" style={{ display: 'inline-block' }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.text) }} />
-																	{option.isCorrect && <Tag color="green">Correct</Tag>}`r`n`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t{option.rationale && <span className="question-preview-content" style={{ color: "#64748b", fontSize: 12 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.rationale) }} />}
+																	{option.isCorrect && <Tag color="green">Correct</Tag>}{option.rationale && <span className="question-preview-content" style={{ color: "#64748b", fontSize: 12 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.rationale) }} />}
 																</Space>
 															</Radio>
 														))}
@@ -2689,7 +2689,7 @@ export function AdminQuestions() {
 													<Radio key={option.id || idx} value={option.id || idx}>
 														<Space align="start">
 															<span className="prose question-preview-content" style={{ display: 'inline-block' }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.text) }} />
-															{option.isCorrect && <Tag color="green">Correct</Tag>}`r`n`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t`t{option.rationale && <span className="question-preview-content" style={{ color: "#64748b", fontSize: 12 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.rationale) }} />}
+															{option.isCorrect && <Tag color="green">Correct</Tag>}{option.rationale && <span className="question-preview-content" style={{ color: "#64748b", fontSize: 12 }} dangerouslySetInnerHTML={{ __html: formatProseWithMath(option.rationale) }} />}
 														</Space>
 													</Radio>
 												))}

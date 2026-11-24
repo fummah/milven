@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -115,12 +115,13 @@ test('real CFA Level III 500-set bank parses completely and SET-001 dry-runs', {
 			courseId: course.id,
 			volumeId: volume.id,
 			moduleId: module.id,
-			primaryTopicId: topic.id
+			primaryTopicId: topic.id,
+			difficulty: 'HARD'
 		});
 		assert.equal(dryRun.ok, true, JSON.stringify({ mappingErrors: dryRun.mappingErrors, validation: dryRun.validation?.errors }));
 		assert.equal(dryRun.mappedPayload.subQuestions.length, 4);
 		assert.equal(dryRun.mappedPayload.subQuestions[0].options.filter(option => option.isCorrect).length, 1);
-		assert.ok(dryRun.warnings.some(warning => warning.code === 'DIFFICULTY_PROVISIONAL'));
+		assert.ok(dryRun.warnings.some(warning => warning.code === 'DIFFICULTY_ADMIN_SUPPLIED'));
 	} finally {
 		await prisma.$disconnect();
 	}

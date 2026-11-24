@@ -240,7 +240,7 @@ export default function StudentRevision() {
 					<AnimatePresence>
 						{paginatedEntries.map((entry, idx) => {
 							const q = entry.question;
-							const diffStyle = difficultyColors[q?.difficulty] || difficultyColors.MEDIUM;
+							const diffStyle = difficultyColors[q?.difficulty] || { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
 							const prioConfig = priorityConfig[entry.priority] || priorityConfig[1];
 
 							return (
@@ -281,7 +281,7 @@ export default function StudentRevision() {
 														borderRadius: 8 
 													}}
 												>
-													{q?.difficulty || 'MEDIUM'}
+													{q?.difficulty || 'UNKNOWN'}
 												</Tag>
 												<Select
 													size="small"

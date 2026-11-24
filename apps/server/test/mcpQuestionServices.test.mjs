@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FIELD_ALIASES, normalizeQuestionPayload, questionPayloadInputSchema } from '../src/lib/questions/questionSchema.js';
 import { validateQuestionPayload } from '../src/lib/questions/questionValidation.js';
@@ -511,7 +511,7 @@ test('sample bank parser preserves set structure and field boundaries', async ()
 	assert.equal(parsed.rawFieldAvailability.correctAnswerExplanations, true);
 	assert.equal(parsed.rawFieldAvailability.incorrectOptionsExplanations, false);
 	assert.equal(parsed.totalMarks, 6);
-	const dryRun = await dryRunSampleImport(fakePrisma(), parsed, { ...ACADEMIC });
+	const dryRun = await dryRunSampleImport(fakePrisma(), parsed, { ...ACADEMIC, difficulty: 'HARD' });
 	assert.ok(Array.isArray(dryRun.validation?.errors));
 	assert.match(dryRun.mappedPayload.subQuestions[0].correctAnswerExplanation, /Evidence must be documented/);
 	assert.match(dryRun.mappedPayload.subQuestions[0].incorrectOptionsExplanation, /Acting immediately/);
@@ -557,4 +557,55 @@ test('missing distractor explanations produce one question-level warning', async
 	assert.equal(warnings[0].path, 'question.incorrectOptionsExplanation');
 	assert.equal(result.summary.reviewStatus, 'NEEDS_REVIEW');
 	assert.equal(result.summary.structuralStatus, 'STRUCTURALLY_VALID');
+});
+test('imported difficulty is normalized and missing or invalid values are rejected', () => {
+	const lower = normalizeQuestionPayload({ ...mcq(), difficulty: '  easy ' });
+	assert.equal(lower.difficulty, 'EASY');
+	const mixed = normalizeQuestionPayload({ ...mcq(), difficulty: 'Hard' });
+	assert.equal(mixed.difficulty, 'HARD');
+	const withoutDifficulty = { ...mcq() };
+	delete withoutDifficulty.difficulty;
+	assert.throws(() => normalizeQuestionPayload(withoutDifficulty), error => {
+		assert.equal(error.issues[0].milvenCode, 'QUESTION_DIFFICULTY_MISSING');
+		assert.equal(error.issues[0].path.join('.'), 'difficulty');
+		return true;
+	});
+	assert.throws(() => normalizeQuestionPayload({ ...mcq(), difficulty: 'EXPERT' }), error => {
+		assert.equal(error.issues[0].milvenCode, 'QUESTION_DIFFICULTY_INVALID');
+		return true;
+	});
+});
+test('missing or lowercase vignette child difficulty is handled without parent overwrite', () => {
+	const child = {
+		externalQuestionId: 'DIFF-CHILD-1',
+		stem: 'Which statement is best supported by the case facts?',
+		difficulty: 'easy',
+		marks: 3,
+		options: [
+			{ label: 'A', text: 'Statement A', isCorrect: true },
+			{ label: 'B', text: 'Statement B', isCorrect: false },
+			{ label: 'C', text: 'Statement C', isCorrect: false }
+		],
+		workedSolution: 'Step 1: review the facts. Step 2: conclude.'
+	};
+	const payload = {
+		externalQuestionId: 'DIFF-PARENT-1',
+		questionType: 'VIGNETTE_MCQ',
+		...ACADEMIC,
+		difficulty: 'HARD',
+		marks: 3,
+		stem: 'Difficulty Parent',
+		vignetteText: 'A committee reviews a multi-asset portfolio and must evaluate the evidence, document assumptions, and explain how the recommendation would change if the facts changed. The shared case study provides enough context for a defensible decision.',
+		subQuestions: [child]
+	};
+	const normalized = normalizeQuestionPayload(payload);
+	assert.equal(normalized.difficulty, 'HARD');
+	assert.equal(normalized.subQuestions[0].difficulty, 'EASY');
+	const missingChild = { ...child };
+	delete missingChild.difficulty;
+	assert.throws(() => normalizeQuestionPayload({ ...payload, subQuestions: [missingChild] }), error => {
+		assert.equal(error.issues[0].milvenCode, 'QUESTION_DIFFICULTY_MISSING');
+		assert.equal(error.issues[0].path.join('.'), 'subQuestions.0.difficulty');
+		return true;
+	});
 });

@@ -45,8 +45,8 @@ test('MCP approval workflow persists and reuses option order', { skip: !runInteg
 			sourceConcept: 'Evidence-based decision process',
 			sourceSetId: 'SET-READBACK',
 			options: [
-				{ label: 'A', text: 'Act immediately without documentation.`r`n`t`t', isCorrect: false, rationale: 'Ignores evidence.' },
-				{ label: 'B', text: 'Document the evidence and assumptions before deciding.\\r\\n\\t\\t', isCorrect: true, rationale: 'Matches a disciplined process.' },
+				{ label: 'A', text: 'Act immediately without documentation.`r`n`t`t', isCorrect: false, rationale: '`r`n`t`t' },
+				{ label: 'B', text: 'Document the evidence and assumptions before deciding.\\r\\n\\t\\t', isCorrect: true, rationale: 'Matches a disciplined process.\\r\\n\\t\\t' },
 				{ label: 'C', text: 'Ignore conflicting information.', isCorrect: false, rationale: 'Fails to evaluate the evidence.' }
 			],
 			generation: { source: 'INTEGRATION_TEST', client: 'milven-test', provider: 'test', model: 'none' },
@@ -90,6 +90,7 @@ test('MCP approval workflow persists and reuses option order', { skip: !runInteg
 		assert.equal(full.moduleId, module.id);
 		assert.equal(full.topicId, topic.id);
 		assert.deepEqual(full.options.map(option => option.text), ['Act immediately without documentation.', 'Document the evidence and assumptions before deciding.', 'Ignore conflicting information.']);
+		assert.deepEqual(full.options.map(option => option.rationale), [null, 'Matches a disciplined process.', 'Fails to evaluate the evidence.']);
 		assert.deepEqual(full.options.map(option => option.position), [0, 1, 2]);
 		assert.deepEqual(full.options.map(option => option.isCorrect), [false, true, false]);
 		assert.equal(full.generationSource, 'MCP');
@@ -108,6 +109,158 @@ test('MCP approval workflow persists and reuses option order', { skip: !runInteg
 			const ids = [...createdQuestionIds, ...children.map(child => child.id)];
 			await prisma.mcqOption.deleteMany({ where: { questionId: { in: ids } } });
 			await prisma.question.deleteMany({ where: { parentId: { in: createdQuestionIds } } });
+			await prisma.question.deleteMany({ where: { id: { in: createdQuestionIds } } });
+		}
+		if (createdBatchIds.length) await prisma.mcpImportBatch.deleteMany({ where: { id: { in: createdBatchIds } } });
+		await prisma.$disconnect();
+	}
+});
+test('MCP vignette commit preserves every child difficulty and parent difficulty', { skip: !runIntegration }, async () => {
+	const prisma = new PrismaClient();
+	const createdBatchIds = [];
+	const createdQuestionIds = [];
+	try {
+		const course = await prisma.course.findFirst({ where: { level: 'LEVEL3' }, orderBy: { name: 'asc' } });
+		if (!course) return;
+		const link = await prisma.courseVolume.findFirst({ where: { courseId: course.id }, orderBy: { order: 'asc' } });
+		if (!link) return;
+		const module = await prisma.module.findFirst({ where: { courseId: course.id, volumeId: link.volumeId }, orderBy: { order: 'asc' } });
+		if (!module) return;
+		const topic = await prisma.topic.findFirst({ where: { moduleId: module.id }, orderBy: { order: 'asc' } });
+		if (!topic) return;
+		const stamp = Date.now();
+		const difficulties = ['EASY', 'MEDIUM', 'HARD', 'HARD'];
+		const children = difficulties.map((difficulty, index) => ({
+			externalQuestionId: `DIFF-VIGNETTE-${stamp}-Q${index + 1}`,
+			stem: `Which statement best supports the committee decision for item ${index + 1}?`,
+			difficulty,
+			marks: 3,
+			primaryTopicId: topic.id,
+			conceptIds: [],
+			los: 'Evaluate the evidence in the case study.',
+			traceSection: 'Asset Allocation',
+			tracePage: '25',
+			workedSolution: `Step 1: review the case facts for item ${index + 1}. Step 2: reach a documented conclusion.`,
+			correctAnswerExplanation: 'The conclusion follows from the stated evidence and assumptions.',
+			incorrectOptionsExplanation: 'The distractors contradict the supplied case facts.',
+			commonMistake: 'Ignoring the stated evidence.',
+			conceptsTested: 'Evidence-based decision making.',
+			options: [
+				{ label: 'A', text: `Statement ${index + 1}A`, isCorrect: true, rationale: 'Supported by the case facts.' },
+				{ label: 'B', text: `Statement ${index + 1}B`, isCorrect: false, rationale: 'Contradicts the case facts.' },
+				{ label: 'C', text: `Statement ${index + 1}C`, isCorrect: false, rationale: 'Adds an unsupported assumption.' }
+			]
+		}));
+		const payload = {
+			schemaVersion: '2026-11-16',
+			externalQuestionId: `DIFF-SET-${stamp}`,
+			questionType: 'VIGNETTE_MCQ',
+			courseId: course.id,
+			volumeId: link.volumeId,
+			moduleId: module.id,
+			primaryTopicId: topic.id,
+			additionalTopicIds: [],
+			conceptIds: [],
+			difficulty: 'HARD',
+			marks: 12,
+			stem: 'Difficulty Preservation Case Study',
+			vignetteText: 'An investment committee is reviewing a multi-asset portfolio after a change in inflation and policy rates. The committee must document the evidence, distinguish temporary noise from structural change, and explain the conditions under which the recommendation would be revised. Each question tests a separate part of the same case study, and every conclusion must be supported by the shared facts.',
+			subQuestions: children,
+			generation: { source: 'INTEGRATION_TEST', client: 'milven-test', provider: 'test', model: 'none' }
+		};
+		const created = await createReviewBatch(prisma, {
+			idempotencyKey: `difficulty-vignette-${stamp}`,
+			sourceClient: 'milven-difficulty-test',
+			questions: [payload]
+		});
+		assert.equal(created.ok, true, JSON.stringify(created));
+		createdBatchIds.push(created.batch.id);
+		const approved = await approveReviewBatch(prisma, created.batch.id, { actorId: null });
+		assert.equal(approved.ok, true, JSON.stringify(approved));
+		const committed = await commitApprovedBatch(prisma, created.batch.id, { actorId: null });
+		assert.equal(committed.ok, true, JSON.stringify(committed.summary));
+		const parentId = committed.summary.committedQuestionIds[0];
+		createdQuestionIds.push(parentId);
+		const saved = await prisma.question.findUnique({
+			where: { id: parentId },
+			include: { children: { orderBy: { orderIndex: 'asc' } } }
+		});
+		assert.equal(saved.difficulty, 'HARD');
+		assert.deepEqual(saved.children.map(child => child.difficulty), ['EASY', 'MEDIUM', 'HARD', 'HARD']);
+		assert.deepEqual(saved.children.map(child => child.qid), children.map(child => child.externalQuestionId));
+	} finally {
+		if (createdQuestionIds.length) {
+			const children = await prisma.question.findMany({ where: { parentId: { in: createdQuestionIds } }, select: { id: true } });
+			const ids = [...createdQuestionIds, ...children.map(child => child.id)];
+			await prisma.mcqOption.deleteMany({ where: { questionId: { in: ids } } });
+			await prisma.question.deleteMany({ where: { parentId: { in: createdQuestionIds } } });
+			await prisma.question.deleteMany({ where: { id: { in: createdQuestionIds } } });
+		}
+		if (createdBatchIds.length) await prisma.mcpImportBatch.deleteMany({ where: { id: { in: createdBatchIds } } });
+		await prisma.$disconnect();
+	}
+});
+test('MCP standalone commit preserves EASY, MEDIUM and HARD exactly', { skip: !runIntegration }, async () => {
+	const prisma = new PrismaClient();
+	const createdBatchIds = [];
+	const createdQuestionIds = [];
+	try {
+		const course = await prisma.course.findFirst({ where: { level: 'LEVEL3' }, orderBy: { name: 'asc' } });
+		if (!course) return;
+		const link = await prisma.courseVolume.findFirst({ where: { courseId: course.id }, orderBy: { order: 'asc' } });
+		if (!link) return;
+		const module = await prisma.module.findFirst({ where: { courseId: course.id, volumeId: link.volumeId }, orderBy: { order: 'asc' } });
+		if (!module) return;
+		const topic = await prisma.topic.findFirst({ where: { moduleId: module.id }, orderBy: { order: 'asc' } });
+		if (!topic) return;
+		const stamp = Date.now();
+		const questions = ['EASY', 'MEDIUM', 'HARD'].map((difficulty, index) => ({
+			schemaVersion: '2026-11-16',
+			externalQuestionId: `DIFF-STANDALONE-${stamp}-${difficulty}`,
+			questionType: 'MCQ',
+			courseId: course.id,
+			volumeId: link.volumeId,
+			moduleId: module.id,
+			primaryTopicId: topic.id,
+			additionalTopicIds: [],
+			conceptIds: [],
+			difficulty,
+			marks: 1,
+			stem: `Which conclusion is most appropriate for difficulty test ${index + 1}?`,
+			los: 'Evaluate the conclusion.',
+			traceSection: 'Asset Allocation',
+			tracePage: '25',
+			workedSolution: `Step 1: review the evidence for item ${index + 1}. Step 2: conclude.`,
+			correctAnswerExplanation: 'The conclusion follows from the stated evidence.',
+			incorrectOptionsExplanation: 'The other options contradict the evidence.',
+			commonMistake: 'Ignoring the evidence.',
+			conceptsTested: 'Evidence-based conclusions.',
+			options: [
+				{ label: 'A', text: `Conclusion ${index + 1}A`, isCorrect: true, rationale: 'Supported.' },
+				{ label: 'B', text: `Conclusion ${index + 1}B`, isCorrect: false, rationale: 'Unsupported.' },
+				{ label: 'C', text: `Conclusion ${index + 1}C`, isCorrect: false, rationale: 'Contradicts evidence.' }
+			],
+			generation: { source: 'INTEGRATION_TEST', client: 'milven-test', provider: 'test', model: 'none' }
+		}));
+		const created = await createReviewBatch(prisma, {
+			idempotencyKey: `difficulty-standalone-${stamp}`,
+			sourceClient: 'milven-difficulty-test',
+			questions
+		});
+		assert.equal(created.ok, true, JSON.stringify(created));
+		createdBatchIds.push(created.batch.id);
+		const approved = await approveReviewBatch(prisma, created.batch.id, { actorId: null });
+		assert.equal(approved.ok, true, JSON.stringify(approved));
+		const committed = await commitApprovedBatch(prisma, created.batch.id, { actorId: null });
+		assert.equal(committed.ok, true, JSON.stringify(committed.summary));
+		createdQuestionIds.push(...committed.summary.committedQuestionIds);
+		const saved = await prisma.question.findMany({ where: { id: { in: createdQuestionIds } }, orderBy: { qid: 'asc' } });
+		assert.deepEqual(saved.map(question => question.difficulty).sort(), ['EASY', 'HARD', 'MEDIUM']);
+		assert.deepEqual(saved.map(question => question.qid).sort(), questions.map(question => question.externalQuestionId).sort());
+		assert.equal(committed.summary.readbackVerifiedCount, 3);
+	} finally {
+		if (createdQuestionIds.length) {
+			await prisma.mcqOption.deleteMany({ where: { questionId: { in: createdQuestionIds } } });
 			await prisma.question.deleteMany({ where: { id: { in: createdQuestionIds } } });
 		}
 		if (createdBatchIds.length) await prisma.mcpImportBatch.deleteMany({ where: { id: { in: createdBatchIds } } });

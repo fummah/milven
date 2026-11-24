@@ -38,3 +38,8 @@ export function normalizeOptionText(value) {
 }
 
 export const sanitizeMcqOptionText = normalizeOptionText;
+export function normalizeOptionRationale(value) {
+	if (value === undefined || value === null) return null;
+	const text = normalizeOptionText(value).text;
+	return text || null;
+}

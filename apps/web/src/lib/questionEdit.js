@@ -21,7 +21,7 @@ export function questionToFormValues(question) {
 		workedSolution: question?.workedSolution || '',
 		keyFormulas: question?.keyFormulas || '',
 		los: question?.los || '',
-		difficulty: question?.difficulty || 'MEDIUM',
+		difficulty: question?.difficulty || '',
 		traceSection: question?.traceSection || '',
 		tracePage: question?.tracePage || '',
 	};

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { deriveExplanationFields, splitExplanation, splitMergedExplanation } from './explanationText.js';
-import { inspectOptionText, normalizeOptionText } from './optionText.js';
+import { inspectOptionText, normalizeOptionRationale, normalizeOptionText } from './optionText.js';
+import { normalizeDifficultyValue } from '../questionDifficulty.js';
 
 export const QUESTION_SCHEMA_VERSION = '2026-11-16';
 export const QUESTION_TYPES = ['MCQ', 'VIGNETTE_MCQ', 'CONSTRUCTED_RESPONSE'];
@@ -78,9 +79,10 @@ export const questionPayloadSchema = z.object({
 	reviewMetadata: z.record(z.any()).optional().nullable()
 });
 
-export const subQuestionInputSchema = subQuestionSchema.passthrough();
+export const subQuestionInputSchema = subQuestionSchema.extend({ difficulty: z.string().optional().nullable() }).passthrough();
 export const questionPayloadInputSchema = z.object({
 	...questionPayloadSchema.shape,
+	difficulty: z.string().optional().nullable(),
 	subQuestions: z.array(subQuestionInputSchema).max(20).optional()
 }).passthrough();
 
@@ -144,7 +146,7 @@ function cleanOptions(options) {
 		...option,
 		label: option.label || String.fromCharCode(65 + index),
 		text: normalizeOptionText(option.text).text,
-		rationale: cleanText(option.rationale || '') || null
+		rationale: normalizeOptionRationale(option.rationale)
 	}));
 }
 
@@ -196,8 +198,35 @@ function applyAliases(input) {
 			delete object[alias];
 		}
 	};
+	const applyDifficulty = (object, path) => {
+		if (!object || typeof object !== 'object' || Array.isArray(object)) return;
+		if (!isNonEmpty(object.difficulty)) {
+			issues.push({
+				milvenCode: 'QUESTION_DIFFICULTY_MISSING',
+				path: [...path, 'difficulty'],
+				message: 'The original question difficulty must be supplied.'
+			});
+			return;
+		}
+		const normalized = normalizeDifficultyValue(object.difficulty);
+		if (!normalized) {
+			issues.push({
+				milvenCode: 'QUESTION_DIFFICULTY_INVALID',
+				path: [...path, 'difficulty'],
+				message: 'Question difficulty must be EASY, MEDIUM or HARD.'
+			});
+			return;
+		}
+		object.difficulty = normalized;
+	};
 	applyTo(value, []);
-	if (Array.isArray(value.subQuestions)) value.subQuestions.forEach((child, index) => applyTo(child, ['subQuestions', index]));
+	applyDifficulty(value, []);
+	if (Array.isArray(value.subQuestions)) {
+		value.subQuestions.forEach((child, index) => {
+			applyTo(child, ['subQuestions', index]);
+			applyDifficulty(child, ['subQuestions', index]);
+		});
+	}
 	return { value, issues };
 }
 
@@ -238,16 +267,19 @@ function auditSubject(raw, normalized, path, derived = []) {
 function collectOptionTextAudit(rawOptions, path, audits) {
 	if (!Array.isArray(rawOptions)) return;
 	rawOptions.forEach((option, index) => {
-		const inspection = inspectOptionText(option?.text);
-		if (!inspection.artifacts.length) return;
-		audits.push({
-			code: 'OPTION_TEXT_FORMATTING_ARTIFACT',
-			path: `${path}.options[${index}].text`,
-			artifacts: inspection.artifacts,
-			original: inspection.original,
-			cleaned: normalizeOptionText(inspection.original).text,
-			codepoints: inspection.codepoints
-		});
+		for (const field of ['text', 'rationale']) {
+			const inspection = inspectOptionText(option?.[field]);
+			if (!inspection.artifacts.length) continue;
+			audits.push({
+				code: 'OPTION_TEXT_FORMATTING_ARTIFACT',
+				path: `${path}.options[${index}].${field}`,
+				field,
+				artifacts: inspection.artifacts,
+				original: inspection.original,
+				cleaned: field === 'rationale' ? normalizeOptionRationale(inspection.original) : normalizeOptionText(inspection.original).text,
+				codepoints: inspection.codepoints
+			});
+		}
 	});
 }
 

@@ -6,6 +6,7 @@ import { normalizeQuestionPayload } from './questionSchema.js';
 import { validateQuestionPayload } from './questionValidation.js';
 import { validateAcademicMapping } from './questionCurriculum.js';
 import { splitExplanation } from './explanationText.js';
+import { normalizeDifficultyValue } from '../questionDifficulty.js';
 
 function clean(value) {
 	return String(value || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
@@ -68,7 +69,8 @@ function parseHeader($) {
 	const pointsPart = parts.find(part => /points?$/i.test(part)) || headerText.match(/(\d+)\s*points?/i)?.[0] || null;
 	const totalMarks = Number(String(pointsPart || '').match(/\d+/)?.[0] || 0);
 	const caseStudyTitle = clean($('header h1').first().text()) || null;
-	return { setId, volume, learningModule, learningModuleFull: modulePart, totalMarks, caseStudyTitle };
+	const difficulty = normalizeDifficultyValue(parts.find(part => /^(easy|medium|hard)$/i.test(part)) || null);
+	return { setId, volume, learningModule, learningModuleFull: modulePart, totalMarks, caseStudyTitle, difficulty };
 }
 
 function parseVignette($, volume) {
@@ -122,6 +124,7 @@ export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {
 		const metaText = clean(qhead.find('.meta').first().text());
 		const qid = metaText.match(/(Q-[A-Z0-9-]+)\s*$/i)?.[1] || null;
 		const topicName = clean(metaText.replace(/\s*[·•�]\s*Q-[A-Z0-9-]+\s*$/i, '')) || null;
+		const difficulty = normalizeDifficultyValue(splitMetadata(metaText).find(part => /^(easy|medium|hard)$/i.test(part)) || null);
 		const stemParts = [];
 		section.children().each((_, child) => {
 			const node = $(child);
@@ -184,6 +187,7 @@ export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {
 			traceSection: sectionText ? sectionText.replace(/\s*\([^)]*\)\s*$/, '').trim() : null,
 			tracePage: extractPage(sectionText || ''),
 			keyFormulas,
+			difficulty,
 			marks: null
 		});
 	});
@@ -195,6 +199,7 @@ export function parseSampleSetHtml(html, { setId = null, sourceFile = null } = {
 		learningModule: header.learningModule,
 		learningModuleFull: header.learningModuleFull,
 		caseStudyTitle: header.caseStudyTitle,
+		difficulty: header.difficulty,
 		vignette,
 		questions,
 		totalMarks,
@@ -294,7 +299,7 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 	primaryTopicId,
 	topicMap = {},
 	conceptMap = {},
-	difficulty = 'HARD',
+	difficulty = null,
 	deriveEqualMarks = true
 } = {}) {
 	const academic = await resolveAcademic(prisma, sample, { courseId, volumeId, moduleId, volumeMap, moduleMap });
@@ -330,8 +335,15 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 			select: { id: true, name: true, topicId: true }
 		})
 		: [];
-	if (!sample.questions.some(question => question.difficulty)) {
-		warnings.push({ code: 'DIFFICULTY_PROVISIONAL', message: `Source set has no difficulty field; dry-run uses ${difficulty} provisionally.` });
+	const setDifficulty = normalizeDifficultyValue(sample.difficulty);
+	const suppliedDifficulty = normalizeDifficultyValue(difficulty);
+	const parentDifficulty = setDifficulty || suppliedDifficulty;
+	if (!parentDifficulty) {
+		academic.errors.push({ code: 'DIFFICULTY_REQUIRED', message: 'The source HTML does not provide a question-set difficulty. Supply an explicit administrator difficulty; MEDIUM is not assumed.' });
+	} else if (!setDifficulty && suppliedDifficulty) {
+		warnings.push({ code: 'DIFFICULTY_ADMIN_SUPPLIED', message: `Source HTML has no difficulty; the explicitly supplied ${suppliedDifficulty} will be used.` });
+	} else if (setDifficulty && suppliedDifficulty && setDifficulty !== suppliedDifficulty) {
+		warnings.push({ code: 'DIFFICULTY_SOURCE_USED', message: `Source difficulty ${setDifficulty} is authoritative; supplied ${suppliedDifficulty} was not used.` });
 	}
 	const equalMarks = deriveEqualMarks && sample.totalMarks && sample.questions.length && sample.totalMarks % sample.questions.length === 0
 		? sample.totalMarks / sample.questions.length
@@ -345,6 +357,9 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 		const sourceConceptNames = [question.sourceConcept, question.conceptsTested]
 			.map(text => String(text || '').trim().toLowerCase())
 			.filter(Boolean);
+		const childDifficulty = normalizeDifficultyValue(question.difficulty) || parentDifficulty;
+		if (!childDifficulty) missingRequired.push('difficulty');
+		else if (!question.difficulty && parentDifficulty) warnings.push({ code: 'CHILD_DIFFICULTY_INHERITED', message: `Child difficulty inherited from the item-set difficulty ${parentDifficulty}; review this child.`, path: `subQuestions[${index}]` });
 		const exactConceptIds = availableConcepts
 			.filter(concept => concept.topicId === mappedTopicId && sourceConceptNames.includes(concept.name.trim().toLowerCase()))
 			.map(concept => concept.id);
@@ -371,6 +386,7 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 			commonMistake: Boolean(question.commonMistake),
 			conceptsTested: Boolean(question.conceptsTested),
 			sourceConcept: Boolean(question.sourceConcept),
+			difficulty: Boolean(question.difficulty),
 			los: Boolean(question.los),
 			traceSection: Boolean(question.traceSection),
 			tracePage: Boolean(question.tracePage),
@@ -381,7 +397,7 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 		const child = {
 			externalQuestionId: question.externalQuestionId || `${sample.setId}-Q${String(question.number || index + 1).padStart(3, '0')}`,
 			stem: question.stem,
-			difficulty,
+			difficulty: childDifficulty,
 			marks: question.marks || equalMarks || null,
 			primaryTopicId: mappedTopicId,
 			additionalTopicIds: [],
@@ -437,7 +453,7 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 		volumeId: academic.volumeId,
 		moduleId: academic.moduleId,
 		primaryTopicId: primaryTopicId || sourceTopicMap.values().next().value || null,
-		difficulty,
+		difficulty: parentDifficulty,
 		marks: sample.totalMarks || subQuestions.reduce((sum, question) => sum + (question.marks || 0), 0),
 		stem: sample.caseStudyTitle || sample.setId,
 		caseStudyTitle: sample.caseStudyTitle || null,
@@ -456,7 +472,7 @@ export async function transformSampleSetToQuestion(prisma, sample, {
 			sourceLearningModule: sample.learningModuleFull || sample.learningModule,
 			sourceTotalMarks: sample.totalMarks,
 			derivedEqualMarks: equalMarks,
-			provisionalDifficulty: difficulty,
+			provisionalDifficulty: parentDifficulty,
 			fieldMapping: {
 				caseStudyTitle: Boolean(sample.caseStudyTitle),
 				sourceSetId: Boolean(sample.setId),

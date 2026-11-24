@@ -3,6 +3,9 @@ import { FIELD_ALIASES, QUESTION_SCHEMA_VERSION, questionPayloadSchema } from '.
 
 export const REQUIRED_QUESTION_RULES = [
 	'Use only the supplied Milven course, volume, module, topic and concept IDs.',
+	'Every standalone question and every vignette child must explicitly supply its original difficulty: EASY, MEDIUM or HARD. Never default imported difficulty to MEDIUM.',
+	'Preserve each child difficulty independently; do not replace it with the parent or batch difficulty.',
+	'An independent difficulty assessment is advisory only and must not overwrite the supplied difficulty.',
 	'Do not invent academic records or silently substitute a similar-looking topic.',
 	'Question stems and option text must use plain candidate-facing language.',
 	'Put formulas and mathematical notation in keyFormulas and workedSolution.',

@@ -239,7 +239,7 @@ export default function StudentMistakes() {
 					<AnimatePresence>
 						{paginatedMistakes.map((mistake, idx) => {
 							const q = mistake.question;
-							const diffStyle = difficultyColors[q?.difficulty] || difficultyColors.MEDIUM;
+							const diffStyle = difficultyColors[q?.difficulty] || { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
 							
 							return (
 								<motion.div
@@ -268,7 +268,7 @@ export default function StudentMistakes() {
 														borderRadius: 8 
 													}}
 												>
-													{q?.difficulty || 'MEDIUM'}
+													{q?.difficulty || 'UNKNOWN'}
 												</Tag>
 												{q?.topic?.name && (
 													<Tag className="bg-white/10 text-white border-0 rounded-lg">

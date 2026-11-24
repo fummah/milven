@@ -59,6 +59,7 @@ try {
 			optionId: candidate.optionId,
 			position: candidate.position,
 			isCorrect: candidate.isCorrect,
+			field: candidate.field,
 			originalText: candidate.originalText,
 			proposedText: candidate.proposedText,
 			confidence: candidate.safeToAutoClean ? 'SAFE' : 'MANUAL_REVIEW',
@@ -79,11 +80,13 @@ try {
 				optionId: candidate.optionId,
 				questionId: candidate.questionId,
 				qid: candidate.qid,
+				field: candidate.field,
 				originalText: candidate.originalText
 			})));
 			const safe = report.candidates.filter(candidate => candidate.safeToAutoClean);
 			const applied = await applyOptionTextRepairs(prisma, safe.map(candidate => ({
 				id: candidate.optionId,
+				field: candidate.field,
 				expectedText: candidate.originalText
 			})), { actorId: null });
 			const questionIds = [...new Set(safe.map(candidate => candidate.questionId).filter(Boolean))];
@@ -91,7 +94,7 @@ try {
 				where: { id: { in: safe.map(candidate => candidate.optionId) } },
 				orderBy: { position: 'asc' }
 			});
-			const artifactFailures = savedOptions.filter(option => inspectOptionText(option.text).artifacts.length);
+			const artifactFailures = savedOptions.filter(option => inspectOptionText(option.text).artifacts.length || inspectOptionText(option.rationale).artifacts.length);
 			const questionOptions = await prisma.mcqOption.findMany({
 				where: { questionId: { in: questionIds } },
 				orderBy: [{ questionId: 'asc' }, { position: 'asc' }]

@@ -1,5 +1,5 @@
 import { splitExplanation, splitMergedExplanation } from './explanationText.js';
-import { normalizeOptionText } from './optionText.js';
+import { normalizeOptionRationale, normalizeOptionText } from './optionText.js';
 import { assessCompleteness } from './questionValidation.js';
 import { auditMcpAction, getReviewBatch, updateReviewItem } from './questionReview.js';
 import { parseSampleSetHtml } from './sampleBank.js';
@@ -57,6 +57,11 @@ function repairSubject(subject, path, changes) {
 			if (normalized.changed) {
 				option.text = normalized.text;
 				changes.push({ path, field: `options[${index}].text`, source: 'option text normalization' });
+			}
+			const rationale = normalizeOptionRationale(option.rationale);
+			if (rationale !== (option.rationale || null)) {
+				option.rationale = rationale;
+				changes.push({ path, field: `options[${index}].rationale`, source: 'option rationale normalization' });
 			}
 		});
 	}

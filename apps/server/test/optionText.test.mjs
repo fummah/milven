@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inspectOptionText, normalizeOptionText } from '../src/lib/questions/optionText.js';
+import { inspectOptionText, normalizeOptionRationale, normalizeOptionText } from '../src/lib/questions/optionText.js';
 import { normalizeQuestionPayload } from '../src/lib/questions/questionSchema.js';
 
 test('normalizes trailing PowerShell-style escape artifacts only', () => {
@@ -64,4 +64,9 @@ test('inspection reports confidence and code points for secure diagnostics', () 
 	assert.equal(inspection.safeToClean, true);
 	assert.deepEqual(inspection.artifacts.map(artifact => artifact.code), ['TRAILING_ESCAPE_ARTIFACT']);
 	assert.deepEqual(inspection.codepoints.slice(-8), [92, 114, 92, 110, 92, 116, 92, 116]);
+});
+test('normalizes option rationales and clears artifact-only rationales', () => {
+	assert.equal(normalizeOptionRationale('`r`n`t`t'), null);
+	assert.equal(normalizeOptionRationale('Meaningful rationale.`r`n`t`t'), 'Meaningful rationale.');
+	assert.equal(normalizeOptionRationale('`text` is a variable.'), '`text` is a variable.');
 });
