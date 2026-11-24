@@ -45,8 +45,8 @@ test('MCP approval workflow persists and reuses option order', { skip: !runInteg
 			sourceConcept: 'Evidence-based decision process',
 			sourceSetId: 'SET-READBACK',
 			options: [
-				{ label: 'A', text: 'Act immediately without documentation.', isCorrect: false, rationale: 'Ignores evidence.' },
-				{ label: 'B', text: 'Document the evidence and assumptions before deciding.', isCorrect: true, rationale: 'Matches a disciplined process.' },
+				{ label: 'A', text: 'Act immediately without documentation.`r`n`t`t', isCorrect: false, rationale: 'Ignores evidence.' },
+				{ label: 'B', text: 'Document the evidence and assumptions before deciding.\\r\\n\\t\\t', isCorrect: true, rationale: 'Matches a disciplined process.' },
 				{ label: 'C', text: 'Ignore conflicting information.', isCorrect: false, rationale: 'Fails to evaluate the evidence.' }
 			],
 			generation: { source: 'INTEGRATION_TEST', client: 'milven-test', provider: 'test', model: 'none' },
@@ -89,6 +89,7 @@ test('MCP approval workflow persists and reuses option order', { skip: !runInteg
 		assert.equal(full.volumeId, link.volumeId);
 		assert.equal(full.moduleId, module.id);
 		assert.equal(full.topicId, topic.id);
+		assert.deepEqual(full.options.map(option => option.text), ['Act immediately without documentation.', 'Document the evidence and assumptions before deciding.', 'Ignore conflicting information.']);
 		assert.deepEqual(full.options.map(option => option.position), [0, 1, 2]);
 		assert.deepEqual(full.options.map(option => option.isCorrect), [false, true, false]);
 		assert.equal(full.generationSource, 'MCP');

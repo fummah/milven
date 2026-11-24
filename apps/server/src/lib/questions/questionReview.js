@@ -444,6 +444,12 @@ export async function commitApprovedBatch(prisma, batchId, { actorId, tokenId = 
 			results.push({ itemId: item.id, externalQuestionId: item.externalQuestionId, ok: false, errors });
 			continue;
 		}
+		const revalidation = await validateQuestionPayload(prisma, payload);
+		if (!revalidation.ok) {
+			await prisma.mcpImportItem.update({ where: { id: item.id }, data: { status: 'FAILED', errors: revalidation.errors, validation: revalidation } });
+			results.push({ itemId: item.id, externalQuestionId: item.externalQuestionId, ok: false, errors: revalidation.errors });
+			continue;
+		}
 		const mapping = await validateAcademicMapping(prisma, {
 			courseId: payload.courseId,
 			volumeId: payload.volumeId,
@@ -496,7 +502,7 @@ export async function commitApprovedBatch(prisma, batchId, { actorId, tokenId = 
 						committedAt: new Date(),
 						errors: null,
 						duplicates,
-						validation: { ...(item.validation || {}), readbackVerification: verification }
+						validation: { ...revalidation, readbackVerification: verification }
 					}
 				});
 				return { ...result, verification };
