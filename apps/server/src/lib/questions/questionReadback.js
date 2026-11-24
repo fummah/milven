@@ -1,12 +1,5 @@
-﻿import { sanitizeDbData } from '../dbText.js';
-
-export function resolveWorkedSolution(workedSolution, explanation, subject = {}) {
-	const ws = String(workedSolution || '').trim();
-	const explanationText = String(explanation || '').trim();
-	if (subject.correctAnswerExplanation || subject.incorrectOptionsExplanation) return ws || null;
-	if (ws && explanationText) return `${explanationText}\n\n--- Worked Solution ---\n${ws}`;
-	return explanationText || ws || null;
-}
+import { inspectOptionText } from './optionText.js';
+import { resolveWorkedSolution } from './questionPersistence.js';
 
 function valueOf(value) {
 	if (value === undefined || value === null) return null;
@@ -53,6 +46,10 @@ function verifyOptions(mismatches, path, expected, actual) {
 		addMismatch(mismatches, `${path}[${index}].text`, option.text || '', saved.text || '');
 		addMismatch(mismatches, `${path}[${index}].isCorrect`, Boolean(option.isCorrect), Boolean(saved.isCorrect));
 		addMismatch(mismatches, `${path}[${index}].position`, index, saved.position ?? index);
+		const inspection = inspectOptionText(saved.text);
+		if (inspection.artifacts.length) {
+			mismatches.push({ code: 'OPTION_TEXT_FORMATTING_ARTIFACT', path: `${path}[${index}].text`, expected: option.text || '', actual: saved.text || '', artifacts: inspection.artifacts });
+		}
 		const expectedRationale = option.rationale || null;
 		const actualRationale = saved.rationale || null;
 		if (!sameValue(expectedRationale, actualRationale)) {

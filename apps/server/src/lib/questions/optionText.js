@@ -1,5 +1,5 @@
-const TRAILING_ARTIFACT = /(?:\s*(?:`[rnt]|\\[rnt])){2,}\s*$/;
-const INTERNAL_ARTIFACT = /(?:`[rnt]|\\[rnt]){2,}/;
+const TRAILING_ARTIFACT = /(?:\s*(?:`[rnt]|\\{1,2}[rnt])){2,}\s*$/;
+const INTERNAL_ARTIFACT = /(?:`[rnt]|\\{1,2}[rnt]){2,}/;
 
 function codepoints(value) {
 	return [...String(value || '')].map(char => char.codePointAt(0));
@@ -27,7 +27,6 @@ export function normalizeOptionText(value) {
 	let text = inspection.original.replace(/\u0000/g, '');
 	text = text.replace(TRAILING_ARTIFACT, '').replace(/[ \t]+$/g, '');
 	text = text.replace(/\r\n?/g, '\n');
-	text = text.replace(/\t/g, ' ');
 	text = text.split('\n').map(line => line.replace(/[\u00a0 ]+/g, ' ').trim()).join('\n');
 	text = text.replace(/\n{3,}/g, '\n\n').trim();
 	return {
@@ -37,3 +36,5 @@ export function normalizeOptionText(value) {
 		artifacts: inspection.artifacts
 	};
 }
+
+export const sanitizeMcqOptionText = normalizeOptionText;

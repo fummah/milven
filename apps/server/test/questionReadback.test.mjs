@@ -89,3 +89,10 @@ test('readback verification detects missing fields, option order and formula cor
 	assert.ok(verification.mismatches.some(mismatch => mismatch.path === 'parent.keyFormulas' && mismatch.code === 'FORMULA_READBACK_MISMATCH'));
 	assert.ok(verification.mismatches.some(mismatch => mismatch.path === 'parent.options[0].text'));
 });
+test('readback verification blocks persisted option formatting artifacts', () => {
+	const { payload, question } = fixture();
+	question.options[0].text = '1,000`r`n`t`t';
+	const verification = verifyPersistedQuestion(payload, question, {});
+	assert.equal(verification.ok, false);
+	assert.ok(verification.mismatches.some(mismatch => mismatch.code === 'OPTION_TEXT_FORMATTING_ARTIFACT' && mismatch.path === 'parent.options[0].text'));
+});

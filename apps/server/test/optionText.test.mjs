@@ -7,7 +7,8 @@ test('normalizes trailing PowerShell-style escape artifacts only', () => {
 	const cases = [
 		'153.03`r`n`t`t`t`t',
 		'147.03\\r\\n\\t\\t\\t\\t',
-		'144.12\r\n\t\t\t\t'
+		'144.12\r\n\t\t\t\t',
+		String.raw`Statement 1\\r\\n\\t\\t`
 	];
 	for (const value of cases) {
 		const result = normalizeOptionText(value);

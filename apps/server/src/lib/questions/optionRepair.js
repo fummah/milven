@@ -15,7 +15,7 @@ export async function scanOptionTextRepairs(prisma, { limit = 2000 } = {}) {
 	for (const option of options) {
 		const inspection = inspectOptionText(option.text);
 		const normalized = normalizeOptionText(option.text);
-		if (!inspection.artifacts.length || !normalized.changed) continue;
+		if (!inspection.artifacts.length) continue;
 		candidates.push({
 			optionId: option.id,
 			questionId: option.question?.id || option.questionId,
@@ -27,7 +27,7 @@ export async function scanOptionTextRepairs(prisma, { limit = 2000 } = {}) {
 			proposedText: normalized.text,
 			artifacts: inspection.artifacts,
 			codepoints: inspection.codepoints,
-			safeToAutoClean: inspection.safeToClean
+			safeToAutoClean: inspection.safeToClean && normalized.changed
 		});
 	}
 	return {

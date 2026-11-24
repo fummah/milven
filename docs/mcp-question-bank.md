@@ -264,3 +264,18 @@ Back up PostgreSQL before applying. The production deployment workflow runs `pri
 ## Existing admin AI generation
 
 The existing AI preview/accept flow and manual question editor remain enabled. New option writes use explicit positions, and child-question updates retain their own LOS, trace, formulas, worked solution, guidelines, output and concept mapping.
+### MCQ option text repair
+
+Run the read-only audit from `apps/server`:
+
+```bash
+npm run questions:repair-option-text -- --dry-run
+```
+
+Apply only unambiguous trailing escape-artifact repairs after reviewing the report:
+
+```bash
+npm run questions:repair-option-text -- --apply
+```
+
+The apply command creates a PostgreSQL custom-format backup, writes a JSON rollback record, updates only safe candidates, and verifies option order, one correct answer per MCQ and clean readback. Internal tabs or other ambiguous formula-like artifacts are reported for manual review rather than automatically rewritten.

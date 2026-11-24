@@ -19,6 +19,7 @@
     "pretest": "npm run mcp:build",
     "migrate": "node src/scripts/migrate.js",
     "migrate:dev": "prisma migrate dev --name init",
+    "questions:repair-option-text": "node src/scripts/repair-option-text.js",
     "generate": "prisma generate"
   },
   "dependencies": {
