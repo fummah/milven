@@ -315,18 +315,21 @@ export function usersRouter(prisma) {
 		const id = req.params.id;
 		try {
 			// Best-effort cascade for related records before deleting the user.
-			await prisma.$transaction([
-				prisma.enrollment.deleteMany({ where: { userId: id } }),
-				prisma.examAnswer.deleteMany({ where: { attempt: { userId: id } } }).catch(() => {}),
-				prisma.examAttempt.deleteMany({ where: { userId: id } }),
-				prisma.materialProgress.deleteMany({ where: { userId: id } }).catch(() => {}),
-				prisma.topicProgress.deleteMany({ where: { userId: id } }).catch(() => {}),
-				prisma.courseProgress.deleteMany({ where: { userId: id } }).catch(() => {}),
-				prisma.subscription.deleteMany({ where: { userId: id } }).catch(() => {}),
-				prisma.payment?.deleteMany ? prisma.payment.deleteMany({ where: { userId: id } }) : prisma.$executeRaw`SELECT 1`,
-				prisma.passwordResetToken.deleteMany({ where: { userId: id } }).catch(() => {}),
-				prisma.emailVerificationToken.deleteMany({ where: { userId: id } }).catch(() => {})
-			]);
+			const deletions = [
+				() => prisma.enrollment.deleteMany({ where: { userId: id } }),
+				() => prisma.examAnswer.deleteMany({ where: { attempt: { userId: id } } }),
+				() => prisma.examAttempt.deleteMany({ where: { userId: id } }),
+				() => prisma.materialProgress.deleteMany({ where: { userId: id } }),
+				() => prisma.topicProgress.deleteMany({ where: { userId: id } }),
+				() => prisma.courseProgress.deleteMany({ where: { userId: id } }),
+				() => prisma.subscription.deleteMany({ where: { userId: id } }),
+				() => prisma.paymentRecord.deleteMany({ where: { userId: id } }),
+				() => prisma.passwordResetToken.deleteMany({ where: { userId: id } }),
+				() => prisma.emailVerificationToken.deleteMany({ where: { userId: id } })
+			];
+			for (const remove of deletions) {
+				try { await remove(); } catch {}
+			}
 			const result = await prisma.user.deleteMany({ where: { id } });
 			if (result.count === 0) return res.status(404).json({ error: 'Not found' });
 			return res.json({ ok: true, deleted: result.count });

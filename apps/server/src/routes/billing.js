@@ -709,10 +709,10 @@ export function billingRouter(prisma) {
         }
       }
 
-      // For non-admin (e.g. student dashboard): only return subscriptions belonging to the current user
-      const subscriptions = (requestedUserId || !isAdmin)
-        ? mapped.filter(m => m.userId === req.user.id)
-        : mapped;
+      // For non-admin (e.g. student dashboard) or an admin filtering by user, only return that user's subscriptions.
+      const subscriptions = isAdmin && !requestedUserId
+        ? mapped
+        : mapped.filter(m => m.userId === (requestedUserId || req.user.id));
 
       res.json({ subscriptions });
     } catch (err) {
