@@ -280,7 +280,7 @@ export function AdminProducts() {
             <Form.Item name="price" label="Price (USD)" rules={[{ required: true }]}>
               <InputNumber min={0} style={{ width: 180 }} />
             </Form.Item>
-            <Form.Item name="interval" label="Interval" rules={[{ required: true }]}>
+            <Form.Item name="interval" label="Interval" rules={[{ required: true }]} extra="Monthly/Yearly plans are eligible for paid subscriptions. One-time products can be used for manual course access.">
               <Select style={{ width: 180 }} options={[
                 { value: 'ONE_TIME', label: 'One‑time' },
                 { value: 'MONTHLY', label: 'Monthly' },

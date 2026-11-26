@@ -18,7 +18,11 @@ export function usersRouter(prisma) {
 			AND: [
 				role ? { role } : {},
 				level ? { level } : {},
-				q ? { email: { contains: q, mode: 'insensitive' } } : {}
+				q ? { OR: [
+					{ email: { contains: q, mode: 'insensitive' } },
+					{ firstName: { contains: q, mode: 'insensitive' } },
+					{ lastName: { contains: q, mode: 'insensitive' } }
+				] } : {}
 			]
 		};
 		const [total, rawUsers] = await Promise.all([

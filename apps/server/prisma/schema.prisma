@@ -651,6 +651,7 @@ enum Provider {
   FLUTTERWAVE
   PAYFAST
   STRIPE
+  MANUAL
 }
 
 enum SubscriptionStatus {

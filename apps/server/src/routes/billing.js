@@ -2,6 +2,7 @@ import express, { Router } from 'express';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import Stripe from 'stripe';
+import { grantManualCourseAccess } from '../lib/billing/manualAccess.js';
 
 const stripeKey = process.env.STRIPE_SECRET_KEY || '';
 const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: '2023-10-16' }) : null;
@@ -9,6 +10,20 @@ const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: '2023-10-16' }) :
 export function billingRouter(prisma) {
   const router = Router();
 
+  async function grantProductEnrollments(prismaClient, userId, productId) {
+    if (!userId || !productId) return [];
+    const links = await prismaClient.courseProduct.findMany({ where: { productId }, select: { courseId: true } });
+    const enrollments = [];
+    for (const link of links) {
+      const enrollment = await prismaClient.enrollment.upsert({
+        where: { userId_courseId: { userId, courseId: link.courseId } },
+        update: {},
+        create: { userId, courseId: link.courseId }
+      });
+      enrollments.push(enrollment);
+    }
+    return enrollments;
+  }
   async function createPurchaseInvoiceForCheckoutSession({ session, custId, productId }) {
     if (!stripe) return;
     if (!session?.id || !custId || !productId) return;
@@ -156,6 +171,9 @@ export function billingRouter(prisma) {
       priceCents: p.priceCents ?? p.priceC, // compatibility with migration column name
       interval: p.interval,
       active: p.active,
+      currency: 'USD',
+      subscriptionEligible: Boolean(p.active) && (p.interval === 'MONTHLY' || p.interval === 'YEARLY'),
+      manualAccessEligible: Boolean(p.active) && (p.courseLinks || []).length > 0,
       courses: (p.courseLinks || []).map(l => l.course)
     }));
     res.json({ products: normalized });
@@ -614,7 +632,7 @@ export function billingRouter(prisma) {
 
       // Include prisma Subscription records (e.g. one-time course purchases) so they appear under Subscriptions
       const stripeSubIds = new Set((subs.data || []).map(s => s.id));
-      const prismaWhere = { provider: 'STRIPE', status: { in: ['ACTIVE', 'PAST_DUE'] } };
+      const prismaWhere = { status: { in: ['ACTIVE', 'PAST_DUE'] } };
       if (requestedUserId || !isAdmin) {
         const uid = requestedUserId || req.user.id;
         prismaWhere.userId = uid;
@@ -649,8 +667,11 @@ export function billingRouter(prisma) {
         const lp = ps.plan ? productByPlanName[ps.plan] : null;
         const courses = lp?.id ? (coursesByProductForPrisma[lp.id] || []) : [];
         mapped.push({
-          id: ps.providerReference || ps.id,
+          id: ps.provider === 'MANUAL' ? ps.id : (ps.providerReference || ps.id),
           _prismaId: ps.id,
+          _manual: ps.provider === 'MANUAL',
+          provider: ps.provider,
+          currentPeriodEnd: ps.currentPeriodEnd ? ps.currentPeriodEnd.getTime() : null,
           status: (ps.status === 'ACTIVE' || ps.status === 'PAST_DUE') ? (ps.status || 'ACTIVE') : 'ACTIVE',
           productName: ps.plan || 'Course purchase',
           localProductId: lp?.id || null,
@@ -1109,25 +1130,53 @@ export function billingRouter(prisma) {
   });
   // ADMIN: Create a subscription for a user and product
   router.post('/subscriptions', requireAuth(), requireRole('ADMIN'), async (req, res) => {
-    if (!stripe) return res.status(500).json({ error: 'Stripe not configured' });
-    const { userId, productId } = req.body || {};
+    const { userId, productId, mode = 'stripe', currentPeriodEnd = null } = req.body || {};
     if (!userId || !productId) return res.status(400).json({ error: 'userId and productId required' });
+    if (mode === 'manual') {
+      const result = await grantManualCourseAccess(prisma, { userId, productId, currentPeriodEnd });
+      if (!result.ok) return res.status(result.statusCode || 400).json(result);
+      return res.status(201).json(result);
+    }
+    if (!stripe) return res.status(500).json({ error: 'Stripe not configured' });
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ error: 'User not found' });
-    const product = await prisma.product.findUnique({ where: { id: productId } });
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-    if (!(product.interval === 'MONTHLY' || product.interval === 'YEARLY')) {
-      return res.status(400).json({ error: 'Product must be a recurring plan' });
-    }
-    const customerId = await ensureStripeCustomer(user);
-    const synced = await ensureStripeProductAndPrice(product);
-    const sub = await stripe.subscriptions.create({
-      customer: customerId,
-      items: [{ price: synced.stripePriceId }],
-      payment_behavior: 'default_incomplete',
-      expand: ['latest_invoice.payment_intent']
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      include: { courseLinks: { select: { courseId: true } } }
     });
-    res.status(201).json({ subscription: sub });
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    if (!product.active) return res.status(400).json({ error: 'Product is inactive' });
+    if (!(product.interval === 'MONTHLY' || product.interval === 'YEARLY')) {
+      return res.status(400).json({ error: 'Product must be a recurring plan. Use manual access for a one-time product.' });
+    }
+    if (!product.courseLinks.length) {
+      return res.status(400).json({ error: 'Product has no linked courses, so a subscription would grant no course access.' });
+    }
+    try {
+      const customerId = await ensureStripeCustomer(user);
+      const synced = await ensureStripeProductAndPrice(product);
+      const existing = await stripe.subscriptions.list({
+        customer: customerId,
+        status: 'all',
+        limit: 100,
+        expand: ['data.items.data.price']
+      });
+      const blockingStatuses = new Set(['active', 'trialing', 'past_due', 'incomplete']);
+      const duplicate = (existing.data || []).some(subscription =>
+        blockingStatuses.has(subscription.status) &&
+        (subscription.items?.data || []).some(item => item.price?.id === synced.stripePriceId)
+      );
+      if (duplicate) return res.status(409).json({ error: 'The user already has an active subscription for this product.' });
+      const sub = await stripe.subscriptions.create({
+        customer: customerId,
+        items: [{ price: synced.stripePriceId }],
+        payment_behavior: 'default_incomplete',
+        expand: ['latest_invoice.payment_intent']
+      });
+      return res.status(201).json({ subscription: sub });
+    } catch (error) {
+      return res.status(400).json({ error: error?.message || 'Failed to create subscription' });
+    }
   });
 
   // ADMIN: Update subscription (toggle cancel_at_period_end)
@@ -1139,6 +1188,15 @@ export function billingRouter(prisma) {
       cancel_at_period_end: !!cancelAtPeriodEnd
     });
     res.json({ subscription: sub });
+  });
+
+  // ADMIN: Cancel a local/manual access subscription
+  router.delete('/subscriptions/local/:id', requireAuth(), requireRole('ADMIN'), async (req, res) => {
+    const subscription = await prisma.subscription.findUnique({ where: { id: req.params.id } });
+    if (!subscription) return res.status(404).json({ error: 'Subscription not found' });
+    if (subscription.provider !== 'MANUAL') return res.status(400).json({ error: 'This is not a manual access subscription.' });
+    const updated = await prisma.subscription.update({ where: { id: subscription.id }, data: { status: 'CANCELED' } });
+    return res.json({ subscription: updated });
   });
 
   // ADMIN: Cancel subscription immediately
@@ -1335,12 +1393,13 @@ export function billingRouter(prisma) {
           if (user) {
             // Resolve product to store as plan (local product name)
             let planValue = 'PRODUCT';
+            let localProduct = null;
             try {
               const item = sub.items?.data?.[0];
               const stripeProdId = item?.price?.product;
               if (stripeProdId) {
-                const local = await prisma.product.findFirst({ where: { stripeProductId: typeof stripeProdId === 'string' ? stripeProdId : stripeProdId.id } });
-                if (local) planValue = local.name;
+                localProduct = await prisma.product.findFirst({ where: { stripeProductId: typeof stripeProdId === 'string' ? stripeProdId : stripeProdId.id } });
+                if (localProduct) planValue = localProduct.name;
               }
             } catch {}
             const statusMap = {
@@ -1371,6 +1430,9 @@ export function billingRouter(prisma) {
                 currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null
               }
             });
+            if (localProduct && (sub.status === 'active' || sub.status === 'trialing')) {
+              await grantProductEnrollments(prisma, user.id, localProduct.id);
+            }
           }
           break;
         }
