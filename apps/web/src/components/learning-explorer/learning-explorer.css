@@ -380,9 +380,9 @@
 
 .learning-title-thumb {
 	display: block;
-	width: 82px;
-	height: 48px;
-	flex: 0 0 82px;
+	width: 140px;
+	height: 79px;
+	flex: 0 0 140px;
 	padding: 0;
 	overflow: hidden;
 	border: 1px solid #e2e8f0;
@@ -821,13 +821,13 @@
 .learning-resource-skeleton-row > .ant-skeleton { flex: 1; min-width: 0; }
 
 .learning-resource-skeleton-thumb.ant-skeleton-element {
-	width: 82px !important;
-	height: 48px !important;
-	flex: 0 0 82px;
+	width: 140px !important;
+	height: 79px !important;
+	flex: 0 0 140px;
 	border-radius: 7px;
 }
 
-.learning-resource-skeleton-thumb.compact { width: 82px !important; height: 48px !important; }
+.learning-resource-skeleton-thumb.compact { width: 140px !important; height: 79px !important; }
 
 .learning-resource-skeleton-card {
 	overflow: hidden;
@@ -1210,6 +1210,301 @@
 	font-size: 12px;
 }
 
+/* Branded resource cover cards */
+.learning-resource-cover {
+	position: relative;
+	isolation: isolate;
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	overflow: hidden;
+	border: 1px solid rgba(255, 255, 255, 0.14);
+	border-radius: 10px;
+	color: #fff;
+	background: linear-gradient(125deg, #0b1930 0%, #10243e 48%, #1d3c68 100%);
+	box-shadow: 0 5px 16px rgba(11, 25, 48, 0.16);
+	text-align: left;
+}
+
+.learning-resource-cover.is-compact {
+	aspect-ratio: auto;
+	height: 100%;
+	border-radius: 8px;
+	box-shadow: none;
+}
+
+.learning-resource-cover.is-notes {
+	background: linear-gradient(125deg, #0b1930 0%, #10243e 52%, #1e4f9c 125%);
+}
+
+.learning-resource-cover.is-formula {
+	background: linear-gradient(125deg, #0b1930 0%, #162b4a 56%, #6b4c0d 145%);
+}
+
+.learning-resource-cover.is-summary {
+	background: linear-gradient(125deg, #0b1930 0%, #0d2f3d 55%, #0f766e 135%);
+}
+
+.learning-resource-cover.is-slides {
+	background: linear-gradient(125deg, #0b1930 0%, #111b45 55%, #3730a3 135%);
+}
+
+.learning-cover-glow {
+	position: absolute;
+	right: -18%;
+	top: -34%;
+	width: 68%;
+	height: 115%;
+	border-radius: 50%;
+	background: radial-gradient(circle, rgba(37, 99, 235, 0.34), transparent 68%);
+	filter: blur(18px);
+	pointer-events: none;
+}
+
+.learning-resource-cover.is-summary .learning-cover-glow {
+	background: radial-gradient(circle, rgba(16, 185, 129, 0.24), transparent 68%);
+}
+
+.learning-resource-cover.is-formula .learning-cover-glow {
+	background: radial-gradient(circle, rgba(212, 167, 44, 0.24), transparent 68%);
+}
+
+.learning-cover-top {
+	position: relative;
+	z-index: 3;
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 11px 13px 0;
+}
+
+.learning-cover-brand {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+	color: rgba(255, 255, 255, 0.94);
+	line-height: 1;
+}
+
+.learning-cover-brand-mark {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 17px;
+	height: 17px;
+	border: 1px solid rgba(212, 167, 44, 0.72);
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.08);
+	color: #fff;
+	font-family: 'Merriweather', Georgia, serif;
+	font-size: 10px;
+	font-weight: 700;
+}
+
+.learning-cover-brand-name {
+	font-size: 8.5px;
+	font-weight: 800;
+	letter-spacing: 1.2px;
+}
+
+.learning-cover-brand-sub {
+	color: rgba(213, 226, 244, 0.58);
+	font-size: 5.3px;
+	font-weight: 600;
+	letter-spacing: 0.85px;
+	white-space: nowrap;
+}
+
+.learning-cover-top-meta {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	flex-shrink: 0;
+}
+
+.learning-cover-level,
+.learning-cover-year {
+	padding: 2px 5px;
+	border: 1px solid rgba(255, 255, 255, 0.16);
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.08);
+	color: rgba(255, 255, 255, 0.76);
+	font-size: 5.8px;
+	font-weight: 700;
+	letter-spacing: 0.65px;
+}
+
+.learning-cover-main {
+	position: relative;
+	z-index: 3;
+	display: flex;
+	flex: 1;
+	align-items: flex-end;
+	min-height: 0;
+	padding: 5px 13px 13px;
+}
+
+.learning-cover-copy {
+	position: relative;
+	z-index: 2;
+	width: 68%;
+	min-width: 0;
+}
+
+.learning-cover-category {
+	margin-bottom: 3px;
+	color: #d4a72c;
+	font-size: 7px;
+	font-weight: 800;
+	letter-spacing: 1.35px;
+	line-height: 1.2;
+}
+
+.learning-cover-title {
+	display: -webkit-box;
+	overflow: hidden;
+	color: #fff;
+	font-family: 'Merriweather', Georgia, serif;
+	font-size: clamp(15px, 7.2cqw, 22px);
+	font-weight: 700;
+	line-height: 1.22;
+	overflow-wrap: anywhere;
+	word-break: normal;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+}
+
+.learning-cover-volume {
+	display: -webkit-box;
+	overflow: hidden;
+	margin-top: 4px;
+	color: rgba(213, 226, 244, 0.76);
+	font-size: 7.6px;
+	font-weight: 500;
+	line-height: 1.35;
+	overflow-wrap: anywhere;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 1;
+}
+
+.learning-cover-badge {
+	display: inline-block;
+	margin-top: 5px;
+	padding: 2px 6px;
+	border: 1px solid rgba(212, 167, 44, 0.45);
+	border-radius: 999px;
+	background: rgba(212, 167, 44, 0.12);
+	color: #f5d477;
+	font-size: 6.2px;
+	font-weight: 700;
+	letter-spacing: 0.5px;
+	text-transform: uppercase;
+}
+
+.learning-cover-visual {
+	position: absolute;
+	z-index: 1;
+	right: -1%;
+	bottom: 4%;
+	width: 43%;
+	max-width: 170px;
+	opacity: 0.9;
+	pointer-events: none;
+}
+
+.learning-cover-art {
+	display: block;
+	width: 100%;
+	height: auto;
+	overflow: visible;
+}
+
+.learning-cover-lines {
+	position: absolute;
+	z-index: 1;
+	left: 0;
+	right: 0;
+	bottom: -1px;
+	width: 100%;
+	height: 32%;
+	opacity: 0.75;
+	pointer-events: none;
+}
+
+.learning-resource-cover.is-compact .learning-cover-top {
+	padding: 6px 7px 0;
+}
+
+.learning-resource-cover.is-compact .learning-cover-brand {
+	gap: 3px;
+}
+
+.learning-resource-cover.is-compact .learning-cover-brand-mark {
+	width: 12px;
+	height: 12px;
+	border-radius: 3px;
+	font-size: 7px;
+}
+
+.learning-resource-cover.is-compact .learning-cover-brand-name {
+	font-size: 6.2px;
+	letter-spacing: 0.8px;
+}
+
+.learning-resource-cover.is-compact .learning-cover-brand-sub {
+	display: none;
+}
+
+.learning-resource-cover.is-compact .learning-cover-level,
+.learning-resource-cover.is-compact .learning-cover-year {
+	padding: 1px 3px;
+	font-size: 4.6px;
+	letter-spacing: 0.3px;
+}
+
+.learning-resource-cover.is-compact .learning-cover-main {
+	padding: 2px 7px 7px;
+}
+
+.learning-resource-cover.is-compact .learning-cover-copy {
+	width: 72%;
+}
+
+.learning-resource-cover.is-compact .learning-cover-category {
+	margin-bottom: 1px;
+	font-size: 5px;
+	letter-spacing: 0.7px;
+}
+
+.learning-resource-cover.is-compact .learning-cover-title {
+	font-size: 10.5px;
+	line-height: 1.2;
+	-webkit-line-clamp: 2;
+}
+
+.learning-resource-cover.is-compact .learning-cover-volume {
+	margin-top: 2px;
+	font-size: 5.4px;
+	-webkit-line-clamp: 1;
+}
+
+.learning-resource-cover.is-compact .learning-cover-badge {
+	margin-top: 2px;
+	padding: 1px 3px;
+	font-size: 4.4px;
+}
+
+.learning-resource-cover.is-compact .learning-cover-visual {
+	right: -3%;
+	bottom: 1%;
+	width: 45%;
+	max-width: 74px;
+	opacity: 0.78;
+}
+
 @media (max-width: 1199px) {
 	.learning-explorer-layout {
 		grid-template-columns: minmax(0, 1fr);
@@ -1288,15 +1583,15 @@
 	}
 
 	.learning-resource-skeleton-thumb.ant-skeleton-element {
-		width: 64px !important;
-		flex-basis: 64px;
-		height: 42px !important;
+		width: 112px !important;
+		flex-basis: 112px;
+		height: 63px !important;
 	}
 
 	.learning-title-thumb {
-		width: 64px;
-		height: 42px;
-		flex-basis: 64px;
+		width: 112px;
+		height: 63px;
+		flex-basis: 112px;
 	}
 
 	.learning-search-result-card {

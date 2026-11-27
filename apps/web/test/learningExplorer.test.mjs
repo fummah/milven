@@ -6,6 +6,8 @@ import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = path => readFileSync(join(root, path), 'utf8');
+const resourceCard = read('src/components/learning-explorer/LearningResourceCard.jsx');
+const resourceCover = read('src/components/learning-explorer/LearningResourceCover.jsx');
 const pages = {
 	slides: read('src/pages/student/StudentSlides.jsx'),
 	notes: read('src/pages/student/StudentModuleNotes.jsx'),
@@ -71,4 +73,37 @@ test('resource pages restore filters in the URL before opening viewers', () => {
 		assert.match(source, /markExplorerReturn/);
 		assert.match(source, /useExplorerScrollMemory/);
 	}
+});
+
+test('resource listings use branded covers instead of document thumbnails', () => {
+	assert.match(resourceCard, /import LearningResourceCover/);
+	assert.match(resourceCard, /<LearningResourceCover \{\.\.\.coverFor\(resource, variant\)\} compact \/>/);
+	assert.match(resourceCard, /<LearningResourceCover \{\.\.\.coverFor\(resource, variant\)\} \/>/);
+	assert.doesNotMatch(resourceCard, /thumbnailUrl/);
+	assert.doesNotMatch(resourceCard, /<img/);
+	assert.match(resourceCover, /resourceType/);
+	assert.match(resourceCover, /SLIDES/);
+	assert.match(resourceCover, /MODULE_NOTES/);
+	assert.match(resourceCover, /FORMULA_BOOK/);
+	assert.match(resourceCover, /SUMMARY_SHEET/);
+});
+
+test('cover titles follow the academic resource rules', () => {
+	assert.match(resourceCard, /isPdf \? \(volumeName \|\| resource\.title\)/);
+	assert.match(resourceCard, /isPdf \? \(volumeName \|\| learningModuleName \|\| resource\.title\)/);
+	assert.match(resourceCard, /learningModuleName \|\| \(isPdf \? volumeName : null\) \|\| resource\.title/);
+	assert.match(resourceCard, /wholeVolume \? \(volumeName \|\| resource\.title\)/);
+});
+
+test('branded covers are CSS/SVG generated and responsive', () => {
+	const css = read('src/components/learning-explorer/learning-explorer.css');
+	assert.match(css, /\.learning-resource-cover[\s\S]*aspect-ratio: 16 \/ 9/);
+	assert.match(css, /\.learning-title-thumb[\s\S]*width: 140px/);
+	assert.match(css, /width: 112px/);
+	assert.match(css, /\.learning-resource-cover\.is-notes/);
+	assert.match(css, /\.learning-resource-cover\.is-formula/);
+	assert.match(css, /\.learning-resource-cover\.is-summary/);
+	assert.match(css, /\.learning-resource-cover\.is-slides/);
+	assert.match(resourceCover, /<svg/);
+	assert.doesNotMatch(resourceCover, /fetch\(|openai|image-generation/);
 });

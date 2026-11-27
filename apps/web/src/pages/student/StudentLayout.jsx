@@ -60,11 +60,15 @@ const childToParentKey = {
   'student-billing': 'account-group', 'student-invoices': 'account-group', 'student-account': 'account-group'
 };
 
-const menuItems = [
+const buildMenuItems = onParentTitleClick => [
   { key: 'student-home', icon: modernBadge(<HomeOutlined />, 'linear-gradient(135deg, #3b82f6, #1d4ed8)'), label: <Link to="/student">Dashboard</Link> },
   { key: 'student-courses', icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #0ea5e9, #0284c7)'), label: <Link to="/student/courses">My Courses</Link> },
   {
     key: 'learning',
+    title: 'Learning',
+    popupClassName: 'student-submenu-popup student-submenu-learning',
+    popupOffset: [10, 0],
+    onTitleClick: () => onParentTitleClick?.('learning'),
     icon: modernBadge(<ReadOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'),
     label: 'Learning',
     children: [
@@ -77,6 +81,10 @@ const menuItems = [
   },
   {
     key: 'exams-group',
+    title: 'Exams & Practice',
+    popupClassName: 'student-submenu-popup student-submenu-exams',
+    popupOffset: [10, 0],
+    onTitleClick: () => onParentTitleClick?.('exams-group'),
     icon: modernBadge(<ReadOutlined />, 'linear-gradient(135deg, #f97316, #ea580c)'),
     label: 'Exams & Practice',
     children: [
@@ -90,6 +98,10 @@ const menuItems = [
   { key: 'student-comparison', icon: modernBadge(<BarChartOutlined />, 'linear-gradient(135deg, #0ea5e9, #0284c7)'), label: <Link to="/student/comparison">Performance</Link> },
   {
     key: 'account-group',
+    title: 'Account & Billing',
+    popupClassName: 'student-submenu-popup student-submenu-account',
+    popupOffset: [10, 0],
+    onTitleClick: () => onParentTitleClick?.('account-group'),
     icon: modernBadge(<UserOutlined />, 'linear-gradient(135deg, #64748b, #475569)'),
     label: 'Account & Billing',
     children: [
@@ -108,7 +120,23 @@ export default function StudentLayout() {
 
   // Keep the same compact behaviour as the Learning Center on the resource explorer pages.
   const [collapsed, setCollapsed] = useState(() => isCompactLearningRoute);
+  const [collapsedOpenKeys, setCollapsedOpenKeys] = useState([]);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const menuItems = buildMenuItems(key => {
+    if (isMobile || !collapsed) return;
+    setCollapsedOpenKeys(previous => previous.includes(key) ? [] : [key]);
+  });
+
+  const handleCollapsedMenuKeyDown = event => {
+    if (isMobile || !collapsed || (event.key !== ' ' && event.key !== 'Spacebar')) return;
+    const title = event.target instanceof Element ? event.target.closest('.ant-menu-submenu-title') : null;
+    if (!title) return;
+    const menuId = title.getAttribute('data-menu-id') || '';
+    const key = ['learning', 'exams-group', 'account-group'].find(item => menuId.includes(item));
+    if (!key) return;
+    event.preventDefault();
+    setCollapsedOpenKeys(previous => previous.includes(key) ? [] : [key]);
+  };
 
   const handleSidebarCollapse = (nextCollapsed) => {
     setCollapsed(nextCollapsed);
@@ -133,7 +161,30 @@ export default function StudentLayout() {
   useEffect(() => {
     if (isMobile) setCollapsed(true);
     if (isMobile) setMobileOpen(false);
+    setCollapsedOpenKeys([]);
   }, [isMobile, location.pathname]);
+
+  useEffect(() => {
+    if (!collapsed) setCollapsedOpenKeys([]);
+  }, [collapsed]);
+
+  useEffect(() => {
+    if (!collapsed || collapsedOpenKeys.length === 0) return undefined;
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') setCollapsedOpenKeys([]);
+    };
+    const closeOutside = event => {
+      const target = event.target;
+      if (target instanceof Element && (target.closest('.student-sider') || target.closest('.student-submenu-popup'))) return;
+      setCollapsedOpenKeys([]);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    document.addEventListener('pointerdown', closeOutside, true);
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.removeEventListener('pointerdown', closeOutside, true);
+    };
+  }, [collapsed, collapsedOpenKeys.length]);
 
   const selected = (() => {
     const path = location.pathname.replace(/^\/student\/?/, '') || 'home';
@@ -243,8 +294,12 @@ export default function StudentLayout() {
             mode="inline" 
             items={menuItems} 
             selectedKeys={selected}
-            openKeys={collapsed ? [] : openKeys}
-            onOpenChange={setOpenKeys}
+            openKeys={collapsed ? collapsedOpenKeys : openKeys}
+            onOpenChange={keys => {
+              if (collapsed) setCollapsedOpenKeys(keys);
+              else setOpenKeys(keys);
+            }}
+            onKeyDown={handleCollapsedMenuKeyDown}
             style={{ 
               borderRight: 0,
               padding: '0 8px',

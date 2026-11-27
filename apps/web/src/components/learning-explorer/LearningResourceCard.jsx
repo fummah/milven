@@ -1,12 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Button } from 'antd';
-import {
-	BookOutlined, EyeOutlined, FilePdfOutlined, FileTextOutlined, FunctionOutlined,
-	StarFilled
-} from '@ant-design/icons';
-import MathText from '../MathText';
-import { assetUrl, levelLabel } from '../../lib/slideUrls';
+import { EyeOutlined, StarFilled } from '@ant-design/icons';
+import { levelLabel } from '../../lib/slideUrls';
 import { LearningTypeBadge } from './LearningExplorer.jsx';
+import LearningResourceCover from './LearningResourceCover.jsx';
 
 const TYPE_LABELS = {
 	'slide': 'Presentation',
@@ -15,55 +12,38 @@ const TYPE_LABELS = {
 	'summary-sheet': 'Summary'
 };
 
-function ResourcePreview({ resource, variant }) {
-	const [status, setStatus] = useState('loading');
-	const src = resource.thumbnailUrl ? assetUrl(resource.thumbnailUrl) : null;
+function coverFor(resource, variant) {
 	const isPdf = resource.type === 'PDF';
-	const isSlide = variant === 'slide';
-	const isFormula = variant === 'formula-book' && !isPdf;
+	const level = resource.level || resource.course?.level;
+	const volumeName = resource.volume?.name;
+	const learningModuleName = resource.module?.name;
+	const wholeVolume = variant === 'slide' && resource.scope === 'WHOLE_VOLUME';
+	let resourceType = 'SLIDES';
+	let resourceTitle = resource.title;
 
-	useEffect(() => {
-		setStatus(src ? 'loading' : 'fallback');
-	}, [src]);
-
-	if (isFormula) {
-		return (
-			<div className="learning-card-preview learning-card-formula-preview">
-				<div className="learning-formula-grid" aria-hidden="true" />
-				<div className="learning-formula-content">
-					<MathText text={resource.formula || resource.title} tag="div" />
-				</div>
-				<span className="learning-preview-label">Formula</span>
-			</div>
-		);
+	if (variant === 'slide') {
+		resourceType = 'SLIDES';
+		resourceTitle = wholeVolume ? (volumeName || resource.title) : (resource.title || learningModuleName);
+	} else if (variant === 'module-note') {
+		resourceType = 'MODULE_NOTES';
+		resourceTitle = isPdf ? (volumeName || resource.title) : (resource.title || learningModuleName);
+	} else if (variant === 'formula-book') {
+		resourceType = 'FORMULA_BOOK';
+		resourceTitle = isPdf ? (volumeName || learningModuleName || resource.title) : (resource.title || resource.formula || volumeName);
+	} else if (variant === 'summary-sheet') {
+		resourceType = 'SUMMARY_SHEET';
+		resourceTitle = learningModuleName || (isPdf ? volumeName : null) || resource.title;
 	}
 
-	if (src && status !== 'error') {
-		return (
-			<div className={`learning-card-preview ${isSlide ? 'is-slide' : 'is-document'}`}>
-				{status === 'loading' && <span className="learning-preview-loading" aria-hidden="true" />}
-				<img
-					src={src}
-					alt={`${resource.title} preview`}
-					loading="lazy"
-					decoding="async"
-					onLoad={() => setStatus('ready')}
-					onError={() => setStatus('error')}
-					className={status === 'ready' ? 'is-ready' : ''}
-				/>
-			</div>
-		);
-	}
-
-	const isSummary = variant === 'summary-sheet';
-	const icon = isSlide ? <BookOutlined /> : isFormula ? <FunctionOutlined /> : isPdf ? <FilePdfOutlined /> : isSummary ? <FileTextOutlined /> : <BookOutlined />;
-	return (
-		<div className={`learning-card-preview learning-card-preview-fallback ${isSlide ? 'is-slide' : 'is-document'}`}>
-			<div className="learning-preview-lines" aria-hidden="true"><i /><i /><i /></div>
-			<span className="learning-preview-icon">{icon}</span>
-			<span className="learning-preview-label">{isPdf ? 'PDF document' : TYPE_LABELS[variant]}</span>
-		</div>
-	);
+	return {
+		resourceType,
+		resourceTitle,
+		volumeName,
+		learningModuleName,
+		level,
+		curriculumYear: resource.year,
+		wholeVolume
+	};
 }
 
 function metaFor(resource, variant) {
@@ -94,7 +74,7 @@ export default function LearningResourceCard({ resource, variant, onView }) {
 	return (
 		<article className="learning-resource-card">
 			<button type="button" className="learning-card-preview-button" onClick={onView} aria-label={`View ${resource.title}`}>
-				<ResourcePreview resource={resource} variant={variant} />
+				<LearningResourceCover {...coverFor(resource, variant)} />
 			</button>
 			<div className="learning-resource-card-body">
 				<div className="learning-card-kicker">
@@ -128,7 +108,7 @@ export function LearningResourceTitleCell({ resource, variant, onView, metaLines
 		<div className="learning-title-cell">
 			<button type="button" className="learning-title-thumb" onClick={onView} aria-label={`View ${resource.title}`}>
 				<span className="learning-title-thumb-inner">
-					<ResourcePreview resource={resource} variant={variant} />
+					<LearningResourceCover {...coverFor(resource, variant)} compact />
 				</span>
 			</button>
 			<div className="learning-title-content">

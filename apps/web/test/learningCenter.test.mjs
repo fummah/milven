@@ -10,6 +10,7 @@ const layout = read('src/pages/student/StudentLayout.jsx');
 const page = read('src/pages/student/StudentLearning.jsx');
 const cards = read('src/components/learning-center/LearningCenter.jsx');
 const css = read('src/components/learning-center/learning-center.css');
+const globalCss = read('src/index.css');
 
 test('student navigation consolidates all learning resources under Learning', () => {
 	assert.match(layout, /key: 'learning'[\s\S]*Learning Center[\s\S]*Milven Module Notes[\s\S]*Milven Summary Sheets[\s\S]*Milven Formula Book[\s\S]*Milven Slides/);
@@ -76,4 +77,28 @@ test('Learning Center cards are responsive and use a single navigation target', 
 test('Learning Center does not fabricate recent-resource activity', () => {
 	assert.doesNotMatch(page, /Recently Accessed/);
 	assert.doesNotMatch(page, /fabricat/i);
+});
+
+test('collapsed parent navigation uses controlled floating submenus', () => {
+	assert.match(layout, /collapsedOpenKeys/);
+	assert.match(layout, /openKeys=\{collapsed \? collapsedOpenKeys : openKeys\}/);
+	assert.match(layout, /popupClassName: 'student-submenu-popup/);
+	assert.match(layout, /onTitleClick: \(\) => onParentTitleClick/);
+	assert.doesNotMatch(layout, /openKeys=\{collapsed \? \[\] : openKeys\}/);
+});
+
+test('collapsed floating menus support escape, outside click and keyboard activation', () => {
+	assert.match(layout, /event\.key === 'Escape'/);
+	assert.match(layout, /document\.addEventListener\('pointerdown', closeOutside, true\)/);
+	assert.match(layout, /event\.key !== ' ' && event\.key !== 'Spacebar'/);
+	assert.match(layout, /onKeyDown=\{handleCollapsedMenuKeyDown\}/);
+});
+
+test('floating submenu styling is premium, layered and viewport-safe', () => {
+	assert.match(globalCss, /\.student-submenu-popup[\s\S]*z-index: 1050/);
+	assert.match(globalCss, /\.student-submenu-popup \.ant-menu[\s\S]*width: 278px/);
+	assert.match(globalCss, /max-height: min\(70vh, 520px\)/);
+	assert.match(globalCss, /\.student-submenu-popup\.student-submenu-exams \.ant-menu::before/);
+	assert.match(globalCss, /\.modern-sider\.ant-layout-sider-collapsed \.ant-menu-submenu-selected/);
+	assert.match(globalCss, /\.student-submenu-popup \.ant-menu-item:focus-within/);
 });

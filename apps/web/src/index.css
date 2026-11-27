@@ -915,6 +915,137 @@ h1, h2, h3, h4, h5, h6 {
   display: none;
 }
 
+/* Collapsed parent highlight */
+.modern-sider.ant-layout-sider-collapsed .ant-menu-submenu-selected > .ant-menu-submenu-title {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%) !important;
+  border-radius: 12px;
+}
+
+.modern-sider.ant-layout-sider-collapsed .ant-menu-submenu-selected > .ant-menu-submenu-title .menu-icon-badge {
+  box-shadow: 0 0 0 2px #bfdbfe, 0 3px 10px rgba(37, 99, 235, 0.18) !important;
+}
+
+/* Floating student submenus */
+.student-submenu-popup {
+  z-index: 1050 !important;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 44px rgba(16, 36, 62, 0.16), 0 4px 14px rgba(16, 36, 62, 0.06);
+}
+
+.student-submenu-popup .ant-menu {
+  width: 278px;
+  min-width: 250px;
+  max-width: min(290px, calc(100vw - 24px));
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  padding: 12px 8px 8px;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.student-submenu-popup .ant-menu::before {
+  content: 'Learning';
+  display: block;
+  margin: 1px 10px 8px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #eef2f7;
+  color: #102540;
+  font-family: 'Merriweather', Georgia, serif;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.student-submenu-popup.student-submenu-exams .ant-menu::before {
+  content: 'Exams & Practice';
+}
+
+.student-submenu-popup.student-submenu-account .ant-menu::before {
+  content: 'Account & Billing';
+}
+
+.student-submenu-popup .ant-menu-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 9px;
+  height: auto !important;
+  min-height: 42px;
+  margin: 2px 0 !important;
+  padding: 7px 10px !important;
+  border-radius: 8px;
+  color: #334155;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.student-submenu-popup .ant-menu-item > .ant-menu-item-icon {
+  flex: 0 0 28px;
+  margin-inline-end: 0 !important;
+}
+
+.student-submenu-popup .ant-menu-title-content {
+  flex: 1;
+  min-width: 0;
+  margin-inline-start: 0 !important;
+}
+
+.student-submenu-popup .ant-menu-item + .ant-menu-item {
+  margin-top: 2px !important;
+}
+
+.student-submenu-popup .ant-menu-item:hover {
+  background: linear-gradient(135deg, #f8fafc 0%, #eef4ff 100%) !important;
+  transform: none !important;
+}
+
+.student-submenu-popup .ant-menu-item:focus-within {
+  outline: 2px solid #93c5fd;
+  outline-offset: -2px;
+}
+
+.student-submenu-popup .ant-menu-item-selected {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  border-left: 0 !important;
+}
+
+.student-submenu-popup .ant-menu-item-selected::after {
+  display: none !important;
+}
+
+.student-submenu-popup .ant-menu-item a {
+  display: block;
+  min-width: 0;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.student-submenu-popup .ant-menu-item-selected a {
+  color: #1d4ed8 !important;
+  font-weight: 650;
+}
+
+.student-submenu-popup .ant-menu-item .sub-menu-icon-badge {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px;
+  border-radius: 8px !important;
+}
+
+.student-submenu-popup .ant-menu-item .sub-menu-icon-badge span {
+  font-size: 13px !important;
+}
+
 /* Modern Drawer styles */
 .modern-drawer .ant-drawer-header {
   background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
