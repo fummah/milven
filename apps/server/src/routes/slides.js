@@ -961,12 +961,24 @@ export function slidesRouter(prisma) {
     if (!(await ensureCourseAccess(prisma, req.user, courseId))) {
       return res.status(403).json({ error: 'You do not have access to this course.' });
     }
-    const where = { courseId, deletedAt: null, status: 'PUBLISHED', slides: { some: {} } };
+    const volumeId = String(req.query.volumeId || '').trim();
+    const moduleId = String(req.query.moduleId || '').trim();
+    const scope = String(req.query.scope || '').trim();
+    const where = {
+      courseId,
+      deletedAt: null,
+      status: 'PUBLISHED',
+      slides: { some: {} },
+      ...(volumeId ? { volumeId } : {}),
+      ...(moduleId ? { moduleId } : {}),
+      ...(scope ? { scope } : {})
+    };
+    const moduleWhere = moduleId ? where : { ...where, moduleId: { not: null } };
     const [presentations, wholeVolume, slideAgg, moduleGroups] = await Promise.all([
       prisma.presentation.count({ where }),
       prisma.presentation.count({ where: { ...where, scope: 'WHOLE_VOLUME' } }),
       prisma.presentation.aggregate({ where, _sum: { slideCount: true } }),
-      prisma.presentation.groupBy({ by: ['moduleId'], where: { ...where, moduleId: { not: null } } })
+      prisma.presentation.groupBy({ by: ['moduleId'], where: moduleWhere })
     ]);
     return res.json({
       presentations,

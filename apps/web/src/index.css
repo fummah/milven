@@ -27,6 +27,21 @@ html {
   overscroll-behavior: contain;
 }
 
+/* Global header responsive navigation */
+.site-mobile-menu-button {
+	display: none !important;
+}
+
+@media (max-width: 1299px) {
+	.site-desktop-nav {
+		display: none !important;
+	}
+
+	.site-mobile-menu-button {
+		display: inline-flex !important;
+	}
+}
+
 /* Smooth fonts */
 html, body, #root {
 	height: 100%;

@@ -1,33 +1,35 @@
 import React from 'react';
-import { Button, Input, Select, Skeleton, Tag } from 'antd';
+import { Button, Input, Select, Skeleton } from 'antd';
 import {
-	AppstoreOutlined,
-	BookOutlined,
-	CloseOutlined,
-	DownOutlined,
-	FolderOutlined,
-	RightOutlined,
-	SearchOutlined
+	AppstoreOutlined, BookOutlined, CloseOutlined, DownOutlined, FilePptOutlined,
+	FileTextOutlined, FolderOutlined, RightOutlined, SearchOutlined
 } from '@ant-design/icons';
 
 const LEVEL_LABELS = { LEVEL1: 'Level I', LEVEL2: 'Level II', LEVEL3: 'Level III' };
+
+function StopPropagation({ children }) {
+	return <span onClick={event => event.stopPropagation()}>{children}</span>;
+}
 
 export default function StudentResourceSidebar({
 	title,
 	icon,
 	allLabel,
-	courses,
+	courses = [],
 	courseId,
 	onCourseChange,
-	volumes,
+	volumes = [],
 	totalCount,
 	selectedVolumeId,
 	selectedModuleId,
-	expandedVolumes,
+	wholeVolumeSelected = false,
+	expandedVolumes = new Set(),
 	onToggleVolume,
 	onSelectAll,
 	onSelectVolume,
 	onSelectModule,
+	onSelectWholeVolume,
+	wholeVolumeLabel = 'Whole Volume Review',
 	activeLabel,
 	onClearFilter,
 	treeSearch,
@@ -39,53 +41,44 @@ export default function StudentResourceSidebar({
 	error,
 	showModules = true
 }) {
-	const courseOptions = [
-		...(courses.length > 1 ? [{ value: null, label: 'All My Courses' }] : []),
-		...courses.map(course => ({
-			value: course.id,
-			label: `${course.name} (${LEVEL_LABELS[course.level] || course.level || 'Course'})`
-		}))
-	];
+	const courseOptions = courses.map(course => ({
+		value: course.id,
+		label: `${course.name} (${LEVEL_LABELS[course.level] || course.level || 'Course'})`
+	}));
 
 	return (
 		<>
 			{isMobile && open && (
-				<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 40 }} onClick={onClose} />
+				<div className="learning-sidebar-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(2,8,23,0.44)', zIndex: 1040 }} onClick={onClose} />
 			)}
 
 			<aside
 				aria-label={`${title} navigation`}
-				style={{
-					width: isMobile ? '85vw' : 290,
-					minWidth: isMobile ? undefined : 260,
-					maxWidth: isMobile ? 360 : 310,
-					borderRight: '1px solid #e2e8f0',
-					background: '#fff',
-					display: 'flex',
-					flexDirection: 'column',
-					overflow: 'hidden',
-					...(isMobile ? {
-						position: 'fixed',
-						left: open ? 0 : '-100%',
-						top: 0,
-						bottom: 0,
-						zIndex: 50,
-						transition: 'left 0.3s ease',
-						boxShadow: open ? '4px 0 16px rgba(0,0,0,0.12)' : undefined
-					} : {})
-				}}
+				className="learning-sidebar"
+				style={isMobile ? {
+					position: 'fixed',
+					left: open ? 0 : '-110%',
+					top: 0,
+					bottom: 0,
+					zIndex: 1050,
+					width: 'min(340px, 88vw)',
+					maxHeight: '100vh',
+					borderRadius: 0,
+					transition: 'left 240ms ease',
+					boxShadow: open ? '18px 0 48px rgba(2,8,23,0.28)' : undefined
+				} : undefined}
 			>
-				<div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', display: 'flex', alignItems: 'center', gap: 10 }}>
-					{icon}
-					<span style={{ fontWeight: 700, fontSize: 15, color: '#fff', flex: 1 }}>{title}</span>
-					{isMobile && <Button type="text" aria-label={`Close ${title} navigation`} icon={<CloseOutlined style={{ color: '#fff' }} />} size="small" onClick={onClose} />}
+				<div className="learning-sidebar-header">
+					<span className="learning-sidebar-header-icon">{icon}</span>
+					<span className="learning-sidebar-header-title">{title}</span>
+					{isMobile && <Button type="text" className="learning-sidebar-mobile-close" aria-label={`Close ${title} navigation`} icon={<CloseOutlined />} size="small" onClick={onClose} />}
 				</div>
 
-				<div style={{ padding: '10px 12px', borderBottom: '1px solid #f0f0f0', background: '#f8fafc' }}>
+				<div className="learning-sidebar-course">
 					<Select
 						aria-label="Select course"
 						placeholder={courses.length ? 'Select Course' : 'No accessible courses'}
-						value={courseId ?? null}
+						value={courseId ?? undefined}
 						disabled={!courses.length}
 						onChange={onCourseChange}
 						options={courseOptions}
@@ -96,7 +89,7 @@ export default function StudentResourceSidebar({
 					/>
 				</div>
 
-				<div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0' }}>
+				<div className="learning-sidebar-search">
 					<Input
 						prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
 						placeholder="Search curriculum..."
@@ -108,125 +101,140 @@ export default function StudentResourceSidebar({
 				</div>
 
 				{activeLabel && (
-					<div style={{ padding: '6px 12px', background: '#eff6ff', borderBottom: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: 6 }}>
-						<Tag color="blue" style={{ margin: 0, fontSize: 11, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeLabel}</Tag>
-						<Button type="link" size="small" style={{ fontSize: 11, padding: 0 }} onClick={onClearFilter}>Clear</Button>
+					<div className="learning-sidebar-active-filter">
+						<span className="learning-sidebar-filter-text">{activeLabel}</span>
+						<Button type="link" size="small" onClick={onClearFilter}>Clear</Button>
 					</div>
 				)}
 
-				<div style={{ flex: 1, overflowY: 'auto' }}>
+				<div className="learning-sidebar-scroll">
 					{loading ? (
-						<div style={{ padding: 20 }}><Skeleton active paragraph={{ rows: 6 }} /></div>
+						<div className="learning-sidebar-state"><Skeleton active paragraph={{ rows: 6 }} /></div>
 					) : error ? (
-						<div style={{ padding: 24, textAlign: 'center', color: '#b91c1c', fontSize: 13 }}>{error}</div>
+						<div className="learning-sidebar-state is-error">{error}</div>
 					) : (
 						<>
 							<div
+								className={`learning-sidebar-row ${!selectedVolumeId ? 'is-active' : ''}`}
+								role="button"
+								tabIndex={0}
 								onClick={onSelectAll}
+								onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelectAll(); } }}
 								aria-current={!selectedVolumeId ? 'true' : undefined}
-								style={{
-									display: 'flex',
-									alignItems: 'center',
-									gap: 8,
-									padding: '9px 14px',
-									cursor: 'pointer',
-									background: !selectedVolumeId ? '#eff6ff' : 'transparent',
-									borderLeft: !selectedVolumeId ? '3px solid #2563eb' : '3px solid transparent'
-								}}
 							>
-								<AppstoreOutlined style={{ fontSize: 13, color: '#2563eb' }} />
-								<span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', flex: 1 }}>{allLabel}</span>
-								<Tag style={{ margin: 0, fontSize: 10 }}>{totalCount || 0}</Tag>
+								<span className="learning-sidebar-row-icon"><AppstoreOutlined /></span>
+								<span className="learning-sidebar-row-content">
+									<span className="learning-sidebar-row-title">{allLabel}</span>
+								</span>
+								<span className="learning-sidebar-count">{totalCount || 0}</span>
 							</div>
 
 							{volumes.length === 0 ? (
-								<div style={{ padding: 32, textAlign: 'center', color: '#94a3b8' }}>
-									<FolderOutlined style={{ fontSize: 28, opacity: 0.4 }} />
-									<div style={{ fontSize: 13, marginTop: 8 }}>No curriculum items</div>
+								<div className="learning-sidebar-empty">
+									<FolderOutlined style={{ fontSize: 24, opacity: 0.35 }} />
+									<div style={{ marginTop: 7 }}>No curriculum items</div>
 								</div>
 							) : volumes.map(volume => {
-								const active = showModules
-									? selectedVolumeId === volume.id && !selectedModuleId
+								const volumeActive = showModules
+									? selectedVolumeId === volume.id && !selectedModuleId && !wholeVolumeSelected
 									: selectedVolumeId === volume.id;
-								const expanded = showModules && expandedVolumes.has(volume.id);
+								const expanded = showModules && expandedVolumes?.has(volume.id);
+								const wholeVolumeCount = volume.wholeVolumeCount || 0;
+
 								if (!showModules) {
 									return (
 										<div
 											key={volume.id}
+											className={`learning-sidebar-row ${volumeActive ? 'is-active' : ''}`}
+											role="button"
+											tabIndex={0}
 											onClick={() => onSelectVolume(volume)}
-											aria-current={active ? 'true' : undefined}
-											style={{
-												display: 'flex',
-												alignItems: 'center',
-												gap: 8,
-												padding: '9px 14px',
-												cursor: 'pointer',
-												background: active ? '#eff6ff' : 'transparent',
-												borderLeft: active ? '3px solid #2563eb' : '3px solid transparent'
-											}}
+											onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelectVolume(volume); } }}
+											aria-current={volumeActive ? 'true' : undefined}
 										>
-											<BookOutlined style={{ fontSize: 13, color: '#2563eb' }} />
-											<span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{volume.name}</span>
-											<Tag style={{ margin: 0, fontSize: 10 }}>{volume.resourceCount || 0}</Tag>
+											<span className="learning-sidebar-row-icon"><BookOutlined /></span>
+											<span className="learning-sidebar-row-content">
+												<span className="learning-sidebar-row-title">{volume.name}</span>
+											</span>
+											<span className="learning-sidebar-count">{volume.resourceCount || 0}</span>
 										</div>
 									);
 								}
+
 								return (
 									<div key={volume.id}>
 										<div
-											onClick={() => onToggleVolume(volume.id)}
+											className={`learning-sidebar-row ${volumeActive ? 'is-active' : ''}`}
+											role="button"
+											tabIndex={0}
+											onClick={() => onToggleVolume?.(volume.id)}
+											onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onToggleVolume?.(volume.id); } }}
 											aria-expanded={expanded}
-											style={{
-												display: 'flex',
-												alignItems: 'center',
-												gap: 8,
-												padding: '9px 14px',
-												cursor: 'pointer',
-												background: active ? '#eff6ff' : 'transparent',
-												borderLeft: active ? '3px solid #2563eb' : '3px solid transparent'
-											}}
 										>
-											{expanded ? <DownOutlined style={{ fontSize: 10, color: '#2563eb' }} /> : <RightOutlined style={{ fontSize: 10, color: '#94a3b8' }} />}
-											<span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{volume.name}</span>
-											<Tag style={{ margin: 0, fontSize: 10 }}>{volume.resourceCount || 0}</Tag>
 											<Button
 												type="text"
-												size="small"
-												aria-label={`Filter by ${volume.name}`}
-												style={{ fontSize: 10, padding: '0 4px', height: 20, color: '#2563eb' }}
-												onClick={event => {
-													event.stopPropagation();
-													onSelectVolume(volume);
-												}}
-											>
-												Filter
-											</Button>
+												className="learning-sidebar-expand"
+												aria-label={expanded ? `Collapse ${volume.name}` : `Expand ${volume.name}`}
+												icon={expanded ? <DownOutlined /> : <RightOutlined />}
+												onClick={event => { event.stopPropagation(); onToggleVolume?.(volume.id); }}
+											/>
+											<span className="learning-sidebar-row-icon"><BookOutlined /></span>
+											<span className="learning-sidebar-row-content">
+												<span className="learning-sidebar-row-title">{volume.name}</span>
+												<span className="learning-sidebar-row-meta">
+													<span className="learning-sidebar-count">{volume.resourceCount || 0}</span>
+													{(volume.resourceCount || 0) > 0 && (
+														<StopPropagation>
+															<Button
+																type="text"
+																className="learning-sidebar-filter-action"
+																aria-label={`Filter by ${volume.name}`}
+																onClick={() => onSelectVolume(volume)}
+															>
+																Filter
+															</Button>
+														</StopPropagation>
+													)}
+												</span>
+											</span>
 										</div>
 										{expanded && (
-											<div style={{ marginLeft: 12, borderLeft: '1px solid #e2e8f0' }}>
-												{volume.modules.map(module => {
+											<div>
+												{(volume.modules || []).map(module => {
 													const moduleActive = selectedModuleId === module.id;
 													return (
 														<div
 															key={module.id}
-															onClick={() => onSelectModule(module, volume)}
+															className={`learning-sidebar-row learning-sidebar-module ${moduleActive ? 'is-active' : ''}`}
+															role="button"
+															tabIndex={0}
+															onClick={() => onSelectModule?.(module, volume)}
+															onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelectModule?.(module, volume); } }}
 															aria-current={moduleActive ? 'true' : undefined}
-															style={{
-																display: 'flex',
-																alignItems: 'center',
-																gap: 6,
-																padding: '7px 10px 7px 16px',
-																cursor: 'pointer',
-																background: moduleActive ? '#f0fdf4' : 'transparent',
-																borderLeft: moduleActive ? '3px solid #16a34a' : '3px solid transparent'
-															}}
 														>
-															<AppstoreOutlined style={{ fontSize: 12, color: module.resourceCount ? '#16a34a' : '#cbd5e1' }} />
-															<span style={{ fontSize: 12, color: '#334155', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{module.name}</span>
-															<span style={{ fontSize: 10, color: module.resourceCount ? '#16a34a' : '#cbd5e1' }}>{module.resourceCount || 0}</span>
+															<span className="learning-sidebar-row-icon"><AppstoreOutlined /></span>
+															<span className="learning-sidebar-row-content">
+																<span className="learning-sidebar-row-title">{module.name}</span>
+															</span>
+															<span className="learning-sidebar-count">{module.resourceCount || 0}</span>
 														</div>
 													);
 												})}
+												{wholeVolumeCount > 0 && (
+													<div
+														className={`learning-sidebar-row learning-sidebar-module ${wholeVolumeSelected && selectedVolumeId === volume.id ? 'is-active' : ''}`}
+														role="button"
+														tabIndex={0}
+														onClick={() => onSelectWholeVolume?.(volume)}
+														onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelectWholeVolume?.(volume); } }}
+													>
+														<span className="learning-sidebar-row-icon"><FileTextOutlined /></span>
+														<span className="learning-sidebar-row-content">
+															<span className="learning-sidebar-row-title">{wholeVolumeLabel}</span>
+														</span>
+														<span className="learning-sidebar-count">{wholeVolumeCount}</span>
+													</div>
+												)}
 											</div>
 										)}
 									</div>

@@ -143,7 +143,7 @@ function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent,
 					transition={{ duration: 0.4, ease: 'easeOut' }}
 				/>
 			</Link>
-			<div className="hidden md:flex items-center gap-6 text-gray-700" style={{ flex: 1 }}>
+			<div className="site-desktop-nav hidden md:flex items-center gap-6 text-gray-700" style={{ flex: 1 }}>
 				{user ? (
 					<Link
 					to={user.role === 'ADMIN' ? '/admin' : '/student'}
@@ -198,36 +198,35 @@ function PublicHeader({ logoUrl, brandName, exploreMenu, exploreDropdownContent,
 				</Dropdown>
 			</div>
 			<div className="flex items-center gap-3">
-				{!screens.md && (
-					<>
-						<Button
-							type="text"
-							icon={<MenuOutlined />}
-							onClick={() => setMobileNavOpen(true)}
-							style={{ width: 40, height: 40 }}
+				<>
+					<Button
+						className="site-mobile-menu-button"
+						type="text"
+						icon={<MenuOutlined />}
+						onClick={() => setMobileNavOpen(true)}
+						style={{ width: 40, height: 40 }}
+					/>
+					<Drawer
+						title={brandName}
+						placement="left"
+						open={mobileNavOpen}
+						onClose={() => setMobileNavOpen(false)}
+						width={Math.min(320, typeof window !== 'undefined' ? window.innerWidth * 0.86 : 320)}
+					>
+						<Menu
+							mode="inline"
+							items={mobileMenuItems}
+							onClick={() => setMobileNavOpen(false)}
 						/>
-						<Drawer
-							title={brandName}
-							placement="left"
-							open={mobileNavOpen}
-							onClose={() => setMobileNavOpen(false)}
-							width={Math.min(320, typeof window !== 'undefined' ? window.innerWidth * 0.86 : 320)}
-						>
-							<Menu
-								mode="inline"
-								items={mobileMenuItems}
-								onClick={() => setMobileNavOpen(false)}
-							/>
-							{user?.role === 'STUDENT' && courseInProgress && !location.pathname.startsWith('/admin') && (
-								<div style={{ marginTop: 16 }}>
-									<Button block type="primary" icon={<PlayCircleFilled />} onClick={() => { setMobileNavOpen(false); navigate(`/student/learn/${courseInProgress.courseId}`); }}>
-										Continue Learning
-									</Button>
-								</div>
-							)}
-						</Drawer>
-					</>
-				)}
+						{user?.role === 'STUDENT' && courseInProgress && !location.pathname.startsWith('/admin') && (
+							<div style={{ marginTop: 16 }}>
+								<Button block type="primary" icon={<PlayCircleFilled />} onClick={() => { setMobileNavOpen(false); navigate(`/student/learn/${courseInProgress.courseId}`); }}>
+									Continue Learning
+								</Button>
+							</div>
+						)}
+					</Drawer>
+				</>
 				<div className="hidden md:block h-6 w-px bg-gray-200 mr-1" />
 				<motion.div
 					animate={{ scale: [1, 1.02, 1] }}

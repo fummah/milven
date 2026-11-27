@@ -1,616 +1,660 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Alert, Button, Pagination, Table, Tag, Typography, Grid } from 'antd';
 import {
-  Alert, Button, Card, Col, Empty, Input, Pagination, Row, Select, Skeleton, Space, Tag,
-  Typography, Grid, Drawer, Table, Tooltip
-} from 'antd';
-import {
-  ArrowLeftOutlined, ArrowRightOutlined, BookOutlined, CloseOutlined, DownOutlined,
-  FilePptOutlined, FileTextOutlined, FolderOutlined, FunctionOutlined, MenuOutlined,
-  RightOutlined, SearchOutlined, SnippetsOutlined, AppstoreOutlined, TableOutlined, EyeOutlined
+	AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, BookOutlined,
+	EyeOutlined, FilePptOutlined, FileTextOutlined, FolderOutlined, FunctionOutlined,
+	MenuOutlined, SearchOutlined, SnippetsOutlined
 } from '@ant-design/icons';
 import { api } from '../../lib/api';
 import { assetUrl, highlightParts, levelLabel, presentationViewerPath } from '../../lib/slideUrls';
+import StudentResourceSidebar from '../../components/resources/StudentResourceSidebar';
+import {
+	LearningExplorerHero, LearningExplorerLayout, LearningResourceEmptyState,
+	LearningResourceHeader, LearningResourceSkeleton, LearningResourceStats
+} from '../../components/learning-explorer/LearningExplorer.jsx';
+import LearningResourceCard, { LearningResourceTitleCell } from '../../components/learning-explorer/LearningResourceCard.jsx';
+import { markExplorerReturn, useExplorerScrollMemory } from '../../lib/explorerSession.js';
 
-const { Text, Title, Paragraph } = Typography;
+const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
+const SESSION_SCOPE = 'slides';
+
 export default function StudentSlides() {
-  const navigate = useNavigate();
-  const screens = useBreakpoint();
-  const isMobile = !screens.md;
-  const [searchParams] = useSearchParams();
-  const initial = useRef({
-    courseId: searchParams.get('courseId') || '',
-    volumeId: searchParams.get('volumeId') || '',
-    moduleId: searchParams.get('moduleId') || '',
-    scope: searchParams.get('scope') || '',
-    q: searchParams.get('q') || ''
-  });
+	const navigate = useNavigate();
+	const screens = useBreakpoint();
+	const isMobile = !screens.xl;
+	const [searchParams, setSearchParams] = useSearchParams();
+	const initial = useRef({
+		courseId: searchParams.get('courseId') || '',
+		volumeId: searchParams.get('volumeId') || '',
+		moduleId: searchParams.get('moduleId') || '',
+		scope: searchParams.get('scope') || '',
+		q: searchParams.get('q') || '',
+		page: Number(searchParams.get('page') || 1)
+	});
 
-  const [courses, setCourses] = useState([]);
-  const [coursesLoaded, setCoursesLoaded] = useState(false);
-  const [courseId, setCourseId] = useState(undefined);
-  const [volumes, setVolumes] = useState([]);
-  const [hierarchyLoading, setHierarchyLoading] = useState(false);
-  const [selectedVolumeId, setSelectedVolumeId] = useState(undefined);
-  const [selectedModuleId, setSelectedModuleId] = useState(undefined);
-  const [wholeVolumeOnly, setWholeVolumeOnly] = useState(false);
-  const [expandedVolumes, setExpandedVolumes] = useState(new Set());
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+	const [courses, setCourses] = useState([]);
+	const [coursesLoaded, setCoursesLoaded] = useState(false);
+	const [courseId, setCourseId] = useState(undefined);
+	const [volumes, setVolumes] = useState([]);
+	const [hierarchyLoading, setHierarchyLoading] = useState(false);
+	const [selectedVolumeId, setSelectedVolumeId] = useState(undefined);
+	const [selectedModuleId, setSelectedModuleId] = useState(undefined);
+	const [wholeVolumeOnly, setWholeVolumeOnly] = useState(false);
+	const [expandedVolumes, setExpandedVolumes] = useState(new Set());
+	const [sidebarOpen, setSidebarOpen] = useState(false);
+	const [treeSearch, setTreeSearch] = useState('');
 
-  const [presentations, setPresentations] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [stats, setStats] = useState(null);
-  const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.student-slides.view') || 'table');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(24);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+	const [presentations, setPresentations] = useState([]);
+	const [total, setTotal] = useState(0);
+	const [stats, setStats] = useState(null);
+	const [viewMode, setViewMode] = useState(() => localStorage.getItem('milven.student-slides.view') || 'table');
+	const [page, setPage] = useState(initial.current.page || 1);
+	const [pageSize, setPageSize] = useState(24);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState('');
+	const [reloadKey, setReloadKey] = useState(0);
 
-  const [searchInput, setSearchInput] = useState(initial.current.q);
-  const [searchTerm, setSearchTerm] = useState(initial.current.q);
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchTotal, setSearchTotal] = useState(0);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState('');
+	const [searchInput, setSearchInput] = useState(initial.current.q);
+	const [searchTerm, setSearchTerm] = useState(initial.current.q);
+	const [searchResults, setSearchResults] = useState([]);
+	const [searchTotal, setSearchTotal] = useState(0);
+	const [searching, setSearching] = useState(false);
+	const [searchError, setSearchError] = useState('');
 
-  useEffect(() => {
-    api.get('/api/slides/library/courses')
-      .then(res => {
-        const list = res.data?.courses || [];
-        setCourses(list);
-        const requested = initial.current.courseId;
-        const chosen = list.find(c => c.id === requested)?.id || list[0]?.id;
-        setCourseId(chosen);
-      })
-      .catch(() => setError('Could not load your enrolled courses.'))
-      .finally(() => setCoursesLoaded(true));
-  }, []);
+	const initialNavigationApplied = useRef(false);
+	const hierarchySequence = useRef(0);
+	const listSequence = useRef(0);
+	const statsSequence = useRef(0);
 
-  useEffect(() => {
-    if (!courseId) {
-      setVolumes([]);
-      setStats(null);
-      setHierarchyLoading(false);
-      return undefined;
-    }
-    api.get('/api/slides/library/stats', { params: { courseId } }).then(res => setStats(res.data || null)).catch(() => setStats(null));
-    setHierarchyLoading(true);
-    setPresentations([]);
-    api.get('/api/slides/library/hierarchy', { params: { courseId } })
-      .then(res => {
-        const list = res.data?.volumes || [];
-        setVolumes(list);
-        const requestedVolume = initial.current.volumeId;
-        const requestedModule = initial.current.moduleId;
-        const volume = list.find(v => v.id === requestedVolume);
-        if (volume) {
-          setSelectedVolumeId(volume.id);
-          setExpandedVolumes(new Set([volume.id]));
-          if (requestedModule && volume.modules.some(m => m.id === requestedModule)) {
-            setSelectedModuleId(requestedModule);
-          } else if (initial.current.scope === 'WHOLE_VOLUME') {
-            setWholeVolumeOnly(true);
-          }
-        } else {
-          setSelectedVolumeId(undefined);
-          setSelectedModuleId(undefined);
-          setWholeVolumeOnly(false);
-        }
-        initial.current.volumeId = '';
-        initial.current.moduleId = '';
-        initial.current.scope = '';
-      })
-      .catch(() => {
-        setVolumes([]);
-        setError('Could not load the slides hierarchy for this course.');
-      })
-      .finally(() => setHierarchyLoading(false));
-  }, [courseId]);
+	useExplorerScrollMemory(SESSION_SCOPE, !loading && !searching && coursesLoaded);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearchTerm(searchInput.trim());
-      setPage(1);
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+	useEffect(() => {
+		api.get('/api/slides/library/courses')
+			.then(res => {
+				const list = res.data?.courses || [];
+				setCourses(list);
+				const requested = initial.current.courseId;
+				const chosen = list.find(c => c.id === requested)?.id || list[0]?.id;
+				setCourseId(chosen);
+			})
+			.catch(() => setError('Could not load your enrolled courses.'))
+			.finally(() => setCoursesLoaded(true));
+	}, []);
 
-  useEffect(() => {
-    if (!courseId) {
-      setLoading(false);
-      setPresentations([]);
-      setTotal(0);
-      setSearchResults([]);
-      setSearchTotal(0);
-      return undefined;
-    }
-    const term = searchTerm.trim();
-    if (term.length >= 2) {
-      setSearching(true);
-      setSearchError('');
-      const params = { q: term, page, limit: pageSize, courseId };
-      if (selectedVolumeId) params.volumeId = selectedVolumeId;
-      if (selectedModuleId) params.moduleId = selectedModuleId;
-      api.get('/api/slides/search', { params })
-        .then(res => {
-          setSearchResults(res.data?.results || []);
-          setSearchTotal(res.data?.total || 0);
-        })
-        .catch(err => {
-          setSearchResults([]);
-          setSearchTotal(0);
-          setSearchError(err?.response?.data?.error || 'Search is temporarily unavailable.');
-        })
-        .finally(() => setSearching(false));
-      return;
-    }
+	useEffect(() => {
+		if (!courseId) {
+			setVolumes([]);
+			setStats(null);
+			setHierarchyLoading(false);
+			return undefined;
+		}
+		const sequence = ++hierarchySequence.current;
+		setHierarchyLoading(true);
+		setPresentations([]);
+		api.get('/api/slides/library/hierarchy', { params: { courseId } })
+			.then(res => {
+				if (sequence !== hierarchySequence.current) return;
+				const list = res.data?.volumes || [];
+				setVolumes(list);
+				if (!initialNavigationApplied.current) {
+					const requestedVolume = initial.current.volumeId;
+					const requestedModule = initial.current.moduleId;
+					const volume = list.find(v => v.id === requestedVolume);
+					if (volume) {
+						setSelectedVolumeId(volume.id);
+						setExpandedVolumes(new Set([volume.id]));
+						if (requestedModule && volume.modules.some(m => m.id === requestedModule)) {
+							setSelectedModuleId(requestedModule);
+						} else if (initial.current.scope === 'WHOLE_VOLUME') {
+							setWholeVolumeOnly(true);
+						}
+					} else {
+						setSelectedVolumeId(undefined);
+						setSelectedModuleId(undefined);
+						setWholeVolumeOnly(false);
+					}
+					initialNavigationApplied.current = true;
+				}
+			})
+			.catch(() => {
+				if (sequence !== hierarchySequence.current) return;
+				setVolumes([]);
+				setError('Could not load the slides hierarchy for this course.');
+			})
+			.finally(() => {
+				if (sequence === hierarchySequence.current) setHierarchyLoading(false);
+			});
+		return () => { hierarchySequence.current += 1; };
+	}, [courseId]);
 
-    setLoading(true);
-    setError('');
-    const params = { courseId, page, limit: pageSize };
-    if (selectedVolumeId) params.volumeId = selectedVolumeId;
-    if (selectedModuleId) params.moduleId = selectedModuleId;
-    if (wholeVolumeOnly) params.scope = 'WHOLE_VOLUME';
-    api.get('/api/slides/library/presentations', { params })
-      .then(res => {
-        setPresentations(res.data?.presentations || []);
-        setTotal(res.data?.total || 0);
-      })
-      .catch(err => {
-        setPresentations([]);
-        setTotal(0);
-        setError(err?.response?.data?.error || 'Could not load presentations.');
-      })
-      .finally(() => setLoading(false));
-  }, [courseId, selectedVolumeId, selectedModuleId, wholeVolumeOnly, page, pageSize, searchTerm]);
+	useEffect(() => {
+		if (!courseId) return undefined;
+		const sequence = ++statsSequence.current;
+		const params = { courseId };
+		if (selectedVolumeId) params.volumeId = selectedVolumeId;
+		if (selectedModuleId) params.moduleId = selectedModuleId;
+		if (wholeVolumeOnly) params.scope = 'WHOLE_VOLUME';
+		api.get('/api/slides/library/stats', { params })
+			.then(res => {
+				if (sequence === statsSequence.current) setStats(res.data || null);
+			})
+			.catch(() => {
+				if (sequence === statsSequence.current) setStats(null);
+			});
+		return () => { statsSequence.current += 1; };
+	}, [courseId, selectedVolumeId, selectedModuleId, wholeVolumeOnly]);
 
-  const course = courses.find(c => c.id === courseId);
-  const selectedVolume = volumes.find(v => v.id === selectedVolumeId);
-  const selectedModule = selectedVolume?.modules?.find(m => m.id === selectedModuleId);
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			setSearchTerm(searchInput.trim());
+			setPage(1);
+		}, 350);
+		return () => clearTimeout(timer);
+	}, [searchInput]);
 
-  const flatModules = useMemo(() => {
-    const rows = [];
-    volumes
-      .slice()
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name))
-      .forEach(volume => {
-        volume.modules.forEach(module => {
-          if ((module.presentationCount || 0) > 0) {
-            rows.push({ ...module, volumeId: volume.id, volumeName: volume.name });
-          }
-        });
-      });
-    return rows;
-  }, [volumes]);
+	useEffect(() => {
+		if (!courseId) {
+			setLoading(false);
+			setPresentations([]);
+			setTotal(0);
+			setSearchResults([]);
+			setSearchTotal(0);
+			return undefined;
+		}
+		const sequence = ++listSequence.current;
+		const term = searchTerm.trim();
+		if (term.length >= 2) {
+			setSearching(true);
+			setSearchError('');
+			const params = { q: term, page, limit: pageSize, courseId };
+			if (selectedVolumeId) params.volumeId = selectedVolumeId;
+			if (selectedModuleId) params.moduleId = selectedModuleId;
+			api.get('/api/slides/search', { params })
+				.then(res => {
+					if (sequence !== listSequence.current) return;
+					setSearchResults(res.data?.results || []);
+					setSearchTotal(res.data?.total || 0);
+				})
+				.catch(err => {
+					if (sequence !== listSequence.current) return;
+					setSearchResults([]);
+					setSearchTotal(0);
+					setSearchError(err?.response?.data?.error || 'Search is temporarily unavailable.');
+				})
+				.finally(() => {
+					if (sequence === listSequence.current) setSearching(false);
+				});
+			return () => { listSequence.current += 1; };
+		}
 
-  const moduleIndex = selectedModuleId ? flatModules.findIndex(m => m.id === selectedModuleId) : -1;
-  const previousModule = moduleIndex > 0 ? flatModules[moduleIndex - 1] : null;
-  const nextModule = moduleIndex >= 0 && moduleIndex < flatModules.length - 1 ? flatModules[moduleIndex + 1] : null;
+		setLoading(true);
+		setError('');
+		const params = { courseId, page, limit: pageSize };
+		if (selectedVolumeId) params.volumeId = selectedVolumeId;
+		if (selectedModuleId) params.moduleId = selectedModuleId;
+		if (wholeVolumeOnly) params.scope = 'WHOLE_VOLUME';
+		api.get('/api/slides/library/presentations', { params })
+			.then(res => {
+				if (sequence !== listSequence.current) return;
+				setPresentations(res.data?.presentations || []);
+				setTotal(res.data?.total || 0);
+			})
+			.catch(err => {
+				if (sequence !== listSequence.current) return;
+				setPresentations([]);
+				setTotal(0);
+				setError(err?.response?.data?.error || 'Could not load presentations.');
+			})
+			.finally(() => {
+				if (sequence === listSequence.current) setLoading(false);
+			});
+		return () => { listSequence.current += 1; };
+	}, [courseId, selectedVolumeId, selectedModuleId, wholeVolumeOnly, page, pageSize, searchTerm, reloadKey]);
 
-  const selectAll = () => {
-    setSelectedVolumeId(undefined);
-    setSelectedModuleId(undefined);
-    setWholeVolumeOnly(false);
-    setPage(1);
-    if (isMobile) setSidebarOpen(false);
-  };
+	useEffect(() => {
+		if (!courseId) return;
+		const next = new URLSearchParams(searchParams);
+		const values = {
+			courseId,
+			volumeId: selectedVolumeId || '',
+			moduleId: selectedModuleId || '',
+			scope: wholeVolumeOnly ? 'WHOLE_VOLUME' : '',
+			q: searchTerm || '',
+			page: page > 1 ? String(page) : ''
+		};
+		Object.entries(values).forEach(([key, value]) => {
+			if (value) next.set(key, value);
+			else next.delete(key);
+		});
+		if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
+	}, [courseId, selectedVolumeId, selectedModuleId, wholeVolumeOnly, searchTerm, page, searchParams, setSearchParams]);
 
-  const selectVolume = (volume, whole = false) => {
-    setSelectedVolumeId(volume.id);
-    setSelectedModuleId(undefined);
-    setWholeVolumeOnly(whole);
-    setPage(1);
-    if (isMobile) setSidebarOpen(false);
-  };
+	const course = courses.find(c => c.id === courseId);
+	const selectedVolume = volumes.find(v => v.id === selectedVolumeId);
+	const selectedModule = selectedVolume?.modules?.find(m => m.id === selectedModuleId);
 
-  const selectModule = (module, volume) => {
-    setSelectedVolumeId(volume.id);
-    setSelectedModuleId(module.id);
-    setWholeVolumeOnly(false);
-    setPage(1);
-    if (isMobile) setSidebarOpen(false);
-  };
+	const flatModules = useMemo(() => {
+		const rows = [];
+		volumes
+			.slice()
+			.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name))
+			.forEach(volume => {
+				(volume.modules || []).forEach(module => {
+					if ((module.presentationCount || 0) > 0) rows.push({ ...module, volumeId: volume.id, volumeName: volume.name });
+				});
+			});
+		return rows;
+	}, [volumes]);
 
-  const goToModule = (module) => {
-    const volume = volumes.find(v => v.id === module.volumeId);
-    if (volume) selectModule(module, volume);
-    setExpandedVolumes(prev => new Set([...prev, module.volumeId]));
-  };
+	const sidebarVolumes = useMemo(() => {
+		const term = treeSearch.toLowerCase().trim();
+		const rows = volumes.map(volume => ({
+			...volume,
+			resourceCount: volume.presentationCount ?? volume.resourceCount ?? 0,
+			modules: (volume.modules || []).map(module => ({
+				...module,
+				resourceCount: module.presentationCount ?? module.resourceCount ?? 0
+			}))
+		}));
+		if (!term) return rows;
+		return rows.filter(volume => (
+			volume.name?.toLowerCase().includes(term)
+			|| volume.modules.some(module => module.name?.toLowerCase().includes(term))
+		));
+	}, [volumes, treeSearch]);
 
-  const openPresentation = (presentation, slideNumber) => {
-    navigate(presentationViewerPath(presentation.id, slideNumber));
-  };
+	const moduleIndex = selectedModuleId ? flatModules.findIndex(m => m.id === selectedModuleId) : -1;
+	const previousModule = moduleIndex > 0 ? flatModules[moduleIndex - 1] : null;
+	const nextModule = moduleIndex >= 0 && moduleIndex < flatModules.length - 1 ? flatModules[moduleIndex + 1] : null;
 
-  const changeView = mode => {
-    setViewMode(mode);
-    try { localStorage.setItem('milven.student-slides.view', mode); } catch {}
-  };
+	const selectAll = () => {
+		setSelectedVolumeId(undefined);
+		setSelectedModuleId(undefined);
+		setWholeVolumeOnly(false);
+		setPage(1);
+		if (isMobile) setSidebarOpen(false);
+	};
 
-  const presentationColumns = [
-    {
-      title: 'Presentation', key: 'presentation', width: 360,
-      render: (_, presentation) => (
-        <Space align="start">
-          <PresentationThumb presentation={presentation} onOpen={() => openPresentation(presentation)} compact />
-          <div style={{ minWidth: 0 }}>
-            <Text strong style={{ color: '#102540', display: 'block' }} ellipsis={{ tooltip: presentation.title }}>{presentation.title}</Text>
-          </div>
-        </Space>
-      )
-    },
-    { title: 'Level', key: 'level', width: 95, render: (_, p) => <Tag color={p.course?.level === 'LEVEL1' ? 'blue' : p.course?.level === 'LEVEL2' ? 'purple' : 'gold'}>{levelLabel(p.course?.level)}</Tag> },
-    { title: 'Volume', key: 'volume', width: 150, render: (_, p) => p.volume?.name || <Text type="secondary">-</Text> },
-    { title: 'Learning Module', key: 'module', width: 200, render: (_, p) => p.scope === 'WHOLE_VOLUME' ? <Tag color="gold">Whole Volume Review</Tag> : p.module?.name || <Text type="secondary">-</Text> },
-    { title: 'Slides', key: 'slides', width: 90, render: (_, p) => <Tag>{p.slideCount || 0}</Tag> },
-    { title: 'Year', key: 'year', width: 90, render: (_, p) => p.year || '-' },
-    { title: 'View', key: 'view', width: 100, fixed: 'right', render: (_, p) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openPresentation(p)}>View</Button> }
-  ];
+	const selectVolume = (volume, whole = false) => {
+		setSelectedVolumeId(volume.id);
+		setSelectedModuleId(undefined);
+		setWholeVolumeOnly(whole);
+		setPage(1);
+		if (isMobile) setSidebarOpen(false);
+	};
 
-  const activeLabel = wholeVolumeOnly
-    ? `${selectedVolume?.name || 'Volume'} — Whole Volume Review`
-    : selectedModule
-      ? selectedModule.name
-      : selectedVolume
-        ? `${selectedVolume.name} — all presentations`
-        : 'All presentations';
+	const selectModule = (module, volume) => {
+		setSelectedVolumeId(volume.id);
+		setSelectedModuleId(module.id);
+		setWholeVolumeOnly(false);
+		setPage(1);
+		if (isMobile) setSidebarOpen(false);
+	};
 
-  const searchMode = searchTerm.trim().length >= 2;
+	const goToModule = (module) => {
+		const volume = volumes.find(v => v.id === module.volumeId);
+		if (volume) selectModule(module, volume);
+		setExpandedVolumes(prev => new Set([...prev, module.volumeId]));
+	};
 
-  const moduleResourceLinks = selectedModule ? (
-    <Space wrap size={[8, 8]} style={{ marginBottom: 14 }}>
-      <Button size="small" icon={<SnippetsOutlined />} onClick={() => navigate(`/student/module-notes?moduleId=${selectedModule.id}&volumeId=${selectedVolumeId}`)}>Module Notes</Button>
-      <Button size="small" icon={<FileTextOutlined />} onClick={() => navigate(`/student/summary-sheets?moduleId=${selectedModule.id}&volumeId=${selectedVolumeId}`)}>Summary Sheets</Button>
-      <Button size="small" icon={<FunctionOutlined />} onClick={() => navigate('/student/formula-book')}>Formula Book</Button>
-      <Button size="small" icon={<BookOutlined />} onClick={() => navigate('/student/exams')}>Practice Questions</Button>
-    </Space>
-  ) : null;
+	const openPresentation = (presentation, slideNumber) => {
+		markExplorerReturn(SESSION_SCOPE);
+		navigate(presentationViewerPath(presentation.id, slideNumber));
+	};
 
-  const tree = (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff' }}>
-      <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid #e2e8f0', background: 'linear-gradient(135deg, #102540 0%, #1b3a5b 100%)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <FilePptOutlined style={{ color: '#fff', fontSize: 18 }} />
-        <span style={{ color: '#fff', fontWeight: 700, flex: 1 }}>Milven Slides</span>
-        {isMobile && <Button type="text" size="small" icon={<CloseOutlined style={{ color: '#fff' }} />} onClick={() => setSidebarOpen(false)} />}
-      </div>
-      <div style={{ padding: 10, borderBottom: '1px solid #f1f5f9' }}>
-        <Select
-          value={courseId}
-          onChange={(value) => {
-            setCourseId(value);
-            setSelectedVolumeId(undefined);
-            setSelectedModuleId(undefined);
-            setWholeVolumeOnly(false);
-            setPage(1);
-          }}
-          style={{ width: '100%' }}
-          showSearch
-          optionFilterProp="label"
-          options={courses.map(c => ({ value: c.id, label: `${c.name} (${levelLabel(c.level)})` }))}
-        />
-      </div>
-      <div
-        onClick={selectAll}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', cursor: 'pointer',
-          background: !selectedVolumeId ? '#eff6ff' : 'transparent',
-          borderLeft: !selectedVolumeId ? '3px solid #2563eb' : '3px solid transparent'
-        }}
-      >
-        <AppstoreIcon />
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>All presentations</span>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 12 }}>
-        {hierarchyLoading ? (
-          <div style={{ padding: 20 }}><Skeleton active paragraph={{ rows: 6 }} /></div>
-        ) : volumes.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8' }}>
-            <FolderOutlined style={{ fontSize: 28 }} />
-            <div style={{ fontSize: 13, marginTop: 8 }}>No curriculum volumes with slides yet.</div>
-          </div>
-        ) : volumes.map(volume => {
-          const expanded = expandedVolumes.has(volume.id);
-          const active = selectedVolumeId === volume.id && !selectedModuleId && !wholeVolumeOnly;
-          return (
-            <div key={volume.id}>
-              <div
-                onClick={() => setExpandedVolumes(prev => {
-                  const next = new Set(prev);
-                  if (next.has(volume.id)) next.delete(volume.id);
-                  else next.add(volume.id);
-                  return next;
-                })}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', cursor: 'pointer',
-                  background: active ? '#eff6ff' : 'transparent',
-                  borderLeft: active ? '3px solid #2563eb' : '3px solid transparent'
-                }}
-              >
-                {expanded ? <DownOutlined style={{ fontSize: 10, color: '#2563eb' }} /> : <RightOutlined style={{ fontSize: 10, color: '#94a3b8' }} />}
-                <BookOutlined style={{ fontSize: 13, color: '#2563eb' }} />
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{volume.name}</span>
-                <Tag style={{ margin: 0, fontSize: 10 }}>{volume.presentationCount || 0}</Tag>
-                <Button
-                  type="text"
-                  size="small"
-                  style={{ fontSize: 10, padding: '0 4px', height: 20, color: '#2563eb' }}
-                  onClick={(event) => { event.stopPropagation(); selectVolume(volume, false); }}
-                >
-                  Filter
-                </Button>
-              </div>
-              {expanded && (
-                <div style={{ marginLeft: 12, borderLeft: '1px solid #e2e8f0' }}>
-                  {volume.modules.map(module => {
-                    const isActive = selectedModuleId === module.id;
-                    return (
-                      <div
-                        key={module.id}
-                        onClick={() => selectModule(module, volume)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px 7px 16px', cursor: 'pointer',
-                          background: isActive ? '#f0fdf4' : 'transparent',
-                          borderLeft: isActive ? '3px solid #16a34a' : '3px solid transparent'
-                        }}
-                      >
-                        <FilePptOutlined style={{ fontSize: 12, color: module.presentationCount ? '#16a34a' : '#cbd5e1' }} />
-                        <span style={{ fontSize: 12, color: '#334155', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{module.name}</span>
-                        <span style={{ fontSize: 10, color: module.presentationCount ? '#16a34a' : '#cbd5e1' }}>{module.presentationCount || 0}</span>
-                      </div>
-                    );
-                  })}
-                  {volume.wholeVolumeCount > 0 && (
-                    <div
-                      onClick={() => selectVolume(volume, true)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px 7px 16px', cursor: 'pointer',
-                        background: wholeVolumeOnly && selectedVolumeId === volume.id ? '#fffbeb' : 'transparent',
-                        borderLeft: wholeVolumeOnly && selectedVolumeId === volume.id ? '3px solid #d97706' : '3px solid transparent'
-                      }}
-                    >
-                      <FileTextOutlined style={{ fontSize: 12, color: '#d97706' }} />
-                      <span style={{ fontSize: 12, color: '#92400e', flex: 1 }}>Whole Volume Review</span>
-                      <span style={{ fontSize: 10, color: '#d97706' }}>{volume.wholeVolumeCount}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+	const changeCourse = (value) => {
+		setCourseId(value);
+		setSelectedVolumeId(undefined);
+		setSelectedModuleId(undefined);
+		setWholeVolumeOnly(false);
+		setPage(1);
+		if (isMobile) setSidebarOpen(false);
+	};
 
-  return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 120px)', overflow: 'hidden', border: '1px solid #e2e8f0', borderRadius: 12, background: '#f8fafc' }}>
-      {!isMobile && (
-        <div style={{ width: 300, minWidth: 280, borderRight: '1px solid #e2e8f0', overflow: 'hidden' }}>
-          {tree}
-        </div>
-      )}
-      {isMobile && (
-        <Drawer placement="left" open={sidebarOpen} onClose={() => setSidebarOpen(false)} width={Math.min(340, typeof window !== 'undefined' ? window.innerWidth * 0.9 : 340)} styles={{ body: { padding: 0 } }} title={null}>
-          {tree}
-        </Drawer>
-      )}
+	const changeView = mode => {
+		setViewMode(mode);
+		try { localStorage.setItem('milven.student-slides.view', mode); } catch {}
+	};
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <div style={{ padding: '12px 16px', background: '#fff', borderBottom: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {isMobile && <Button icon={<MenuOutlined />} onClick={() => setSidebarOpen(true)}>Curriculum</Button>}
-            <div style={{ flex: 1, minWidth: 160 }}>
-              <Title level={4} style={{ margin: 0 }}>Slides</Title>
-              <Text type="secondary" style={{ fontSize: 12 }}>{activeLabel}</Text>
-            </div>
-            <Input
-              allowClear
-              prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
-              placeholder="Search slide content, e.g. convexity"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              style={{ maxWidth: 360, width: isMobile ? '100%' : 360 }}
-            />
-            <Button.Group>
-              <Button type={viewMode === 'cards' ? 'primary' : 'default'} icon={<AppstoreOutlined />} onClick={() => changeView('cards')} aria-label="Card view" />
-              <Button type={viewMode === 'table' ? 'primary' : 'default'} icon={<TableOutlined />} onClick={() => changeView('table')} aria-label="Table view" />
-            </Button.Group>
-          </div>
-        </div>
+	const clearFilters = () => {
+		setSearchInput('');
+		selectAll();
+	};
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? 12 : 18 }}>
-          {stats && <Row gutter={[10, 10]} style={{ marginBottom: 14 }}>
-            {[{ label: 'Presentations', value: stats.presentations, color: '#2563eb' }, { label: 'Total slides', value: stats.slides, color: '#4f46e5' }, { label: 'Learning modules', value: stats.modules, color: '#16a34a' }, { label: 'Whole volume reviews', value: stats.wholeVolume, color: '#d97706' }].map(item => (
-              <Col xs={12} sm={6} key={item.label}><Card size="small" styles={{ body: { padding: '10px 12px' } }} style={{ borderRadius: 12, border: '1px solid #e2e8f0' }}><Text type="secondary" style={{ fontSize: 11 }}>{item.label}</Text><div style={{ fontSize: 22, fontWeight: 700, color: '#102540', fontVariantNumeric: 'tabular-nums' }}>{Number(item.value || 0).toLocaleString('en-US')}</div></Card></Col>
-            ))}
-          </Row>}
-          {selectedModule && !searchMode && moduleResourceLinks}
+	const activeLabel = wholeVolumeOnly
+		? `${selectedVolume?.name || 'Volume'} - Whole Volume Review`
+		: selectedModule
+			? selectedModule.name
+			: selectedVolume
+				? `${selectedVolume.name} - all presentations`
+				: 'All presentations';
 
-          {selectedModule && !searchMode && (
-            <Space style={{ marginBottom: 14 }} wrap>
-              <Button icon={<ArrowLeftOutlined />} disabled={!previousModule} onClick={() => previousModule && goToModule(previousModule)}>
-                {previousModule ? previousModule.name.split(':')[0] : 'Previous module'}
-              </Button>
-              <Button icon={<ArrowRightOutlined />} iconPosition="end" disabled={!nextModule} onClick={() => nextModule && goToModule(nextModule)}>
-                {nextModule ? nextModule.name.split(':')[0] : 'Next module'}
-              </Button>
-            </Space>
-          )}
+	const searchMode = searchTerm.trim().length >= 2;
+	const hasActiveFilters = Boolean(searchInput || selectedVolumeId || selectedModuleId || wholeVolumeOnly);
 
-          {searchMode ? (
-            <SearchPanel
-              q={searchTerm}
-              loading={searching}
-              error={searchError}
-              results={searchResults}
-              total={searchTotal}
-              page={page}
-              pageSize={pageSize}
-              onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPageSize(nextSize || pageSize); }}
-              onOpen={openPresentation}
-            />
-          ) : loading ? (
-            <Row gutter={[14, 14]}>
-              {[1, 2, 3, 4].map(i => (
-                <Col xs={24} sm={12} lg={8} key={i}><Card><Skeleton active avatar paragraph={{ rows: 3 }} /></Card></Col>
-              ))}
-            </Row>
-          ) : error ? (
-            <Alert type="error" showIcon message={error} />
-          ) : presentations.length === 0 ? (
-            <Card><Empty description={coursesLoaded && courses.length === 0 ? "You do not currently have access to any learning courses." : "No learning resources are available for your enrolled course yet."}>{coursesLoaded && courses.length === 0 && <Button type="primary" onClick={() => navigate('/courses')}>Browse Courses</Button>}</Empty></Card>
-          ) : viewMode === 'table' ? (
-            <Card style={{ borderRadius: 12, border: '1px solid #e2e8f0' }} styles={{ body: { padding: 0 } }}>
-              <Table dataSource={presentations} columns={presentationColumns} rowKey="id" scroll={{ x: 1100 }} pagination={{ current: page, pageSize, total, showSizeChanger: true, pageSizeOptions: [12, 24, 48], onChange: (nextPage, nextSize) => { setPage(nextPage); setPageSize(nextSize || pageSize); }, showTotal: count => `${count} presentations` }} />
-            </Card>
-          ) : (
-            <>
-              <Row gutter={[14, 14]}>
-                {presentations.map(presentation => (
-                  <Col xs={24} sm={12} lg={8} xl={6} key={presentation.id}>
-                    <PresentationCard presentation={presentation} onOpen={() => openPresentation(presentation)} />
-                  </Col>
-                ))}
-              </Row>
-              {total > pageSize && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-                  <Pagination current={page} pageSize={pageSize} total={total} showSizeChanger pageSizeOptions={[12, 24, 48]} onChange={(nextPage, nextSize) => { setPage(nextPage); setPageSize(nextSize || pageSize); }} showTotal={count => `${count} presentations`} />
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+	const presentationColumns = isMobile ? [
+		{
+			title: 'Presentation', key: 'presentation',
+			render: (_, presentation) => (
+				<LearningResourceTitleCell
+					resource={{
+						...presentation,
+						level: presentation.course?.level,
+						volume: presentation.volume,
+						module: presentation.module,
+						slideCount: presentation.slideCount
+					}}
+					variant="slide"
+					onView={() => openPresentation(presentation)}
+					metaLines={[
+						presentation.course?.level ? `CFA ${levelLabel(presentation.course.level)}` : null,
+						presentation.volume?.name,
+						presentation.scope === 'WHOLE_VOLUME'
+							? 'Whole Volume Review'
+							: (presentation.module?.name && presentation.module.name.trim() !== String(presentation.title || '').trim() ? presentation.module.name : null)
+					]}
+				/>
+			)
+		},
+		{ title: 'Actions', key: 'actions', width: 82, render: (_, presentation) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openPresentation(presentation)}>View</Button> }
+	] : [
+		{
+			title: 'Presentation', key: 'presentation', width: 330,
+			render: (_, presentation) => (
+				<LearningResourceTitleCell
+					resource={{
+						...presentation,
+						level: presentation.course?.level,
+						volume: presentation.volume,
+						module: presentation.module,
+						slideCount: presentation.slideCount
+					}}
+					variant="slide"
+					onView={() => openPresentation(presentation)}
+				/>
+			)
+		},
+		{
+			title: 'Level', key: 'level', width: 96,
+			render: (_, presentation) => <Tag color={presentation.course?.level === 'LEVEL1' ? 'blue' : presentation.course?.level === 'LEVEL2' ? 'purple' : 'gold'}>{levelLabel(presentation.course?.level)}</Tag>
+		},
+		{ title: 'Volume', key: 'volume', width: 140, render: (_, presentation) => <div className="learning-meta-cell">{presentation.volume?.name || '-'}</div> },
+		{
+			title: 'Learning Module', key: 'module', width: 160,
+			render: (_, presentation) => presentation.scope === 'WHOLE_VOLUME'
+				? <Tag color="gold" style={{ whiteSpace: 'normal' }}>Whole Volume Review</Tag>
+				: <div className="learning-meta-cell">{presentation.module?.name || '-'}</div>
+		},
+		{ title: 'Actions', key: 'actions', width: 82, fixed: 'right', render: (_, presentation) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openPresentation(presentation)}>View</Button> }
+	];
+
+	const statsItems = [
+		{ label: 'Presentations', value: stats?.presentations, tone: 'purple', icon: <FilePptOutlined /> },
+		{ label: 'Total Slides', value: stats?.slides, tone: 'blue', icon: <FileTextOutlined /> },
+		{ label: 'Learning Modules', value: stats?.modules, tone: 'gold', icon: <AppstoreOutlined /> },
+		{ label: 'Whole Volume Reviews', value: stats?.wholeVolume, tone: 'green', icon: <FolderOutlined /> }
+	];
+
+	const moduleContext = selectedModule && !searchMode ? (
+		<div className="learning-module-context">
+			<div className="learning-module-context-copy">
+				<strong>{selectedModule.name}</strong>
+				{selectedVolume?.name ? ` / ${selectedVolume.name}` : ''}
+			</div>
+			<div className="learning-module-context-actions">
+				<Button size="small" icon={<SnippetsOutlined />} onClick={() => navigate(`/student/module-notes?courseId=${courseId}&volumeId=${selectedVolumeId}&moduleId=${selectedModule.id}`)}>Module Notes</Button>
+				<Button size="small" icon={<FileTextOutlined />} onClick={() => navigate(`/student/summary-sheets?courseId=${courseId}&volumeId=${selectedVolumeId}&moduleId=${selectedModule.id}`)}>Summary Sheets</Button>
+				<Button size="small" icon={<FunctionOutlined />} onClick={() => navigate(`/student/formula-book?courseId=${courseId}`)}>Formula Book</Button>
+				<Button size="small" icon={<BookOutlined />} onClick={() => navigate('/student/exams')}>Practice Questions</Button>
+			</div>
+		</div>
+	) : null;
+
+	const emptyState = (() => {
+		if (searchMode) {
+			return {
+				title: 'No slide content matched your search',
+				description: `No published slides match "${searchTerm}". Try a different concept, phrase or clear your filters.`,
+				action: <Button onClick={() => setSearchInput('')}>Clear Search</Button>
+			};
+		}
+		if (selectedModule) {
+			return {
+				title: 'No presentations found for this learning module',
+				description: 'Try another module or clear your filters.',
+				action: <Button onClick={clearFilters}>Clear Filters</Button>
+			};
+		}
+		if (selectedVolume) {
+			return {
+				title: 'No presentations published for this volume',
+				description: 'Choose another volume or view all presentations in this course.',
+				action: <Button onClick={selectAll}>View All Presentations</Button>
+			};
+		}
+		if (coursesLoaded && courses.length === 0) {
+			return {
+				title: 'No active course access',
+				description: 'You do not currently have access to any learning courses.',
+				action: <Button type="primary" onClick={() => navigate('/courses')}>Browse Courses</Button>
+			};
+		}
+		return {
+			title: 'No presentations published for this course',
+			description: 'Your course does not have any published presentations yet.',
+			action: null
+		};
+	})();
+
+	const sidebar = (
+		<StudentResourceSidebar
+			title="Course & Modules"
+			icon={<FilePptOutlined />}
+			allLabel="All Presentations"
+			courses={courses}
+			courseId={courseId}
+			onCourseChange={changeCourse}
+			volumes={sidebarVolumes}
+			totalCount={stats?.presentations || 0}
+			selectedVolumeId={selectedVolumeId}
+			selectedModuleId={selectedModuleId}
+			wholeVolumeSelected={wholeVolumeOnly}
+			expandedVolumes={expandedVolumes}
+			onToggleVolume={volumeId => setExpandedVolumes(prev => {
+				const next = new Set(prev);
+				if (next.has(volumeId)) next.delete(volumeId);
+				else next.add(volumeId);
+				return next;
+			})}
+			onSelectAll={selectAll}
+			onSelectVolume={volume => selectVolume(volume)}
+			onSelectModule={selectModule}
+			onSelectWholeVolume={volume => selectVolume(volume, true)}
+			activeLabel={selectedVolumeId || selectedModuleId ? activeLabel : null}
+			onClearFilter={selectAll}
+			treeSearch={treeSearch}
+			onTreeSearch={setTreeSearch}
+			isMobile={isMobile}
+			open={sidebarOpen}
+			onClose={() => setSidebarOpen(false)}
+			loading={hierarchyLoading}
+			error=""
+			showModules
+		/>
+	);
+
+	return (
+		<LearningExplorerLayout
+			hero={<LearningExplorerHero eyebrow="MILVEN SLIDES" title="Learning Explorer" description="Browse, preview, and study slide presentations by learning module." variant="slides" />}
+			sidebar={sidebar}
+		>
+			<LearningResourceHeader
+				title="Slides"
+				subtitle="All presentations in your selected course."
+				icon={<FilePptOutlined />}
+				searchValue={searchInput}
+				onSearchChange={setSearchInput}
+				searchPlaceholder="Search slide content, e.g. convexity"
+				viewMode={viewMode}
+				onViewChange={changeView}
+				isMobile={isMobile}
+				onOpenFilters={() => setSidebarOpen(true)}
+				extra={hasActiveFilters ? <Button size="small" onClick={clearFilters}>Clear</Button> : null}
+			/>
+
+			<LearningResourceStats items={statsItems} />
+			{moduleContext}
+
+			{selectedModule && !searchMode && (
+				<div className="learning-main-actions" style={{ marginBottom: 14 }}>
+					<Button icon={<ArrowLeftOutlined />} disabled={!previousModule} onClick={() => previousModule && goToModule(previousModule)}>
+						{previousModule ? previousModule.name.split(':')[0] : 'Previous module'}
+					</Button>
+					<Button icon={<ArrowRightOutlined />} iconPosition="end" disabled={!nextModule} onClick={() => nextModule && goToModule(nextModule)}>
+						{nextModule ? nextModule.name.split(':')[0] : 'Next module'}
+					</Button>
+				</div>
+			)}
+
+			{searchMode ? (
+				<SearchPanel
+					q={searchTerm}
+					loading={searching}
+					error={searchError}
+					results={searchResults}
+					total={searchTotal}
+					page={page}
+					pageSize={pageSize}
+					course={course}
+					onPageChange={(nextPage, nextSize) => { setPage(nextPage); setPageSize(nextSize || pageSize); }}
+					onOpen={openPresentation}
+				/>
+			) : loading ? (
+				<LearningResourceSkeleton viewMode={viewMode} />
+			) : error ? (
+				<Alert
+					type="error"
+					showIcon
+					message={error}
+					action={<Button size="small" onClick={() => setReloadKey(key => key + 1)}>Retry</Button>}
+				/>
+			) : coursesLoaded && courses.length === 0 ? (
+				<LearningResourceEmptyState {...emptyState} />
+			) : presentations.length === 0 ? (
+				<LearningResourceEmptyState {...emptyState} />
+			) : viewMode === 'table' ? (
+				<div className="learning-resource-table">
+					<Table
+						dataSource={presentations}
+						columns={presentationColumns}
+						rowKey="id"
+						tableLayout="fixed"
+						scroll={isMobile ? undefined : { x: 808 }}
+						pagination={{
+							current: page,
+							pageSize,
+							total,
+							showSizeChanger: true,
+							pageSizeOptions: [12, 24, 48],
+							onChange: (nextPage, nextSize) => { setPage(nextPage); setPageSize(nextSize || pageSize); },
+							showTotal: count => `${count} presentations`
+						}}
+					/>
+				</div>
+			) : (
+				<>
+					<div className="learning-resource-grid">
+						{presentations.map(presentation => (
+							<LearningResourceCard
+								key={presentation.id}
+								resource={{
+									...presentation,
+									level: presentation.course?.level,
+									volume: presentation.volume,
+									module: presentation.module
+								}}
+								variant="slide"
+								onView={() => openPresentation(presentation)}
+							/>
+						))}
+					</div>
+					{total > pageSize && (
+						<div className="learning-pagination">
+							<Pagination current={page} pageSize={pageSize} total={total} showSizeChanger pageSizeOptions={[12, 24, 48]} onChange={(nextPage, nextSize) => { setPage(nextPage); setPageSize(nextSize || pageSize); }} showTotal={count => `${count} presentations`} />
+						</div>
+					)}
+				</>
+			)}
+		</LearningExplorerLayout>
+	);
 }
 
-function AppstoreIcon() {
-  return <FilePptOutlined style={{ fontSize: 13, color: '#2563eb' }} />;
-}
-
-function PresentationThumb({ presentation, onOpen, compact = false }) {
-  const [hovered, setHovered] = React.useState(false);
-  return (
-    <button
-      type="button"
-      onClick={event => { event.stopPropagation(); onOpen?.(); }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      aria-label={`View ${presentation.title}`}
-      style={{
-        width: compact ? 90 : '100%', height: compact ? 52 : 145, padding: 0,
-        border: 0, borderRadius: compact ? 5 : 0, background: '#0f172a', overflow: 'hidden',
-        cursor: 'pointer', position: 'relative', flexShrink: 0
-      }}
-    >
-      <FilePptOutlined style={{ color: '#94a3b8', fontSize: compact ? 22 : 36, position: 'absolute', inset: 0, margin: 'auto', width: 36, height: 36 }} />
-      {presentation.thumbnailUrl && (
-        <img
-          src={assetUrl(presentation.thumbnailUrl)}
-          alt=""
-          loading="lazy"
-          style={{ width: '100%', height: '100%', objectFit: 'contain', position: 'relative' }}
-          onError={event => { event.currentTarget.style.display = 'none'; }}
-        />
-      )}
-      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, background: 'rgba(15,23,42,0.48)', color: '#fff', opacity: hovered ? 1 : 0, transition: 'opacity 160ms ease', pointerEvents: 'none', fontSize: compact ? 11 : 12, fontWeight: 600 }}>
-        <EyeOutlined /> {!compact && 'Preview Presentation'}
-      </span>
-    </button>
-  );
-}
-
-function PresentationCard({ presentation, onOpen }) {
-  return (
-    <Card
-      hoverable
-      size="small"
-      onClick={onOpen}
-      styles={{ body: { padding: 12 } }}
-      cover={<PresentationThumb presentation={presentation} onOpen={onOpen} />}
-    >
-      <Space direction="vertical" size={6} style={{ width: '100%' }}>
-        <Text strong ellipsis={{ tooltip: presentation.title }} style={{ fontSize: 14 }}>{presentation.title}</Text>
-        <Text type="secondary" style={{ fontSize: 12 }} ellipsis={{ tooltip: presentation.module?.name || 'Whole Volume Review' }}>
-          {presentation.scope === 'WHOLE_VOLUME' ? 'Whole Volume Review' : presentation.module?.name}
-        </Text>
-        <Space size={[4, 4]} wrap>
-          <Tag>{presentation.slideCount} slides</Tag>
-          <Tag>{presentation.year}</Tag>
-          {presentation.topics?.length > 0 && <Tag color="purple">{presentation.topics.length} topic{presentation.topics.length === 1 ? '' : 's'}</Tag>}
-          {presentation.scope === 'WHOLE_VOLUME' && <Tag color="gold">Volume Review</Tag>}
-        </Space>
-      </Space>
-    </Card>
-  );
-}
-
-function SearchPanel({ q, loading, error, results, total, page, pageSize, onPageChange, onOpen }) {
-  if (loading) {
-    return <Card><Skeleton active paragraph={{ rows: 8 }} /></Card>;
-  }
-  if (error) return <Alert type="error" showIcon message={error} />;
-  if (!results.length) {
-    return <Card><Empty description={`No published slides match “${q}”. Try a different concept or phrase.`} /></Card>;
-  }
-  return (
-    <div>
-      <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-        {total} matching result{total === 1 ? '' : 's'} for “{q}”
-      </Text>
-      <Space direction="vertical" size={10} style={{ width: '100%' }}>
-        {results.map((result, index) => {
-          const presentation = result.presentation || {};
-          return (
-            <Card
-              key={`${result.presentationId}-${result.slideNumber}-${index}`}
-              hoverable
-              size="small"
-              onClick={() => onOpen(presentation, result.slideNumber)}
-              styles={{ body: { padding: 12 } }}
-            >
-              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                <div style={{ width: 150, height: 84, flexShrink: 0, background: '#0f172a', borderRadius: 6, overflow: 'hidden' }}>
-                  {result.thumbnailUrl && (
-                    <img
-                      src={assetUrl(result.thumbnailUrl)}
-                      alt=""
-                      loading="lazy"
-                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                      onError={(event) => { event.currentTarget.style.display = 'none'; }}
-                    />
-                  )}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Space size={6} wrap style={{ marginBottom: 4 }}>
-                    <Text strong>{presentation.title}</Text>
-                    <Tag color="blue">Slide {result.slideNumber}</Tag>
-                    {result.matchType === 'PRESENTATION' && <Tag>Presentation match</Tag>}
-                  </Space>
-                  <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
-                    {levelLabel(presentation.course?.level)} · {presentation.volume?.name}{presentation.module?.name ? ` · ${presentation.module.name}` : ''}
-                  </Text>
-                  <Paragraph className="mb-0" style={{ marginBottom: 0, fontSize: 13, color: '#334155' }} ellipsis={{ rows: 2, tooltip: result.excerpt }}>
-                    {highlightParts(result.excerpt, q).map((part, i) => (
-                      part.match
-                        ? <mark key={i} style={{ background: '#fde68a', padding: 0 }}>{part.text}</mark>
-                        : <React.Fragment key={i}>{part.text}</React.Fragment>
-                    ))}
-                  </Paragraph>
-                </div>
-                <Button type="link">Open Slide</Button>
-              </div>
-            </Card>
-          );
-        })}
-      </Space>
-      {total > pageSize && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-          <Pagination current={page} pageSize={pageSize} total={total} onChange={onPageChange} showTotal={count => `${count} results`} />
-        </div>
-      )}
-    </div>
-  );
+function SearchPanel({ q, loading, error, results, total, page, pageSize, course, onPageChange, onOpen }) {
+	if (loading) return <LearningResourceSkeleton viewMode="table" count={4} />;
+	if (error) return <Alert type="error" showIcon message={error} />;
+	if (!results.length) {
+		return (
+			<LearningResourceEmptyState
+				title="No slide content matched your search"
+				description={`No published slides match "${q}". Try a different concept or phrase.`}
+				action={<Button onClick={() => onPageChange(1, pageSize)}>Try Again</Button>}
+			/>
+		);
+	}
+	return (
+		<div>
+			<div className="learning-search-summary">{total} matching result{total === 1 ? '' : 's'} for "{q}"</div>
+			{results.map((result, index) => {
+				const presentation = result.presentation || {};
+				return (
+					<div
+						key={`${result.presentationId}-${result.slideNumber}-${index}`}
+						className="learning-search-result"
+						role="button"
+						tabIndex={0}
+						onClick={() => onOpen(presentation, result.slideNumber)}
+						onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(presentation, result.slideNumber); } }}
+					>
+						<div className="learning-search-result-card">
+							<div className="learning-search-thumb">
+								{result.thumbnailUrl && (
+									<img
+										src={assetUrl(result.thumbnailUrl)}
+										alt=""
+										loading="lazy"
+										onError={event => { event.currentTarget.style.display = 'none'; }}
+									/>
+								)}
+							</div>
+							<div className="learning-search-result-body">
+								<div className="learning-search-result-title">{presentation.title}</div>
+								<div className="learning-search-result-meta">
+									{levelLabel(presentation.course?.level || course?.level)} / {presentation.volume?.name || '-'}{presentation.module?.name ? ` / ${presentation.module.name}` : ''}
+								</div>
+								<p className="learning-search-excerpt">
+									{highlightParts(result.excerpt, q).map((part, i) => (
+										part.match
+											? <mark key={i} style={{ background: '#fde68a', padding: 0 }}>{part.text}</mark>
+											: <React.Fragment key={i}>{part.text}</React.Fragment>
+									))}
+								</p>
+							</div>
+							<div className="learning-search-result-actions">
+								<Tag color="blue" style={{ marginBottom: 8 }}>Slide {result.slideNumber}</Tag>
+								<Button type="link" icon={<SearchOutlined />}>Open Slide</Button>
+							</div>
+						</div>
+					</div>
+				);
+			})}
+			{total > pageSize && (
+				<div className="learning-pagination">
+					<Pagination current={page} pageSize={pageSize} total={total} onChange={onPageChange} showTotal={count => `${count} results`} />
+				</div>
+			)}
+		</div>
+	);
 }

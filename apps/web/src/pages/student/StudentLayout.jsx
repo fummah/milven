@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Layout, Menu, Typography, Avatar, Grid, Drawer, Button } from 'antd';
 import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined, TeamOutlined, ExperimentOutlined, FunctionOutlined, SolutionOutlined, SnippetsOutlined, BarChartOutlined, FilePptOutlined } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
@@ -6,6 +6,8 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 const { Sider, Content } = Layout;
 
 const isLearningPreviewPath = (pathname) => pathname.startsWith('/student/learn/') || pathname === '/student/learning';
+const isResourceExplorerPath = (pathname) => /^\/student\/(slides|module-notes|formula-book|summary-sheets)(\/|$)/.test(pathname);
+const isCompactLearningPath = (pathname) => isLearningPreviewPath(pathname) || isResourceExplorerPath(pathname);
 
 const modernBadge = (iconNode, gradient) => (
   <span
@@ -106,22 +108,34 @@ const menuItems = [
 
 export default function StudentLayout() {
   const location = useLocation();
-  const isLearningPreview = isLearningPreviewPath(location.pathname);
+  const isCompactLearningRoute = isCompactLearningPath(location.pathname);
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
-  
-  // Only collapse by default on learning preview pages
-  const [collapsed, setCollapsed] = useState(isLearningPreview);
+  const manualOverridePath = useRef(null);
+
+  // Keep the same compact behaviour as the Learning Center on the resource explorer pages.
+  const [collapsed, setCollapsed] = useState(() => isCompactLearningRoute);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Auto-collapse/expand based on learning preview page
+  const handleSidebarCollapse = (nextCollapsed) => {
+    setCollapsed(nextCollapsed);
+    manualOverridePath.current = isCompactLearningRoute ? location.pathname : null;
+  };
+
+  // Collapse on entering a compact learning route. A manual expand on the same
+  // route is respected until the student navigates to a different page.
   useEffect(() => {
-    if (isLearningPreview) {
+    if (isMobile) {
       setCollapsed(true);
-    } else if (!isMobile) {
+      return;
+    }
+    if (isCompactLearningRoute) {
+      if (manualOverridePath.current !== location.pathname) setCollapsed(true);
+    } else {
+      manualOverridePath.current = null;
       setCollapsed(false);
     }
-  }, [isLearningPreview, isMobile]);
+  }, [isCompactLearningRoute, isMobile, location.pathname]);
 
   useEffect(() => {
     if (isMobile) setCollapsed(true);
@@ -159,7 +173,7 @@ export default function StudentLayout() {
         <Sider
           collapsible
           collapsed={collapsed}
-          onCollapse={setCollapsed}
+          onCollapse={handleSidebarCollapse}
           trigger={null}
           theme="light"
           width={260}
