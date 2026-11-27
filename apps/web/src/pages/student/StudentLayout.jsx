@@ -53,33 +53,26 @@ const subMenuBadge = (iconNode, color = '#102540') => (
 );
 
 const childToParentKey = {
-  'student-courses': 'learning', 'student-module-notes': 'learning', 'student-slides': 'learning',
-  'student-formula-book': 'study-tools', 'student-summary-sheets': 'study-tools', 'student-revision': 'study-tools',
-  'student-exams': 'exams-group', 'student-mock-exams': 'exams-group', 'student-milven-mocks': 'exams-group', 'student-mistakes': 'exams-group',
+  'student-learning': 'learning', 'student-module-notes': 'learning',
+  'student-summary-sheets': 'learning', 'student-formula-book': 'learning', 'student-slides': 'learning',
+  'student-exams': 'exams-group', 'student-mock-exams': 'exams-group', 'student-milven-mocks': 'exams-group',
+  'student-mistakes': 'exams-group', 'student-revision': 'exams-group',
   'student-billing': 'account-group', 'student-invoices': 'account-group', 'student-account': 'account-group'
 };
 
 const menuItems = [
   { key: 'student-home', icon: modernBadge(<HomeOutlined />, 'linear-gradient(135deg, #3b82f6, #1d4ed8)'), label: <Link to="/student">Dashboard</Link> },
+  { key: 'student-courses', icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #0ea5e9, #0284c7)'), label: <Link to="/student/courses">My Courses</Link> },
   {
     key: 'learning',
-    icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'),
+    icon: modernBadge(<ReadOutlined />, 'linear-gradient(135deg, #8b5cf6, #7c3aed)'),
     label: 'Learning',
     children: [
-      { key: 'student-courses', icon: subMenuBadge(<BookOutlined />, '#8b5cf6'), label: <Link to="/student/courses">My Courses</Link> },
       { key: 'student-learning', icon: subMenuBadge(<ReadOutlined />, '#8b5cf6'), label: <Link to="/student/learning">Learning Center</Link> },
       { key: 'student-module-notes', icon: subMenuBadge(<SnippetsOutlined />, '#8b5cf6'), label: <Link to="/student/module-notes">Milven Module Notes</Link> },
-      { key: 'student-slides', icon: subMenuBadge(<FilePptOutlined />, '#8b5cf6'), label: <Link to="/student/slides">Milven Slides</Link> },
-    ]
-  },
-  {
-    key: 'study-tools',
-    icon: modernBadge(<FunctionOutlined />, 'linear-gradient(135deg, #102540, #1b3a5b)'),
-    label: 'Study Tools',
-    children: [
-      { key: 'student-formula-book', icon: subMenuBadge(<FunctionOutlined />, '#102540'), label: <Link to="/student/formula-book">Formula Book</Link> },
-      { key: 'student-summary-sheets', icon: subMenuBadge(<FileTextOutlined />, '#102540'), label: <Link to="/student/summary-sheets">Milven Summary Sheets</Link> },
-      { key: 'student-revision', icon: subMenuBadge(<StarOutlined />, '#eab308'), label: <Link to="/student/revision">Revision List</Link> },
+      { key: 'student-summary-sheets', icon: subMenuBadge(<FileTextOutlined />, '#8b5cf6'), label: <Link to="/student/summary-sheets">Milven Summary Sheets</Link> },
+      { key: 'student-formula-book', icon: subMenuBadge(<FunctionOutlined />, '#8b5cf6'), label: <Link to="/student/formula-book">Milven Formula Book</Link> },
+      { key: 'student-slides', icon: subMenuBadge(<FilePptOutlined />, '#8b5cf6'), label: <Link to="/student/slides">Milven Slides</Link> }
     ]
   },
   {
@@ -91,6 +84,7 @@ const menuItems = [
       { key: 'student-mock-exams', icon: subMenuBadge(<ExperimentOutlined />, '#6366f1'), label: <Link to="/student/mock-exams">Mock Exam</Link> },
       { key: 'student-milven-mocks', icon: subMenuBadge(<SolutionOutlined />, '#102540'), label: <Link to="/student/milven-mocks">Milven Mock Exams</Link> },
       { key: 'student-mistakes', icon: subMenuBadge(<ExclamationCircleOutlined />, '#ef4444'), label: <Link to="/student/mistakes">My Mistakes</Link> },
+      { key: 'student-revision', icon: subMenuBadge(<StarOutlined />, '#eab308'), label: <Link to="/student/revision">Revision List</Link> }
     ]
   },
   { key: 'student-comparison', icon: modernBadge(<BarChartOutlined />, 'linear-gradient(135deg, #0ea5e9, #0284c7)'), label: <Link to="/student/comparison">Performance</Link> },
@@ -101,11 +95,10 @@ const menuItems = [
     children: [
       { key: 'student-billing', icon: subMenuBadge(<DollarOutlined />, '#22c55e'), label: <Link to="/student/billing">Billing</Link> },
       { key: 'student-invoices', icon: subMenuBadge(<FileTextOutlined />, '#6366f1'), label: <Link to="/student/invoices">Invoices</Link> },
-      { key: 'student-account', icon: subMenuBadge(<UserOutlined />, '#64748b'), label: <Link to="/student/account">Account</Link> },
+      { key: 'student-account', icon: subMenuBadge(<UserOutlined />, '#64748b'), label: <Link to="/student/account">Account</Link> }
     ]
   }
 ];
-
 export default function StudentLayout() {
   const location = useLocation();
   const isCompactLearningRoute = isCompactLearningPath(location.pathname);
@@ -163,7 +156,7 @@ export default function StudentLayout() {
     }
   }, [location.pathname]);
   
-  const siderWidth = (isMobile ? 0 : (collapsed ? 80 : 260));
+  const siderWidth = (isMobile ? 0 : (collapsed ? 80 : 290));
   const HEADER_OFFSET = 64;
   const SIDER_TOP_GAP = 12;
   
@@ -176,7 +169,7 @@ export default function StudentLayout() {
           onCollapse={handleSidebarCollapse}
           trigger={null}
           theme="light"
-          width={260}
+          width={290}
           collapsedWidth={80}
           style={{
             position: 'fixed',
