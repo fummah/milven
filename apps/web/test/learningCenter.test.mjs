@@ -46,22 +46,26 @@ test('Learning Center is a four-category resource hub with selected-course links
 	assert.match(page, /Explore Slides/);
 });
 
-test('resource counts use existing authorized aggregate APIs only', () => {
+test('Learning Center no longer renders category counts or Continue Learning', () => {
 	assert.match(page, /\/api\/slides\/library\/courses/);
-	assert.match(page, /\/api\/module-notes\/unified/);
-	assert.match(page, /\/api\/summary-sheets\/unified/);
-	assert.match(page, /\/api\/formulas\/unified/);
-	assert.match(page, /\/api\/slides\/library\/stats/);
-	assert.match(page, /AbortController/);
-	assert.doesNotMatch(page, /3762|3,762|40 presentations/);
+	assert.doesNotMatch(page, /module-notes\/unified|summary-sheets\/unified|formulas\/unified|slides\/library\/stats/);
+	assert.doesNotMatch(page, /learning\/me\/courses|progressPercent|Continue Learning|Continue Curriculum/);
+	assert.doesNotMatch(page, /learning-category-stats|learning-category-stat/);
+	assert.doesNotMatch(cards, /learning-category-stats|learning-category-stat/);
 });
 
-test('Continue Learning uses real course progress endpoints and preserves the route', () => {
-	assert.match(page, /\/api\/learning\/me\/courses/);
-	assert.match(page, /progressPercent/);
-	assert.match(page, /Continue Curriculum/);
-	assert.match(page, /\/student\/learn\/\$\{courseId\}/);
-	assert.match(page, /No saved curriculum progress yet/);
+test('Learning Center uses the compact hero and concise card copy', () => {
+	assert.match(cards, /Learn, revise and master your CFA curriculum in one place\./);
+	assert.doesNotMatch(cards, /Resources update for/);
+	assert.doesNotMatch(cards, /learning-center-hero-subtext/);
+	for (const copy of [
+		'Comprehensive, exam-focused notes to master your CFA curriculum.',
+		'Revise key concepts quickly with concise, exam-focused summaries.',
+		'Master essential financial formulas, calculations and investment models.',
+		'Study curriculum-aligned presentations and visual explanations.'
+	]) assert.match(page, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+	assert.match(css, /min-height: 168px/);
+	assert.match(css, /max-height: 820px/);
 });
 
 test('Learning Center cards are responsive and use a single navigation target', () => {
@@ -101,4 +105,12 @@ test('floating submenu styling is premium, layered and viewport-safe', () => {
 	assert.match(globalCss, /\.student-submenu-popup\.student-submenu-exams \.ant-menu::before/);
 	assert.match(globalCss, /\.modern-sider\.ant-layout-sider-collapsed \.ant-menu-submenu-selected/);
 	assert.match(globalCss, /\.student-submenu-popup \.ant-menu-item:focus-within/);
+});
+test('collapsed direct navigation items use configured paths and navigate immediately', () => {
+	assert.match(layout, /path: '\/student'/);
+	assert.match(layout, /path: '\/student\/courses'/);
+	assert.match(layout, /path: '\/student\/comparison'/);
+	assert.match(layout, /directNavigationPaths/);
+	assert.match(layout, /navigate\(path\)/);
+	assert.match(layout, /onClick=\{handleMenuNavigation\}/);
 });

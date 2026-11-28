@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Layout, Menu, Typography, Avatar, Grid, Drawer, Button } from 'antd';
 import { HomeOutlined, BookOutlined, ReadOutlined, DollarOutlined, FileTextOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ExclamationCircleOutlined, StarOutlined, TeamOutlined, ExperimentOutlined, FunctionOutlined, SolutionOutlined, SnippetsOutlined, BarChartOutlined, FilePptOutlined } from '@ant-design/icons';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 const { Sider, Content } = Layout;
 
@@ -61,8 +61,8 @@ const childToParentKey = {
 };
 
 const buildMenuItems = onParentTitleClick => [
-  { key: 'student-home', icon: modernBadge(<HomeOutlined />, 'linear-gradient(135deg, #3b82f6, #1d4ed8)'), label: <Link to="/student">Dashboard</Link> },
-  { key: 'student-courses', icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #0ea5e9, #0284c7)'), label: <Link to="/student/courses">My Courses</Link> },
+  { key: 'student-home', path: '/student', title: 'Dashboard', icon: modernBadge(<HomeOutlined />, 'linear-gradient(135deg, #3b82f6, #1d4ed8)'), label: <Link to="/student">Dashboard</Link> },
+  { key: 'student-courses', path: '/student/courses', title: 'My Courses', icon: modernBadge(<BookOutlined />, 'linear-gradient(135deg, #0ea5e9, #0284c7)'), label: <Link to="/student/courses">My Courses</Link> },
   {
     key: 'learning',
     title: 'Learning',
@@ -95,7 +95,7 @@ const buildMenuItems = onParentTitleClick => [
       { key: 'student-revision', icon: subMenuBadge(<StarOutlined />, '#eab308'), label: <Link to="/student/revision">Revision List</Link> }
     ]
   },
-  { key: 'student-comparison', icon: modernBadge(<BarChartOutlined />, 'linear-gradient(135deg, #0ea5e9, #0284c7)'), label: <Link to="/student/comparison">Performance</Link> },
+  { key: 'student-comparison', path: '/student/comparison', title: 'Performance', icon: modernBadge(<BarChartOutlined />, 'linear-gradient(135deg, #0ea5e9, #0284c7)'), label: <Link to="/student/comparison">Performance</Link> },
   {
     key: 'account-group',
     title: 'Account & Billing',
@@ -113,6 +113,7 @@ const buildMenuItems = onParentTitleClick => [
 ];
 export default function StudentLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const isCompactLearningRoute = isCompactLearningPath(location.pathname);
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
@@ -126,6 +127,17 @@ export default function StudentLayout() {
     if (isMobile || !collapsed) return;
     setCollapsedOpenKeys(previous => previous.includes(key) ? [] : [key]);
   });
+  const directNavigationPaths = Object.fromEntries(
+    menuItems.filter(item => !item.children?.length && item.path).map(item => [item.key, item.path])
+  );
+
+  const handleMenuNavigation = ({ key }) => {
+    if (isMobile || !collapsed) return;
+    const path = directNavigationPaths[key];
+    if (!path) return;
+    setCollapsedOpenKeys([]);
+    navigate(path);
+  };
 
   const handleCollapsedMenuKeyDown = event => {
     if (isMobile || !collapsed || (event.key !== ' ' && event.key !== 'Spacebar')) return;
@@ -300,6 +312,7 @@ export default function StudentLayout() {
               else setOpenKeys(keys);
             }}
             onKeyDown={handleCollapsedMenuKeyDown}
+            onClick={handleMenuNavigation}
             style={{ 
               borderRight: 0,
               padding: '0 8px',

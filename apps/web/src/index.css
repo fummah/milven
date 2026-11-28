@@ -32,7 +32,7 @@ html {
 	display: none !important;
 }
 
-@media (max-width: 1299px) {
+@media (max-width: 1399px) {
 	.site-desktop-nav {
 		display: none !important;
 	}

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Pagination, Table, Tag, Typography, Grid } from 'antd';
 import {
 	AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, BookOutlined,
-	EyeOutlined, FilePptOutlined, FileTextOutlined, FolderOutlined, FunctionOutlined,
+	FilePptOutlined, FileTextOutlined, FolderOutlined, FunctionOutlined,
 	MenuOutlined, SearchOutlined, SnippetsOutlined
 } from '@ant-design/icons';
 import { api } from '../../lib/api';
@@ -13,7 +13,7 @@ import {
 	LearningExplorerHero, LearningExplorerLayout, LearningResourceEmptyState,
 	LearningResourceHeader, LearningResourceSkeleton, LearningResourceStats
 } from '../../components/learning-explorer/LearningExplorer.jsx';
-import LearningResourceCard, { LearningResourceTitleCell } from '../../components/learning-explorer/LearningResourceCard.jsx';
+import LearningResourceCard, { LearningResourceTitleCell, LearningViewAction } from '../../components/learning-explorer/LearningResourceCard.jsx';
 import { markExplorerReturn, useExplorerScrollMemory } from '../../lib/explorerSession.js';
 
 const { Text } = Typography;
@@ -359,10 +359,10 @@ export default function StudentSlides() {
 				/>
 			)
 		},
-		{ title: 'Actions', key: 'actions', width: 82, render: (_, presentation) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openPresentation(presentation)}>View</Button> }
+		{ title: 'Actions', key: 'actions', width: 96, className: 'learning-actions-cell', render: (_, presentation) => <LearningViewAction onClick={() => openPresentation(presentation)} /> }
 	] : [
 		{
-			title: 'Presentation', key: 'presentation', width: 330,
+			title: 'Presentation', key: 'presentation',
 			render: (_, presentation) => (
 				<LearningResourceTitleCell
 					resource={{
@@ -374,21 +374,21 @@ export default function StudentSlides() {
 					}}
 					variant="slide"
 					onView={() => openPresentation(presentation)}
+					metaLines={[presentation.volume?.name]}
 				/>
 			)
 		},
 		{
-			title: 'Level', key: 'level', width: 96,
+			title: 'Level', key: 'level', width: 100, className: 'learning-level-cell',
 			render: (_, presentation) => <Tag color={presentation.course?.level === 'LEVEL1' ? 'blue' : presentation.course?.level === 'LEVEL2' ? 'purple' : 'gold'}>{levelLabel(presentation.course?.level)}</Tag>
 		},
-		{ title: 'Volume', key: 'volume', width: 140, render: (_, presentation) => <div className="learning-meta-cell">{presentation.volume?.name || '-'}</div> },
 		{
-			title: 'Learning Module', key: 'module', width: 160,
+			title: 'Learning Module', key: 'module', width: 180, className: 'learning-module-cell',
 			render: (_, presentation) => presentation.scope === 'WHOLE_VOLUME'
 				? <Tag color="gold" style={{ whiteSpace: 'normal' }}>Whole Volume Review</Tag>
 				: <div className="learning-meta-cell">{presentation.module?.name || '-'}</div>
 		},
-		{ title: 'Actions', key: 'actions', width: 82, fixed: 'right', render: (_, presentation) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openPresentation(presentation)}>View</Button> }
+		{ title: 'Actions', key: 'actions', width: 110, className: 'learning-actions-cell', render: (_, presentation) => <LearningViewAction onClick={() => openPresentation(presentation)} /> }
 	];
 
 	const statsItems = [
@@ -552,7 +552,6 @@ export default function StudentSlides() {
 						columns={presentationColumns}
 						rowKey="id"
 						tableLayout="fixed"
-						scroll={isMobile ? undefined : { x: 808 }}
 						pagination={{
 							current: page,
 							pageSize,

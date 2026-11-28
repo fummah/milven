@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Select, Skeleton, Tag } from 'antd';
+import { Select, Skeleton } from 'antd';
 import {
 	ArrowRightOutlined, BookOutlined, FilePptOutlined, FileTextOutlined,
 	FunctionOutlined, ReadOutlined
@@ -37,22 +37,19 @@ function LearningCenterArtwork() {
 	);
 }
 
-export function LearningCenterHero({ courses = [], courseId, onCourseChange, coursesLoading, selectedProgress }) {
-	const selectedCourse = courses.find(course => course.id === courseId);
+export function LearningCenterHero({ courses = [], courseId, onCourseChange, coursesLoading }) {
 	return (
 		<section className="learning-center-hero">
 			<div className="learning-center-hero-copy">
 				<div className="learning-center-eyebrow">MILVEN FINANCE SCHOOL</div>
 				<h1>Your Learning Center</h1>
-				<p>Everything you need to learn, revise and master your CFA curriculum.</p>
-				<p className="learning-center-hero-subtext">Explore comprehensive notes, essential formulas, revision summaries and curriculum-aligned lecture slides in one place.</p>
+				<p>Learn, revise and master your CFA curriculum in one place.</p>
 			</div>
 			<div className="learning-center-hero-side">
 				<LearningCenterArtwork />
 				<div className="learning-center-course-panel">
 					<div className="learning-center-course-label">
-						<span>Selected course</span>
-						{selectedProgress?.progressPercent > 0 && <Tag color="gold">{selectedProgress.progressPercent}% complete</Tag>}
+						<span>Selected Course</span>
 					</div>
 					{coursesLoading ? (
 						<Skeleton.Input active block size="small" />
@@ -72,7 +69,6 @@ export function LearningCenterHero({ courses = [], courseId, onCourseChange, cou
 					) : (
 						<span className="learning-center-no-course">No active course</span>
 					)}
-					{selectedCourse && <span className="learning-center-course-note">Resources update for {selectedCourse.name}.</span>}
 				</div>
 			</div>
 		</section>
@@ -155,25 +151,6 @@ export function LearningCategoryCard({ card, courseId }) {
 			<div className="learning-category-body">
 				<h3>{card.title}</h3>
 				<p>{card.description}</p>
-				<div className="learning-category-stats">
-					{card.loading ? (
-						<>
-							<Skeleton.Input active size="small" block />
-							<Skeleton.Input active size="small" block />
-						</>
-					) : card.statsUnavailable ? (
-						<span className="learning-category-unavailable">Counts temporarily unavailable</span>
-					) : card.empty ? (
-						<span className="learning-category-empty">No published content for this course yet</span>
-					) : (
-						card.stats.map(stat => (
-							<div className="learning-category-stat" key={stat.label}>
-								<strong>{Number(stat.value || 0).toLocaleString('en-US')}</strong>
-								<span>{stat.label}</span>
-							</div>
-						))
-					)}
-				</div>
 				<span className="learning-category-cta">
 					{card.cta}
 					<ArrowRightOutlined />

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Grid, Modal, Pagination, Table, Tag } from 'antd';
 import {
-	BookOutlined, EyeOutlined, FilePdfOutlined, FileTextOutlined
+	BookOutlined, FilePdfOutlined, FileTextOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
@@ -12,7 +12,7 @@ import {
 	LearningResourceHeader, LearningResourceSkeleton, LearningResourceStats
 } from '../../components/learning-explorer/LearningExplorer.jsx';
 import LearningResourceCard, {
-	LearningResourceTitleCell, ResourceTypeForVolume
+	LearningResourceTitleCell, LearningViewAction
 } from '../../components/learning-explorer/LearningResourceCard.jsx';
 import { markExplorerReturn, useExplorerScrollMemory } from '../../lib/explorerSession.js';
 
@@ -247,31 +247,29 @@ export function StudentModuleNotes() {
 					onView={() => openResource(resource)}
 					metaLines={[
 						LEVEL_LABELS[resource.level] || resource.level,
-						resource.volume?.name
+						resource.type === 'PDF' ? null : resource.volume?.name
 					]}
 				/>
 			)
 		},
-		{ title: 'Actions', key: 'actions', width: 82, render: (_, resource) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openResource(resource)}>View</Button> }
+		{ title: 'Actions', key: 'actions', width: 96, className: 'learning-actions-cell', render: (_, resource) => <LearningViewAction onClick={() => openResource(resource)} /> }
 	] : [
 		{
-			title: 'Resource', key: 'resource', width: 360,
-			render: (_, resource) => <LearningResourceTitleCell resource={resource} variant="module-note" onView={() => openResource(resource)} />
-		},
-		{
-			title: 'Level', key: 'level', width: 96,
-			render: (_, resource) => <Tag color={resource.level === 'LEVEL1' ? 'blue' : resource.level === 'LEVEL2' ? 'purple' : 'gold'}>{LEVEL_LABELS[resource.level] || resource.level}</Tag>
-		},
-		{
-			title: 'Volume', key: 'volume', width: 180,
+			title: 'Resource', key: 'resource',
 			render: (_, resource) => (
-				<div className="learning-meta-cell">
-					<div>{resource.volume?.name || '-'}</div>
-					<div style={{ marginTop: 4 }}><ResourceTypeForVolume resource={resource} variant="module-note" /></div>
-				</div>
+				<LearningResourceTitleCell
+					resource={resource}
+					variant="module-note"
+					onView={() => openResource(resource)}
+					metaLines={[resource.type === 'PDF' ? null : resource.volume?.name]}
+				/>
 			)
 		},
-		{ title: 'Actions', key: 'actions', width: 82, fixed: 'right', render: (_, resource) => <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openResource(resource)}>View</Button> }
+		{
+			title: 'Level', key: 'level', width: 100, className: 'learning-level-cell',
+			render: (_, resource) => <Tag color={resource.level === 'LEVEL1' ? 'blue' : resource.level === 'LEVEL2' ? 'purple' : 'gold'}>{LEVEL_LABELS[resource.level] || resource.level}</Tag>
+		},
+		{ title: 'Actions', key: 'actions', width: 110, className: 'learning-actions-cell', render: (_, resource) => <LearningViewAction onClick={() => openResource(resource)} /> }
 	];
 
 	const statsItems = [
@@ -369,7 +367,6 @@ export function StudentModuleNotes() {
 						columns={columns}
 						rowKey={resource => resource.resourceKey || resource.id}
 						tableLayout="fixed"
-						scroll={isMobile ? undefined : { x: 718 }}
 						pagination={{ current: page, pageSize: 24, total, showSizeChanger: false, onChange: setPage, showTotal: count => `${count} resources` }}
 					/>
 				</div>

@@ -44,13 +44,17 @@ test('table remains the default and grid is available on every page', () => {
 	}
 });
 
-test('module notes and formula book keep concise academic columns', () => {
+test('resource tables remove redundant Volume columns and use shared view actions', () => {
+	for (const source of Object.values(pages)) {
+		assert.doesNotMatch(source, /title: 'Volume'/);
+		assert.match(source, /LearningViewAction/);
+	}
 	assert.doesNotMatch(pages.notes, /title: 'Learning Module'/);
 	assert.doesNotMatch(pages.notes, /title: 'Status'/);
 	assert.doesNotMatch(pages.formula, /title: 'Learning Module'/);
 	assert.doesNotMatch(pages.formula, /title: 'Status'/);
-	assert.match(pages.notes, /ResourceTypeForVolume/);
-	assert.match(pages.formula, /ResourceTypeForVolume/);
+	assert.match(pages.slides, /title: 'Learning Module'/);
+	assert.match(pages.summaries, /title: 'Learning Module'/);
 });
 
 test('summary explorer does not reintroduce the redundant source filter', () => {
@@ -98,8 +102,10 @@ test('cover titles follow the academic resource rules', () => {
 test('branded covers are CSS/SVG generated and responsive', () => {
 	const css = read('src/components/learning-explorer/learning-explorer.css');
 	assert.match(css, /\.learning-resource-cover[\s\S]*aspect-ratio: 16 \/ 9/);
-	assert.match(css, /\.learning-title-thumb[\s\S]*width: 140px/);
-	assert.match(css, /width: 112px/);
+	assert.match(css, /\.learning-title-thumb[\s\S]*width: 260px/);
+	assert.match(css, /width: 220px/);
+	assert.match(css, /\.learning-title-cell[\s\S]*flex-direction: column/);
+	assert.match(css, /\.learning-view-action\.ant-btn/);
 	assert.match(css, /\.learning-resource-cover\.is-notes/);
 	assert.match(css, /\.learning-resource-cover\.is-formula/);
 	assert.match(css, /\.learning-resource-cover\.is-summary/);

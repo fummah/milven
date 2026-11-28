@@ -128,3 +128,16 @@ export function ResourceTypeForVolume({ resource, variant }) {
 	if (variant === 'summary-sheet') return <LearningTypeBadge tone="purple">Summary</LearningTypeBadge>;
 	return null;
 }
+
+export function LearningViewAction({ onClick, label = 'View' }) {
+	return (
+		<Button
+			className="learning-view-action"
+			size="small"
+			icon={<EyeOutlined />}
+			onClick={onClick}
+		>
+			{label}
+		</Button>
+	);
+}
